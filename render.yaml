@@ -2,7 +2,7 @@ services:
   - type: web
     name: athoo-api
     runtime: node
-    plan: starter
+    plan: free
     rootDir: .
     buildCommand: corepack enable && corepack prepare pnpm@10.33.2 --activate && pnpm install --frozen-lockfile && pnpm --filter @workspace/api-server build
     startCommand: pnpm db:migrate && pnpm --filter @workspace/api-server start

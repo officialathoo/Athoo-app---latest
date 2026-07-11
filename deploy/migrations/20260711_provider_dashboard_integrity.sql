@@ -4,6 +4,8 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS availability_override_reason text;
 UPDATE users SET availability_updated_at = COALESCE(updated_at, now())
 WHERE role = 'provider' AND availability_updated_at IS NULL;
 
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS job_completed_at timestamptz;
+
 CREATE INDEX IF NOT EXISTS bookings_provider_completed_at_idx
   ON bookings (provider_id, job_completed_at DESC)
   WHERE status = 'completed';

@@ -35,7 +35,7 @@ router.get("/booking-360/:bookingId", requireAuth, requireAdmin, async (req, res
       (select coalesce(json_agg(br order by br.created_at desc), '[]'::json) from broadcast_requests br where br.booking_id = ${bookingId}) as broadcasts,
       (select coalesce(json_agg(n order by n.created_at desc), '[]'::json) from negotiations n where n.booking_id = ${bookingId}) as negotiations,
       (select coalesce(json_agg(i order by i.created_at desc), '[]'::json) from invoices i where i.booking_id = ${bookingId}) as invoices,
-      (select coalesce(json_agg(a order by a.created_at desc), '[]'::json) from audit_log a where a.entity_id = ${bookingId}) as audit_timeline
+      (select coalesce(json_agg(a order by a.created_at desc), '[]'::json) from audit_log a where a.target_id = ${bookingId}) as audit_timeline
   `);
   return ok(res, data.rows?.[0] || {}, "Booking 360 loaded");
 });

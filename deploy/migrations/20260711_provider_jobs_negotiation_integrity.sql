@@ -1,3 +1,5 @@
+ALTER TABLE negotiations ADD COLUMN IF NOT EXISTS booking_id text;
+
 -- One negotiation record may be linked to a booking.
 WITH ranked AS (
   SELECT id, row_number() OVER (PARTITION BY booking_id ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC) AS rn
