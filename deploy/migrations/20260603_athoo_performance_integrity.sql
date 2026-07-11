@@ -7,8 +7,9 @@ CREATE INDEX IF NOT EXISTS bookings_customer_status_idx ON bookings(customer_id,
 CREATE INDEX IF NOT EXISTS bookings_provider_status_idx ON bookings(provider_id, status);
 CREATE INDEX IF NOT EXISTS bookings_created_at_status_idx ON bookings(created_at, status);
 CREATE INDEX IF NOT EXISTS invoices_booking_id_idx ON invoices(booking_id);
-CREATE INDEX IF NOT EXISTS invoices_user_id_idx ON invoices(user_id);
-CREATE INDEX IF NOT EXISTS notifications_user_id_read_idx ON notifications(user_id, read);
+CREATE INDEX IF NOT EXISTS invoices_customer_id_idx ON invoices(customer_id);
+CREATE INDEX IF NOT EXISTS invoices_provider_id_idx ON invoices(provider_id);
+CREATE INDEX IF NOT EXISTS notifications_user_id_read_idx ON notifications(user_id, is_read);
 CREATE INDEX IF NOT EXISTS notifications_user_id_created_at_idx ON notifications(user_id, created_at);
 CREATE INDEX IF NOT EXISTS broadcast_requests_status_updated_at_idx ON broadcast_requests(status, updated_at);
 CREATE INDEX IF NOT EXISTS broadcast_requests_customer_status_idx ON broadcast_requests(customer_id, status);
