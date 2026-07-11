@@ -1,0 +1,33 @@
+node_modules/
+.pnpm-store/
+
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+dist/
+build/
+.next/
+.expo/
+.expo-shared/
+coverage/
+logs/
+*.log
+
+desktop.ini
+.DS_Store
+
+.vscode/
+.idea/
+
+tmp/
+temp/
+
+# Accidental/debug artifacts
+stacktrace.txt
+*tatus --short
+* (rprev )
+
+# Generated release sign-off records
+release-evidence/*.json

@@ -1,0 +1,21 @@
+appId: ${ATHOO_APP_ID}
+name: Customer password login
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    id: welcome-screen
+- tapOn:
+    id: welcome-customer-sign-in
+- tapOn:
+    id: login-password-tab
+- tapOn:
+    id: login-identifier
+- inputText: ${BETA_CUSTOMER_IDENTIFIER}
+- tapOn:
+    id: login-password
+- inputText: ${BETA_CUSTOMER_PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: login-submit
+- assertVisible: "Home"

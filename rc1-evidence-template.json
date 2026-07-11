@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "releaseVersion": "rc1",
+  "artifactSha256": "",
+  "generatedAt": "",
+  "checks": {
+    "codeVerification": { "status": "passed", "evidence": "Phase 4.6 build certification" },
+    "securityScan": { "status": "passed", "evidence": "Phase 4.4 and Phase 4.6 security scan" },
+    "databaseIntegrity": { "status": "pending", "evidence": "" },
+    "databaseRecoveryRehearsal": { "status": "pending", "evidence": "" },
+    "crossRoleApiSmoke": { "status": "pending", "evidence": "" },
+    "performanceSmoke": { "status": "pending", "evidence": "" },
+    "expoDoctor": { "status": "pending", "evidence": "" },
+    "mobileExport": { "status": "pending", "evidence": "" },
+    "androidPreviewBuild": { "status": "pending", "evidence": "" },
+    "iosPreviewBuild": { "status": "pending", "evidence": "" },
+    "androidDeviceAcceptance": { "status": "pending", "evidence": "" },
+    "iosDeviceAcceptance": { "status": "pending", "evidence": "" },
+    "crossRoleDeviceAcceptance": { "status": "pending", "evidence": "" },
+    "openP0Defects": { "status": "passed", "count": 0, "evidence": "No known P0 defects in code-certified baseline" },
+    "openP1Defects": { "status": "passed", "count": 0, "evidence": "No known P1 defects in code-certified baseline" }
+  },
+  "approvals": {
+    "engineering": "pending",
+    "qa": "pending",
+    "product": "pending",
+    "operations": "pending"
+  }
+}

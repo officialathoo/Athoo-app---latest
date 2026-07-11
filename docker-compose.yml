@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: athoo
+      POSTGRES_PASSWORD: athoo_password
+      POSTGRES_DB: athoo
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    env_file:
+      - .env.production.example
+    environment:
+      DATABASE_URL: postgresql://athoo:athoo_password@postgres:5432/athoo
+      REDIS_URL: redis://redis:6379
+      API_BASE_URL: http://localhost:5000
+      ADMIN_BASE_URL: http://localhost:5173
+      CORS_ORIGIN: http://localhost:5173,http://localhost:8081
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "5000:5000"
+
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile.admin
+    restart: unless-stopped
+    environment:
+      VITE_API_BASE_URL: http://localhost:5000
+    depends_on:
+      - api
+    ports:
+      - "5173:80"
+
+volumes:
+  postgres_data:

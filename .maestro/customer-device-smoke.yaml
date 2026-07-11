@@ -1,0 +1,11 @@
+appId: ${ATHOO_APP_ID}
+name: Customer device navigation smoke
+---
+- runFlow: customer-login.yaml
+- assertVisible: "Home"
+- tapOn: "Bookings"
+- assertVisible: "Bookings"
+- tapOn: "Chat"
+- assertVisible: "Chat"
+- tapOn: "Profile"
+- assertVisible: "Profile"

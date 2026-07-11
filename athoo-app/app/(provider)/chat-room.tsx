@@ -1,0 +1,333 @@
+import { Icon } from "@/components/ui/Icon";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { PrivateImage } from "@/services/storage";
+import { api } from "@/services/api";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Colors } from "@/constants/colors";
+import { useAuth } from "@/context/AuthContext";
+import { useCall } from "@/context/CallContext";
+import { useChat, Message } from "@/context/ChatContext";
+import { useNotifications } from "@/context/NotificationContext";
+
+function formatTime(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+export default function ProviderChatRoomScreen() {
+  const { chatId, otherUserId, otherUserName, otherUserImage, otherUserColor } = useLocalSearchParams<{
+    chatId: string;
+    otherUserId: string;
+    otherUserName: string;
+    otherUserImage?: string;
+    otherUserColor?: string;
+  }>();
+  const { user } = useAuth();
+  const { chats, messages, sendMessage, markAsRead, setActiveChatId, loadingMessages } = useChat();
+  const { startOutgoingCall } = useCall();
+  const { notifications, markRead } = useNotifications();
+  const insets = useSafeAreaInsets();
+  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const botPad = Platform.OS === "web" ? 34 : insets.bottom;
+
+  const [text, setText] = useState("");
+  const [otherProfile, setOtherProfile] = useState<{ profileImage?: string | null; profileColor?: string } | null>(
+    (otherUserImage || otherUserColor)
+      ? { profileImage: otherUserImage || null, profileColor: otherUserColor || undefined }
+      : null
+  );
+  const flatRef = useRef<FlatList>(null);
+
+  const chatMessages: Message[] = messages[chatId || ""] || [];
+  const activeChat = chats.find((item) => item.id === chatId);
+  const resolvedOtherUserId =
+    otherUserId ||
+    (user && activeChat
+      ? activeChat.participant1Id === user.id
+        ? activeChat.participant2Id
+        : activeChat.participant1Id
+      : "");
+  const resolvedOtherUserName =
+    otherUserName ||
+    (user && activeChat
+      ? activeChat.participant1Id === user.id
+        ? activeChat.participant2Name
+        : activeChat.participant1Name
+      : "User");
+
+  useEffect(() => {
+    if (chatId) {
+      setActiveChatId(chatId);
+      if (user) markAsRead(chatId, user.id);
+      // Clear any in-app message notifications for this chat so the badge resets
+      notifications
+        .filter((n) => n.type === "message" && n.chatId === chatId && !n.read)
+        .forEach((n) => markRead(n.id));
+    }
+    return () => setActiveChatId(null);
+  }, [chatId, user]);
+
+  useEffect(() => {
+    if (resolvedOtherUserId) {
+      api
+        .getUser(resolvedOtherUserId)
+        .then((res: any) => {
+          if (res?.user) setOtherProfile(res.user);
+        })
+        .catch(() => {});
+    }
+  }, [resolvedOtherUserId]);
+
+  const handleSend = async () => {
+    if (!text.trim() || !chatId || !user) return;
+    const msg = text.trim();
+    setText("");
+    try {
+      await sendMessage(chatId, user.id, user.name, msg);
+    } catch {
+      setText(msg);
+      Alert.alert("Send Failed", "Message could not be sent. Please check your connection and try again.");
+    }
+  };
+
+  const initials = (resolvedOtherUserName || "C")
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+
+  const renderMessage = ({ item }: { item: Message }) => {
+    const isMe = user?.id === item.senderId;
+    return (
+      <View style={[styles.msgRow, isMe && styles.msgRowMe]}>
+        {!isMe && (
+          otherProfile?.profileImage ? (
+            <PrivateImage objectPath={otherProfile.profileImage} style={[styles.msgAvatar, { borderRadius: 16 }]} />
+          ) : (
+            <View style={[styles.msgAvatar, { backgroundColor: otherProfile?.profileColor || Colors.secondary }]}>
+              <Text style={styles.msgAvatarText}>{initials}</Text>
+            </View>
+          )
+        )}
+        <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}>
+          <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>{item.text}</Text>
+          <Text style={[styles.bubbleTime, isMe && styles.bubbleTimeMe]}>
+            {formatTime(item.createdAt || item.timestamp || new Date().toISOString())}
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
+  return (
+    <View style={[styles.container, { paddingTop: topPad }]}>
+      <View style={styles.header}>
+        <Pressable style={styles.backBtn} onPress={() => router.back()}>
+          <Icon name="arrow-left" size={20} color={Colors.text} />
+        </Pressable>
+        {otherProfile?.profileImage ? (
+          <PrivateImage objectPath={otherProfile.profileImage} style={[styles.avatar, { borderRadius: 22 }]} />
+        ) : (
+          <View style={[styles.avatar, { backgroundColor: otherProfile?.profileColor || Colors.secondary }]}>
+            <Text style={styles.avatarTxt}>{initials}</Text>
+          </View>
+        )}
+        <View style={{ flex: 1 }}>
+          <Text style={styles.name}>{resolvedOtherUserName}</Text>
+          <Text style={styles.role}>Customer</Text>
+        </View>
+        <Pressable
+          style={styles.actionBtn}
+          onPress={() => startOutgoingCall(resolvedOtherUserId || "", resolvedOtherUserName || "Customer", "Voice Call", "#FF6B1A")}
+        >
+          <Icon name="phone" size={18} color={Colors.secondary} />
+        </Pressable>
+      </View>
+
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        {loadingMessages ? (
+          <View style={styles.emptyChat}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={{ color: Colors.textSecondary, marginTop: 12, fontSize: 13 }}>Loading messages…</Text>
+          </View>
+        ) : chatMessages.length === 0 ? (
+          <View style={styles.emptyChat}>
+            <Icon name="message-circle" size={32} color={Colors.textMuted} />
+            <Text style={styles.emptyChatTitle}>No messages yet</Text>
+            <Text style={styles.emptyChatText}>
+              Send a message to {resolvedOtherUserName}
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            ref={flatRef}
+            data={chatMessages}
+            keyExtractor={(item) => item.id}
+            renderItem={renderMessage}
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.messagesList}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={20}
+            windowSize={10}
+            initialNumToRender={20}
+            onContentSizeChange={() => flatRef.current?.scrollToEnd({ animated: true })}
+          />
+        )}
+
+        <View style={[styles.inputBar, { paddingBottom: botPad + 8 }]}>
+          <View style={styles.inputWrapper}>
+            <TextInput
+              style={styles.input}
+              placeholder="Type a message..."
+              value={text}
+              onChangeText={setText}
+              multiline
+              placeholderTextColor={Colors.textMuted}
+            />
+          </View>
+          <Pressable
+            style={[styles.sendBtn, !text.trim() && styles.sendBtnDisabled]}
+            onPress={handleSend}
+            disabled={!text.trim()}
+          >
+            <Icon name="send" size={18} color={Colors.white} />
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: Colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: Colors.background,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.secondary + "20",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: Colors.secondary + "40",
+  },
+  avatarTxt: { fontSize: 13, fontWeight: "700", color: "#fff" },
+  name: { fontSize: 15, fontWeight: "700", color: Colors.text },
+  role: { fontSize: 11, color: Colors.textSecondary },
+  actionBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: Colors.secondary + "15",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyChat: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10 },
+  emptyChatTitle: { fontSize: 17, fontWeight: "700", color: Colors.text },
+  emptyChatText: { fontSize: 13, color: Colors.textSecondary, textAlign: "center" },
+  messagesList: { padding: 16, gap: 8, paddingBottom: 16 },
+  msgRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 8,
+    marginBottom: 8,
+  },
+  msgRowMe: { justifyContent: "flex-end" },
+  msgAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.secondary + "20",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  msgAvatarText: { fontSize: 10, fontWeight: "700", color: "#fff" },
+  bubble: {
+    maxWidth: "72%",
+    borderRadius: 18,
+    padding: 10,
+    paddingHorizontal: 14,
+  },
+  bubbleMe: {
+    backgroundColor: Colors.secondary,
+    borderBottomRightRadius: 4,
+  },
+  bubbleThem: {
+    backgroundColor: Colors.card,
+    borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  bubbleText: { fontSize: 14, color: Colors.text, lineHeight: 20 },
+  bubbleTextMe: { color: Colors.white },
+  bubbleTime: { fontSize: 10, color: Colors.textMuted, marginTop: 4, textAlign: "right" },
+  bubbleTimeMe: { color: "rgba(255,255,255,0.7)" },
+  inputBar: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    backgroundColor: Colors.white,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  inputWrapper: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    maxHeight: 100,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  input: { fontSize: 14, color: Colors.text },
+  sendBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.secondary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sendBtnDisabled: { backgroundColor: Colors.textMuted },
+});
+

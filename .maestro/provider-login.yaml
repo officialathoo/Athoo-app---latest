@@ -1,0 +1,21 @@
+appId: ${ATHOO_APP_ID}
+name: Provider password login
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    id: welcome-screen
+- tapOn:
+    id: welcome-provider-sign-in
+- tapOn:
+    id: login-password-tab
+- tapOn:
+    id: login-identifier
+- inputText: ${BETA_PROVIDER_IDENTIFIER}
+- tapOn:
+    id: login-password
+- inputText: ${BETA_PROVIDER_PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: login-submit
+- assertVisible: "Dashboard"

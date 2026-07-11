@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "platforms": {
+    "android": [
+      "fresh-install-and-launch", "customer-password-login", "provider-password-login", "notification-permission", "foreground-location-permission", "gps-disabled-recovery", "camera-capture", "gallery-limited-access", "microphone-call-permission", "fingerprint-login", "push-tap-cold-start", "push-tap-background", "offline-banner-and-recovery", "app-background-foreground-refresh", "secure-logout"
+    ],
+    "ios": [
+      "fresh-install-and-launch", "customer-password-login", "provider-password-login", "notification-permission", "when-in-use-location", "location-services-disabled-recovery", "camera-capture", "photo-library-limited-access", "microphone-call-permission", "face-id-login", "push-tap-terminated", "push-tap-background", "offline-banner-and-recovery", "app-background-foreground-refresh", "secure-logout"
+    ]
+  },
+  "crossRole": [
+    "customer-provider-chat-realtime", "new-booking-provider-alert", "negotiation-round-trip", "provider-arrival-customer-update", "start-pin-verification", "completion-pin-verification", "provider-live-location-foreground", "review-after-completion", "admin-force-logout", "admin-availability-override", "manual-commission-proof", "withdrawal-status-notification"
+  ],
+  "evidenceRequired": ["device-model", "os-version", "app-build", "tester", "timestamp", "result", "screenshot-or-video", "notes"]
+}
