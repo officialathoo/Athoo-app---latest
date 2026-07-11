@@ -11,8 +11,8 @@ CREATE INDEX IF NOT EXISTS notifications_user_unread_created_idx
 CREATE INDEX IF NOT EXISTS support_tickets_status_created_idx
   ON support_tickets (status, created_at DESC);
 
-CREATE INDEX IF NOT EXISTS audit_log_entity_created_idx
-  ON audit_log (entity_type, entity_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS audit_log_target_created_idx
+  ON audit_log (target, target_id, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS bookings_active_provider_updated_idx
   ON bookings (provider_id, updated_at DESC)
