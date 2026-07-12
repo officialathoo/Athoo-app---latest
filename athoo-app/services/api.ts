@@ -4,8 +4,7 @@ import Constants from "expo-constants";
 import { Platform } from "react-native";
 
 // API base is provider-agnostic. Set EXPO_PUBLIC_API_BASE_URL to your own API domain, for example https://api.athoo.pk.
-const DEFAULT_LOCAL_API = "";
-
+const DEFAULT_API_BASE_URL = "https://athoo-api.onrender.com";
 function sanitizeBaseUrl(value: string | undefined | null): string {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -26,7 +25,7 @@ function browserOriginIfAvailable(): string {
 const API_BASE_URL =
   sanitizeBaseUrl(ENV_API_BASE_URL) ||
   browserOriginIfAvailable() ||
-  DEFAULT_LOCAL_API;
+  DEFAULT_API_BASE_URL;
 
 const TOKEN_KEY = "athoo_token";
 const REMEMBER_KEY = "athoo_remember_me";
