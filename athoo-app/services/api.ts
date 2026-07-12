@@ -13,10 +13,8 @@ function sanitizeBaseUrl(value: string | undefined | null): string {
 }
 
 const ENV_API_BASE_URL =
-  Constants?.expoConfig?.extra?.API_BASE_URL ||
-  Constants?.manifest?.extra?.API_BASE_URL ||
   process.env.EXPO_PUBLIC_API_BASE_URL ||
-  process.env.API_BASE_URL ||
+  Constants.expoConfig?.extra?.API_BASE_URL ||
   "";
 
 function browserOriginIfAvailable(): string {
