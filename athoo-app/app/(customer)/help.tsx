@@ -10,7 +10,7 @@ import { api } from "@/services/api";
 type Faq = { id?: string; q: string; a: string };
 
 const HARDCODED_FAQS: Faq[] = [
-  { q: "How do I book a service?", a: "Go to the Search tab, find a provider in Rawalpindi or Islamabad, view their profile, and tap 'Book Now'. Choose your date, time, and address, then confirm." },
+  { q: "How do I book a service?", a: "Go to the Search tab, find a provider in Pakistan, view their profile, and tap 'Book Now'. Choose your date, time, and address, then confirm." },
   { q: "What is the arrival OTP?", a: "When the provider arrives at your location, they'll give you a 4-digit code. Enter it in the app to officially start the service and begin the timer." },
   { q: "What is the completion OTP?", a: "After work is done, you'll receive a 4-digit OTP to enter in the app. This marks the service as complete and triggers the invoice." },
   { q: "Is my phone number shared with providers?", a: "Never. Athoo masks all phone numbers. Communication between customers and providers happens only through the in-app chat." },
@@ -19,7 +19,7 @@ const HARDCODED_FAQS: Faq[] = [
   { q: "How do I cancel a booking?", a: "Open the booking from 'My Bookings', then tap 'Cancel Booking'. Free cancellation is available up to 1 hour before the scheduled time." },
   { q: "How do I rate a provider?", a: "After a booking is marked complete, you'll be prompted to leave a star rating and optional review for the provider." },
   { q: "Are providers verified?", a: "Yes! All providers go through CNIC verification, document upload, selfie verification, and police background check before being approved on Athoo." },
-  { q: "What areas do you cover?", a: "Currently Rawalpindi and Islamabad only. We'll expand to other cities soon. Stay tuned!" },
+  { q: "What areas do you cover?", a: "Athoo serves customers and providers across Pakistan." },
 ];
 
 export default function HelpScreen() {

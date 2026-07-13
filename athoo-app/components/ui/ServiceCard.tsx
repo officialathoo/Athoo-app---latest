@@ -31,8 +31,8 @@ export function ServiceCard({ service, onPress, size = "md" }: ServiceCardProps)
           padding: isSmall ? theme.spacing.sm : theme.spacing.md,
           borderRadius: theme.radius.md,
           gap: theme.spacing.sm,
-          backgroundColor: theme.colors.surface,
-          borderColor: theme.colors.border,
+          backgroundColor: "#FFFFFF",
+          borderColor: "#E6EAF0",
         },
         theme.shadows.sm,
         pressed && styles.pressed,
@@ -55,7 +55,7 @@ export function ServiceCard({ service, onPress, size = "md" }: ServiceCardProps)
         variant="caption"
         numberOfLines={2}
         align="center"
-        style={[styles.name, isUrdu && styles.urduText, isSmall && { fontSize: 10 }]}
+        style={[styles.name, { color: "#111827" }, isUrdu && styles.urduText, isSmall && { fontSize: 10 }]}
       >
         {displayName}
       </AppText>
@@ -66,7 +66,10 @@ export function ServiceCard({ service, onPress, size = "md" }: ServiceCardProps)
 const styles = StyleSheet.create({
   card: {
     alignItems: "center",
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
+    minHeight: 112,
+    backgroundColor: "#FFFFFF",
+    justifyContent: "flex-start",
   },
   pressed: { opacity: 0.82, transform: [{ scale: 0.97 }] },
   iconBg: { alignItems: "center", justifyContent: "center" },

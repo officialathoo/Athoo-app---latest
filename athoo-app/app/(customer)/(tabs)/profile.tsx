@@ -68,7 +68,7 @@ const MENU_SECTIONS = [
     items: [
       { icon: "help-circle", label: "Help & FAQs", subtitle: "Answers to common questions", route: "/(customer)/help", color: Colors.primary },
       { icon: "headphones", label: "Contact Support", subtitle: "Reach our support team", route: "/(customer)/contact-support", color: "#EF4444" },
-      { icon: "info", label: "About Athoo", subtitle: "v1.0 · Rawalpindi & Islamabad", route: "/(customer)/about", color: "#6366F1" },
+      { icon: "info", label: "About Athoo", subtitle: "v1.0 · Pakistan", route: "/(customer)/about", color: "#6366F1" },
     ],
   },
 ];
@@ -526,7 +526,7 @@ export default function ProfileScreen() {
         </View>
       </AnimatedCard>
 
-      <Text style={styles.version}>Athoo v1.0 · Made for Rawalpindi & Islamabad</Text>
+      <Text style={styles.version}>Athoo v1.0 · Available across Pakistan</Text>
 
       <Modal visible={showAvatarModal} animationType="slide" transparent>
         <Pressable style={styles.modalOverlay} onPress={() => setShowAvatarModal(false)}>
@@ -1073,27 +1073,27 @@ const styles = StyleSheet.create({
   referralCard: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     backgroundColor: Colors.primary + "10", borderRadius: 18,
-    padding: 18, marginHorizontal: 16, marginBottom: 0,
+    paddingVertical: 24, paddingHorizontal: 24, marginHorizontal: 18, marginBottom: 10,
     borderWidth: 1.5, borderColor: Colors.primary + "30",
     shadowColor: Colors.primary, shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08, shadowRadius: 8, elevation: 2,
   },
-  referralLeft: { flex: 1, gap: 6 },
+  referralLeft: { flex: 1, minWidth: 0, gap: 10, paddingRight: 18 },
   referralTitle: { fontSize: 15, fontWeight: "800", color: Colors.text },
   referralSub: { fontSize: 11, color: Colors.textSecondary, lineHeight: 16 },
-  referralCodeRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 2 },
+  referralCodeRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", columnGap: 12, rowGap: 10, marginTop: 8, paddingRight: 4 },
   referralCode: {
     fontSize: 18, fontWeight: "900", color: Colors.primary,
-    letterSpacing: 1.5, fontVariant: ["tabular-nums"],
+    letterSpacing: 1.2, fontVariant: ["tabular-nums"], flexShrink: 1,
   },
   shareCodeBtn: {
     flexDirection: "row", alignItems: "center", gap: 5,
     backgroundColor: Colors.white, borderRadius: 10,
-    paddingHorizontal: 10, paddingVertical: 6,
+    paddingHorizontal: 12, paddingVertical: 8,
     borderWidth: 1, borderColor: Colors.primary + "40",
   },
   shareCodeText: { fontSize: 12, fontWeight: "700", color: Colors.primary },
-  referralRight: { alignItems: "center", gap: 2, marginLeft: 16 },
+  referralRight: { alignItems: "center", justifyContent: "center", gap: 4, marginLeft: 14, minWidth: 64, paddingLeft: 12, borderLeftWidth: 1, borderLeftColor: Colors.primary + "25" },
   referralCount: { fontSize: 30, fontWeight: "900", color: Colors.primary },
   referralCountLbl: { fontSize: 10, fontWeight: "600", color: Colors.textSecondary },
 

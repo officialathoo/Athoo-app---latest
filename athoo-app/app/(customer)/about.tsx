@@ -10,7 +10,7 @@ import { AnimatedCard } from "@/components/ui/AnimatedCard";
 const FEATURES = [
   { icon: "shield", title: "Privacy First", desc: "Phone numbers never shared. All communication via in-app chat." },
   { icon: "trending-down", title: "Price Negotiation", desc: "InDrive-style offer system — you set the price." },
-  { icon: "map-pin", title: "Local Focus", desc: "Exclusively serving Rawalpindi & Islamabad." },
+  { icon: "map-pin", title: "Local Focus", desc: "Exclusively serving Pakistan." },
   { icon: "check-circle", title: "Verified Providers", desc: "CNIC + police verification for all workers." },
   { icon: "clock", title: "Real-time Tracking", desc: "OTP-based arrival & completion verification." },
   { icon: "star", title: "Transparent Ratings", desc: "Honest reviews from real customers only." },
@@ -34,7 +34,7 @@ export default function AboutScreen() {
           <LinearGradient colors={[Colors.primary, "#0D4BA0"]} style={styles.heroBanner}>
             <Image source={require("../../assets/images/logo.png")} style={{ width: 120, height: 48 }} resizeMode="contain" />
             <Text style={styles.heroTagline}>Pakistan's Trusted Home Services Platform</Text>
-            <Text style={styles.heroVersion}>Version 1.0 · Rawalpindi & Islamabad</Text>
+            <Text style={styles.heroVersion}>Version 1.0 · Pakistan</Text>
           </LinearGradient>
         </AnimatedCard>
 
@@ -42,7 +42,7 @@ export default function AboutScreen() {
           <View style={styles.missionCard}>
             <Text style={styles.missionTitle}>Our Mission</Text>
             <Text style={styles.missionText}>
-              Athoo connects skilled local professionals with homeowners across Rawalpindi and Islamabad.
+              Athoo connects skilled local professionals with homeowners across Pakistan.
               We believe everyone deserves access to trustworthy, affordable home services — with full privacy protection and transparent pricing.
             </Text>
           </View>

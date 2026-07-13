@@ -81,7 +81,7 @@ export default function WelcomeScreen() {
           />
         </View>
         <Text style={styles.tagline}>Home Services at Your Fingertips</Text>
-        <Text style={styles.subTagline}>Rawalpindi & Islamabad</Text>
+        <Text style={styles.subTagline}>Pakistan</Text>
       </View>
 
       {requiresBiometric ? (

@@ -18,7 +18,7 @@ const FALLBACK_FAQS: FaqItem[] = [
   { q: "How do I update my profile?", a: "Go to Profile > Edit icon. You can update your name, bio, services offered, and avatar color." },
   { q: "What documents are required?", a: "CNIC front/back, live selfie, optional diploma/certificate, and optional police verification letter. These are reviewed by the Athoo team." },
   { q: "How do I get rated?", a: "After each job is completed, the customer rates your service 1–5 stars. High ratings improve your visibility and attract more bookings." },
-  { q: "What areas do you serve?", a: "Currently Rawalpindi and Islamabad only. We're expanding to Lahore and Karachi soon!" },
+  { q: "What areas do you serve?", a: "Athoo serves customers and providers across Pakistan." },
 ];
 
 function FAQItem({ faq, index }: { faq: FaqItem; index: number }) {

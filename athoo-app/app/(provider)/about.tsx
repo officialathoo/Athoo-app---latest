@@ -22,11 +22,11 @@ export default function ProviderAboutScreen() {
             <Image source={require("../../assets/images/logo.png")} style={{ width: 120, height: 48, marginBottom: 6 }} resizeMode="contain" />
             <Text style={styles.logoSub}>Home Services Marketplace</Text>
           </View>
-          <Text style={styles.tagline}>Connecting Rawalpindi & Islamabad</Text>
+          <Text style={styles.tagline}>Connecting Pakistan</Text>
         </View>
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Our Mission</Text>
-          <Text style={styles.cardText}>Athoo connects skilled service professionals with customers in Rawalpindi and Islamabad. We provide a transparent, safe, and fair platform for both providers and customers to connect and transact with confidence.</Text>
+          <Text style={styles.cardText}>Athoo connects skilled service professionals with customers in Pakistan. We provide a transparent, safe, and fair platform for both providers and customers to connect and transact with confidence.</Text>
         </View>
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Provider Promise</Text>

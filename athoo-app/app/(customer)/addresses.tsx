@@ -173,7 +173,7 @@ export default function AddressesScreen() {
                 style={[styles.input, { minHeight: 80, textAlignVertical: "top" }]}
                 value={newAddress}
                 onChangeText={setNewAddress}
-                placeholder="Full address in Rawalpindi / Islamabad"
+                placeholder="Full address in Pakistan"
                 placeholderTextColor={Colors.textMuted}
                 multiline
               />

@@ -129,7 +129,7 @@ export default function ProviderRegisterScreen() {
     email: "",
     services: [] as string[],
     experience: "",
-    city: "Rawalpindi",
+    city: "",
     address: "",
     bio: "",
     hourlyRate: "",

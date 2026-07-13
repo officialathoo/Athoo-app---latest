@@ -191,6 +191,7 @@ export default function BookServiceScreen() {
 
   const [submitting, setSubmitting] = useState(false);
   const directBookingRequestIdRef = useRef<string | null>(null);
+  const broadcastRequestIdRef = useRef<string | null>(null);
   const [broadcastId, setBroadcastId] = useState<string | null>(null);
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -570,7 +571,11 @@ export default function BookServiceScreen() {
           [{ text: "OK", onPress: () => router.replace("/(customer)/(tabs)/bookings" as any) }]
         );
       } else {
+        if (!broadcastRequestIdRef.current) {
+          broadcastRequestIdRef.current = `broadcast-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        }
         const res = await api.createBroadcastRequest({
+          clientRequestId: broadcastRequestIdRef.current,
           service: selectedCategory.id,
           serviceLabel: selectedCategory.name,
           serviceIcon: selectedCategory.icon,
@@ -584,6 +589,7 @@ export default function BookServiceScreen() {
           customerOffer: parsedOffer && parsedOffer >= 100 ? parsedOffer : undefined,
           travellingCharge: parsedTravelCharge,
         });
+        broadcastRequestIdRef.current = null;
         setBroadcastId(res.request.id);
       }
     } catch (e: any) {
@@ -784,7 +790,7 @@ export default function BookServiceScreen() {
                 </View>
                 <Text style={styles.mapCardHint}>Drag the pin to fine-tune your exact location</Text>
                 <View style={styles.mapWrap}>
-                  <AthooMapFallback />
+                  <AthooMapFallback latitude={userLocation.latitude} longitude={userLocation.longitude} draggable onCoordinateChange={(latitude, longitude) => void onPinDragEnd({ nativeEvent: { coordinate: { latitude, longitude } } })} />
                 </View>
                 <View style={styles.addrPreview}>
                   <Icon name="check-circle" size={13} color={Colors.success} />

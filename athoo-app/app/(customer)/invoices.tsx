@@ -207,7 +207,7 @@ export default function InvoicesScreen() {
           <LinearGradient colors={[Colors.primary, "#0D4BA0"]} style={styles.invoiceHeader}>
             <View style={styles.invoiceLogo}>
               <Image source={require("../../assets/images/logo.png")} style={{ width: 80, height: 32 }} resizeMode="contain" />
-              <Text style={styles.invoiceSubhead}>Home Services · Rawalpindi & Islamabad</Text>
+              <Text style={styles.invoiceSubhead}>Home Services · Pakistan</Text>
             </View>
             <View style={styles.invoiceHeaderRight}>
               <Text style={styles.invoiceNo}>{getInvoiceNo(selected.id)}</Text>

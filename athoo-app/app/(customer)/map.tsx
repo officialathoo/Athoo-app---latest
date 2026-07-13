@@ -39,17 +39,6 @@ function isValidMapCoord(latitude: number, longitude: number) {
   return Number.isFinite(latitude) && Number.isFinite(longitude) && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180;
 }
 
-function getFallbackCoords(index: number, cityHint?: string) {
-  const base =
-    cityHint?.toLowerCase().includes("rawalpindi")
-      ? { latitude: 33.5651, longitude: 73.0169 }
-      : { latitude: 33.6844, longitude: 73.0479 };
-
-  return {
-    latitude: base.latitude + (index % 7) * 0.004,
-    longitude: base.longitude + (index % 7) * 0.004,
-  };
-}
 
 export default function CustomerMapScreen() {
   const { serviceId, providerId, returnTo } = useLocalSearchParams<{
@@ -89,30 +78,20 @@ export default function CustomerMapScreen() {
         const res = await api.getProviders(serviceId && serviceId !== "all" ? serviceId : undefined);
         const raw = (res.providers as Provider[]) || [];
 
-        const mapped = raw.map((p, index) => {
-          const locationText =
-            ((p as any).location as string) ||
-            ((p as any).address as string) ||
-            ((p as any).city as string) ||
-            "";
-
-          const fallback = getFallbackCoords(index, locationText);
+        const mapped: ExtendedProvider[] = raw.flatMap((p) => {
           const rawLat = (p as any).latitude ?? (p as any).lat;
           const rawLng = (p as any).longitude ?? (p as any).lng;
           const parsedLat = typeof rawLat === "number" ? rawLat : typeof rawLat === "string" ? Number(rawLat) : NaN;
           const parsedLng = typeof rawLng === "number" ? rawLng : typeof rawLng === "string" ? Number(rawLng) : NaN;
-          const hasRealCoords = isValidMapCoord(parsedLat, parsedLng);
-          const latitude = hasRealCoords ? parsedLat : fallback.latitude;
-          const longitude = hasRealCoords ? parsedLng : fallback.longitude;
-
-          return {
-            ...(p as ExtendedProvider),
-            latitude,
-            longitude,
-            distanceKm: currentCoords && hasRealCoords
-              ? getDistanceKm(currentCoords.latitude, currentCoords.longitude, latitude, longitude)
+          if (!isValidMapCoord(parsedLat, parsedLng)) return [];
+          return [{
+            ...(p as Provider),
+            latitude: parsedLat,
+            longitude: parsedLng,
+            distanceKm: currentCoords
+              ? getDistanceKm(currentCoords.latitude, currentCoords.longitude, parsedLat, parsedLng)
               : undefined,
-          };
+          } as ExtendedProvider];
         });
 
         if (!alive) return;
@@ -238,7 +217,7 @@ export default function CustomerMapScreen() {
             <Text style={styles.loadingText}>Loading map...</Text>
           </View>
         ) : (
-          <AthooMapFallback />
+          <AthooMapFallback latitude={pickedLocation?.latitude ?? selectedProvider?.latitude ?? userLocation?.latitude} longitude={pickedLocation?.longitude ?? selectedProvider?.longitude ?? userLocation?.longitude} draggable={!!returnTo} onCoordinateChange={(latitude, longitude) => { setPickedLocation({ latitude, longitude }); void resolveAddress(latitude, longitude); }} />
         )}
       </View>
 

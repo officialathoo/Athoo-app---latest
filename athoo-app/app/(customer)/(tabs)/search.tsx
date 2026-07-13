@@ -29,7 +29,7 @@ import { api } from "@/services/api";
 import { getDistanceKm } from "@/utils/distance";
 import { matchingCategories, normalizeDiscoveryText, providerRecommendationScore } from "@/utils/discovery";
 
-const DEFAULT_CITIES = ["All Areas", "Islamabad", "Rawalpindi"];
+const DEFAULT_CITIES = ["All Areas", "Karachi", "Lahore", "Islamabad", "Rawalpindi", "Faisalabad", "Peshawar", "Quetta", "Multan", "Hyderabad"];
 
 type ExtendedProvider = Provider & {
   latitude?: number;
@@ -50,17 +50,6 @@ function isValidMapCoord(latitude?: number, longitude?: number) {
   return typeof latitude === "number" && Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 && typeof longitude === "number" && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
 }
 
-function getFallbackCoords(index: number, cityHint?: string) {
-  const base =
-    cityHint?.toLowerCase().includes("rawalpindi")
-      ? { latitude: 33.5651, longitude: 73.0169 }
-      : { latitude: 33.6844, longitude: 73.0479 };
-
-  return {
-    latitude: base.latitude + (index % 7) * 0.004,
-    longitude: base.longitude + (index % 7) * 0.004,
-  };
-}
 
 export default function SearchScreen() {
   const { providerId, providerRate, pickAddress } = useLocalSearchParams<{ providerId?: string; providerRate?: string; pickAddress?: string }>();
@@ -176,25 +165,24 @@ export default function SearchScreen() {
           const res = await api.getProviders();
           const raw = (res.providers as Provider[]) || [];
 
-          const mapped: ExtendedProvider[] = raw.map((p, index) => {
+          const mapped: ExtendedProvider[] = raw.map((p) => {
             const locationText =
               ((p as any).location as string) ||
               ((p as any).address as string) ||
               ((p as any).city as string) ||
               "";
 
-            const fallback = getFallbackCoords(index, locationText);
             const rawLat = (p as any).latitude ?? (p as any).lat;
             const rawLng = (p as any).longitude ?? (p as any).lng;
             const parsedLat = typeof rawLat === "number" ? rawLat : typeof rawLat === "string" ? Number(rawLat) : NaN;
             const parsedLng = typeof rawLng === "number" ? rawLng : typeof rawLng === "string" ? Number(rawLng) : NaN;
             const hasRealCoords = isValidMapCoord(parsedLat, parsedLng);
-            const latitude = hasRealCoords ? parsedLat : fallback.latitude;
-            const longitude = hasRealCoords ? parsedLng : fallback.longitude;
+            const latitude = hasRealCoords ? parsedLat : undefined;
+            const longitude = hasRealCoords ? parsedLng : undefined;
 
             const distanceKm =
               hasRealCoords && userLat !== undefined && userLng !== undefined
-                ? getDistanceKm(userLat, userLng, latitude, longitude)
+                ? getDistanceKm(userLat, userLng, parsedLat, parsedLng)
                 : undefined;
 
             return {
@@ -481,7 +469,7 @@ export default function SearchScreen() {
             </View>
           ) : (
             <View style={{ flex: 1 }}>
-              <AthooMapFallback />
+              <AthooMapFallback latitude={pickedLocation?.latitude ?? userLat} longitude={pickedLocation?.longitude ?? userLng} draggable={pickAddress === "1"} onCoordinateChange={(latitude, longitude) => void handleMapPress({ nativeEvent: { coordinate: { latitude, longitude } } } as any)} />
 
               <Pressable style={styles.locateMeBtn} onPress={handleLocateMe}>
                 {locating ? (

@@ -1168,6 +1168,7 @@ export const api = {
     scheduledTime: string;
     customerOffer?: number;
     travellingCharge?: number;
+    clientRequestId: string;
   }) {
     return request<{ request: any }>("/api/broadcast", {
       method: "POST",

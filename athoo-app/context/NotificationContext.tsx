@@ -133,6 +133,7 @@ function notificationFromResponseData(
     bookingId: toStringValue(data.bookingId),
     chatId: toStringValue(data.chatId),
     negotiationId: toStringValue(data.negotiationId),
+    broadcastRequestId: toStringValue(data.broadcastRequestId),
   };
 }
 
@@ -230,6 +231,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const [active, setActive] = useState<AppNotif | null>(null);
   const loadedRef = useRef(false);
   const remoteFetchInFlightRef = useRef(false);
+  const handledResponseIdsRef = useRef<Set<string>>(new Set());
 
   const currentRole = user?.role === "provider" ? "provider" : user?.role === "customer" ? "customer" : null;
 
@@ -369,7 +371,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
           return;
         }
 
-        router.push("/(provider)/notifications");
+        router.replace("/(provider)/(tabs)/dashboard" as any);
         return;
       }
 
@@ -402,7 +404,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         return;
       }
 
-      router.push("/(customer)/notifications");
+      router.replace("/(customer)/(tabs)/home" as any);
     },
     [currentRole, user]
   );
@@ -507,11 +509,26 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         const Notifications = await import("expo-notifications");
         if (!mounted) return;
 
-        const openResponse = (response: any) => {
-          const content = response.notification.request.content;
+        const openResponse = (response: any, source: "cold" | "live" = "live") => {
+          if (!user || !currentRole) return;
+          const request = response?.notification?.request;
+          const content = request?.content;
+          if (!content) return;
+
+          const responseId = String(response?.notification?.request?.identifier || response?.actionIdentifier || "");
+          if (responseId && handledResponseIdsRef.current.has(responseId)) return;
+
+          // A cached Android notification response can survive normal app launches.
+          // Only a genuinely recent cold-start response may redirect the user.
+          if (source === "cold") {
+            const receivedAt = Number(response?.notification?.date || 0);
+            if (!receivedAt || Date.now() - receivedAt > 2 * 60 * 1000) return;
+          }
+
+          if (responseId) handledResponseIdsRef.current.add(responseId);
           const notif = notificationFromResponseData(
             content.data as Record<string, unknown>,
-            currentRole || "customer"
+            currentRole
           );
           if (!notif) return;
 
@@ -522,12 +539,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
           });
         };
 
-        const lastResponse = await Notifications.getLastNotificationResponseAsync?.();
-        if (lastResponse) {
-          openResponse(lastResponse);
-        }
+        // Android can persist the last notification response across ordinary app launches.
+        // Never navigate from that cached response after login; only a fresh user tap handled
+        // by the live listener is allowed to change the current screen.
+        await (Notifications as any).clearLastNotificationResponseAsync?.().catch(() => undefined);
 
-        subscription = Notifications.addNotificationResponseReceivedListener(openResponse);
+        subscription = Notifications.addNotificationResponseReceivedListener((response) => openResponse(response, "live"));
       } catch {}
     })();
 

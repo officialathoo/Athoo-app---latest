@@ -122,7 +122,7 @@ export function AthooLoader({ tagline = "Pakistan's Home Services" }: AthooLoade
       </View>
 
       <View style={styles.footer}>
-        <Text style={styles.footerText}>Rawalpindi · Islamabad</Text>
+        <Text style={styles.footerText}>Pakistan</Text>
       </View>
     </LinearGradient>
   );

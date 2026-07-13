@@ -105,7 +105,7 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <ThemeProvider>
       {!api.isConfigured ? <ApiConfigurationScreen /> : <>
-      <StatusBar style="auto" translucent backgroundColor="transparent" />
+      <StatusBar style="auto" translucent={false} backgroundColor="#FFFFFF" />
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>

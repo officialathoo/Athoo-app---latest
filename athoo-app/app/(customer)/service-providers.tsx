@@ -28,23 +28,12 @@ type ExtendedProvider = Provider & {
   distanceKm?: number;
 };
 
-const CITY_FILTERS = ["All", "Rawalpindi", "Islamabad"];
+const CITY_FILTERS = ["All", "Karachi", "Lahore", "Islamabad", "Rawalpindi", "Faisalabad", "Peshawar", "Quetta", "Multan", "Hyderabad"];
 
 function isValidMapCoord(latitude?: number, longitude?: number) {
   return typeof latitude === "number" && Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 && typeof longitude === "number" && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
 }
 
-function getFallbackCoords(index: number, cityHint?: string) {
-  const base =
-    cityHint?.toLowerCase().includes("rawalpindi")
-      ? { latitude: 33.5651, longitude: 73.0169 }
-      : { latitude: 33.6844, longitude: 73.0479 };
-
-  return {
-    latitude: base.latitude + (index % 7) * 0.004,
-    longitude: base.longitude + (index % 7) * 0.004,
-  };
-}
 
 export default function ServiceProvidersScreen() {
   const { serviceId } = useLocalSearchParams<{ serviceId: string }>();
@@ -97,29 +86,28 @@ export default function ServiceProvidersScreen() {
         const sid = serviceId === "all" ? undefined : serviceId;
         const res = await api.getProviders(sid);
 
-        const mapped = ((res.providers as Provider[]) || []).map((p, index) => {
+        const mapped = ((res.providers as Provider[]) || []).map((p) => {
           const locationText =
             (p as any).location ||
             (p as any).address ||
             (p as any).city ||
             "";
 
-          const fallback = getFallbackCoords(index, locationText);
           const rawLat = (p as any).latitude ?? (p as any).lat;
           const rawLng = (p as any).longitude ?? (p as any).lng;
           const parsedLat = typeof rawLat === "number" ? rawLat : typeof rawLat === "string" ? Number(rawLat) : NaN;
           const parsedLng = typeof rawLng === "number" ? rawLng : typeof rawLng === "string" ? Number(rawLng) : NaN;
           const hasRealCoords = isValidMapCoord(parsedLat, parsedLng);
-          const latitude = hasRealCoords ? parsedLat : fallback.latitude;
-          const longitude = hasRealCoords ? parsedLng : fallback.longitude;
+          const latitude = hasRealCoords ? parsedLat : undefined;
+          const longitude = hasRealCoords ? parsedLng : undefined;
 
           const distanceKm =
             userLocation && hasRealCoords
               ? getDistanceKm(
                   userLocation.latitude,
                   userLocation.longitude,
-                  latitude,
-                  longitude
+                  parsedLat,
+                  parsedLng
                 )
               : undefined;
 

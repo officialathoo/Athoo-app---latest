@@ -1,15 +1,15 @@
 import React from "react";
-import { View, Text } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
+import MapView, { Marker } from "react-native-maps";
 
-export function AthooMapFallback() {
+type Props = { latitude?: number; longitude?: number; draggable?: boolean; onCoordinateChange?: (latitude:number, longitude:number)=>void };
+
+export function AthooMapFallback({ latitude = 30.3753, longitude = 69.3451, draggable = false, onCoordinateChange }: Props) {
+  if (Platform.OS === "web") return <View style={styles.fallback}><Text style={styles.title}>Map preview is available in the Android and iOS app.</Text></View>;
   return (
-    <View style={{ minHeight: 220, borderRadius: 16, backgroundColor: "#F3F4F6", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827", textAlign: "center" }}>
-        Map system is being upgraded
-      </Text>
-      <Text style={{ fontSize: 13, color: "#6B7280", textAlign: "center", marginTop: 8 }}>
-        Athoo is switching to GraphHopper/OpenStreetMap provider-based maps.
-      </Text>
-    </View>
+    <MapView style={styles.map} initialRegion={{ latitude, longitude, latitudeDelta: 0.08, longitudeDelta: 0.08 }} showsUserLocation showsMyLocationButton>
+      <Marker coordinate={{ latitude, longitude }} draggable={draggable} onDragEnd={(e)=>onCoordinateChange?.(e.nativeEvent.coordinate.latitude,e.nativeEvent.coordinate.longitude)} />
+    </MapView>
   );
 }
+const styles=StyleSheet.create({map:{width:"100%",height:220,borderRadius:16},fallback:{minHeight:220,borderRadius:16,backgroundColor:"#F3F4F6",alignItems:"center",justifyContent:"center",padding:16},title:{fontSize:14,fontWeight:"700",color:"#334155",textAlign:"center"}});

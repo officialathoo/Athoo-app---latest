@@ -80,7 +80,7 @@ export default function ServiceRadiusScreen() {
 
         <View style={styles.tipBox}>
           <Text style={styles.tipTitle}>Tips</Text>
-          <Text style={styles.tip}>• A 10–15 km radius covers most of Rawalpindi or Islamabad comfortably.</Text>
+          <Text style={styles.tip}>• A 10–15 km radius covers most of Pakistan comfortably.</Text>
           <Text style={styles.tip}>• A larger radius means more job opportunities but longer travel.</Text>
           <Text style={styles.tip}>• You can change this setting at any time from your profile.</Text>
         </View>

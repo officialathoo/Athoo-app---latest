@@ -28,7 +28,7 @@ import { useNegotiation } from "@/context/NegotiationContext";
 import { Provider } from "@/data/services";
 import { useCategories } from "@/context/CategoriesContext";
 import { api } from "@/services/api";
-import { CustomerHomeSkeleton } from "@/components/design";
+import { AppText } from "@/components/design";
 
 type ApiBanner = {
   id: string;
@@ -95,7 +95,8 @@ export default function HomeScreen() {
   const [announcement, setAnnouncement] = useState<AppAnnouncement | null>(null);
   const [showAnnouncement, setShowAnnouncement] = useState(false);
   const [activeBroadcasts, setActiveBroadcasts] = useState<any[]>([]);
-  const [homeLoading, setHomeLoading] = useState(true);
+  const [homeLoading, setHomeLoading] = useState(false);
+  const hasLoadedHomeRef = useRef(false);
   const [refreshing, setRefreshing] = useState(false);
   const [homeError, setHomeError] = useState<string | null>(null);
   const [bannersStatus, setBannersStatus] = useState<"idle" | "success" | "error">("idle");
@@ -120,11 +121,10 @@ export default function HomeScreen() {
       .then(async res => {
         if (res.announcements.length === 0) return;
         const ann = res.announcements[0];
-        if (!ann.showOnce) {
-          setAnnouncement(ann);
-          setShowAnnouncement(true);
-          return;
-        }
+        // Repeating announcements must not block Home with a dark full-screen modal.
+        // They remain available through normal marketing surfaces; only one-time
+        // acknowledgements are presented as a modal.
+        if (!ann.showOnce) return;
         try {
           const AS = (await import("@react-native-async-storage/async-storage")).default;
           const shown = await AS.getItem(SHOWN_ANNOUNCEMENTS_KEY);
@@ -174,7 +174,7 @@ export default function HomeScreen() {
 
   const loadFocusData = useCallback(async (mode: "initial" | "refresh" = "initial") => {
     if (mode === "refresh") setRefreshing(true);
-    else setHomeLoading(true);
+    else if (!hasLoadedHomeRef.current) setHomeLoading(true);
     setHomeError(null);
 
     const results = await Promise.allSettled([
@@ -202,12 +202,13 @@ export default function HomeScreen() {
     if (failures >= 3) {
       setHomeError("Some home content could not be refreshed. Pull down or tap retry.");
     }
+    hasLoadedHomeRef.current = true;
     setHomeLoading(false);
     setRefreshing(false);
   }, []);
 
   useFocusEffect(useCallback(() => {
-    void loadFocusData("initial");
+    void loadFocusData(hasLoadedHomeRef.current ? "refresh" : "initial");
   }, [loadFocusData]));
 
   const firstName = user?.name?.split(" ")[0] || "there";
@@ -275,7 +276,7 @@ export default function HomeScreen() {
         )}
         scrollEventThrottle={16}
       >
-        {homeLoading ? <CustomerHomeSkeleton /> : null}
+        {homeLoading ? <View style={styles.compactLoading}><Text style={styles.compactLoadingText}>Updating home…</Text></View> : null}
         {homeError ? (
           <View style={styles.homeErrorCard} accessibilityRole="alert">
             <Icon name="wifi-off" size={18} color={Colors.error} />
@@ -1002,4 +1003,10 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 15,
   },
+
+  compactLoading: {
+    marginHorizontal: 20, marginTop: 10, paddingVertical: 8, paddingHorizontal: 12,
+    borderRadius: 10, backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: "#E5E7EB",
+  },
+  compactLoadingText: { fontSize: 12, color: "#64748B", fontWeight: "600" },
 });

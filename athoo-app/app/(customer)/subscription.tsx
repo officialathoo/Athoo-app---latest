@@ -180,7 +180,7 @@ export default function CustomerSubscriptionScreen() {
             <LinearGradient colors={["#1A6EE0", "#8B5CF6"]} style={styles.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
               <Icon name="crown" size={36} color="#FFD700" />
               <Text style={styles.heroTitle}>Athoo Premium</Text>
-              <Text style={styles.heroSub}>Unlock exclusive benefits and priority services for every booking in Rawalpindi & Islamabad.</Text>
+              <Text style={styles.heroSub}>Unlock exclusive benefits and priority services for every booking in Pakistan.</Text>
               <View style={styles.heroPerks}>
                 {PERKS.map((p, i) => (
                   <View key={i} style={styles.heroPerk}>

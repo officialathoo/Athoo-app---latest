@@ -449,7 +449,7 @@ export default function ProviderProfileScreen() {
         </Pressable>
       </View>
 
-      <Text style={styles.version}>Athoo Provider v1.0 • Rawalpindi & Islamabad</Text>
+      <Text style={styles.version}>Athoo Provider v1.0 • Pakistan</Text>
 
       <Modal visible={showAvatarModal} animationType="slide" transparent>
         <Pressable style={styles.modalOverlay} onPress={() => setShowAvatarModal(false)}>

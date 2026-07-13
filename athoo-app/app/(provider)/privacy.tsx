@@ -9,7 +9,7 @@ const SECTIONS = [
   { icon: "phone-off", title: "Phone Number Privacy", color: Colors.primary, text: "Your phone number is never shared with customers. All communication happens through Athoo's secure in-app chat system only." },
   { icon: "credit-card", title: "CNIC Protection", color: Colors.secondary, text: "Your CNIC and documents are stored securely and used only for identity verification. They are never shared with customers or third parties." },
   { icon: "shield", title: "Profile Verification", color: "#22C55E", text: "Your verified status is shown publicly. However, your personal document details are kept confidential and only used during verification." },
-  { icon: "map-pin", title: "Location Privacy", color: "#8B5CF6", text: "Only your general service area (Rawalpindi / Islamabad) is shown. Your live location is only shared with the customer during an active booking." },
+  { icon: "map-pin", title: "Location Privacy", color: "#8B5CF6", text: "Only your general service area (Pakistan) is shown. Your live location is only shared with the customer during an active booking." },
   { icon: "lock", title: "Account Security", color: "#F59E0B", text: "Your password is stored securely. We recommend using a unique password and changing it periodically. Enable 2-step verification where possible." },
   { icon: "database", title: "Data Storage", color: Colors.primary, text: "All data is stored locally on your device using secure encrypted storage. No payment data is stored by Athoo." },
 ];
@@ -47,7 +47,7 @@ export default function ProviderPrivacyScreen() {
           <Text style={styles.changePassText}>Change Password</Text>
           <Icon name="chevron-right" size={16} color={Colors.textMuted} />
         </Pressable>
-        <Text style={styles.footer}>Last updated: April 2026 • Rawalpindi & Islamabad</Text>
+        <Text style={styles.footer}>Last updated: April 2026 • Pakistan</Text>
       </ScrollView>
     </View>
   );
