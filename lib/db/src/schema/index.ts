@@ -345,6 +345,7 @@ export const bookingOperationsTable = pgTable("booking_operations", {
 export const negotiationsTable = pgTable("negotiations", {
   id: text("id").primaryKey(),
   customerId: text("customer_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  clientRequestId: text("client_request_id"),
   customerName: text("customer_name").notNull(),
   providerId: text("provider_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   providerName: text("provider_name").notNull(),
@@ -732,6 +733,7 @@ export type InsertNegotiation = any;
 export const broadcastRequestsTable = pgTable("broadcast_requests", {
   id: text("id").primaryKey(),
   customerId: text("customer_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  clientRequestId: text("client_request_id"),
   customerName: text("customer_name").notNull(),
   // service category slug/id (e.g. "plumber", "electrician")
   service: text("service").notNull(),
@@ -762,6 +764,7 @@ export const broadcastRequestsTable = pgTable("broadcast_requests", {
 }, (t) => [
   index("broadcast_requests_status_idx").on(t.status),
   index("broadcast_requests_customer_id_idx").on(t.customerId),
+  uniqueIndex("broadcast_requests_customer_request_uidx").on(t.customerId, t.clientRequestId),
   index("broadcast_requests_expires_at_idx").on(t.expiresAt),
 ]);
 

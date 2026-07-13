@@ -263,7 +263,7 @@ const PROVIDER_FAQS: FAQ[] = [
   },
   {
     keywords: ["travel distance", "service area", "service radius", "how far", "travel radius", "max distance", "coverage area", "work distance", "km limit"],
-    answer: "You can set your maximum travel distance to only receive jobs you're willing to reach!\n\n• Go to Profile → Service Radius\n• Set your maximum travel distance in kilometers (e.g. 5 km, 10 km, 20 km)\n• Customers outside your radius won't see you in their search results\n• You can change this setting at any time\n\nTip: A radius of 10–15 km covers most of Rawalpindi or Islamabad comfortably. Set a larger radius to get more jobs, smaller for convenience.",
+    answer: "You can set your maximum travel distance to only receive jobs you're willing to reach!\n\n• Go to Profile → Service Radius\n• Set your maximum travel distance in kilometers (e.g. 5 km, 10 km, 20 km)\n• Customers outside your radius won't see you in their search results\n• You can change this setting at any time\n\nTip: A radius of 10–15 km covers most of Pakistan comfortably. Set a larger radius to get more jobs, smaller for convenience.",
   },
   {
     keywords: ["badge", "top rated", "100 jobs", "what are badges", "how to get badge", "premium badge", "earn badge", "my badges"],

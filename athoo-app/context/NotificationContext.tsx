@@ -225,13 +225,15 @@ function ToastBanner({
 const SEED_NOTIFICATIONS: AppNotif[] = [];
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const [notifications, setNotifications] = useState<AppNotif[]>([]);
   const [queue, setQueue] = useState<AppNotif[]>([]);
   const [active, setActive] = useState<AppNotif | null>(null);
   const loadedRef = useRef(false);
   const remoteFetchInFlightRef = useRef(false);
   const handledResponseIdsRef = useRef<Set<string>>(new Set());
+  const notificationNavigationArmedAtRef = useRef<number>(Number.POSITIVE_INFINITY);
+  const coldStartCheckedRef = useRef(false);
 
   const currentRole = user?.role === "provider" ? "provider" : user?.role === "customer" ? "customer" : null;
 
@@ -318,10 +320,18 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     if (!user) {
+      notificationNavigationArmedAtRef.current = Number.POSITIVE_INFINITY;
+      handledResponseIdsRef.current.clear();
       setQueue([]);
       setActive(null);
+      return;
     }
-  }, [user]);
+
+    // Ignore stale native notification callbacks fired while authentication is
+    // restoring or immediately after login. Fresh user taps are enabled once
+    // the authenticated navigator has settled.
+    notificationNavigationArmedAtRef.current = Date.now() + 1500;
+  }, [user?.id]);
 
   const handleNotificationPress = useCallback(
     (notif: AppNotif) => {
@@ -503,32 +513,27 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     let subscription: { remove: () => void } | null = null;
 
     (async () => {
-      if (Platform.OS === "web" || isExpoGoRuntime()) return;
+      if (Platform.OS === "web" || isExpoGoRuntime() || authLoading) return;
 
       try {
         const Notifications = await import("expo-notifications");
         if (!mounted) return;
 
-        const openResponse = (response: any, source: "cold" | "live" = "live") => {
+        const openResponse = (response: any) => {
           if (!user || !currentRole) return;
+          if (Date.now() < notificationNavigationArmedAtRef.current) return;
+
           const request = response?.notification?.request;
           const content = request?.content;
           if (!content) return;
 
-          const responseId = String(response?.notification?.request?.identifier || response?.actionIdentifier || "");
+          const responseId = String(request?.identifier || response?.actionIdentifier || "");
           if (responseId && handledResponseIdsRef.current.has(responseId)) return;
-
-          // A cached Android notification response can survive normal app launches.
-          // Only a genuinely recent cold-start response may redirect the user.
-          if (source === "cold") {
-            const receivedAt = Number(response?.notification?.date || 0);
-            if (!receivedAt || Date.now() - receivedAt > 2 * 60 * 1000) return;
-          }
-
           if (responseId) handledResponseIdsRef.current.add(responseId);
+
           const notif = notificationFromResponseData(
             content.data as Record<string, unknown>,
-            currentRole
+            currentRole,
           );
           if (!notif) return;
 
@@ -539,12 +544,23 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
           });
         };
 
-        // Android can persist the last notification response across ordinary app launches.
-        // Never navigate from that cached response after login; only a fresh user tap handled
-        // by the live listener is allowed to change the current screen.
-        await (Notifications as any).clearLastNotificationResponseAsync?.().catch(() => undefined);
+        // Cold-start navigation is checked exactly once after initial auth
+        // restoration. If the first resolved state is signed out, consume and
+        // clear any cached Android response so a later manual login always opens
+        // Home rather than an old Notifications destination.
+        if (!coldStartCheckedRef.current) {
+          coldStartCheckedRef.current = true;
+          const lastResponse = await Notifications.getLastNotificationResponseAsync();
+          if (user && currentRole && lastResponse) {
+            notificationNavigationArmedAtRef.current = Date.now();
+            openResponse(lastResponse);
+          }
+          await (Notifications as any).clearLastNotificationResponseAsync?.().catch(() => undefined);
+        }
 
-        subscription = Notifications.addNotificationResponseReceivedListener((response) => openResponse(response, "live"));
+        if (user && currentRole) {
+          subscription = Notifications.addNotificationResponseReceivedListener(openResponse);
+        }
       } catch {}
     })();
 
@@ -552,7 +568,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       mounted = false;
       subscription?.remove();
     };
-  }, [currentRole, handleNotificationPress]);
+  }, [authLoading, currentRole, handleNotificationPress, user]);
 
   const dismissActive = useCallback(() => setActive(null), []);
 

@@ -2,7 +2,7 @@ import "dotenv/config";
 import pg from "pg";
 
 const { Client } = pg;
-const LATEST = "20260712_release_performance_scalability.sql";
+const LATEST = "20260713_broadcast_request_idempotency.sql";
 
 type Check = { name: string; value: number | string | null; ok: boolean; detail?: string };
 

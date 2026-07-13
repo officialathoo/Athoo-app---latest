@@ -28,7 +28,7 @@ import { useNegotiation } from "@/context/NegotiationContext";
 import { Provider } from "@/data/services";
 import { useCategories } from "@/context/CategoriesContext";
 import { api } from "@/services/api";
-import { AppText } from "@/components/design";
+import { AppText, CustomerHomeSkeleton } from "@/components/design";
 
 type ApiBanner = {
   id: string;
@@ -71,6 +71,7 @@ const DEFAULT_HOME_CONFIG: HomeConfig = {
 };
 
 const SHOWN_ANNOUNCEMENTS_KEY = "shown_announcements";
+let customerHomeLoadedThisSession = false;
 
 const FALLBACK_BANNERS = [
   { id: "f1", title: "Book a Plumber", subtitle: "Quick fixes at your door", bgColorFrom: Colors.primary, bgColorTo: "#0D4BA0", iconName: "droplet", linkType: "category", linkTarget: "plumber" },
@@ -95,7 +96,7 @@ export default function HomeScreen() {
   const [announcement, setAnnouncement] = useState<AppAnnouncement | null>(null);
   const [showAnnouncement, setShowAnnouncement] = useState(false);
   const [activeBroadcasts, setActiveBroadcasts] = useState<any[]>([]);
-  const [homeLoading, setHomeLoading] = useState(false);
+  const [homeLoading, setHomeLoading] = useState(!customerHomeLoadedThisSession);
   const hasLoadedHomeRef = useRef(false);
   const [refreshing, setRefreshing] = useState(false);
   const [homeError, setHomeError] = useState<string | null>(null);
@@ -203,6 +204,7 @@ export default function HomeScreen() {
       setHomeError("Some home content could not be refreshed. Pull down or tap retry.");
     }
     hasLoadedHomeRef.current = true;
+    customerHomeLoadedThisSession = true;
     setHomeLoading(false);
     setRefreshing(false);
   }, []);
@@ -276,7 +278,11 @@ export default function HomeScreen() {
         )}
         scrollEventThrottle={16}
       >
-        {homeLoading ? <View style={styles.compactLoading}><Text style={styles.compactLoadingText}>Updating home…</Text></View> : null}
+        {homeLoading ? (
+          <View style={styles.initialSkeletonWrap}>
+            <CustomerHomeSkeleton />
+          </View>
+        ) : null}
         {homeError ? (
           <View style={styles.homeErrorCard} accessibilityRole="alert">
             <Icon name="wifi-off" size={18} color={Colors.error} />
@@ -1004,9 +1010,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 
-  compactLoading: {
-    marginHorizontal: 20, marginTop: 10, paddingVertical: 8, paddingHorizontal: 12,
-    borderRadius: 10, backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: "#E5E7EB",
+  initialSkeletonWrap: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 8,
   },
-  compactLoadingText: { fontSize: 12, color: "#64748B", fontWeight: "600" },
 });

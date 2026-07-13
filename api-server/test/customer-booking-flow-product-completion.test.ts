@@ -1,4 +1,4 @@
-﻿import { describe, it } from "node:test";
+import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -22,7 +22,7 @@ describe("Stage 1 customer booking flow product completion", () => {
     const screen = read("athoo-app/app/(customer)/book-service.tsx");
     assert.match(screen, /directBookingRequestIdRef/);
     assert.match(screen, /clientRequestId: directBookingRequestIdRef\.current/);
-    assert.match(screen, /directBookingRequestIdRef\.current = null;\r?\n\s*Alert\.alert/);
+    assert.match(screen, /directBookingRequestIdRef\.current = null;\n\s*Alert\.alert/);
   });
 
   it("uses the shared 12-hour-aware parser for cancellation-window enforcement", () => {
@@ -31,4 +31,3 @@ describe("Stage 1 customer booking flow product completion", () => {
     assert.doesNotMatch(route, /scheduledTime\)\.slice\(0, 5\)/);
   });
 });
-

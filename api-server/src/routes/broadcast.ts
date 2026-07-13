@@ -111,12 +111,24 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       scheduledTime,
       customerOffer,
       travellingCharge,
+      clientRequestId,
     } = req.body;
 
-    if (!service || !serviceLabel || !address || !scheduledDate || !scheduledTime) {
+    if (!service || !serviceLabel || !address || !scheduledDate || !scheduledTime || !clientRequestId) {
       res.status(400).json({
-        error: "service, serviceLabel, address, scheduledDate, and scheduledTime are required",
+        error: "service, serviceLabel, address, scheduledDate, scheduledTime, and clientRequestId are required",
       });
+      return;
+    }
+
+    const existingRequest = await db.query.broadcastRequestsTable.findFirst({
+      where: and(
+        eq(broadcastRequestsTable.customerId, userId),
+        eq(broadcastRequestsTable.clientRequestId, String(clientRequestId))
+      ),
+    });
+    if (existingRequest) {
+      res.json({ request: existingRequest, duplicate: true });
       return;
     }
 
@@ -134,6 +146,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
     const request = {
       id: generateId(),
       customerId: userId,
+      clientRequestId: String(clientRequestId),
       customerName: customer.name,
       service: String(service).trim(),
       serviceLabel: String(serviceLabel).trim(),
@@ -155,137 +168,174 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
     await db.insert(broadcastRequestsTable).values(request);
 
-    // Fetch ALL providers as candidates. The matching criteria (approved +
-    // not-blocked + service-match + within-radius) are still enforced below —
-    // we only widen the initial fetch so every rejection can be logged with a
-    // precise reason for diagnostics.
-    const candidateProviders = await db
-      .select()
-      .from(usersTable)
-      .where(eq(usersTable.role, "provider"));
+    // Provider matching and notification delivery are best-effort. Once the
+    // broadcast row is committed, downstream push/socket failures must never
+    // turn a successful creation into an HTTP 500 or encourage duplicate retries.
+    try {
+      // Fetch ALL providers as candidates. The matching criteria (approved +
+      // not-blocked + service-match + within-radius) are still enforced below —
+      // we only widen the initial fetch so every rejection can be logged with a
+      // precise reason for diagnostics.
+      const candidateProviders = await db
+        .select()
+        .from(usersTable)
+        .where(eq(usersTable.role, "provider"));
 
-    const serviceKey = String(service).toLowerCase();
-    const MAX_RADIUS_KM = settings.broadcastInitialRadiusKm;
+      const serviceKey = String(service).toLowerCase();
+      const MAX_RADIUS_KM = settings.broadcastInitialRadiusKm;
 
-    // Returns true when the provider's service list matches the broadcast service.
-    function providerMatchesService(providerServices: string[] | null): boolean {
-      const svcs = providerServices || [];
-      if (svcs.length === 0) return true; // unspecialised provider sees everything
-      return svcs.some((s) => {
-        const ps = (s || "").toLowerCase();
-        return ps === serviceKey || ps.includes(serviceKey) || serviceKey.includes(ps);
-      });
-    }
-
-    const busyProviderIds = await getBusyProviderIds(candidateProviders.map((p) => p.id));
-
-    const matchedProviders: typeof candidateProviders = [];
-    const skipped: { id: string; reason: string }[] = [];
-
-    for (const p of candidateProviders) {
-      if (p.isBlocked) {
-        skipped.push({ id: p.id, reason: "blocked" });
-        continue;
-      }
-      if (p.isDeactivated) {
-        skipped.push({ id: p.id, reason: "deactivated" });
-        continue;
-      }
-      if (p.verificationStatus !== "approved") {
-        skipped.push({ id: p.id, reason: "not approved" });
-        continue;
-      }
-      if (busyProviderIds.has(p.id)) {
-        skipped.push({ id: p.id, reason: "provider busy on active job or negotiation" });
-        continue;
-      }
-      if (!providerMatchesService(p.services)) {
-        skipped.push({ id: p.id, reason: "service mismatch" });
-        continue;
-      }
-
-      const pLat = parseFloat(p.latitude || "");
-      const pLng = parseFloat(p.longitude || "");
-      if (isNaN(pLat) || isNaN(pLng)) {
-        skipped.push({ id: p.id, reason: "no location" });
-        continue;
-      }
-      const dist = distanceKm(parsedLat, parsedLng, pLat, pLng);
-      if (dist > MAX_RADIUS_KM) {
-        skipped.push({
-          id: p.id,
-          reason: `out of radius (${Math.round(dist * 10) / 10} km > ${MAX_RADIUS_KM} km)`,
+      // Returns true when the provider's service list matches the broadcast service.
+      function providerMatchesService(providerServices: string[] | null): boolean {
+        const svcs = providerServices || [];
+        if (svcs.length === 0) return true; // unspecialised provider sees everything
+        return svcs.some((s) => {
+          const ps = (s || "").toLowerCase();
+          return ps === serviceKey || ps.includes(serviceKey) || serviceKey.includes(ps);
         });
-        continue;
       }
-      matchedProviders.push(p);
-    }
 
-    const priceText = parsedOffer ? `Rs. ${parsedOffer}` : "open price";
+      const busyProviderIds = await getBusyProviderIds(candidateProviders.map((p) => p.id));
 
-    let socketEmitCount = 0;
-    let pushTokenCount = 0;
-    let dbNotificationCount = 0;
-    let pushSuccessCount = 0;
-    let pushFailureCount = 0;
+      const matchedProviders: typeof candidateProviders = [];
+      const skipped: { id: string; reason: string }[] = [];
 
-    // Every MATCHED provider gets a DB notification + push attempt REGARDLESS of
-    // availability so the broadcast reliably surfaces in their notification list
-    // and broadcast list even if they were offline. Live socket emit is sent to
-    // every matched provider with an open websocket; provider availability can be
-    // stale and must not block urgent broadcast delivery.
-    await Promise.all(
-      matchedProviders.map(async (provider) => {
-        const sent = emitToUser(provider.id, "broadcast:new" as EventName, { request });
-        if (sent > 0) socketEmitCount += 1;
-        if (provider.expoPushToken) pushTokenCount += 1;
-
-        const result = await notifyUser({
-          userId: provider.id,
-          title: "New Job Request",
-          body: `${customer.name} needs ${serviceLabel} — ${priceText}`,
-          type: "broadcast",
-          link: `/broadcast/${request.id}`,
-          data: { broadcastRequestId: request.id, role: "provider", type: "broadcast" },
-        });
-
-        if (result.created) dbNotificationCount += 1;
-        if (result.hasToken) {
-          if (result.pushSent) pushSuccessCount += 1;
-          else pushFailureCount += 1;
+      for (const p of candidateProviders) {
+        if (p.isBlocked) {
+          skipped.push({ id: p.id, reason: "blocked" });
+          continue;
         }
-      })
-    );
+        if (p.isDeactivated) {
+          skipped.push({ id: p.id, reason: "deactivated" });
+          continue;
+        }
+        if (p.verificationStatus !== "approved") {
+          skipped.push({ id: p.id, reason: "not approved" });
+          continue;
+        }
+        if (busyProviderIds.has(p.id)) {
+          skipped.push({ id: p.id, reason: "provider busy on active job or negotiation" });
+          continue;
+        }
+        if (!providerMatchesService(p.services)) {
+          skipped.push({ id: p.id, reason: "service mismatch" });
+          continue;
+        }
 
-    req.log.info(
-      {
-        broadcastRequestId: request.id,
-        totalCandidateProviders: candidateProviders.length,
-        matchedProviderIds: matchedProviders.map((p) => p.id),
-        matchedCount: matchedProviders.length,
-        skipped,
-        skippedCount: skipped.length,
-        pushTokenCount,
-        pushSendStatus: { success: pushSuccessCount, failure: pushFailureCount },
-        socketEmitCount,
-        dbNotificationCount,
-      },
-      "broadcast created — provider notification delivery summary"
-    );
+        const pLat = parseFloat(p.latitude || "");
+        const pLng = parseFloat(p.longitude || "");
+        if (isNaN(pLat) || isNaN(pLng)) {
+          skipped.push({ id: p.id, reason: "no location" });
+          continue;
+        }
+        const dist = distanceKm(parsedLat, parsedLng, pLat, pLng);
+        if (dist > MAX_RADIUS_KM) {
+          skipped.push({
+            id: p.id,
+            reason: `out of radius (${Math.round(dist * 10) / 10} km > ${MAX_RADIUS_KM} km)`,
+          });
+          continue;
+        }
+        matchedProviders.push(p);
+      }
 
-    if (matchedProviders.length === 0) {
-      req.log.warn(
-        { broadcastRequestId: request.id, totalCandidateProviders: candidateProviders.length },
-        "broadcast created but no providers matched"
+      const priceText = parsedOffer ? `Rs. ${parsedOffer}` : "open price";
+
+      let socketEmitCount = 0;
+      let pushTokenCount = 0;
+      let dbNotificationCount = 0;
+      let pushSuccessCount = 0;
+      let pushFailureCount = 0;
+
+      // Every MATCHED provider gets a DB notification + push attempt REGARDLESS of
+      // availability so the broadcast reliably surfaces in their notification list
+      // and broadcast list even if they were offline. Live socket emit is sent to
+      // every matched provider with an open websocket; provider availability can be
+      // stale and must not block urgent broadcast delivery.
+      await Promise.all(
+        matchedProviders.map(async (provider) => {
+          const sent = emitToUser(provider.id, "broadcast:new" as EventName, { request });
+          if (sent > 0) socketEmitCount += 1;
+          if (provider.expoPushToken) pushTokenCount += 1;
+
+          try {
+            const result = await notifyUser({
+              userId: provider.id,
+              title: "New Job Request",
+              body: `${customer.name} needs ${serviceLabel} — ${priceText}`,
+              type: "broadcast",
+              link: `/broadcast/${request.id}`,
+              data: { broadcastRequestId: request.id, role: "provider", type: "broadcast" },
+            });
+
+            if (result.created) dbNotificationCount += 1;
+            if (result.hasToken) {
+              if (result.pushSent) pushSuccessCount += 1;
+              else pushFailureCount += 1;
+            }
+          } catch (notifyError) {
+            pushFailureCount += 1;
+            req.log?.warn?.({ err: notifyError, providerId: provider.id, broadcastRequestId: request.id }, "broadcast provider notification failed");
+          }
+        })
+      );
+
+      req.log?.info?.(
+        {
+          broadcastRequestId: request.id,
+          totalCandidateProviders: candidateProviders.length,
+          matchedProviderIds: matchedProviders.map((p) => p.id),
+          matchedCount: matchedProviders.length,
+          skipped,
+          skippedCount: skipped.length,
+          pushTokenCount,
+          pushSendStatus: { success: pushSuccessCount, failure: pushFailureCount },
+          socketEmitCount,
+          dbNotificationCount,
+        },
+        "broadcast created — provider notification delivery summary"
+      );
+
+      if (matchedProviders.length === 0) {
+        req.log?.warn?.(
+          { broadcastRequestId: request.id, totalCandidateProviders: candidateProviders.length },
+          "broadcast created but no providers matched"
+        );
+      }
+
+      emitToRole("admin", "admin:event" as EventName, { type: "broadcast:new", request });
+
+    } catch (deliveryError) {
+      logger.warn(
+        { err: deliveryError, broadcastRequestId: request.id },
+        "broadcast created but provider matching/notification delivery was incomplete",
       );
     }
 
-    emitToRole("admin", "admin:event" as EventName, { type: "broadcast:new", request });
-
     res.json({ request });
-  } catch (e) {
+  } catch (e: any) {
     logger.error({ err: e }, "broadcast create error");
-    res.status(500).json({ error: "Failed to create broadcast request" });
+    const code = String(e?.code || "");
+    if (code === "23505") {
+      const userId = req.user?.userId;
+      const requestId = String(req.body?.clientRequestId || "");
+      if (userId && requestId) {
+        const existing = await db.query.broadcastRequestsTable.findFirst({
+          where: and(
+            eq(broadcastRequestsTable.customerId, userId),
+            eq(broadcastRequestsTable.clientRequestId, requestId),
+          ),
+        });
+        if (existing) {
+          res.json({ request: existing, duplicate: true });
+          return;
+        }
+      }
+    }
+    if (code === "42703" || code === "42P01") {
+      res.status(503).json({ error: "Broadcast database migration is not applied. Run pnpm db:migrate and redeploy the API." });
+      return;
+    }
+    res.status(500).json({ error: process.env.NODE_ENV === "production" ? "Failed to create broadcast request" : String(e?.message || "Failed to create broadcast request") });
   }
 });
 

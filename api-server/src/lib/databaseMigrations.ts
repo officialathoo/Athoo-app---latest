@@ -1,6 +1,6 @@
 import { pool } from "@workspace/db";
 
-export const LATEST_DATABASE_MIGRATION = "20260712_release_performance_scalability.sql";
+export const LATEST_DATABASE_MIGRATION = "20260713_broadcast_request_idempotency.sql";
 
 export type MigrationHealth = {
   ok: boolean;

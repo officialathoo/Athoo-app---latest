@@ -31,7 +31,7 @@ test("micro-cache uses compact token identities and invalidates after writes", (
 });
 
 test("performance migration adds sequence and covering indexes", () => {
-  const migration = read("deploy/migrations/20260712_release_performance_scalability.sql");
+  const migration = read("deploy/migrations/20260713_broadcast_request_idempotency.sql");
   assert.match(migration, /CREATE SEQUENCE IF NOT EXISTS athoo_invoice_number_seq/);
   assert.match(migration, /bookings_customer_status_price_idx/);
   assert.match(migration, /notifications_user_unread_created_idx/);

@@ -1073,15 +1073,15 @@ const styles = StyleSheet.create({
   referralCard: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     backgroundColor: Colors.primary + "10", borderRadius: 18,
-    paddingVertical: 24, paddingHorizontal: 24, marginHorizontal: 18, marginBottom: 10,
+    paddingVertical: 26, paddingHorizontal: 26, marginHorizontal: 20, marginBottom: 12,
     borderWidth: 1.5, borderColor: Colors.primary + "30",
     shadowColor: Colors.primary, shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08, shadowRadius: 8, elevation: 2,
   },
-  referralLeft: { flex: 1, minWidth: 0, gap: 10, paddingRight: 18 },
+  referralLeft: { flex: 1, minWidth: 0, gap: 10, paddingRight: 22 },
   referralTitle: { fontSize: 15, fontWeight: "800", color: Colors.text },
   referralSub: { fontSize: 11, color: Colors.textSecondary, lineHeight: 16 },
-  referralCodeRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", columnGap: 12, rowGap: 10, marginTop: 8, paddingRight: 4 },
+  referralCodeRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", columnGap: 14, rowGap: 12, marginTop: 10, paddingRight: 8 },
   referralCode: {
     fontSize: 18, fontWeight: "900", color: Colors.primary,
     letterSpacing: 1.2, fontVariant: ["tabular-nums"], flexShrink: 1,
@@ -1089,11 +1089,11 @@ const styles = StyleSheet.create({
   shareCodeBtn: {
     flexDirection: "row", alignItems: "center", gap: 5,
     backgroundColor: Colors.white, borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: 8,
+    paddingHorizontal: 14, paddingVertical: 9,
     borderWidth: 1, borderColor: Colors.primary + "40",
   },
   shareCodeText: { fontSize: 12, fontWeight: "700", color: Colors.primary },
-  referralRight: { alignItems: "center", justifyContent: "center", gap: 4, marginLeft: 14, minWidth: 64, paddingLeft: 12, borderLeftWidth: 1, borderLeftColor: Colors.primary + "25" },
+  referralRight: { alignItems: "center", justifyContent: "center", gap: 4, marginLeft: 18, minWidth: 72, paddingLeft: 18, paddingRight: 4, borderLeftWidth: 1, borderLeftColor: Colors.primary + "25" },
   referralCount: { fontSize: 30, fontWeight: "900", color: Colors.primary },
   referralCountLbl: { fontSize: 10, fontWeight: "600", color: Colors.textSecondary },
 
