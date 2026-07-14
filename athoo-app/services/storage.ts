@@ -77,6 +77,71 @@ function emitProgress(onProgress: UploadProgressCallback | undefined, progress: 
   if (onProgress) onProgress(progress);
 }
 
+
+const MIME_EXTENSION: Record<string, string> = {
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
+  "application/pdf": ".pdf",
+  "video/mp4": ".mp4",
+  "video/quicktime": ".mov",
+  "video/x-m4v": ".m4v",
+};
+
+function inferContentType(filename: string, contentType: string): string {
+  const normalized = String(contentType || "").toLowerCase().trim();
+  if (normalized && normalized !== "application/octet-stream") return normalized;
+  const extension = String(filename || "").toLowerCase().match(/\.([a-z0-9]{1,8})$/)?.[1];
+  const inferred: Record<string, string> = {
+    jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp",
+    pdf: "application/pdf", mp4: "video/mp4", mov: "video/quicktime", m4v: "video/x-m4v",
+  };
+  return (extension && inferred[extension]) || "application/octet-stream";
+}
+
+function normalizeUploadMetadata(filename: string, contentType: string): { filename: string; contentType: string } {
+  const safeBase = String(filename || "upload").replace(/[\\/]/g, "-").trim() || "upload";
+  const normalizedType = inferContentType(safeBase, contentType);
+  if (["image/heic", "image/heif"].includes(normalizedType) || /\.hei[cf]$/i.test(safeBase)) {
+    throw new Error("This HEIC/HEIF photo cannot be uploaded directly. Choose a compatible JPG, PNG, or WebP image.");
+  }
+  const expectedExtension = MIME_EXTENSION[normalizedType];
+  if (!expectedExtension) return { filename: safeBase, contentType: normalizedType };
+  const withoutExtension = safeBase.replace(/\.[a-z0-9]{1,8}$/i, "");
+  return { filename: `${withoutExtension}${expectedExtension}`, contentType: normalizedType };
+}
+
+async function prepareLocalUploadUri(uri: string, filename: string): Promise<{ uri: string; temporary: boolean }> {
+  const raw = String(uri || "").trim();
+  if (!raw) throw new Error("The selected file has no readable location. Please select it again.");
+  if (raw.startsWith("file://") || Platform.OS === "web") return { uri: raw, temporary: false };
+
+  const cacheRoot = FileSystem.cacheDirectory;
+  if (!cacheRoot) return { uri: raw, temporary: false };
+  const safeName = String(filename || "upload").replace(/[^a-zA-Z0-9._-]/g, "-");
+  const target = `${cacheRoot}athoo-upload-${Date.now()}-${safeName}`;
+  try {
+    await FileSystem.copyAsync({ from: raw, to: target });
+    return { uri: target, temporary: true };
+  } catch {
+    // Some Android providers expose content:// URIs that fetch() can read even
+    // when FileSystem.copyAsync cannot. Keep the original URI for the fallback.
+    return { uri: raw, temporary: false };
+  }
+}
+
+async function resolveFileSize(uri: string): Promise<number> {
+  try {
+    const info = await FileSystem.getInfoAsync(uri);
+    if (info.exists && typeof (info as any).size === "number" && (info as any).size > 0) return (info as any).size;
+  } catch {}
+  try {
+    const blob = await (await fetch(uri)).blob();
+    if (blob.size > 0) return blob.size;
+  } catch {}
+  throw new Error("The selected file could not be read. Please select it again.");
+}
+
 export type UploadUrlResult = {
   provider?: "cloudinary" | "gcs" | "replit-object-storage" | string;
   method?: "POST" | "PUT" | string;
@@ -223,29 +288,27 @@ export async function uploadPickedImage(
   contentType = "image/jpeg",
   onProgress?: UploadProgressCallback,
 ): Promise<string> {
-  let size = 0;
-  if (Platform.OS !== "web") {
-    try {
-      const info = await FileSystem.getInfoAsync(uri);
-      if (info.exists && typeof (info as any).size === "number") size = (info as any).size;
-    } catch {
-      // size is best-effort metadata only
+  const metadata = normalizeUploadMetadata(filename, contentType);
+  const prepared = await prepareLocalUploadUri(uri, metadata.filename);
+  try {
+    const size = await resolveFileSize(prepared.uri);
+    emitProgress(onProgress, { loaded: 0, total: size, percent: 0, stage: "preparing" });
+    const uploadInstructions = await getUploadUrl(metadata.filename, size, metadata.contentType);
+    if (uploadInstructions.provider === "cloudinary" || uploadInstructions.method === "POST") {
+      return await uploadFileToCloudinary(
+        prepared.uri,
+        uploadInstructions.uploadURL,
+        metadata.contentType,
+        uploadInstructions.fields || {},
+        onProgress,
+      );
     }
+    await putFileToPresignedUrl(prepared.uri, uploadInstructions.uploadURL, metadata.contentType, onProgress);
+    emitProgress(onProgress, { loaded: 1, total: 1, percent: 100, stage: "done" });
+    return uploadInstructions.objectPath;
+  } finally {
+    if (prepared.temporary) await FileSystem.deleteAsync(prepared.uri, { idempotent: true }).catch(() => undefined);
   }
-  emitProgress(onProgress, { loaded: 0, total: size || undefined, percent: 0, stage: "preparing" });
-  const uploadInstructions = await getUploadUrl(filename, size, contentType);
-  if (uploadInstructions.provider === "cloudinary" || uploadInstructions.method === "POST") {
-    return uploadFileToCloudinary(
-      uri,
-      uploadInstructions.uploadURL,
-      contentType,
-      uploadInstructions.fields || {},
-      onProgress,
-    );
-  }
-  await putFileToPresignedUrl(uri, uploadInstructions.uploadURL, contentType, onProgress);
-  emitProgress(onProgress, { loaded: 1, total: 1, percent: 100, stage: "done" });
-  return uploadInstructions.objectPath;
 }
 
 /**

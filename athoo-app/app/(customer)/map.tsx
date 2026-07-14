@@ -57,17 +57,26 @@ export default function CustomerMapScreen() {
   const [pickedAddress, setPickedAddress] = useState("");
   const [resolving, setResolving] = useState(false);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [locationGranted, setLocationGranted] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     let alive = true;
 
     async function load() {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
+        setLoadError("");
+        const permission = await Location.requestForegroundPermissionsAsync();
+        const status = permission.status;
+        if (alive) setLocationGranted(status === "granted");
         let currentCoords: { latitude: number; longitude: number } | null = null;
 
         if (status === "granted") {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+          const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 120000, requiredAccuracy: 1000 }).catch(() => null);
+          const loc = lastKnown || await Promise.race([
+            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Location request timed out")), 12000)),
+          ]);
           currentCoords = {
             latitude: loc.coords.latitude,
             longitude: loc.coords.longitude,
@@ -122,7 +131,7 @@ export default function CustomerMapScreen() {
           mapRef.current?.animateToRegion(initialRegion, 500);
         }, 80);
       } catch (error) {
-        // silent fail — map shows without providers
+        if (alive) setLoadError(error instanceof Error ? error.message : "Map could not be loaded");
       } finally {
         if (alive) setLoading(false);
       }
@@ -217,11 +226,12 @@ export default function CustomerMapScreen() {
             <Text style={styles.loadingText}>Loading map...</Text>
           </View>
         ) : (
-          <AthooMapFallback latitude={pickedLocation?.latitude ?? selectedProvider?.latitude ?? userLocation?.latitude} longitude={pickedLocation?.longitude ?? selectedProvider?.longitude ?? userLocation?.longitude} draggable={!!returnTo} onCoordinateChange={(latitude, longitude) => { setPickedLocation({ latitude, longitude }); void resolveAddress(latitude, longitude); }} />
+          <AthooMapFallback latitude={pickedLocation?.latitude ?? selectedProvider?.latitude ?? userLocation?.latitude} longitude={pickedLocation?.longitude ?? selectedProvider?.longitude ?? userLocation?.longitude} draggable={!!returnTo} showsUserLocation={locationGranted} onCoordinateChange={(latitude, longitude) => { setPickedLocation({ latitude, longitude }); void resolveAddress(latitude, longitude); }} />
         )}
       </View>
 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        {loadError ? <View style={styles.errorBanner}><Text style={styles.errorText}>{loadError}</Text></View> : null}
         {providerId ? (
           <AnimatedCard>
             <View style={styles.card}>
@@ -318,6 +328,8 @@ const styles = StyleSheet.create({
   map: { flex: 1 },
   loadingBox: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10 },
   loadingText: { color: Colors.textSecondary, fontSize: 13 },
+  errorBanner: { backgroundColor: "#FEF2F2", borderColor: "#FECACA", borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 12 },
+  errorText: { color: "#B91C1C", fontSize: 13, fontWeight: "600" },
   content: { padding: 16, paddingBottom: 40, gap: 12 },
   card: {
     backgroundColor: Colors.surface,

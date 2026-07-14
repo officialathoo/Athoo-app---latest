@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/usePermissions";
+import { BulkActionBar } from "@/components/admin/BulkActionBar";
 import {
   Loader2, Plus, Pencil, Trash2, X, Wrench, Zap, Droplets, Paintbrush,
   Hammer, Truck, Home, Scissors, Brush, Settings2, AirVent, Fan,
@@ -90,6 +91,7 @@ export function CategoriesPage() {
   const [editing, setEditing] = useState<Category | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin", "categories"],
@@ -120,7 +122,24 @@ export function CategoriesPage() {
     },
   });
 
+
+  const bulkMutation = useMutation({
+    mutationFn: async (isActive: boolean) => {
+      const ids = Array.from(selectedIds);
+      await Promise.all(ids.map((id) => api(`/api/admin/categories/${id}`, { method: "PATCH", body: JSON.stringify({ isActive }) })));
+      return ids.length;
+    },
+    onSuccess: (count, isActive) => {
+      setSelectedIds(new Set());
+      qc.invalidateQueries({ queryKey: ["admin", "categories"] });
+      toast({ title: isActive ? "Activated" : "Deactivated", description: `${count} categories updated` });
+    },
+    onError: (e: any) => toast({ title: "Bulk action failed", description: e.message, variant: "destructive" }),
+  });
+
   const cats = data?.categories ?? [];
+  const allSelected = cats.length > 0 && cats.every((category) => selectedIds.has(category.id));
+  const toggleSelection = (id: string) => setSelectedIds((current) => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; });
 
   return (
     <div className="space-y-6">
@@ -148,6 +167,18 @@ export function CategoriesPage() {
         />
       )}
 
+      {canWrite ? (
+        <BulkActionBar
+          count={selectedIds.size}
+          busy={bulkMutation.isPending}
+          onClear={() => setSelectedIds(new Set())}
+          actions={[
+            { label: "Activate", onClick: () => bulkMutation.mutate(true) },
+            { label: "Deactivate", tone: "danger", onClick: () => bulkMutation.mutate(false) },
+          ]}
+        />
+      ) : null}
+
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
@@ -159,6 +190,7 @@ export function CategoriesPage() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-600 text-left">
               <tr>
+                <th className="w-12 px-4 py-3"><input aria-label="Select all categories" type="checkbox" checked={allSelected} onChange={() => setSelectedIds(allSelected ? new Set() : new Set(cats.map((category) => category.id)))} /></th>
                 <th className="px-4 py-3 font-medium">Name</th>
                 <th className="px-4 py-3 font-medium">Slug</th>
                 <th className="px-4 py-3 font-medium">Visit charge</th>
@@ -170,6 +202,7 @@ export function CategoriesPage() {
             <tbody className="divide-y divide-slate-100">
               {cats.map((c) => (
                 <tr key={c.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3"><input aria-label={`Select ${c.name}`} type="checkbox" checked={selectedIds.has(c.id)} onChange={() => toggleSelection(c.id)} /></td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <span

@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Loader2, Plus, Pencil, Trash2, X, MapPin, ToggleLeft, ToggleRight } from "lucide-react";
+import { BulkActionBar } from "@/components/admin/BulkActionBar";
 
 type ServiceArea = {
   id: string;
@@ -37,6 +38,7 @@ export function ServiceAreasPage() {
   const [editing, setEditing] = useState<ServiceArea | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["admin", "service-areas"],
@@ -77,7 +79,24 @@ export function ServiceAreasPage() {
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+
+  const bulkMutation = useMutation({
+    mutationFn: async (isActive: boolean) => {
+      const ids = Array.from(selectedIds);
+      await Promise.all(ids.map((id) => api(`/api/admin/service-areas/${id}`, { method: "PATCH", body: JSON.stringify({ isActive }) })));
+      return ids.length;
+    },
+    onSuccess: (count, isActive) => {
+      setSelectedIds(new Set());
+      qc.invalidateQueries({ queryKey: ["admin", "service-areas"] });
+      toast({ title: isActive ? "Activated" : "Deactivated", description: `${count} service areas updated` });
+    },
+    onError: (e: any) => toast({ title: "Bulk action failed", description: e.message, variant: "destructive" }),
+  });
+
   const areas = data?.areas ?? [];
+  const allSelected = areas.length > 0 && areas.every((area) => selectedIds.has(area.id));
+  const toggleSelection = (id: string) => setSelectedIds((current) => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; });
 
   function openAdd() {
     setEditing(null);
@@ -123,6 +142,18 @@ export function ServiceAreasPage() {
         </button>}
       </div>
 
+      {canWrite ? (
+        <BulkActionBar
+          count={selectedIds.size}
+          busy={bulkMutation.isPending}
+          onClear={() => setSelectedIds(new Set())}
+          actions={[
+            { label: "Activate", onClick: () => bulkMutation.mutate(true) },
+            { label: "Deactivate", tone: "danger", onClick: () => bulkMutation.mutate(false) },
+          ]}
+        />
+      ) : null}
+
       {isLoading ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 size={28} className="animate-spin text-blue-500" />
@@ -143,6 +174,7 @@ export function ServiceAreasPage() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
+                <th className="w-12 px-4 py-3"><input aria-label="Select all service areas" type="checkbox" checked={allSelected} onChange={() => setSelectedIds(allSelected ? new Set() : new Set(areas.map((area) => area.id)))} /></th>
                 <th className="text-left px-4 py-3 font-semibold text-slate-600">City</th>
                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Province</th>
                 <th className="text-center px-4 py-3 font-semibold text-slate-600">Sort Order</th>
@@ -153,6 +185,7 @@ export function ServiceAreasPage() {
             <tbody>
               {areas.map((area) => (
                 <tr key={area.id} className="border-b border-slate-100 hover:bg-slate-50 transition">
+                  <td className="px-4 py-3"><input aria-label={`Select ${area.name}`} type="checkbox" checked={selectedIds.has(area.id)} onChange={() => toggleSelection(area.id)} /></td>
                   <td className="px-4 py-3 font-semibold text-slate-800">{area.name}</td>
                   <td className="px-4 py-3 text-slate-500">{area.province || "—"}</td>
                   <td className="px-4 py-3 text-center text-slate-500">{area.sortOrder}</td>

@@ -49,6 +49,9 @@ function normalizeOptions(options: PickOptions): PickOptions {
     ...options,
     // Mandatory Athoo rule: never crop documents, diplomas, CNICs, payment screenshots, or evidence media.
     allowsEditing: false,
+    ...(Platform.OS === "ios" && (ImagePicker as any).UIImagePickerPreferredAssetRepresentationMode?.Compatible
+      ? { preferredAssetRepresentationMode: (ImagePicker as any).UIImagePickerPreferredAssetRepresentationMode.Compatible }
+      : {}),
   } as PickOptions;
 }
 

@@ -36,6 +36,7 @@ import { useBookings } from "@/context/BookingContext";
 import { useLang } from "@/context/LanguageContext";
 import { api } from "@/services/api";
 import { uploadPickedImage, PrivateImage } from "@/services/storage";
+import { AppearanceSelector } from "@/components/ui/AppearanceSelector";
 
 const AVATAR_COLORS = [
   "#1A6EE0", "#FF6B1A", "#8B5CF6", "#22C55E", "#F59E0B", "#EC4899", "#06B6D4",
@@ -163,10 +164,12 @@ export default function ProfileScreen() {
       const asset = result.assets[0];
       try {
         setUploadingPhoto(true);
-        const objectPath = await uploadPickedImage(asset.uri, "profile.jpg", "image/jpeg");
+        const contentType = asset.mimeType || "image/jpeg";
+        const filename = asset.fileName || `profile-${Date.now()}.${contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg"}`;
+        const objectPath = await uploadPickedImage(asset.uri, filename, contentType);
         await updateUser({ profileImage: objectPath });
-      } catch {
-        Alert.alert("Upload Failed", "Profile photo could not be saved. Please try again.");
+      } catch (error) {
+        Alert.alert("Upload Failed", error instanceof Error ? error.message : "Profile photo could not be saved. Please try again.");
       } finally {
         setUploadingPhoto(false);
       }
@@ -413,6 +416,8 @@ export default function ProfileScreen() {
           </View>
         </AnimatedCard>
       )}
+
+      <AppearanceSelector />
 
       {MENU_SECTIONS.map((section, si) => (
         <AnimatedCard key={si} delay={100 + si * 60}>
