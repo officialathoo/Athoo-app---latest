@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "evidenceRequired": ["screenshot-or-video", "device-and-os", "build-identifier", "timestamp", "result-and-notes"],
+  "platforms": {
+    "android": [
+      "fresh-install-and-launch", "customer-login", "provider-login", "logout-and-session-clear", "home-navigation", "location-permission-and-map", "camera-image-upload", "gallery-image-upload", "video-upload", "push-notification-tap", "booking-and-negotiation", "premium-payment-proof"
+    ],
+    "ios": [
+      "fresh-install-and-launch", "customer-login", "provider-login", "logout-and-session-clear", "home-navigation", "location-permission-and-map", "camera-image-upload", "gallery-image-upload", "video-upload", "push-notification-tap", "booking-and-negotiation", "premium-payment-proof"
+    ]
+  },
+  "crossRole": [
+    "customer-provider-direct-booking", "customer-provider-negotiation", "broadcast-provider-response", "chat-and-read-receipts", "incoming-and-outgoing-call", "provider-arrival-and-pin-start", "job-completion-and-review", "admin-approval-and-notification", "premium-approval-and-cancellation", "complaint-ticket-admin-response"
+  ]
+}

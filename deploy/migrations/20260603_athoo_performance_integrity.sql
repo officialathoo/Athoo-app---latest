@@ -1,0 +1,20 @@
+-- Safe idempotent production indexes for Athoo.
+CREATE INDEX IF NOT EXISTS users_email_idx ON users(email);
+CREATE INDEX IF NOT EXISTS users_phone_idx ON users(phone);
+CREATE INDEX IF NOT EXISTS users_role_available_idx ON users(role, is_available);
+CREATE INDEX IF NOT EXISTS users_role_verification_idx ON users(role, verification_status);
+CREATE INDEX IF NOT EXISTS bookings_customer_status_idx ON bookings(customer_id, status);
+CREATE INDEX IF NOT EXISTS bookings_provider_status_idx ON bookings(provider_id, status);
+CREATE INDEX IF NOT EXISTS bookings_created_at_status_idx ON bookings(created_at, status);
+CREATE INDEX IF NOT EXISTS invoices_booking_id_idx ON invoices(booking_id);
+CREATE INDEX IF NOT EXISTS invoices_customer_id_idx ON invoices(customer_id);
+CREATE INDEX IF NOT EXISTS invoices_provider_id_idx ON invoices(provider_id);
+CREATE INDEX IF NOT EXISTS notifications_user_id_read_idx ON notifications(user_id, is_read);
+CREATE INDEX IF NOT EXISTS notifications_user_id_created_at_idx ON notifications(user_id, created_at);
+CREATE INDEX IF NOT EXISTS broadcast_requests_status_updated_at_idx ON broadcast_requests(status, updated_at);
+CREATE INDEX IF NOT EXISTS broadcast_requests_customer_status_idx ON broadcast_requests(customer_id, status);
+CREATE INDEX IF NOT EXISTS broadcast_responses_request_provider_idx ON broadcast_responses(request_id, provider_id);
+CREATE INDEX IF NOT EXISTS negotiations_customer_status_idx ON negotiations(customer_id, status);
+CREATE INDEX IF NOT EXISTS negotiations_provider_status_idx ON negotiations(provider_id, status);
+CREATE INDEX IF NOT EXISTS calls_receiver_status_idx ON calls(receiver_id, status);
+CREATE INDEX IF NOT EXISTS calls_caller_status_idx ON calls(caller_id, status);

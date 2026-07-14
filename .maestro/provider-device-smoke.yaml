@@ -1,0 +1,11 @@
+appId: ${ATHOO_APP_ID}
+name: Provider device navigation smoke
+---
+- runFlow: provider-login.yaml
+- assertVisible: "Dashboard"
+- tapOn: "Jobs"
+- assertVisible: "Jobs"
+- tapOn: "Earnings"
+- assertVisible: "Earnings"
+- tapOn: "Profile"
+- assertVisible: "Profile"
