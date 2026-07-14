@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, CheckCircle2, XCircle, ExternalLink, Trash2 } from "lucide-react";
+import { BulkActionBar } from "@/components/admin/BulkActionBar";
 
 type ServiceReq = {
   id: string;
@@ -49,6 +50,7 @@ function ServiceReqs() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [status, setStatus] = useState<"pending" | "approved" | "rejected">("pending");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const { data, isLoading } = useQuery({
     queryKey: ["admin", "service-requests", status],
     queryFn: () => api<{ requests: ServiceReq[] }>(`/api/admin/account/service-requests`, { params: { status } }),
@@ -69,12 +71,29 @@ function ServiceReqs() {
           <button key={s} onClick={() => setStatus(s)} className={`px-3 py-1.5 text-xs font-medium rounded-md capitalize ${status === s ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}>{s}</button>
         ))}
       </div>
+      {status === "pending" && selectedIds.size > 0 && (
+        <BulkActionBar
+          count={selectedIds.size}
+          onClear={() => setSelectedIds(new Set())}
+          actions={[
+            { label: "Approve selected", onClick: async () => { for (const id of selectedIds) await approve.mutateAsync(id); setSelectedIds(new Set()); } },
+            { label: "Reject selected", tone: "danger", onClick: async () => { const reason = prompt("Reason for rejecting selected requests?")?.trim(); if (!reason) return; for (const id of selectedIds) await reject.mutateAsync({ id, reason }); setSelectedIds(new Set()); } },
+          ]}
+        />
+      )}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        {status === "pending" && items.length > 0 && (
+          <label className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 text-sm text-slate-600">
+            <input type="checkbox" aria-label="Select all pending requests" checked={items.every((item) => selectedIds.has(item.id))} onChange={() => setSelectedIds(items.every((item) => selectedIds.has(item.id)) ? new Set() : new Set(items.map((item) => item.id)))} />
+            Select all pending requests
+          </label>
+        )}
         {isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-400" /></div> :
           items.length === 0 ? <div className="text-center py-16 text-slate-500">No {status} requests.</div> :
           items.map((r) => (
             <div key={r.id} className="border-b border-slate-100 p-4">
               <div className="flex items-start justify-between gap-3">
+                {r.status === "pending" && <input type="checkbox" aria-label={`Select ${r.serviceName}`} checked={selectedIds.has(r.id)} onChange={() => setSelectedIds((previous) => { const next = new Set(previous); next.has(r.id) ? next.delete(r.id) : next.add(r.id); return next; })} />}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-semibold text-slate-900">{r.serviceName}</h3>
@@ -112,6 +131,7 @@ function DeletionReqs() {
   const { toast } = useToast();
   const [status, setStatus] = useState<"pending" | "cancelled" | "completed">("pending");
   const [confirmRestoreId, setConfirmRestoreId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const { data, isLoading } = useQuery({
     queryKey: ["admin", "deletion-requests", status],
     queryFn: () => api<{ requests: DeletionReq[] }>(`/api/admin/account/deletion-requests`, { params: { status } }),
@@ -121,6 +141,16 @@ function DeletionReqs() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin"] }); toast({ title: "Cancelled — account restored" }); },
   });
   const items = data?.requests ?? [];
+  const pendingItems = items.filter((item) => item.status === "pending");
+  const allPendingSelected = pendingItems.length > 0 && pendingItems.every((item) => selectedIds.has(item.id));
+
+  const restoreSelected = async () => {
+    for (const id of selectedIds) {
+      await cancel.mutateAsync(id);
+    }
+    setSelectedIds(new Set());
+  };
+
   return (
     <div className="space-y-4">
       <div className="inline-flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1">
@@ -128,12 +158,30 @@ function DeletionReqs() {
           <button key={s} onClick={() => setStatus(s)} className={`px-3 py-1.5 text-xs font-medium rounded-md capitalize ${status === s ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}>{s}</button>
         ))}
       </div>
+      {status === "pending" && selectedIds.size > 0 && (
+        <BulkActionBar
+          count={selectedIds.size}
+          onClear={() => setSelectedIds(new Set())}
+          actions={[
+            { label: "Restore selected", onClick: restoreSelected },
+          ]}
+        />
+      )}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         {isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-400" /></div> :
           items.length === 0 ? <div className="text-center py-16 text-slate-500">No {status} requests.</div> :
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-600 text-left">
               <tr>
+                <th className="px-4 py-3 font-medium w-10">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all pending deletion requests"
+                    disabled={status !== "pending" || pendingItems.length === 0}
+                    checked={allPendingSelected}
+                    onChange={() => setSelectedIds(allPendingSelected ? new Set() : new Set(pendingItems.map((item) => item.id)))}
+                  />
+                </th>
                 <th className="px-4 py-3 font-medium">User</th>
                 <th className="px-4 py-3 font-medium">Reason</th>
                 <th className="px-4 py-3 font-medium">Requested</th>
@@ -146,6 +194,19 @@ function DeletionReqs() {
                 const days = Math.max(0, Math.ceil((+new Date(r.scheduledDeleteAt) - Date.now()) / 86400000));
                 return (
                   <tr key={r.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select deletion request for ${r.userName || r.id}`}
+                        disabled={r.status !== "pending"}
+                        checked={selectedIds.has(r.id)}
+                        onChange={() => setSelectedIds((previous: Set<string>) => {
+                          const next = new Set(previous);
+                          next.has(r.id) ? next.delete(r.id) : next.add(r.id);
+                          return next;
+                        })}
+                      />
+                    </td>
                     <td className="px-4 py-3">
                       <div className="font-medium text-slate-900 text-sm">{r.userName || "Unknown"}</div>
                       {r.userPhone && <div className="text-xs text-slate-500">{r.userPhone}</div>}

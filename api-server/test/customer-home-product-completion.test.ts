@@ -19,8 +19,8 @@ test("customer home has refresh, retry, profile location and admin-controlled vi
 });
 
 test("empty admin banner list does not silently restore hard-coded banners", () => {
-  assert.match(home, /bannersStatus === "error" \? FALLBACK_BANNERS : apiBanners/);
-  assert.doesNotMatch(home, /apiBanners\.length > 0 \? apiBanners : FALLBACK_BANNERS/);
+  assert.match(home, /const displayBanners = apiBanners/);
+  assert.doesNotMatch(home, /FALLBACK_BANNERS/);
 });
 
 test("home configuration is wired through database, API and admin panel", () => {

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState } from "react-native";
 import { api, realtime } from "@/services/api";
 import { SERVICE_CATEGORIES } from "@/data/services";
@@ -87,17 +88,17 @@ interface CategoriesContextType {
   getCategoryBySlug: (slug: string) => AppCategory | undefined;
 }
 
+const CATEGORIES_CACHE_KEY = "athoo.admin.categories.cache.v1";
+
 const CategoriesContext = createContext<CategoriesContextType>({
-  categories: SERVICE_CATEGORIES.map((s) => ({ ...s, slug: s.id, isActive: true, sortOrder: 0 })),
+  categories: [],
   isLoading: false,
   reload: () => {},
   getCategoryBySlug: () => undefined,
 });
 
 export function CategoriesProvider({ children }: { children: React.ReactNode }) {
-  const [categories, setCategories] = useState<AppCategory[]>(
-    SERVICE_CATEGORIES.map((s) => ({ ...s, slug: s.id, isActive: true, sortOrder: 0 }))
-  );
+  const [categories, setCategories] = useState<AppCategory[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const inFlightRef = useRef(false);
 
@@ -107,10 +108,11 @@ export function CategoriesProvider({ children }: { children: React.ReactNode }) 
     setIsLoading(true);
     try {
       const res = await api.getCategories();
-      if (res.categories && res.categories.length > 0) {
-        setCategories(res.categories.map(mapApiCategory));
-      }
+      const next = Array.isArray(res.categories) ? res.categories.map(mapApiCategory) : [];
+      setCategories(next);
+      await AsyncStorage.setItem(CATEGORIES_CACHE_KEY, JSON.stringify(next));
     } catch {
+      // Keep the most recent admin-managed data when the device is offline.
     } finally {
       inFlightRef.current = false;
       setIsLoading(false);
@@ -118,7 +120,16 @@ export function CategoriesProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   useEffect(() => {
-    load();
+    let active = true;
+    void AsyncStorage.getItem(CATEGORIES_CACHE_KEY)
+      .then((raw) => {
+        if (!active || !raw) return;
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) setCategories(parsed);
+      })
+      .catch(() => {})
+      .finally(() => { if (active) void load(); });
+    return () => { active = false; };
   }, [load]);
 
   // Keep customer/provider apps linked with admin panel changes.

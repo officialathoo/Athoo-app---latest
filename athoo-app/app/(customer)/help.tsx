@@ -1,6 +1,7 @@
 import { Icon } from "@/components/ui/Icon";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
@@ -9,33 +10,31 @@ import { api } from "@/services/api";
 
 type Faq = { id?: string; q: string; a: string };
 
-const HARDCODED_FAQS: Faq[] = [
-  { q: "How do I book a service?", a: "Go to the Search tab, find a provider in Pakistan, view their profile, and tap 'Book Now'. Choose your date, time, and address, then confirm." },
-  { q: "What is the arrival OTP?", a: "When the provider arrives at your location, they'll give you a 4-digit code. Enter it in the app to officially start the service and begin the timer." },
-  { q: "What is the completion OTP?", a: "After work is done, you'll receive a 4-digit OTP to enter in the app. This marks the service as complete and triggers the invoice." },
-  { q: "Is my phone number shared with providers?", a: "Never. Athoo masks all phone numbers. Communication between customers and providers happens only through the in-app chat." },
-  { q: "How does price negotiation work?", a: "On a provider's profile, tap 'Negotiate' to send your own budget offer. The provider can accept or counter with a different price, just like InDrive." },
-  { q: "What are visit charges?", a: "A fixed Rs. 200 visit/call-out charge applies to all bookings. This covers the provider's travel. Service charges are separate and agreed in advance." },
-  { q: "How do I cancel a booking?", a: "Open the booking from 'My Bookings', then tap 'Cancel Booking'. Free cancellation is available up to 1 hour before the scheduled time." },
-  { q: "How do I rate a provider?", a: "After a booking is marked complete, you'll be prompted to leave a star rating and optional review for the provider." },
-  { q: "Are providers verified?", a: "Yes! All providers go through CNIC verification, document upload, selfie verification, and police background check before being approved on Athoo." },
-  { q: "What areas do you cover?", a: "Athoo serves customers and providers across Pakistan." },
-];
+const FAQ_CACHE_KEY = "athoo.admin.faqs.customer.cache.v1";
 
 export default function HelpScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const [expanded, setExpanded] = useState<number | null>(null);
-  const [faqs, setFaqs] = useState<Faq[]>(HARDCODED_FAQS);
+  const [faqs, setFaqs] = useState<Faq[]>([]);
 
   useEffect(() => {
+    let active = true;
+    void AsyncStorage.getItem(FAQ_CACHE_KEY).then((raw) => {
+      if (!active || !raw) return;
+      const cached = JSON.parse(raw);
+      if (Array.isArray(cached)) setFaqs(cached);
+    }).catch(() => {});
+
     api.getFaqs("customer")
-      .then(res => {
-        if (res.faqs.length > 0) {
-          setFaqs(res.faqs.map(f => ({ id: f.id, q: f.question, a: f.answer })));
-        }
+      .then(async (res) => {
+        const next = Array.isArray(res.faqs) ? res.faqs.map((f) => ({ id: f.id, q: f.question, a: f.answer })) : [];
+        if (!active) return;
+        setFaqs(next);
+        await AsyncStorage.setItem(FAQ_CACHE_KEY, JSON.stringify(next));
       })
       .catch(() => {});
+    return () => { active = false; };
   }, []);
 
   return (

@@ -25,11 +25,16 @@ test("mobile fails visibly when the API URL is missing", () => {
   assert.match(layout, /ApiConfigurationScreen/);
 });
 
-test("logout clears push registration before revoking the session", () => {
-  const clearIndex = authContext.indexOf('api.savePushToken("")');
-  const logoutIndex = authContext.indexOf("api.logoutSession()");
-  assert.ok(clearIndex >= 0 && logoutIndex >= 0 && clearIndex < logoutIndex);
+test("logout clears local state immediately and performs bounded remote cleanup", () => {
+  const clearUserIndex = authContext.indexOf("setUser(null)");
+  const navigateIndex = authContext.indexOf('router.replace("/auth/welcome"');
+  const remoteCleanupIndex = authContext.indexOf("Promise.allSettled");
+  assert.ok(clearUserIndex >= 0 && navigateIndex >= 0 && remoteCleanupIndex >= 0);
+  assert.ok(clearUserIndex < remoteCleanupIndex && navigateIndex < remoteCleanupIndex);
   assert.match(authContext, /notificationService\.resetSyncedToken\(\)/);
+  assert.match(authContext, /\/api\/auth\/push-token/);
+  assert.match(authContext, /\/api\/auth\/logout/);
+  assert.match(authContext, /setTimeout\(\(\) => controller\.abort\(\), 4000\)/);
 });
 
 test("notification navigation has one owner and supports cold starts", () => {

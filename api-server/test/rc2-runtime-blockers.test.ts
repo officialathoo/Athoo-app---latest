@@ -22,11 +22,16 @@ test("mobile storage requires readable positive file size and normalizes metadat
   assert.match(storage, /selected file could not be read/);
 });
 
-test("appearance selector is available to customer and provider profiles", () => {
+test("appearance selector is available through customer and provider profiles", () => {
   const customer = read("athoo-app/app/(customer)/(tabs)/profile.tsx");
   const provider = read("athoo-app/app/(provider)/(tabs)/profile.tsx");
-  assert.match(customer, /<AppearanceSelector \/>/);
-  assert.match(provider, /<AppearanceSelector \/>/);
+  const appearanceScreen = read("athoo-app/app/appearance.tsx");
+  const selector = read("athoo-app/components/settings/AppearanceSelector.tsx");
+  assert.match(customer, /route: "\/appearance"/);
+  assert.match(provider, /router\.push\("\/appearance"/);
+  assert.match(appearanceScreen, /<AppearanceSelector \/>/);
+  assert.match(selector, /Use device setting/);
+  assert.match(selector, /accessibilityRole="radio"/);
 });
 
 test("admin service areas and categories expose select-all bulk actions", () => {

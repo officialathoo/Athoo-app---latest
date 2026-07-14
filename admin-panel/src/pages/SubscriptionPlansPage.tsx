@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Loader2, Plus, Pencil, Trash2, X, Crown, CheckCircle2, XCircle, ImageIcon } from "lucide-react";
 import { openAuthenticatedFile } from "@/lib/api";
+import { BulkActionBar } from "@/components/admin/BulkActionBar";
 
 type Plan = {
   id: string;
@@ -193,6 +194,7 @@ function SubsList({ canWrite }: { canWrite: boolean }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [status, setStatus] = useState<"pending" | "active" | "expired" | "cancelled" | "rejected" | "cancellation_scheduled">("pending");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const { data, isLoading } = useQuery({
     queryKey: ["admin", "subs", status],
     queryFn: () => api<{ subscriptions: Sub[] }>(`/api/admin/subscriptions`, { params: { status } }),
@@ -215,12 +217,23 @@ function SubsList({ canWrite }: { canWrite: boolean }) {
           </button>
         ))}
       </div>
+      {status === "pending" && canWrite && selectedIds.size > 0 && (
+        <BulkActionBar
+          count={selectedIds.size}
+          onClear={() => setSelectedIds(new Set())}
+          actions={[
+            { label: "Approve selected", onClick: async () => { for (const id of selectedIds) await approve.mutateAsync(id); setSelectedIds(new Set()); } },
+            { label: "Reject selected", tone: "danger", onClick: async () => { const reason = prompt("Rejection reason for selected subscriptions?")?.trim(); if (!reason) return; for (const id of selectedIds) await reject.mutateAsync({ id, reason }); setSelectedIds(new Set()); } },
+          ]}
+        />
+      )}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         {isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-400" /></div> :
           items.length === 0 ? <div className="text-center py-16 text-slate-500">No {status} subscriptions.</div> :
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-600 text-left">
               <tr>
+                <th className="px-4 py-3 w-10"><input type="checkbox" aria-label="Select all pending subscriptions" disabled={status !== "pending" || !canWrite} checked={status === "pending" && items.length > 0 && items.every((item) => selectedIds.has(item.id))} onChange={() => setSelectedIds(items.every((item) => selectedIds.has(item.id)) ? new Set() : new Set(items.map((item) => item.id)))} /></th>
                 <th className="px-4 py-3 font-medium">User</th>
                 <th className="px-4 py-3 font-medium">Period</th>
                 <th className="px-4 py-3 font-medium">Amount</th>
@@ -235,6 +248,7 @@ function SubsList({ canWrite }: { canWrite: boolean }) {
                 const rowBusy = (approve.isPending && approve.variables === s.id) || (reject.isPending && reject.variables?.id === s.id);
                 return (
                 <tr key={s.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3"><input type="checkbox" aria-label={`Select subscription ${s.id}`} disabled={s.status !== "pending" || !canWrite} checked={selectedIds.has(s.id)} onChange={() => setSelectedIds((previous) => { const next = new Set(previous); next.has(s.id) ? next.delete(s.id) : next.add(s.id); return next; })} /></td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">{s.userId.slice(0, 8)}…</td>
                   <td className="px-4 py-3 capitalize">{s.billingPeriod}</td>
                   <td className="px-4 py-3 font-semibold">Rs {s.amount.toLocaleString()}</td>

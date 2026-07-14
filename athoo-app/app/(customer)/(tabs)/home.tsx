@@ -2,6 +2,7 @@ import { Icon } from "@/components/ui/Icon";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   Animated,
   Linking,
@@ -76,11 +77,8 @@ let customerHomeLoadedThisSession = false;
 let customerHomeLastLoadedAt = 0;
 const HOME_BACKGROUND_REFRESH_MS = 60_000;
 
-const FALLBACK_BANNERS = [
-  { id: "f1", title: "Book a Plumber", subtitle: "Quick fixes at your door", bgColorFrom: Colors.primary, bgColorTo: "#0D4BA0", iconName: "droplet", linkType: "category", linkTarget: "plumber" },
-  { id: "f2", title: "AC Service", subtitle: "Stay cool this summer", bgColorFrom: "#14B8A6", bgColorTo: "#0E8A7E", iconName: "thermometer", linkType: "category", linkTarget: "ac_repair" },
-  { id: "f3", title: "Deep Cleaning", subtitle: "Professional cleaning team", bgColorFrom: Colors.secondary, bgColorTo: "#D45A0E", iconName: "wind", linkType: "category", linkTarget: "cleaner" },
-];
+const HOME_CONTENT_CACHE_KEY = "athoo.admin.home.content.cache.v2";
+
 
 export default function HomeScreen() {
   const { user } = useAuth();
@@ -107,9 +105,29 @@ export default function HomeScreen() {
   const [homeError, setHomeError] = useState<string | null>(null);
   const [bannersStatus, setBannersStatus] = useState<"idle" | "success" | "error">("idle");
   const [homeConfig, setHomeConfig] = useState<HomeConfig>(DEFAULT_HOME_CONFIG);
-  const [emergencyContacts, setEmergencyContacts] = useState<Array<{ id: string; name: string; number: string; description?: string | null; icon: string; sortOrder: number }>>([
-    { id: "fallback-1", name: "Emergency Rescue", number: "1122", description: "24/7 Emergency Service", icon: "phone-call", sortOrder: 0 },
-  ]);
+  const [emergencyContacts, setEmergencyContacts] = useState<Array<{ id: string; name: string; number: string; description?: string | null; icon: string; sortOrder: number }>>([]);
+
+  useEffect(() => {
+    let active = true;
+    void AsyncStorage.getItem(HOME_CONTENT_CACHE_KEY).then((raw) => {
+      if (!active || !raw) return;
+      const cached = JSON.parse(raw);
+      if (cached.homeConfig) setHomeConfig({ ...DEFAULT_HOME_CONFIG, ...cached.homeConfig });
+      if (Array.isArray(cached.banners)) { setApiBanners(cached.banners); setBannersStatus("success"); }
+      if (Array.isArray(cached.providers)) setTopProviders(cached.providers);
+      if (cached.platformStats) setPlatformStats(cached.platformStats);
+      if (Array.isArray(cached.emergencyContacts)) setEmergencyContacts(cached.emergencyContacts);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  const cacheHomePart = useCallback(async (part: Record<string, unknown>) => {
+    try {
+      const currentRaw = await AsyncStorage.getItem(HOME_CONTENT_CACHE_KEY);
+      const current = currentRaw ? JSON.parse(currentRaw) : {};
+      await AsyncStorage.setItem(HOME_CONTENT_CACHE_KEY, JSON.stringify({ ...current, ...part, cachedAt: Date.now() }));
+    } catch {}
+  }, []);
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -187,21 +205,27 @@ export default function HomeScreen() {
 
     try {
       const results = await Promise.allSettled([
-      api.getCustomerHomeConfig().then((res) => setHomeConfig({ ...DEFAULT_HOME_CONFIG, ...res.config })),
+      api.getCustomerHomeConfig().then((res) => { const next = { ...DEFAULT_HOME_CONFIG, ...res.config }; setHomeConfig(next); void cacheHomePart({ homeConfig: next }); }),
       api.getMarketingBanners("customer").then((res) => {
-        setApiBanners(res.banners);
+        const next = Array.isArray(res.banners) ? res.banners : [];
+        setApiBanners(next);
         setBannersStatus("success");
+        void cacheHomePart({ banners: next });
       }).catch((error) => {
         setBannersStatus("error");
         throw error;
       }),
-      api.getProviders().then((res) => setTopProviders(res.providers as Provider[])),
-      api.getPlatformStats().then((data) => setPlatformStats({
-        providerCount: data.providerCount || 0,
-        categoryCount: data.categoryCount || 0,
-        avgRating: data.avgRating || 0,
-      })),
-      api.getEmergencyContacts().then((res) => setEmergencyContacts(res.contacts)),
+      api.getProviders().then((res) => { const next = res.providers as Provider[]; setTopProviders(next); void cacheHomePart({ providers: next }); }),
+      api.getPlatformStats().then((data) => {
+        const next = { providerCount: data.providerCount || 0, categoryCount: data.categoryCount || 0, avgRating: data.avgRating || 0 };
+        setPlatformStats(next);
+        void cacheHomePart({ platformStats: next });
+      }),
+      api.getEmergencyContacts().then((res) => {
+        const next = Array.isArray(res.contacts) ? res.contacts : [];
+        setEmergencyContacts(next);
+        void cacheHomePart({ emergencyContacts: next });
+      }),
       api.getBroadcastRequests({ status: "open" }).then((res) =>
         setActiveBroadcasts((res.requests || []).filter((request: any) => request.status === "open"))
       ),
@@ -219,7 +243,7 @@ export default function HomeScreen() {
       setHomeLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [cacheHomePart]);
 
   useFocusEffect(useCallback(() => {
     if (!hasLoadedHomeRef.current) {
@@ -232,7 +256,7 @@ export default function HomeScreen() {
   }, [loadFocusData]));
 
   const firstName = user?.name?.split(" ")[0] || "there";
-  const displayBanners = bannersStatus === "error" ? FALLBACK_BANNERS : apiBanners;
+  const displayBanners = apiBanners;
   const displayCategories = categories.slice(0, homeConfig.maxCategories);
   const displayProviders = topProviders.slice(0, homeConfig.maxProviders);
   const locationLabel = user?.location?.trim() || homeConfig.locationLabel || "Pakistan";

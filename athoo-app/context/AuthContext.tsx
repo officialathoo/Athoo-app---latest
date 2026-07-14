@@ -305,17 +305,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user?.id]);
 
   const logout = useCallback(async () => {
-    // Clear this device's push token while the access session is still valid,
-    // then revoke the session. Reversing this order leaves stale push tokens.
-    try { await api.savePushToken(""); } catch {}
-    await api.logoutSession().catch(() => {});
+    // Logout must feel immediate even on a slow or unavailable network.
+    // Capture the current token first, clear local UI/session state, then perform
+    // server cleanup as a bounded best-effort background task.
+    const token = await getToken().catch(() => null);
+
+    realtime.stop();
     notificationService.resetSyncedToken();
-    try { await clearToken(); await AsyncStorage.removeItem(REMEMBER_KEY); }
-    finally {
-      setUser(null);
-      setRequiresBiometric(false);
-      try { router.replace("/auth/welcome" as any); } catch { router.replace("/" as any); }
+    setUser(null);
+    setRequiresBiometric(false);
+    try { router.replace("/auth/welcome" as any); } catch { router.replace("/" as any); }
+
+    await clearToken().catch(() => {});
+    await AsyncStorage.removeItem(REMEMBER_KEY).catch(() => {});
+
+    if (!token) return;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    const baseUrl = String(api.baseUrl || "").replace(/\/$/, "");
+    if (!baseUrl) {
+      clearTimeout(timeout);
+      return;
     }
+
+    void Promise.allSettled([
+      fetch(`${baseUrl}/api/auth/push-token`, {
+        method: "PATCH",
+        headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ expoPushToken: "" }),
+        signal: controller.signal,
+      }),
+      fetch(`${baseUrl}/api/auth/logout`, {
+        method: "POST",
+        headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      }),
+    ]).finally(() => clearTimeout(timeout));
   }, []);
 
   useEffect(() => {

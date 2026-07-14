@@ -36,43 +36,45 @@ import { useBookings } from "@/context/BookingContext";
 import { useLang } from "@/context/LanguageContext";
 import { api } from "@/services/api";
 import { uploadPickedImage, PrivateImage } from "@/services/storage";
-import { AppearanceSelector } from "@/components/ui/AppearanceSelector";
 
 const AVATAR_COLORS = [
   "#1A6EE0", "#FF6B1A", "#8B5CF6", "#22C55E", "#F59E0B", "#EC4899", "#06B6D4",
 ];
 
-const MENU_SECTIONS = [
-  {
-    title: "Bookings & Payments",
-    items: [
-      { icon: "calendar", label: "My Bookings", subtitle: "View all your bookings", route: "/(customer)/(tabs)/bookings", color: Colors.primary },
-      { icon: "crown", label: "Premium Plan", subtitle: "Unlock exclusive benefits", route: "/(customer)/subscription", color: "#F59E0B" },
-      { icon: "file-text", label: "Billing History", subtitle: "Past transactions & receipts", route: "/(customer)/billing", color: "#8B5CF6" },
-      { icon: "download", label: "Invoices", subtitle: "Download service invoices", route: "/(customer)/invoices", color: "#14B8A6" },
-      { icon: "rotate-ccw", label: "Refund Requests", subtitle: "View & submit refund requests", route: "/(customer)/refund-requests", color: "#EF4444" },
-    ],
-  },
-  {
-    title: "Account",
-    items: [
-      { icon: "map-pin", label: "My Addresses", subtitle: "Saved service locations", route: "/(customer)/addresses", color: "#F59E0B" },
-      { icon: "heart", label: "Saved Providers", subtitle: "Your favourite workers", route: "/(customer)/saved", color: "#EF4444" },
-      { icon: "bell", label: "Notifications", subtitle: "Manage alerts", route: "/(customer)/notifications", color: "#3B82F6" },
-      { icon: "lock", label: "Change Password", subtitle: "Update your password", route: "/(customer)/change-password", color: "#F59E0B" },
-      { icon: "globe", label: "Language", subtitle: "English / اردو", route: null, color: "#06B6D4" },
-      { icon: "shield", label: "Privacy & Security", subtitle: "Number masking & data", route: "/(customer)/privacy", color: "#10B981" },
-    ],
-  },
-  {
-    title: "Support",
-    items: [
-      { icon: "help-circle", label: "Help & FAQs", subtitle: "Answers to common questions", route: "/(customer)/help", color: Colors.primary },
-      { icon: "headphones", label: "Contact Support", subtitle: "Reach our support team", route: "/(customer)/contact-support", color: "#EF4444" },
-      { icon: "info", label: "About Athoo", subtitle: "v1.0 · Pakistan", route: "/(customer)/about", color: "#6366F1" },
-    ],
-  },
-];
+function buildMenuSections(t: ReturnType<typeof useLang>["t"]) {
+  return [
+    {
+      title: t.bookingsPayments,
+      items: [
+        { icon: "calendar", label: t.myBookings, subtitle: t.bookingHistory, route: "/(customer)/(tabs)/bookings", color: Colors.primary },
+        { icon: "crown", label: t.premiumPlan, subtitle: t.unlockBenefits, route: "/(customer)/subscription", color: "#F59E0B" },
+        { icon: "file-text", label: t.billingHistory, subtitle: t.billingHistoryLong, route: "/(customer)/billing", color: "#8B5CF6" },
+        { icon: "download", label: t.invoices, subtitle: t.downloadInvoices, route: "/(customer)/invoices", color: "#14B8A6" },
+        { icon: "rotate-ccw", label: t.refundRequests, subtitle: t.refundRequestsHint, route: "/(customer)/refund-requests", color: "#EF4444" },
+      ],
+    },
+    {
+      title: t.account,
+      items: [
+        { icon: "map-pin", label: t.myAddresses, subtitle: t.savedServiceLocations, route: "/(customer)/addresses", color: "#F59E0B" },
+        { icon: "heart", label: t.savedProviders, subtitle: t.favouriteWorkers, route: "/(customer)/saved", color: "#EF4444" },
+        { icon: "bell", label: t.notifications, subtitle: t.manageAlerts, route: "/(customer)/notifications", color: "#3B82F6" },
+        { icon: "sun", label: t.appearance, subtitle: t.appearanceHint, route: "/appearance", color: "#6366F1" },
+        { icon: "lock", label: t.changePassword, subtitle: t.updatePassword, route: "/(customer)/change-password", color: "#F59E0B" },
+        { icon: "globe", label: t.language, subtitle: t.languageHint, route: null, color: "#06B6D4" },
+        { icon: "shield", label: t.privacy, subtitle: t.privacyHint, route: "/(customer)/privacy", color: "#10B981" },
+      ],
+    },
+    {
+      title: t.support,
+      items: [
+        { icon: "help-circle", label: t.help, subtitle: t.helpHint, route: "/(customer)/help", color: Colors.primary },
+        { icon: "headphones", label: t.contactSupport, subtitle: t.contactSupportHint, route: "/(customer)/contact-support", color: "#EF4444" },
+        { icon: "info", label: t.about, subtitle: t.aboutHint, route: "/(customer)/about", color: "#6366F1" },
+      ],
+    },
+  ];
+}
 
 const SOCIAL = [
   { icon: "phone", label: "WhatsApp", value: "+92 339 0051068", color: "#25D366", action: () => Linking.openURL("https://wa.me/923390051068") },
@@ -84,6 +86,7 @@ export default function ProfileScreen() {
   const { user, logout, updateUser } = useAuth();
   const { getMyBookings } = useBookings();
   const { t, lang, setLang, isUrdu } = useLang();
+  const menuSections = buildMenuSections(t);
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const [editing, setEditing] = useState(false);
@@ -201,9 +204,9 @@ export default function ProfileScreen() {
   };
 
   const handleLogout = () => {
-    Alert.alert("Logout", "Are you sure?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Logout", style: "destructive", onPress: logout },
+    Alert.alert(t.logout, t.areYouSure, [
+      { text: t.cancel, style: "cancel" },
+      { text: t.logout, style: "destructive", onPress: logout },
     ]);
   };
 
@@ -255,12 +258,11 @@ export default function ProfileScreen() {
     );
   };
 
-  const handleMenuPress = (route: string | null, label?: string) => {
-    if (label === "Language") {
+  const handleMenuPress = (route: string | null) => {
+    if (!route) {
       setShowLangModal(true);
       return;
     }
-    if (!route) return;
     router.push(route as any);
   };
 
@@ -273,7 +275,7 @@ export default function ProfileScreen() {
     >
       <LinearGradient colors={[Colors.primary, "#0D4BA0"]} style={styles.headerGrad}>
         <View style={styles.headerTop}>
-          <Text style={styles.headerTitle}>Profile</Text>
+          <Text style={styles.headerTitle}>{t.profile}</Text>
           <Pressable onPress={handleLogout} style={styles.logoutTopBtn}>
             <Icon name="log-out" size={16} color="rgba(255,255,255,0.8)" />
           </Pressable>
@@ -387,7 +389,7 @@ export default function ProfileScreen() {
             <Text style={[styles.statVal, { color: Colors.secondary }]}>
               Rs.{spent > 0 ? (spent / 1000).toFixed(1) + "k" : "0"}
             </Text>
-            <Text style={styles.statLbl}>Spent</Text>
+            <Text style={styles.statLbl}>{t.spent}</Text>
           </Pressable>
         </View>
       </AnimatedCard>
@@ -396,8 +398,8 @@ export default function ProfileScreen() {
         <AnimatedCard delay={80}>
           <View style={styles.referralCard}>
             <View style={styles.referralLeft}>
-              <Text style={styles.referralTitle}>🎁 Invite Friends</Text>
-              <Text style={styles.referralSub}>Share your referral code and earn rewards</Text>
+              <Text style={styles.referralTitle}>🎁 {t.inviteFriends}</Text>
+              <Text style={styles.referralSub}>{t.inviteFriendsHint}</Text>
               <View style={styles.referralCodeRow}>
                 <Text style={styles.referralCode}>{(user as any).referralCode}</Text>
                 <Pressable
@@ -405,21 +407,19 @@ export default function ProfileScreen() {
                   onPress={() => Share.share({ message: `Join Athoo — Pakistan's home services app! Use my referral code ${(user as any).referralCode} when you sign up. Download: https://athoo.pk` })}
                 >
                   <Icon name="share-2" size={13} color={Colors.primary} />
-                  <Text style={styles.shareCodeText}>Share</Text>
+                  <Text style={styles.shareCodeText}>{t.share}</Text>
                 </Pressable>
               </View>
             </View>
             <View style={styles.referralRight}>
               <Text style={styles.referralCount}>{(user as any).referralCount || 0}</Text>
-              <Text style={styles.referralCountLbl}>Referred</Text>
+              <Text style={styles.referralCountLbl}>{t.referred}</Text>
             </View>
           </View>
         </AnimatedCard>
       )}
 
-      <AppearanceSelector />
-
-      {MENU_SECTIONS.map((section, si) => (
+      {menuSections.map((section, si) => (
         <AnimatedCard key={si} delay={100 + si * 60}>
           <View style={styles.menuSection}>
             <Text style={styles.sectionTitle}>{section.title}</Text>
@@ -432,7 +432,7 @@ export default function ProfileScreen() {
                     ii < section.items.length - 1 && styles.menuItemBorder,
                     pressed && styles.pressed,
                   ]}
-                  onPress={() => handleMenuPress(item.route, item.label)}
+                  onPress={() => handleMenuPress(item.route)}
                 >
                   <View style={[styles.menuIconBox, { backgroundColor: item.color + "15" }]}>
                     <Icon name={item.icon as any} size={17} color={item.color} />
@@ -452,7 +452,7 @@ export default function ProfileScreen() {
       {biometricAvail && (
         <AnimatedCard delay={300}>
           <View style={styles.menuSection}>
-            <Text style={styles.sectionTitle}>Security</Text>
+            <Text style={styles.sectionTitle}>{t.security}</Text>
             <View style={styles.menuCard}>
               <View style={styles.menuItem}>
                 <View style={[styles.menuIconBox, { backgroundColor: "#8B5CF615" }]}>
@@ -476,7 +476,7 @@ export default function ProfileScreen() {
 
       <AnimatedCard delay={360}>
         <View style={styles.menuSection}>
-          <Text style={styles.sectionTitle}>Connect With Us</Text>
+          <Text style={styles.sectionTitle}>{t.connectWithUs}</Text>
           <View style={styles.menuCard}>
             {SOCIAL.map((s, i) => (
               <Pressable
@@ -505,17 +505,17 @@ export default function ProfileScreen() {
       <AnimatedCard delay={460}>
         <Pressable style={styles.logoutBtn} onPress={handleLogout}>
           <Icon name="log-out" size={16} color={Colors.error} />
-          <Text style={styles.logoutText}>Sign Out</Text>
+          <Text style={styles.logoutText}>{t.signOut}</Text>
         </Pressable>
       </AnimatedCard>
 
       <AnimatedCard delay={500}>
         <View style={styles.dangerZone}>
-          <Text style={styles.dangerTitle}>Danger Zone</Text>
+          <Text style={styles.dangerTitle}>{t.dangerZone}</Text>
 
           <Pressable style={styles.dangerBtn} onPress={handleDeactivate}>
             <Icon name="eye-off" size={15} color={Colors.error} />
-            <Text style={styles.dangerBtnText}>Deactivate Account</Text>
+            <Text style={styles.dangerBtnText}>{t.deactivateAccount}</Text>
           </Pressable>
 
           <Pressable
@@ -526,7 +526,7 @@ export default function ProfileScreen() {
             onPress={handleDeleteAccount}
           >
             <Icon name="trash-2" size={15} color={Colors.error} />
-            <Text style={[styles.dangerBtnText, { fontWeight: "800" }]}>Delete Account</Text>
+            <Text style={[styles.dangerBtnText, { fontWeight: "800" }]}>{t.deleteAccount}</Text>
           </Pressable>
         </View>
       </AnimatedCard>

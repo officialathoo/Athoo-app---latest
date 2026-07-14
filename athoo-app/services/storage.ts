@@ -149,6 +149,7 @@ export type UploadUrlResult = {
   objectPath: string;
   fields?: Record<string, string | number | boolean>;
   metadata?: Record<string, unknown>;
+  headers?: Record<string, string>;
 };
 
 /**
@@ -239,6 +240,7 @@ async function putFileToPresignedUrl(
   uploadURL: string,
   contentType: string,
   onProgress?: UploadProgressCallback,
+  requiredHeaders: Record<string, string> = {},
 ): Promise<void> {
   emitProgress(onProgress, { loaded: 0, percent: 0, stage: "uploading" });
   if (Platform.OS === "web") {
@@ -247,7 +249,7 @@ async function putFileToPresignedUrl(
       const xhr = new XMLHttpRequest();
       xhr.timeout = 300000;
       xhr.open("PUT", uploadURL);
-      xhr.setRequestHeader("Content-Type", contentType);
+      Object.entries({ "Content-Type": contentType, ...requiredHeaders }).forEach(([key, value]) => xhr.setRequestHeader(key, value));
       xhr.upload.onprogress = (event) => {
         const total = event.lengthComputable ? event.total : blob.size;
         const percent = total ? Math.min(99, Math.round((event.loaded / total) * 100)) : undefined;
@@ -265,7 +267,7 @@ async function putFileToPresignedUrl(
   const task = FileSystem.createUploadTask(uploadURL, localUri, {
     httpMethod: "PUT",
     uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-    headers: { "Content-Type": contentType },
+    headers: { "Content-Type": contentType, ...requiredHeaders },
   }, (event) => {
     const total = event.totalBytesExpectedToSend || undefined;
     const loaded = event.totalBytesSent || 0;
@@ -303,7 +305,7 @@ export async function uploadPickedImage(
         onProgress,
       );
     }
-    await putFileToPresignedUrl(prepared.uri, uploadInstructions.uploadURL, metadata.contentType, onProgress);
+    await putFileToPresignedUrl(prepared.uri, uploadInstructions.uploadURL, metadata.contentType, onProgress, uploadInstructions.headers || {});
     emitProgress(onProgress, { loaded: 1, total: 1, percent: 100, stage: "done" });
     return uploadInstructions.objectPath;
   } finally {

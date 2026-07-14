@@ -34,7 +34,6 @@ import { useLang } from "@/context/LanguageContext";
 import { useCategories } from "@/context/CategoriesContext";
 import { api } from "@/services/api";
 import { uploadPickedImage, PrivateImage } from "@/services/storage";
-import { AppearanceSelector } from "@/components/ui/AppearanceSelector";
 
 const AVATAR_COLORS = [
   "#FF6B1A", "#1A6EE0", "#8B5CF6", "#22C55E", "#F59E0B", "#EC4899", "#06B6D4",
@@ -192,8 +191,8 @@ export default function ProviderProfileScreen() {
   };
 
   const handleLogout = () => {
-    Alert.alert(t.logout, "Are you sure you want to logout?", [
-      { text: "Cancel", style: "cancel" },
+    Alert.alert(t.logout, t.areYouSure, [
+      { text: t.cancel, style: "cancel" },
       { text: t.logout, style: "destructive", onPress: logout },
     ]);
   };
@@ -216,21 +215,22 @@ export default function ProviderProfileScreen() {
 
   const MENU_SECTIONS = [
     {
-      title: "Work & Earnings",
+      title: t.workEarnings,
       items: [
-        { icon: "crown", label: "Premium Plan", color: "#F59E0B", onPress: () => router.push("/(provider)/subscription") },
-        { icon: "dollar-sign", label: "Earnings History", color: "#22C55E", onPress: () => router.push("/(provider)/earnings") },
+        { icon: "crown", label: t.premiumPlan, color: "#F59E0B", onPress: () => router.push("/(provider)/subscription") },
+        { icon: "dollar-sign", label: t.earningsHistory, color: "#22C55E", onPress: () => router.push("/(provider)/earnings") },
         { icon: "file-text", label: t.invoices, color: Colors.primary, onPress: () => router.push("/(provider)/invoices") },
-        { icon: "briefcase", label: "My Negotiations", color: Colors.secondary, onPress: () => router.push("/(provider)/negotiations") },
-        { icon: "calendar", label: "Availability Schedule", color: "#06B6D4", onPress: () => router.push("/(provider)/availability" as any) },
-        { icon: "trending-up", label: "My Wallet", color: "#059669", onPress: () => router.push("/(provider)/wallet" as any) },
-        { icon: "map-pin", label: "Service Radius", color: "#0891B2", onPress: () => router.push("/(provider)/service-radius" as any) },
+        { icon: "briefcase", label: t.myNegotiations, color: Colors.secondary, onPress: () => router.push("/(provider)/negotiations") },
+        { icon: "calendar", label: t.availabilitySchedule, color: "#06B6D4", onPress: () => router.push("/(provider)/availability" as any) },
+        { icon: "trending-up", label: t.myWallet, color: "#059669", onPress: () => router.push("/(provider)/wallet" as any) },
+        { icon: "map-pin", label: t.serviceRadius, color: "#0891B2", onPress: () => router.push("/(provider)/service-radius" as any) },
       ],
     },
     {
-      title: "Account",
+      title: t.account,
       items: [
         { icon: "bell", label: t.notifications, color: "#8B5CF6", onPress: () => router.push("/(provider)/notifications") },
+        { icon: "sun", label: t.appearance, color: "#6366F1", onPress: () => router.push("/appearance" as any) },
         { icon: "lock", label: t.changePassword, color: "#F59E0B", onPress: () => router.push("/(provider)/change-password") },
         { icon: "globe", label: t.language, color: "#06B6D4", onPress: () => setShowLangModal(true), rightEl: (
           <View style={styles.langBadge}>
@@ -241,10 +241,10 @@ export default function ProviderProfileScreen() {
       ],
     },
     {
-      title: "Support",
+      title: t.support,
       items: [
         { icon: "help-circle", label: t.help, color: Colors.primary, onPress: () => router.push("/(provider)/help") },
-        { icon: "headphones", label: "Contact Support", color: "#EF4444", onPress: () => router.push("/(provider)/contact-support") },
+        { icon: "headphones", label: t.contactSupport, color: "#EF4444", onPress: () => router.push("/(provider)/contact-support") },
         { icon: "info", label: t.about, color: Colors.secondary, onPress: () => router.push("/(provider)/about") },
       ],
     },
@@ -254,7 +254,7 @@ export default function ProviderProfileScreen() {
     <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 80 }]} showsVerticalScrollIndicator={false}>
       <LinearGradient colors={[Colors.gradientStart, Colors.gradientEnd]} style={[styles.headerGrad, { paddingTop: topPad + 16 }]}>
         <View style={styles.headerRow}>
-          <Text style={styles.headerTitle}>My Profile</Text>
+          <Text style={styles.headerTitle}>{t.myProfile}</Text>
           <Pressable style={styles.editBtn} onPress={() => router.push("/(provider)/edit-profile" as any)}>
             <Icon name="edit-2" size={16} color="#fff" />
           </Pressable>
@@ -283,11 +283,11 @@ export default function ProviderProfileScreen() {
             <Text style={styles.userName}>{user?.name}</Text>
             <View style={styles.verifiedRow}>
               <Icon name="briefcase" size={12} color="rgba(255,255,255,0.8)" />
-              <Text style={styles.userRole}>Service Provider</Text>
+              <Text style={styles.userRole}>{t.providerRole}</Text>
               {user?.isVerified && (
                 <View style={styles.verifiedBadge}>
                   <Icon name="check-circle" size={10} color={Colors.secondary} />
-                  <Text style={styles.verifiedText}>Verified</Text>
+                  <Text style={styles.verifiedText}>{t.verified}</Text>
                 </View>
               )}
             </View>
@@ -298,38 +298,38 @@ export default function ProviderProfileScreen() {
         <View style={styles.statsRow}>
           <View style={styles.stat}>
             <Text style={styles.statVal}>{bookings.length}</Text>
-            <Text style={styles.statLbl}>Total Jobs</Text>
+            <Text style={styles.statLbl}>{t.totalJobsLabel}</Text>
           </View>
           <View style={styles.statDiv} />
           <View style={styles.stat}>
             <Text style={[styles.statVal, { color: "#86efac" }]}>{completed}</Text>
-            <Text style={styles.statLbl}>Done</Text>
+            <Text style={styles.statLbl}>{t.doneLabel}</Text>
           </View>
           <View style={styles.statDiv} />
           <View style={styles.stat}>
             <Text style={[styles.statVal, { color: Colors.secondary }]}>{active}</Text>
-            <Text style={styles.statLbl}>Active</Text>
+            <Text style={styles.statLbl}>{t.active}</Text>
           </View>
           <View style={styles.statDiv} />
           <View style={styles.stat}>
             <Text style={[styles.statVal, { color: "#fbbf24" }]}>
               {earnings > 0 ? `${Math.round(earnings / 1000)}k` : "0"}
             </Text>
-            <Text style={styles.statLbl}>Earned Rs.</Text>
+            <Text style={styles.statLbl}>{t.earnedRs}</Text>
           </View>
           <View style={styles.statDiv} />
           <View style={styles.stat}>
             <Text style={[styles.statVal, { color: Colors.secondary, fontSize: 13 }]}>
               {(user as any)?.ratePerHour ? String((user as any).ratePerHour) : "–"}
             </Text>
-            <Text style={styles.statLbl}>Rs./hr</Text>
+            <Text style={styles.statLbl}>{t.ratePerHourLabel}</Text>
           </View>
         </View>
       </LinearGradient>
 
       {user?.services && user.services.length > 0 && (
         <View style={styles.servicesCard}>
-          <Text style={styles.cardTitle}>My Services</Text>
+          <Text style={styles.cardTitle}>{t.myServices}</Text>
           <View style={styles.servicesGrid}>
             {user.services.map((sid) => {
               const svc = getCategoryBySlug(sid);
@@ -387,8 +387,6 @@ export default function ProviderProfileScreen() {
         </View>
       </View>
 
-      <AppearanceSelector />
-
       {MENU_SECTIONS.map((section) => (
         <View key={section.title} style={styles.menuSection}>
           <Text style={styles.sectionTitle}>{section.title}</Text>
@@ -443,10 +441,10 @@ export default function ProviderProfileScreen() {
       </Pressable>
 
       <View style={styles.dangerZone}>
-        <Text style={styles.dangerTitle}>Danger Zone</Text>
+        <Text style={styles.dangerTitle}>{t.dangerZone}</Text>
         <Pressable style={styles.dangerBtn} onPress={handleDeactivate}>
           <Icon name="eye-off" size={15} color={Colors.error} />
-          <Text style={styles.dangerBtnText}>Deactivate Account</Text>
+          <Text style={styles.dangerBtnText}>{t.deactivateAccount}</Text>
         </Pressable>
         <Pressable style={[styles.dangerBtn, { borderColor: Colors.error, backgroundColor: Colors.error + "10" }]} onPress={handleDeleteAccount}>
           <Icon name="trash-2" size={15} color={Colors.error} />
