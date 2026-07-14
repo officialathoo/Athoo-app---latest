@@ -9,7 +9,9 @@ const mapTileUrl =
   process.env.EXPO_PUBLIC_MAP_TILE_URL ||
   "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 
-const easProjectId = process.env.EAS_PROJECT_ID || "";
+const easProjectId =
+  process.env.EAS_PROJECT_ID ||
+  "42a7f8fe-68ea-4422-8f46-0def1f55abb9";
 const appVersion = process.env.APP_VERSION || "1.0.0";
 const androidVersionCode = Number(process.env.ANDROID_VERSION_CODE || 1);
 const iosBuildNumber = process.env.IOS_BUILD_NUMBER || "1";
@@ -63,7 +65,7 @@ export default {
       buildNumber: iosBuildNumber,
 
       config: {
-            },
+      },
 
       infoPlist: {
         NSCameraUsageDescription:
