@@ -30,6 +30,7 @@ import {
   messagesTable,
   bookingOperationsTable,
   financeLedgerTable,
+  notificationTemplatesTable,
 } from "@workspace/db/schema";
 import { and, between, desc, eq, gte, ilike, lte, or, sql, inArray } from "drizzle-orm";
 import {
@@ -691,6 +692,27 @@ router.patch("/settings", requirePermission("settings.write"), async (req: AuthR
     }
     logger.error({ err: error }, "admin settings update error");
     return res.status(500).json({ error: "Failed to update settings" });
+  }
+});
+
+router.get("/broadcast-templates", requirePermission("broadcasts.read"), async (_req, res) => {
+  try {
+    const templates = await db
+      .select({
+        id: notificationTemplatesTable.id,
+        key: notificationTemplatesTable.key,
+        name: notificationTemplatesTable.name,
+        subject: notificationTemplatesTable.subject,
+        body: notificationTemplatesTable.body,
+        targetAudience: notificationTemplatesTable.targetAudience,
+      })
+      .from(notificationTemplatesTable)
+      .where(and(eq(notificationTemplatesTable.channel, "push"), eq(notificationTemplatesTable.isActive, true)))
+      .orderBy(notificationTemplatesTable.name);
+    return res.json({ templates });
+  } catch (error) {
+    logger.error({ err: error }, "admin broadcast templates error");
+    return res.status(500).json({ error: "Failed to load broadcast templates" });
   }
 });
 

@@ -17,6 +17,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { apiErrorToMessage } from "@/lib/apiError";
 
 type DaySchedule = { enabled: boolean; startTime: string; endTime: string };
 type WeeklySchedule = Record<string, DaySchedule>;
@@ -121,7 +122,7 @@ export default function AvailabilityScreen() {
       await api.updateSchedule(schedule);
       Alert.alert("Saved", "Your availability schedule has been updated.");
     } catch (e: any) {
-      Alert.alert("Error", e.message || "Failed to save schedule.");
+      Alert.alert("Unable to save", apiErrorToMessage(e, "Could not save your availability. Please try again."));
     } finally {
       setSaving(false);
     }

@@ -6,11 +6,14 @@ import test from "node:test";
 const root = path.resolve(import.meta.dirname, "../..");
 const read = (relative: string) => fs.readFileSync(path.join(root, relative), "utf8");
 
-test("Android map does not mount react-native-maps without a configured Google key", () => {
-  const source = read("athoo-app/components/maps/AthooMapFallback.tsx");
-  assert.match(source, /nativeMapConfigured/);
-  assert.match(source, /Platform\.OS !== "android" \|\| googleMapsApiKey\.length > 0/);
-  assert.match(source, /Platform\.OS === "web" \|\| nativeFailed \|\| !nativeMapConfigured/);
+test("mobile map preview is OpenStreetMap-based and requires no commercial map key", () => {
+  const fallback = read("athoo-app/components/maps/AthooMapFallback.tsx");
+  const openMap = read("athoo-app/components/maps/OpenStreetMapPreview.tsx");
+  const mobilePackage = read("athoo-app/package.json");
+  assert.match(fallback, /OpenStreetMapPreview/);
+  assert.match(openMap, /tile\.openstreetmap\.org/);
+  assert.match(openMap, /© OpenStreetMap contributors/);
+  assert.doesNotMatch(mobilePackage, /react-native-maps/);
 });
 
 test("mobile storage stages non-file URIs and cleans temporary upload files", () => {

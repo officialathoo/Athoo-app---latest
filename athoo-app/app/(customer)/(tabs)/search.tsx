@@ -1,6 +1,5 @@
 import { AthooMapFallback } from "@/components/maps/AthooMapFallback";
 import { Icon } from "@/components/ui/Icon";
-import * as Location from "expo-location";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -16,7 +15,8 @@ import {
   AppState,
 } from "react-native";
 import { PrivateImage } from "@/services/storage";
-import { reverseGeocodeGoogle } from "@/services/maps";
+import { reverseGeocode } from "@/services/maps";
+import { getFastForegroundLocation } from "@/services/location";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
 import { AnimatedCard } from "@/components/ui/AnimatedCard";
@@ -28,6 +28,7 @@ import { useLang } from "@/context/LanguageContext";
 import { api } from "@/services/api";
 import { getDistanceKm } from "@/utils/distance";
 import { matchingCategories, normalizeDiscoveryText, providerRecommendationScore } from "@/utils/discovery";
+import { useTheme } from "@/context/ThemeContext";
 
 // Only the "All Areas" sentinel is hardcoded here — actual city names are
 // loaded live from /api/service-areas below so this list always matches the
@@ -56,10 +57,11 @@ function isValidMapCoord(latitude?: number, longitude?: number) {
 
 export default function SearchScreen() {
   const { providerId, providerRate, pickAddress } = useLocalSearchParams<{ providerId?: string; providerRate?: string; pickAddress?: string }>();
-  const { isUrdu } = useLang();
+  const { t, isUrdu, translate: tr, textAlign, writingDirection } = useLang();
+  const { theme } = useTheme();
+  const localizedText = { textAlign, writingDirection } as const;
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const mapRef = useRef<any | null>(null);
   const { categories, getCategoryBySlug } = useCategories();
 
   const [cities, setCities] = useState<string[]>(DEFAULT_CITIES);
@@ -121,30 +123,16 @@ export default function SearchScreen() {
 
     setLocating(true);
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        setLocating(false);
-        return;
-      }
-
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
+      const result = await getFastForegroundLocation({
+        timeoutMs: 8_000,
+        rationaleTitle: tr("Location permission"),
+        rationaleBody: tr("Athoo uses your location to show nearby providers and choose an address."),
       });
+      if (!result.location) return;
 
-      setUserLat(loc.coords.latitude);
-      setUserLng(loc.coords.longitude);
-
-      if (mapRef.current) {
-        mapRef.current.animateToRegion(
-          {
-            latitude: loc.coords.latitude,
-            longitude: loc.coords.longitude,
-            latitudeDelta: 0.08,
-            longitudeDelta: 0.08,
-          },
-          500
-        );
-      }
+      setUserLat(result.location.latitude);
+      setUserLng(result.location.longitude);
+      setPickedLocation({ latitude: result.location.latitude, longitude: result.location.longitude });
     } catch (e) {
       // locate error — silently ignore, user can proceed without GPS
     }
@@ -251,21 +239,8 @@ export default function SearchScreen() {
 
   const focusProvider = (provider: ExtendedProvider) => {
     setSelectedProvider(provider);
-
-    if (
-      mapRef.current &&
-      typeof provider.latitude === "number" &&
-      typeof provider.longitude === "number"
-    ) {
-      mapRef.current.animateToRegion(
-        {
-          latitude: provider.latitude,
-          longitude: provider.longitude,
-          latitudeDelta: 0.04,
-          longitudeDelta: 0.04,
-        },
-        500
-      );
+    if (typeof provider.latitude === "number" && typeof provider.longitude === "number") {
+      setPickedLocation({ latitude: provider.latitude, longitude: provider.longitude });
     }
   };
 
@@ -275,7 +250,7 @@ export default function SearchScreen() {
   ): Promise<string> => {
     try {
       setResolvingAddress(true);
-      const resolved = (await reverseGeocodeGoogle(latitude, longitude)) || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+      const resolved = (await reverseGeocode(latitude, longitude)) || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
       setPickedAddress(resolved);
       return resolved;
     } catch {
@@ -367,17 +342,17 @@ export default function SearchScreen() {
         };
 
   return (
-    <View style={[styles.container, { paddingTop: topPad }]}>
-      <View style={styles.header}>
+    <View style={[styles.container, { paddingTop: topPad, backgroundColor: theme.colors.background }]}>
+      <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
         <View style={styles.searchRow}>
-          <View style={styles.searchBar}>
+          <View style={[styles.searchBar, { backgroundColor: theme.colors.input, borderColor: theme.colors.border }]}>
             <Icon name="search" size={17} color={Colors.textMuted} />
             <TextInput
-              style={styles.searchInput}
-              placeholder={isUrdu ? "خدمات، ملازمین تلاش کریں..." : "Search services, workers..."}
+              style={[styles.searchInput, localizedText, { color: theme.colors.text }]}
+              placeholder={t.searchPlaceholder}
               value={query}
               onChangeText={setQuery}
-              placeholderTextColor={Colors.textMuted}
+              placeholderTextColor={theme.colors.textMuted}
             />
             {query.length > 0 && (
               <Pressable onPress={() => setQuery("")}>
@@ -398,7 +373,7 @@ export default function SearchScreen() {
           <View style={styles.cityRow}>
             {cities.map((c) => (
               <Pressable
-                key={c}
+                key={c === "All Areas" ? t.allAreas : c}
                 onPress={() => setSelectedCity(c)}
                 style={[styles.cityChip, selectedCity === c && styles.cityChipActive]}
               >
@@ -413,10 +388,10 @@ export default function SearchScreen() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={styles.sortRow}>
             {[
-              { label: "Recommended", value: "recommended" as const },
-              { label: "Nearest", value: "nearby" as const },
-              { label: "Top Rated", value: "rating" as const },
-              { label: "Most Jobs", value: "jobs" as const },
+              { label: tr("Recommended"), value: "recommended" as const },
+              { label: tr("Nearest"), value: "nearby" as const },
+              { label: tr("Top Rated"), value: "rating" as const },
+              { label: tr("Most Jobs"), value: "jobs" as const },
             ].map((item) => (
               <Pressable
                 key={item.value}
@@ -446,12 +421,12 @@ export default function SearchScreen() {
             <View
               style={[
                 styles.mapBg,
-                { alignItems: "center", justifyContent: "center", backgroundColor: "#e8f0fe" },
+                { alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.infoSoft },
               ]}
             >
               <Icon name="map-pin" size={40} color={Colors.primary} />
               <Text style={{ fontSize: 16, fontWeight: "700", color: Colors.text, marginTop: 12 }}>
-                Map available in mobile app
+                {tr("Map available in mobile app")}
               </Text>
               <Text
                 style={{
@@ -491,9 +466,9 @@ export default function SearchScreen() {
           {!!pickedLocation && (
             <View style={styles.pickedAddressBar}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.pickedAddressLabel}>Selected Address</Text>
+                <Text style={[styles.pickedAddressLabel, localizedText]}>{tr("Selected Address")}</Text>
                 <Text style={styles.pickedAddressText} numberOfLines={2}>
-                  {resolvingAddress ? "Getting address..." : pickedAddress || "Picked from map"}
+                  {resolvingAddress ? tr("Getting address...") : pickedAddress || tr("Picked from map")}
                 </Text>
               </View>
               <Pressable
@@ -716,7 +691,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
 
   header: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     paddingHorizontal: 20,
     paddingBottom: 12,
     shadowColor: "#000",
@@ -825,7 +800,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
@@ -839,7 +814,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderTopWidth: 1,
@@ -873,7 +848,7 @@ const styles = StyleSheet.create({
   },
 
   mapBottomSheet: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 16,

@@ -1,3 +1,4 @@
+import { appLogger } from "@/lib/logger";
 import React, {
   createContext,
   useCallback,
@@ -153,7 +154,7 @@ export function NegotiationProvider({ children }: { children: React.ReactNode })
         }
       } catch (error) {
         if (!isLikelyNetworkError(error)) {
-          console.log("Failed to load negotiations:", error);
+          appLogger.debug("negotiations", "Failed to load negotiations:", error);
         }
       } finally {
         isLoadingRef.current = false;
@@ -252,7 +253,7 @@ export function NegotiationProvider({ children }: { children: React.ReactNode })
       setNegotiations(fresh);
     } catch (error) {
       if (!isLikelyNetworkError(error)) {
-        console.log("Negotiation polling issue:", error);
+        appLogger.debug("negotiations", "Negotiation polling issue:", error);
       }
     } finally {
       isPollingRef.current = false;

@@ -2,7 +2,7 @@ import { Icon } from "@/components/ui/Icon";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Alert,
   Image,
@@ -17,15 +17,18 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/colors";
 import { OtpModal } from "@/components/ui/OtpModal";
 import { SuccessModal } from "@/components/ui/SuccessModal";
 import { useAuth } from "@/context/AuthContext";
+import { useLang } from "@/context/LanguageContext";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 import { useCategories } from "@/context/CategoriesContext";
 import { api } from "@/services/api";
 import { uploadPickedImage } from "@/services/storage";
 import { LegalAcceptanceCheckbox, LEGAL_VERSION } from "@/components/ui/LegalAcceptanceCheckbox";
 import { CityPicker } from "@/components/ui/CityPicker";
+import { apiErrorToMessage } from "@/lib/apiError";
 
 type InputFieldProps = {
   label: string;
@@ -50,27 +53,35 @@ function InputField({
   multiline,
   maxLength,
 }: InputFieldProps) {
+  const { theme } = useTheme();
+  const { textAlign, writingDirection, direction } = useLang();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const localizedText = useMemo(() => ({ textAlign, writingDirection }), [textAlign, writingDirection]);
+  const localizedRow = direction === "rtl" ? styles.rowReverse : undefined;
+
   return (
     <View style={styles.inputGroup}>
-      <Text style={styles.label}>
-        {label} {required && <Text style={{ color: Colors.error }}>*</Text>}
+      <Text style={[styles.label, localizedText]}>
+        {label} {required && <Text style={{ color: theme.colors.danger }}>*</Text>}
       </Text>
 
       <View
         style={[
           styles.inputWrapper,
+          localizedRow,
           multiline && { minHeight: 80, alignItems: "flex-start" },
         ]}
       >
         <TextInput
           style={[
             styles.input,
+            localizedText,
             multiline && { textAlignVertical: "top", paddingTop: 4 },
           ]}
           value={value}
           onChangeText={onChange}
           placeholder={placeholder}
-          placeholderTextColor={Colors.textMuted}
+          placeholderTextColor={theme.colors.textMuted}
           keyboardType={keyboardType || "default"}
           secureTextEntry={secure}
           multiline={multiline}
@@ -100,11 +111,20 @@ const DOC_ITEMS = [
   { id: "video", label: "Introduction Video", icon: "video", required: false, hint: "Short 30-second intro video (optional)" },
   { id: "diploma", label: "Diploma / Certificate", icon: "award", required: false, hint: "Any relevant qualification or trade certificate" },
   { id: "police", label: "Police Verification Letter", icon: "shield", required: true, hint: "Character certificate from your local police station — mandatory for verification" },
-];
+] as const;
+
+type DocItem = { id: string; label: string; icon: string; required: boolean; hint: string };
 
 export default function ProviderRegisterScreen() {
   const { register, sendOtp, verifyOtpAndLogin } = useAuth();
   const { categories } = useCategories();
+  const { theme } = useTheme();
+  const { translate: tr, textAlign, writingDirection, direction } = useLang();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const localizedText = useMemo(() => ({ textAlign, writingDirection }), [textAlign, writingDirection]);
+  const localizedRow = direction === "rtl" ? styles.rowReverse : undefined;
+  const steps = useMemo(() => STEPS.map((item) => ({ ...item, title: tr(item.title), desc: tr(item.desc) })), [tr]);
+  const docItems = useMemo(() => DOC_ITEMS.map((item) => ({ ...item, label: tr(item.label), hint: tr(item.hint) })), [tr]);
   const { phone: phoneParam, preVerified } = useLocalSearchParams<{ phone?: string; preVerified?: string }>();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -146,13 +166,13 @@ export default function ProviderRegisterScreen() {
     }));
   };
 
-  const handleDocUpload = async (doc: typeof DOC_ITEMS[0]) => {
+  const handleDocUpload = async (doc: DocItem) => {
     if (docFiles[doc.id]) {
-      Alert.alert("Replace or Remove", `What would you like to do with "${doc.label}"?`, [
-        { text: "Keep", style: "cancel" },
-        { text: "Replace", onPress: () => launchPicker(doc) },
+      Alert.alert(tr("Replace or Remove"), tr("What would you like to do with \"{{label}}\"?", { label: doc.label }), [
+        { text: tr("Keep"), style: "cancel" },
+        { text: tr("Replace"), onPress: () => launchPicker(doc) },
         {
-          text: "Remove", style: "destructive", onPress: () => {
+          text: tr("Remove"), style: "destructive", onPress: () => {
             setDocFiles(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
             setUploadedDocs(prev => prev.filter(d => d !== doc.id));
           }
@@ -163,30 +183,30 @@ export default function ProviderRegisterScreen() {
     if (doc.id === "selfie") {
       await launchCamera(doc);
     } else {
-      Alert.alert("Upload Document", `Choose source for "${doc.label}"`, [
-        { text: "Camera", onPress: () => { launchCamera(doc).catch((e) => Alert.alert("Error", e?.message)); } },
-        { text: "Gallery", onPress: () => { launchGallery(doc).catch((e) => Alert.alert("Error", e?.message)); } },
-        { text: "Cancel", style: "cancel" },
+      Alert.alert(tr("Upload Document"), tr("Choose source for \"{{label}}\"", { label: doc.label }), [
+        { text: tr("Camera"), onPress: () => { launchCamera(doc).catch((e) => Alert.alert(tr("Camera Error"), tr(apiErrorToMessage(e, "Could not open camera. Please try gallery instead.")))); } },
+        { text: tr("Gallery"), onPress: () => { launchGallery(doc).catch((e) => Alert.alert(tr("Gallery Error"), tr(apiErrorToMessage(e, "Could not open photo library. Please try again.")))); } },
+        { text: tr("Cancel"), style: "cancel" },
       ]);
     }
   };
 
-  const launchPicker = (doc: typeof DOC_ITEMS[0]) => {
-    Alert.alert("Upload Document", `Choose source for "${doc.label}"`, [
-      { text: "Camera", onPress: () => { launchCamera(doc).catch((e) => Alert.alert("Error", e?.message)); } },
-      { text: "Gallery", onPress: () => { launchGallery(doc).catch((e) => Alert.alert("Error", e?.message)); } },
-      { text: "Cancel", style: "cancel" },
+  const launchPicker = (doc: DocItem) => {
+    Alert.alert(tr("Upload Document"), tr("Choose source for \"{{label}}\"", { label: doc.label }), [
+      { text: tr("Camera"), onPress: () => { launchCamera(doc).catch((e) => Alert.alert(tr("Camera Error"), tr(apiErrorToMessage(e, "Could not open camera. Please try gallery instead.")))); } },
+      { text: tr("Gallery"), onPress: () => { launchGallery(doc).catch((e) => Alert.alert(tr("Gallery Error"), tr(apiErrorToMessage(e, "Could not open photo library. Please try again.")))); } },
+      { text: tr("Cancel"), style: "cancel" },
     ]);
   };
 
-  const launchCamera = async (doc: typeof DOC_ITEMS[0]) => {
+  const launchCamera = async (doc: DocItem) => {
     const isVideo = doc.id === "video";
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (perm.status !== "granted") {
         Alert.alert(
-          "Camera Permission Required",
-          "Please go to Settings → Athoo (or Expo Go) → allow Camera access, then try again."
+          tr("Camera Permission Required"),
+          tr("Please go to Settings → Athoo (or Expo Go) → allow Camera access, then try again.")
         );
         return;
       }
@@ -201,18 +221,18 @@ export default function ProviderRegisterScreen() {
         setUploadedDocs(prev => prev.includes(doc.id) ? prev : [...prev, doc.id]);
       }
     } catch (err: any) {
-      Alert.alert("Camera Error", err?.message || "Could not open camera. Please try gallery instead.");
+      Alert.alert(tr("Camera Error"), tr(apiErrorToMessage(err, "Could not open camera. Please try gallery instead.")));
     }
   };
 
-  const launchGallery = async (doc: typeof DOC_ITEMS[0]) => {
+  const launchGallery = async (doc: DocItem) => {
     const isVideo = doc.id === "video";
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (perm.status !== "granted") {
         Alert.alert(
-          "Gallery Permission Required",
-          "Please go to Settings → Athoo (or Expo Go) → allow Photos access, then try again."
+          tr("Gallery Permission Required"),
+          tr("Please go to Settings → Athoo (or Expo Go) → allow Photos access, then try again.")
         );
         return;
       }
@@ -227,35 +247,35 @@ export default function ProviderRegisterScreen() {
         setUploadedDocs(prev => prev.includes(doc.id) ? prev : [...prev, doc.id]);
       }
     } catch (err: any) {
-      Alert.alert("Gallery Error", err?.message || "Could not open photo library. Please try again.");
+      Alert.alert(tr("Gallery Error"), tr(apiErrorToMessage(err, "Could not open photo library. Please try again.")));
     }
   };
 
   const validateStep0 = () => {
     if (!form.name || !form.fatherName || !form.cnic || !form.phone) {
-      Alert.alert("Required", "Please fill all required fields marked with *");
+      Alert.alert(tr("Required"), tr("Please fill all required fields marked with *"));
       return false;
     }
     if (form.cnic.length < 13) {
-      Alert.alert("Invalid CNIC", "Enter a valid 13-digit CNIC number.");
+      Alert.alert(tr("Invalid CNIC"), tr("Enter a valid 13-digit CNIC number."));
       return false;
     }
     if (!otpVerified) {
-      Alert.alert("Phone Not Verified", "Please verify your phone number before continuing.");
+      Alert.alert(tr("Phone Not Verified"), tr("Please verify your phone number before continuing."));
       return false;
     }
     if (form.services.length === 0) {
-      Alert.alert("Services Required", "Select at least one service you offer.");
+      Alert.alert(tr("Services Required"), tr("Select at least one service you offer."));
       return false;
     }
     return true;
   };
 
   const validateStep1 = () => {
-    const required = DOC_ITEMS.filter(d => d.required).map(d => d.id);
+    const required = docItems.filter(d => d.required).map(d => d.id);
     const missing = required.filter(r => !uploadedDocs.includes(r));
     if (missing.length > 0) {
-      Alert.alert("Documents Required", "Please upload CNIC front, CNIC back, a live selfie, and the police verification letter.");
+      Alert.alert(tr("Documents Required"), tr("Please upload CNIC front, CNIC back, a live selfie, and the police verification letter."));
       return false;
     }
     return true;
@@ -277,7 +297,7 @@ export default function ProviderRegisterScreen() {
 
   const handleSubmit = async () => {
     if (!legalAccepted) {
-      Alert.alert("Required", "Please accept the Terms of Service and Privacy Policy to continue.");
+      Alert.alert(tr("Required"), tr("Please accept the Terms of Service and Privacy Policy to continue."));
       return;
     }
     setLoading(true);
@@ -316,14 +336,14 @@ export default function ProviderRegisterScreen() {
             const objectPath = await uploadPickedImage(localUri, `${docId}.${ext}`, contentType);
             await api.postDocument({ type: docId, label: docLabel[docId] || docId, url: objectPath });
           } catch {
-            if (["cnic_front", "cnic_back", "selfie", "police"].includes(docId)) failedRequired.push(docLabel[docId] || docId);
+            if (["cnic_front", "cnic_back", "selfie", "police"].includes(docId)) failedRequired.push(tr(docLabel[docId] || docId));
           }
         }
         if (failedRequired.length > 0) {
           Alert.alert(
-            "Registration saved — documents need attention",
-            `Your account was created, but these required documents did not upload: ${failedRequired.join(", ")}. Please upload them again from Verification Documents.`,
-            [{ text: "Manage Documents", onPress: () => router.replace("/(provider)/verification-documents" as any) }],
+            tr("Registration saved — documents need attention"),
+            tr("Your account was created, but these required documents did not upload: {{documents}}. Please upload them again from Verification Documents.", { documents: failedRequired.join(", ") }),
+            [{ text: tr("Manage Documents"), onPress: () => router.replace("/(provider)/verification-documents" as any) }],
           );
           return;
         }
@@ -331,7 +351,7 @@ export default function ProviderRegisterScreen() {
 
       setShowSuccess(true);
     } else {
-      Alert.alert("Registration Error", ok.error || "Could not create account. Please try again.");
+      Alert.alert(tr("Registration Error"), tr(apiErrorToMessage(ok.error, "Could not create account. Please try again.")));
     }
     setLoading(false);
   };
@@ -341,26 +361,26 @@ export default function ProviderRegisterScreen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <View style={[styles.container, { paddingTop: topPad }]}>
-        <LinearGradient colors={[Colors.primary, "#0D4BA0"]} style={styles.headerGrad}>
+        <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.headerGrad}>
           <Pressable style={styles.backBtn} onPress={() => step > 0 ? setStep(step - 1) : router.back()}>
-            <Icon name="arrow-left" size={20} color="#fff" />
+            <Icon name="arrow-left" size={20} color={theme.colors.white} />
           </Pressable>
-          <Text style={styles.headerTitle}>Provider Registration</Text>
-          <Text style={styles.headerSubtitle}>Join Athoo as a verified professional</Text>
+          <Text style={[styles.headerTitle, localizedText]}>{tr("Provider Registration")}</Text>
+          <Text style={[styles.headerSubtitle, localizedText]}>{tr("Join Athoo as a verified professional")}</Text>
 
-          <View style={styles.stepsRow}>
-            {STEPS.map((s, i) => (
+          <View style={[styles.stepsRow, localizedRow]}>
+            {steps.map((s, i) => (
               <React.Fragment key={i}>
                 <View style={styles.stepItem}>
                   <View style={[styles.stepCircle, i === step && styles.stepActive, i < step && styles.stepDone]}>
                     {i < step
-                      ? <Icon name="check" size={14} color="#fff" />
-                      : <Icon name={s.icon as any} size={14} color={i === step ? "#fff" : "rgba(255,255,255,0.4)"} />
+                      ? <Icon name="check" size={14} color={theme.colors.white} />
+                      : <Icon name={s.icon as any} size={14} color={i === step ? theme.colors.white : "rgba(255,255,255,0.4)"} />
                     }
                   </View>
-                  <Text style={[styles.stepLabel, i === step && styles.stepLabelActive]}>{s.title}</Text>
+                  <Text style={[styles.stepLabel, localizedText, i === step && styles.stepLabelActive]}>{s.title}</Text>
                 </View>
-                {i < STEPS.length - 1 && (
+                {i < steps.length - 1 && (
                   <View style={[styles.stepLine, i < step && styles.stepLineDone]} />
                 )}
               </React.Fragment>
@@ -372,13 +392,13 @@ export default function ProviderRegisterScreen() {
           {step === 0 && (
             <View style={styles.formSection}>
               <Text style={styles.formSectionTitle}>
-                <Icon name="user" size={15} color={Colors.primary} />{"  "}Personal Information
+                <Icon name="user" size={15} color={theme.colors.primary} />{"  "}{tr("Personal Information")}
               </Text>
 
-              <InputField label="Full Name" value={form.name} onChange={(v: string) => update("name", v)} placeholder="As on CNIC" required />
-              <InputField label="Father's Name" value={form.fatherName} onChange={(v: string) => update("fatherName", v)} placeholder="Father's full name" required />
+              <InputField label={tr("Full Name")} value={form.name} onChange={(v: string) => update("name", v)} placeholder={tr("As on CNIC")} required />
+              <InputField label={tr("Father's Name")} value={form.fatherName} onChange={(v: string) => update("fatherName", v)} placeholder={tr("Father's full name")} required />
               <InputField
-                label="CNIC Number"
+                label={tr("CNIC Number")}
                 value={form.cnic}
                 onChange={(v: string) => update("cnic", v.replace(/\D/g, "").slice(0, 13))}
                 placeholder="3740012345678"
@@ -387,7 +407,7 @@ export default function ProviderRegisterScreen() {
                 maxLength={13}
               />
               <InputField
-                label="Phone Number"
+                label={tr("Phone Number")}
                 value={form.phone}
                 onChange={(v: string) => update("phone", v)}
                 placeholder="03XX-XXXXXXX"
@@ -395,44 +415,44 @@ export default function ProviderRegisterScreen() {
                 required
               />
               {otpVerified && (
-                <View style={styles.verifiedRow}>
-                  <Icon name="check-circle" size={14} color={Colors.success} />
-                  <Text style={styles.verifiedText}>Phone number verified</Text>
+                <View style={[styles.verifiedRow, localizedRow]}>
+                  <Icon name="check-circle" size={14} color={theme.colors.success} />
+                  <Text style={[styles.verifiedText, localizedText]}>{tr("Phone number verified")}</Text>
                 </View>
               )}
               {!otpVerified && (
                 <Pressable style={styles.sendOtpBtn} onPress={async () => {
-                  if (!form.phone) { Alert.alert("Enter phone number first"); return; }
+                  if (!form.phone) { Alert.alert(tr("Enter phone number first")); return; }
                   const cleaned = form.phone.trim().replace(/\D/g, "");
                   const isPakistani = /^(92|0)?3\d{9}$/.test(cleaned);
-                  if (!isPakistani) { Alert.alert("Invalid Phone", "Please enter a valid Pakistani mobile number (e.g. 03XX-XXXXXXX)."); return; }
+                  if (!isPakistani) { Alert.alert(tr("Invalid Phone"), tr("Please enter a valid Pakistani mobile number (e.g. 03XX-XXXXXXX).")); return; }
                   const res = await sendOtp(form.phone);
                   if (!res.success || res.error) {
-                    Alert.alert("Failed", res.error || res.message || "Unable to send OTP. Please try again.");
+                    Alert.alert(tr("Failed"), tr(apiErrorToMessage(res.error || res.message, "Unable to send OTP. Please try again.")));
                     return;
                   }
                   if (__DEV__) setOtpHint(res.code || "");
                   setShowOtp(true);
-                  if (__DEV__ && res.code) Alert.alert("Your OTP Code", `Code: ${res.code}\n\nEnter this code in the field below.`, [{ text: "OK" }]);
+                  if (__DEV__ && res.code) Alert.alert(tr("Your OTP Code"), tr("Code: {{code}}\n\nEnter this code in the field below.", { code: res.code }), [{ text: "OK" }]);
                 }}>
-                  <Text style={styles.sendOtpText}>Send Verification Code</Text>
+                  <Text style={[styles.sendOtpText, localizedText]}>{tr("Send Verification Code")}</Text>
                 </Pressable>
               )}
               {otpHint ? (
-                <View style={styles.verifiedRow}>
-                  <Icon name="info" size={14} color={Colors.secondary} />
-                  <Text style={[styles.verifiedText, { color: Colors.secondary }]}>OTP code: <Text style={{ fontWeight: "800" }}>{otpHint}</Text></Text>
+                <View style={[styles.verifiedRow, localizedRow]}>
+                  <Icon name="info" size={14} color={theme.colors.secondary} />
+                  <Text style={[styles.verifiedText, localizedText, { color: theme.colors.secondary }]}>{tr("OTP code: {{code}}", { code: otpHint })}</Text>
                 </View>
               ) : null}
-              <InputField label="Email Address" value={form.email} onChange={(v: string) => update("email", v)} placeholder="your@email.com" keyboardType="email-address" />
+              <InputField label={tr("Email Address")} value={form.email} onChange={(v: string) => update("email", v)} placeholder="your@email.com" keyboardType="email-address" />
 
               <Text style={[styles.formSectionTitle, { marginTop: 12 }]}>
-                <Icon name="tool" size={15} color={Colors.primary} />{"  "}Services & Details
+                <Icon name="tool" size={15} color={theme.colors.primary} />{"  "}{tr("Services & Details")}
               </Text>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Services Offered <Text style={{ color: Colors.error }}>*</Text></Text>
-                <View style={styles.servicesGrid}>
+                <Text style={[styles.label, localizedText]}>{tr("Services Offered")} <Text style={{ color: theme.colors.danger }}>*</Text></Text>
+                <View style={[styles.servicesGrid, localizedRow]}>
                   {categories.map((s) => {
                     const sel = form.services.includes(s.slug || s.id);
                     return (
@@ -441,7 +461,7 @@ export default function ProviderRegisterScreen() {
                         onPress={() => toggleService(s.slug || s.id)}
                         style={[styles.serviceChip, sel && { backgroundColor: s.bgColor, borderColor: s.color }]}
                       >
-                        <Icon name={s.icon as any} size={13} color={sel ? s.color : Colors.textSecondary} />
+                        <Icon name={s.icon as any} size={13} color={sel ? s.color : theme.colors.textSecondary} />
                         <Text style={[styles.serviceChipText, sel && { color: s.color }]}>{s.name}</Text>
                       </Pressable>
                     );
@@ -449,40 +469,40 @@ export default function ProviderRegisterScreen() {
                 </View>
               </View>
 
-              <InputField label="Years of Experience" value={form.experience} onChange={(v: string) => update("experience", v)} placeholder="e.g. 5 years" />
+              <InputField label={tr("Years of Experience")} value={form.experience} onChange={(v: string) => update("experience", v)} placeholder={tr("e.g. 5 years")} />
               <InputField
-                label="Hourly Rate (PKR)"
+                label={tr("Hourly Rate (PKR)")}
                 value={form.hourlyRate}
                 onChange={(v: string) => update("hourlyRate", v.replace(/\D/g, ""))}
                 placeholder="e.g. 1500"
                 keyboardType="numeric"
               />
               <InputField
-                label="Professional Bio"
+                label={tr("Professional Bio")}
                 value={form.bio}
                 onChange={(v: string) => update("bio", v)}
-                placeholder="Describe your expertise, experience, and what makes you the best choice..."
+                placeholder={tr("Describe your expertise, experience, and what makes you the best choice...")}
                 multiline
                 maxLength={300}
               />
               <CityPicker value={form.city} onChange={(city) => update("city", city)} required testID="provider-city-picker" />
-              <InputField label="Area/Address" value={form.address} onChange={(v: string) => update("address", v)} placeholder="Your working area" />
+              <InputField label={tr("Area/Address")} value={form.address} onChange={(v: string) => update("address", v)} placeholder={tr("Your working area")} />
             </View>
           )}
 
           {step === 1 && (
             <View style={styles.formSection}>
               <Text style={styles.formSectionTitle}>
-                <Icon name="file-text" size={15} color={Colors.primary} />{"  "}Document Upload
+                <Icon name="file-text" size={15} color={theme.colors.primary} />{"  "}{tr("Document Upload")}
               </Text>
               <View style={[styles.infoBox, { marginBottom: 8 }]}>
-                <Icon name="info" size={14} color={Colors.primary} />
+                <Icon name="info" size={14} color={theme.colors.primary} />
                 <Text style={styles.infoText}>
-                  All documents are encrypted and reviewed only by Athoo's verification team. Your data is never shared publicly.
+                  {tr("All documents are encrypted and reviewed only by Athoo's verification team. Your data is never shared publicly.")}
                 </Text>
               </View>
 
-              {DOC_ITEMS.map((doc) => {
+              {docItems.map((doc) => {
                 const uploaded = uploadedDocs.includes(doc.id);
                 const fileUri = docFiles[doc.id];
                 return (
@@ -491,39 +511,39 @@ export default function ProviderRegisterScreen() {
                     style={[styles.docItem, uploaded && styles.docItemUploaded]}
                     onPress={() => handleDocUpload(doc)}
                   >
-                    <View style={[styles.docIconBox, { backgroundColor: uploaded ? Colors.success + "15" : Colors.surface }]}>
+                    <View style={[styles.docIconBox, { backgroundColor: uploaded ? theme.colors.success + "15" : theme.colors.surfaceAlt }]}>
                       {fileUri ? (
                         <Image source={{ uri: fileUri }} style={styles.docThumb} />
                       ) : (
-                        <Icon name={doc.icon as any} size={20} color={uploaded ? Colors.success : Colors.textSecondary} />
+                        <Icon name={doc.icon as any} size={20} color={uploaded ? theme.colors.success : theme.colors.textSecondary} />
                       )}
                     </View>
                     <View style={{ flex: 1 }}>
-                      <View style={styles.docLabelRow}>
+                      <View style={[styles.docLabelRow, localizedRow]}>
                         <Text style={styles.docLabel}>{doc.label}</Text>
                         {doc.required && (
-                          <Text style={styles.docRequired}>Required</Text>
+                          <Text style={[styles.docRequired, localizedText]}>{tr("Required")}</Text>
                         )}
                       </View>
                       <Text style={styles.docHint}>
                         {uploaded
-                          ? "✓ Uploaded — tap to replace or remove"
-                          : (doc.id === "selfie" ? "📷 Tap to open camera" : "📁 Tap for camera or gallery")}
+                          ? tr("✓ Uploaded — tap to replace or remove")
+                          : (doc.id === "selfie" ? tr("📷 Tap to open camera") : tr("📁 Tap for camera or gallery"))}
                       </Text>
                     </View>
                     <View style={[styles.docCheck, uploaded && styles.docCheckDone]}>
-                      <Icon name={uploaded ? "check" : (doc.id === "selfie" ? "camera" : "upload")} size={14} color={uploaded ? "#fff" : Colors.textMuted} />
+                      <Icon name={uploaded ? "check" : (doc.id === "selfie" ? "camera" : "upload")} size={14} color={uploaded ? theme.colors.white : theme.colors.textMuted} />
                     </View>
                   </Pressable>
                 );
               })}
 
-              <View style={styles.policeBox}>
-                <Icon name="shield" size={16} color={Colors.primary} />
+              <View style={[styles.policeBox, localizedRow]}>
+                <Icon name="shield" size={16} color={theme.colors.primary} />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.policeTitle}>Police Verification</Text>
+                  <Text style={[styles.policeTitle, localizedText]}>{tr("Police Verification")}</Text>
                   <Text style={styles.policeText}>
-                    After registration, our team will guide you through the police character certificate verification process. This builds customer trust and helps you get more bookings.
+                    {tr("After registration, our team will guide you through the police character certificate verification process. This builds customer trust and helps you get more bookings.")}
                   </Text>
                 </View>
               </View>
@@ -533,16 +553,16 @@ export default function ProviderRegisterScreen() {
           {step === 2 && (
             <View style={styles.formSection}>
               <Text style={styles.formSectionTitle}>
-                <Icon name="clock" size={15} color={Colors.primary} />{"  "}Under Review
+                <Icon name="clock" size={15} color={theme.colors.primary} />{"  "}{tr("Under Review")}
               </Text>
 
               <View style={styles.reviewCard}>
                 <View style={styles.reviewIconCircle}>
-                  <Icon name="search" size={28} color={Colors.primary} />
+                  <Icon name="search" size={28} color={theme.colors.primary} />
                 </View>
-                <Text style={styles.reviewTitle}>Your Application is Being Reviewed</Text>
+                <Text style={[styles.reviewTitle, localizedText]}>{tr("Your Application is Being Reviewed")}</Text>
                 <Text style={styles.reviewText}>
-                  Our team will verify your documents, CNIC, and police verification within 24-48 hours. You'll receive a notification once approved.
+                  {tr("Our team will verify your documents, CNIC, and police verification within 24-48 hours. You'll receive a notification once approved.")}
                 </Text>
 
                 <View style={styles.reviewChecklist}>
@@ -552,22 +572,22 @@ export default function ProviderRegisterScreen() {
                     "Police background check",
                     "Skills & experience review",
                   ].map((item, i) => (
-                    <View key={i} style={styles.checkRow}>
+                    <View key={i} style={[styles.checkRow, localizedRow]}>
                       <View style={styles.checkCircle}>
-                        <Icon name="clock" size={11} color={Colors.primary} />
+                        <Icon name="clock" size={11} color={theme.colors.primary} />
                       </View>
-                      <Text style={styles.checkText}>{item}</Text>
+                      <Text style={[styles.checkText, localizedText]}>{tr(item)}</Text>
                     </View>
                   ))}
                 </View>
 
                 <View style={styles.reviewSummary}>
-                  <Text style={styles.reviewSummaryTitle}>Summary</Text>
-                  <View style={styles.summaryRow}><Text style={styles.summaryKey}>Name</Text><Text style={styles.summaryVal}>{form.name}</Text></View>
-                  <View style={styles.summaryRow}><Text style={styles.summaryKey}>CNIC</Text><Text style={styles.summaryVal}>{"*".repeat(9) + form.cnic.slice(-4)}</Text></View>
-                  <View style={styles.summaryRow}><Text style={styles.summaryKey}>Phone</Text><Text style={styles.summaryVal}>{form.phone.slice(0, 4) + "***" + form.phone.slice(-3)}</Text></View>
-                  <View style={styles.summaryRow}><Text style={styles.summaryKey}>Services</Text><Text style={styles.summaryVal}>{form.services.length} selected</Text></View>
-                  <View style={styles.summaryRow}><Text style={styles.summaryKey}>Documents</Text><Text style={styles.summaryVal}>{uploadedDocs.length}/{DOC_ITEMS.length} uploaded</Text></View>
+                  <Text style={[styles.reviewSummaryTitle, localizedText]}>{tr("Summary")}</Text>
+                  <View style={[styles.summaryRow, localizedRow]}><Text style={[styles.summaryKey, localizedText]}>{tr("Name")}</Text><Text style={styles.summaryVal}>{form.name}</Text></View>
+                  <View style={[styles.summaryRow, localizedRow]}><Text style={styles.summaryKey}>CNIC</Text><Text style={styles.summaryVal}>{"*".repeat(9) + form.cnic.slice(-4)}</Text></View>
+                  <View style={[styles.summaryRow, localizedRow]}><Text style={[styles.summaryKey, localizedText]}>{tr("Phone")}</Text><Text style={styles.summaryVal}>{form.phone.slice(0, 4) + "***" + form.phone.slice(-3)}</Text></View>
+                  <View style={[styles.summaryRow, localizedRow]}><Text style={[styles.summaryKey, localizedText]}>{tr("Services")}</Text><Text style={[styles.summaryVal, localizedText]}>{tr("{{count}} selected", { count: form.services.length })}</Text></View>
+                  <View style={[styles.summaryRow, localizedRow]}><Text style={[styles.summaryKey, localizedText]}>{tr("Documents")}</Text><Text style={styles.summaryVal}>{tr("{{uploaded}}/{{total}} uploaded", { uploaded: uploadedDocs.length, total: docItems.length })}</Text></View>
                 </View>
               </View>
             </View>
@@ -576,15 +596,14 @@ export default function ProviderRegisterScreen() {
           {step === 2 && (
             <View style={styles.declarationBox}>
               <Pressable
-                style={styles.declarationRow}
+                style={[styles.declarationRow, localizedRow]}
                 onPress={() => setDeclarationAccepted(!declarationAccepted)}
               >
                 <View style={[styles.checkbox, declarationAccepted && styles.checkboxChecked]}>
-                  {declarationAccepted && <Icon name="check" size={14} color="#fff" />}
+                  {declarationAccepted && <Icon name="check" size={14} color={theme.colors.white} />}
                 </View>
                 <Text style={styles.declarationText}>
-                  I declare that all the information and documents provided above are true,
-                  accurate, and to the best of my knowledge.
+                  {tr("I declare that all the information and documents provided above are true, accurate, and to the best of my knowledge.")}
                 </Text>
               </Pressable>
               <View style={{ marginTop: 12 }}>
@@ -604,14 +623,14 @@ export default function ProviderRegisterScreen() {
               disabled={loading || (step === 2 && (!declarationAccepted || !legalAccepted))}
             >
               <LinearGradient
-                colors={[Colors.primary, "#0D4BA0"]}
+                colors={[theme.colors.primary, theme.colors.primaryPressed]}
                 style={styles.nextBtnGrad}
                 start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
               >
                 <Text style={styles.nextBtnText}>
-                  {loading ? "Submitting..." : step === 2 ? "Submit Application" : "Continue"}
+                  {loading ? tr("Submitting...") : step === 2 ? tr("Submit Application") : tr("Continue")}
                 </Text>
-                <Icon name={step === 2 ? "send" : "arrow-right"} size={18} color="#fff" />
+                <Icon name={step === 2 ? "send" : "arrow-right"} size={18} color={theme.colors.white} />
               </LinearGradient>
             </Pressable>
           </View>
@@ -622,28 +641,26 @@ export default function ProviderRegisterScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Pressable style={styles.modalClose} onPress={() => router.back()}>
-              <Icon name="x" size={20} color={Colors.text} />
+              <Icon name="x" size={20} color={theme.colors.text} />
             </Pressable>
             <View style={styles.modalIconWrap}>
-              <Icon name="alert-circle" size={36} color={Colors.primary} />
+              <Icon name="alert-circle" size={36} color={theme.colors.primary} />
             </View>
-            <Text style={styles.modalTitle}>Important Notice</Text>
+            <Text style={[styles.modalTitle, localizedText]}>{tr("Important Notice")}</Text>
             <Text style={styles.modalBody}>
-              Please add all your information exactly as it appears on your CNIC and other
-              legal documents. False or incorrect details will lead to rejection of your
-              application and may result in a permanent ban.
+              {tr("Please add all your information exactly as it appears on your CNIC and other legal documents. False or incorrect details will lead to rejection of your application and may result in a permanent ban.")}
             </Text>
             <Pressable
               style={styles.modalOkBtn}
               onPress={() => setShowCnicNotice(false)}
             >
               <LinearGradient
-                colors={[Colors.primary, "#0D4BA0"]}
+                colors={[theme.colors.primary, theme.colors.primaryPressed]}
                 style={styles.modalOkGrad}
                 start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
               >
-                <Text style={styles.modalOkText}>I Understand, Continue</Text>
-                <Icon name="arrow-right" size={18} color="#fff" />
+                <Text style={[styles.modalOkText, localizedText]}>{tr("I Understand, Continue")}</Text>
+                <Icon name="arrow-right" size={18} color={theme.colors.white} />
               </LinearGradient>
             </Pressable>
           </View>
@@ -652,14 +669,14 @@ export default function ProviderRegisterScreen() {
 
       <OtpModal
         visible={showOtp}
-        title="Phone Verification"
-        subtitle="Enter the 4-digit code shown below"
+        title={tr("Phone Verification")}
+        subtitle={tr("Enter the 4-digit code shown below")}
         sentTo={form.phone}
         hint={otpHint}
         onVerify={async (code: string) => {
           const res = await verifyOtpAndLogin(form.phone, code);
           if (!res.success) {
-            Alert.alert("Invalid Code", res.error || "The code you entered is incorrect. Check the code shown above.");
+            Alert.alert(tr("Invalid Code"), tr(apiErrorToMessage(res.error, "The code you entered is incorrect. Check the code shown above.")));
             return;
           }
 
@@ -667,13 +684,13 @@ export default function ProviderRegisterScreen() {
             const existingRole = res.user?.role === "provider" ? "provider" : "customer";
             setShowOtp(false);
             Alert.alert(
-              "Account Already Exists",
+              tr("Account Already Exists"),
               existingRole === "provider"
-                ? "This phone number is already registered as a provider. Please sign in instead."
-                : "This phone number is already registered as a customer. Please sign in instead.",
+                ? tr("This phone number is already registered as a provider. Please sign in instead.")
+                : tr("This phone number is already registered as a customer. Please sign in instead."),
               [
                 {
-                  text: "Go to Sign In",
+                  text: tr("Go to Sign In"),
                   onPress: () =>
                     router.replace({
                       pathname: "/auth/login",
@@ -694,18 +711,19 @@ export default function ProviderRegisterScreen() {
 
       <SuccessModal
         visible={showSuccess}
-        title="Application Submitted!"
-        subtitle="Your provider registration is under review. Our team will verify your documents and approve your account within 24-48 hours."
-        primaryAction={{ label: "Go to Home", onPress: () => router.replace("/(provider)/(tabs)/dashboard") }}
-        secondaryAction={{ label: "Back to Login", onPress: () => router.replace("/auth/welcome") }}
+        title={tr("Application Submitted!")}
+        subtitle={tr("Your provider registration is under review. Our team will verify your documents and approve your account within 24-48 hours.")}
+        primaryAction={{ label: tr("Go to Home"), onPress: () => router.replace("/(provider)/(tabs)/dashboard") }}
+        secondaryAction={{ label: tr("Back to Login"), onPress: () => router.replace("/auth/welcome") }}
         onClose={() => router.replace("/auth/welcome")}
       />
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
+  rowReverse: { flexDirection: "row-reverse" },
   headerGrad: { paddingHorizontal: 20, paddingBottom: 20 },
   backBtn: {
     width: 38,
@@ -717,7 +735,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     marginTop: 10,
   },
-  headerTitle: { fontSize: 20, fontWeight: "800", color: "#fff" },
+  headerTitle: { fontSize: 20, fontWeight: "800", color: theme.colors.white },
   headerSubtitle: { fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 2, marginBottom: 16 },
   stepsRow: { flexDirection: "row", alignItems: "center" },
   stepItem: { alignItems: "center", gap: 4 },
@@ -729,56 +747,56 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  stepActive: { backgroundColor: "#fff" },
-  stepDone: { backgroundColor: Colors.success },
+  stepActive: { backgroundColor: theme.colors.surface },
+  stepDone: { backgroundColor: theme.colors.success },
   stepLabel: { fontSize: 10, color: "rgba(255,255,255,0.5)", fontWeight: "600" },
-  stepLabelActive: { color: "#fff" },
+  stepLabelActive: { color: theme.colors.white },
   stepLine: { flex: 1, height: 2, backgroundColor: "rgba(255,255,255,0.2)", marginBottom: 14 },
-  stepLineDone: { backgroundColor: Colors.success },
+  stepLineDone: { backgroundColor: theme.colors.success },
   scroll: { flex: 1 },
   scrollContent: { padding: 20, paddingBottom: 100 },
   formSection: { gap: 14 },
   formSectionTitle: {
     fontSize: 15,
     fontWeight: "800",
-    color: Colors.text,
+    color: theme.colors.text,
     marginTop: 6,
     marginBottom: 4,
   },
   inputGroup: { gap: 6 },
-  label: { fontSize: 13, fontWeight: "600", color: Colors.text },
+  label: { fontSize: 13, fontWeight: "600", color: theme.colors.text },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 13,
     borderWidth: 1.5,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
-  input: { flex: 1, fontSize: 14, color: Colors.text },
-  charCount: { fontSize: 10, color: Colors.textMuted, alignSelf: "flex-end" },
+  input: { flex: 1, fontSize: 14, color: theme.colors.text },
+  charCount: { fontSize: 10, color: theme.colors.textMuted, alignSelf: "flex-end" },
   verifiedRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: Colors.success + "10",
+    backgroundColor: theme.colors.success + "10",
     padding: 10,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: Colors.success + "30",
+    borderColor: theme.colors.success + "30",
   },
-  verifiedText: { fontSize: 13, fontWeight: "600", color: Colors.success },
+  verifiedText: { fontSize: 13, fontWeight: "600", color: theme.colors.success },
   sendOtpBtn: {
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 12,
     padding: 12,
     alignItems: "center",
     borderWidth: 1.5,
-    borderColor: Colors.primary,
+    borderColor: theme.colors.primary,
   },
-  sendOtpText: { fontSize: 14, fontWeight: "700", color: Colors.primary },
+  sendOtpText: { fontSize: 14, fontWeight: "700", color: theme.colors.primary },
   servicesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   serviceChip: {
     flexDirection: "row",
@@ -787,115 +805,115 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderWidth: 1.5,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
-  serviceChipText: { fontSize: 12, fontWeight: "600", color: Colors.textSecondary },
+  serviceChipText: { fontSize: 12, fontWeight: "600", color: theme.colors.textSecondary },
   infoBox: {
     flexDirection: "row",
     gap: 10,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 12,
     padding: 12,
     borderWidth: 1,
-    borderColor: Colors.primary + "25",
+    borderColor: theme.colors.primary + "25",
   },
-  infoText: { flex: 1, fontSize: 12, color: Colors.textSecondary, lineHeight: 18 },
+  infoText: { flex: 1, fontSize: 12, color: theme.colors.textSecondary, lineHeight: 18 },
   docItem: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderRadius: 14,
     padding: 14,
     borderWidth: 1.5,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
-  docItemUploaded: { borderColor: Colors.success, backgroundColor: Colors.success + "05" },
+  docItemUploaded: { borderColor: theme.colors.success, backgroundColor: theme.colors.success + "05" },
   docIconBox: {
     width: 44, height: 44, borderRadius: 12,
     alignItems: "center", justifyContent: "center", overflow: "hidden",
   },
   docThumb: { width: 44, height: 44, borderRadius: 10, resizeMode: "cover" },
   docLabelRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  docLabel: { fontSize: 14, fontWeight: "700", color: Colors.text },
-  docRequired: { fontSize: 9, fontWeight: "700", color: Colors.error, backgroundColor: Colors.error + "15", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 },
-  docStatus: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
-  docHint: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
+  docLabel: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
+  docRequired: { fontSize: 9, fontWeight: "700", color: theme.colors.danger, backgroundColor: theme.colors.danger + "15", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 },
+  docStatus: { fontSize: 11, color: theme.colors.textSecondary, marginTop: 2 },
+  docHint: { fontSize: 11, color: theme.colors.textSecondary, marginTop: 2 },
   docCheck: {
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: Colors.border,
+    backgroundColor: theme.colors.border,
     alignItems: "center",
     justifyContent: "center",
   },
-  docCheckDone: { backgroundColor: Colors.success },
+  docCheckDone: { backgroundColor: theme.colors.success },
   policeBox: {
     flexDirection: "row",
     gap: 12,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
-    borderColor: Colors.primary + "25",
+    borderColor: theme.colors.primary + "25",
     marginTop: 4,
   },
-  policeTitle: { fontSize: 14, fontWeight: "700", color: Colors.text, marginBottom: 4 },
-  policeText: { fontSize: 12, color: Colors.textSecondary, lineHeight: 18 },
+  policeTitle: { fontSize: 14, fontWeight: "700", color: theme.colors.text, marginBottom: 4 },
+  policeText: { fontSize: 12, color: theme.colors.textSecondary, lineHeight: 18 },
   reviewCard: {
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderRadius: 20,
     padding: 20,
     alignItems: "center",
     gap: 14,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
   reviewIconCircle: {
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: Colors.primary + "30",
+    borderColor: theme.colors.primary + "30",
   },
-  reviewTitle: { fontSize: 18, fontWeight: "800", color: Colors.text, textAlign: "center" },
-  reviewText: { fontSize: 13, color: Colors.textSecondary, textAlign: "center", lineHeight: 20 },
+  reviewTitle: { fontSize: 18, fontWeight: "800", color: theme.colors.text, textAlign: "center" },
+  reviewText: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center", lineHeight: 20 },
   reviewChecklist: { width: "100%", gap: 10 },
   checkRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   checkCircle: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: Colors.primary + "30",
+    borderColor: theme.colors.primary + "30",
   },
-  checkText: { fontSize: 13, color: Colors.textSecondary },
-  reviewSummary: { width: "100%", backgroundColor: Colors.background, borderRadius: 14, padding: 14, gap: 8 },
-  reviewSummaryTitle: { fontSize: 13, fontWeight: "700", color: Colors.text, marginBottom: 4 },
+  checkText: { fontSize: 13, color: theme.colors.textSecondary },
+  reviewSummary: { width: "100%", backgroundColor: theme.colors.background, borderRadius: 14, padding: 14, gap: 8 },
+  reviewSummaryTitle: { fontSize: 13, fontWeight: "700", color: theme.colors.text, marginBottom: 4 },
   summaryRow: { flexDirection: "row", justifyContent: "space-between" },
-  summaryKey: { fontSize: 12, color: Colors.textSecondary },
-  summaryVal: { fontSize: 12, fontWeight: "700", color: Colors.text },
+  summaryKey: { fontSize: 12, color: theme.colors.textSecondary },
+  summaryVal: { fontSize: 12, fontWeight: "700", color: theme.colors.text },
   footer: { marginTop: 24 },
   nextBtn: { borderRadius: 18, overflow: "hidden" },
   nextBtnGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 17 },
-  nextBtnText: { fontSize: 16, fontWeight: "800", color: "#fff" },
+  nextBtnText: { fontSize: 16, fontWeight: "800", color: theme.colors.white },
   btnDisabled: { opacity: 0.5 },
   declarationBox: {
     marginHorizontal: 16,
     marginTop: 12,
-    backgroundColor: "#fff7ed",
+    backgroundColor: theme.colors.warningSoft,
     borderRadius: 12,
     padding: 14,
     borderWidth: 1,
-    borderColor: "#fed7aa",
+    borderColor: theme.colors.warning,
   },
   declarationRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
   checkbox: {
@@ -903,13 +921,13 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: Colors.primary,
+    borderColor: theme.colors.primary,
     alignItems: "center",
     justifyContent: "center",
     marginTop: 1,
   },
-  checkboxChecked: { backgroundColor: Colors.primary },
-  declarationText: { flex: 1, fontSize: 12, color: Colors.text, lineHeight: 18 },
+  checkboxChecked: { backgroundColor: theme.colors.primary },
+  declarationText: { flex: 1, fontSize: 12, color: theme.colors.text, lineHeight: 18 },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.55)",
@@ -918,7 +936,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   modalCard: {
-    backgroundColor: "#fff",
+    backgroundColor: theme.colors.surface,
     borderRadius: 20,
     padding: 24,
     width: "100%",
@@ -930,15 +948,15 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: "#eff6ff",
+    backgroundColor: theme.colors.infoSoft,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 16,
   },
-  modalTitle: { fontSize: 20, fontWeight: "800", color: Colors.text, marginBottom: 8 },
+  modalTitle: { fontSize: 20, fontWeight: "800", color: theme.colors.text, marginBottom: 8 },
   modalBody: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     textAlign: "center",
     lineHeight: 21,
     marginBottom: 20,
@@ -951,6 +969,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     gap: 8,
   },
-  modalOkText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  modalOkText: { color: theme.colors.white, fontWeight: "700", fontSize: 15 },
 });
 

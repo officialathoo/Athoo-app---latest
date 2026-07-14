@@ -7,6 +7,8 @@ import { signAccessToken, signPurposeToken, verifyToken, requireAuth, type AuthR
 import { createSession, rotateSession, revokeSession, revokeAllUserSessions } from "../lib/session";
 import { getPlatformSettings } from "../lib/admin";
 import { LEGAL_VERSION } from "../lib/legal";
+import { isOwnedUploadObjectPath, normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { cleanupReplacedOwnedMedia } from "../lib/mediaLifecycle";
 // Rate limiting is handled globally by express-rate-limit in app.ts
 import { sendEmail, renderOtpEmail } from "../lib/email";
 import * as bcrypt from "bcryptjs";
@@ -18,6 +20,12 @@ function generateOtp(): string {
   return crypto.randomInt(1000, 10000).toString();
 }
 
+function hashOtp(phone: string, code: string): string {
+  const secret = process.env.OTP_HASH_SECRET?.trim() || process.env.JWT_SECRET?.trim();
+  if (!secret) throw new Error("OTP hash secret is not configured");
+  return crypto.createHmac("sha256", secret).update(`${phone}:${code}`).digest("hex");
+}
+
 function generateId(): string {
   return crypto.randomUUID();
 }
@@ -27,12 +35,14 @@ async function issueSession(user: any, req: any) {
 }
 
 async function sendWhatsAppOTP(phone: string, code: string): Promise<boolean> {
-  const token = process.env.WHATSAPP_ACCESS_TOKEN;
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const token = process.env.WHATSAPP_ACCESS_TOKEN?.trim();
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID?.trim();
+  const configuredVersion = process.env.WHATSAPP_GRAPH_API_VERSION?.trim() || "v25.0";
+  const graphApiVersion = /^v\d+\.\d+$/.test(configuredVersion) ? configuredVersion : "v25.0";
   if (!token || !phoneNumberId) return false;
   const waPhone = phone.startsWith("0") ? `92${phone.slice(1)}` : phone.replace(/^\+/, "");
   try {
-    const resp = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/messages`, {
+    const resp = await fetch(`https://graph.facebook.com/${graphApiVersion}/${phoneNumberId}/messages`, {
       method: "POST",
       headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -101,13 +111,42 @@ router.post("/send-otp", async (req, res) => {
     const code = generateOtp();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-    await db.insert(otpsTable).values({
-      id: generateId(),
-      phone: normalizedPhone,
-      code,
-      expiresAt,
-      used: false,
-    });
+    await db
+      .update(otpsTable)
+      .set({ used: true })
+      .where(and(eq(otpsTable.phone, normalizedPhone), eq(otpsTable.used, false)));
+
+    const otpId = generateId();
+    const insertedOtp = await db
+      .insert(otpsTable)
+      .values({
+        id: otpId,
+        phone: normalizedPhone,
+        code: hashOtp(normalizedPhone, code),
+        expiresAt,
+        used: false,
+      })
+      .returning({
+        id: otpsTable.id,
+        phone: otpsTable.phone,
+        expiresAt: otpsTable.expiresAt,
+        createdAt: otpsTable.createdAt,
+      });
+
+    const persistedOtp = insertedOtp[0];
+    if (!persistedOtp || persistedOtp.id !== otpId) {
+      throw new Error("OTP persistence verification failed");
+    }
+
+    logger.info(
+      {
+        otpId: persistedOtp.id,
+        phone: persistedOtp.phone,
+        createdAt: persistedOtp.createdAt,
+        expiresAt: persistedOtp.expiresAt,
+      },
+      "authentication OTP persisted",
+    );
 
     const isDev = process.env.NODE_ENV === "development" && process.env.ALLOW_DEV_OTP_RESPONSE === "true";
     if (isDev) {
@@ -117,12 +156,11 @@ router.post("/send-otp", async (req, res) => {
       logger.info(`[auth-otp] phone=${normalizedPhone} code=${code} (expires in 10m)`);
     }
 
-    // Best-effort WhatsApp OTP — only sends if WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID are set.
+    // Deliver through configured channels. Production must never report success
+    // when no channel actually delivered the verification code.
     const waSent = await sendWhatsAppOTP(normalizedPhone, code).catch(() => false);
     if (waSent) logger.info({ phone: normalizedPhone }, "WhatsApp OTP sent");
 
-    // Best-effort email — only sends if SMTP is configured AND we have an
-    // email to send to. Falls back to phone-only delivery silently otherwise.
     let emailChannel: "smtp" | "console" | null = null;
     const targetEmail = normalizedEmail || (await db.query.usersTable.findFirst({
       where: eq(usersTable.phone, normalizedPhone),
@@ -133,16 +171,39 @@ router.post("/send-otp", async (req, res) => {
       emailChannel = r.channel;
     }
 
-    res.json({
+    const emailSent = emailChannel === "smtp";
+    const delivered = waSent || emailSent;
+
+    if (!isDev && !delivered) {
+      // The row is kept for auditability but cannot be used after delivery fails.
+      await db.update(otpsTable).set({ used: true }).where(eq(otpsTable.id, otpId));
+      logger.warn(
+        { otpId, phone: normalizedPhone, hasEmail: Boolean(targetEmail) },
+        "OTP persisted but no production delivery channel succeeded",
+      );
+      return res.status(503).json({
+        error: "Verification code delivery is temporarily unavailable. Please try again shortly.",
+        code: "OTP_DELIVERY_UNAVAILABLE",
+      });
+    }
+
+    const productionMessage = waSent && emailSent
+      ? "OTP sent to your WhatsApp and email"
+      : waSent
+        ? "OTP sent to your WhatsApp"
+        : "OTP sent to your email";
+
+    return res.json({
       success: true,
-      emailSent: emailChannel === "smtp",
+      emailSent,
       whatsappSent: waSent,
-      ...(isDev ? { code, message: "OTP sent (dev mode: code returned and logged to server console)" } : {}),
-      ...(!isDev ? { message: waSent ? "OTP sent to your WhatsApp" : emailChannel === "smtp" ? "OTP sent to your phone and email" : "OTP sent to your phone number" } : {}),
+      ...(isDev
+        ? { code, message: "OTP generated for local development" }
+        : { message: productionMessage }),
     });
   } catch (e) {
     logger.error({ err: e }, "send-otp error");
-    res.status(500).json({ error: "Failed to send OTP" });
+    return res.status(500).json({ error: "Failed to send OTP" });
   }
 });
 
@@ -160,7 +221,7 @@ router.post("/verify-otp", async (req, res) => {
     const otp = await db.query.otpsTable.findFirst({
       where: and(
         eq(otpsTable.phone, normalizedPhone),
-        eq(otpsTable.code, code.trim()),
+        eq(otpsTable.code, hashOtp(normalizedPhone, code.trim())),
         eq(otpsTable.used, false),
         gt(otpsTable.expiresAt, new Date())
       ),
@@ -481,7 +542,14 @@ router.patch("/me", requireAuth, async (req: AuthRequest, res: Response) => {
       }
       updates.location = location || null;
     }
-    if (body.profileImage !== undefined) updates.profileImage = body.profileImage || null;
+    if (body.profileImage !== undefined) {
+      const profileImage = normalizeStoredObjectPath(body.profileImage);
+      if (profileImage && !isOwnedUploadObjectPath(profileImage, user.id, ["shared", "private"])) {
+        res.status(400).json({ error: "Profile photo must be uploaded through your Athoo account" });
+        return;
+      }
+      updates.profileImage = profileImage || null;
+    }
     if (body.profileColor !== undefined) {
       const color = String(body.profileColor || "").trim();
       if (color && !/^#[0-9a-f]{6}$/i.test(color)) {
@@ -503,6 +571,7 @@ router.patch("/me", requireAuth, async (req: AuthRequest, res: Response) => {
     }
 
     const [updated] = await db.update(usersTable).set(updates).where(eq(usersTable.id, user.id)).returning();
+    if (body.profileImage !== undefined) cleanupReplacedOwnedMedia(user.profileImage, updated.profileImage, user.id);
     res.json({ user: toSafeUser(updated) });
   } catch (e) {
     logger.error({ err: e }, "update me error");
@@ -780,13 +849,21 @@ router.post("/forgot-password/send-otp", async (req, res) => {
     const code = generateOtp();
     const isDev = process.env.NODE_ENV === "development" && process.env.ALLOW_DEV_OTP_RESPONSE === "true";
     let emailChannel: "smtp" | "console" | null = null;
+    let whatsappSent = false;
+    let otpId: string | null = null;
 
     if (user) {
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+      await db
+        .update(otpsTable)
+        .set({ used: true })
+        .where(and(eq(otpsTable.phone, normalizedPhone), eq(otpsTable.used, false)));
+
+      otpId = generateId();
       await db.insert(otpsTable).values({
-        id: generateId(),
+        id: otpId,
         phone: normalizedPhone,
-        code,
+        code: hashOtp(normalizedPhone, code),
         expiresAt,
         used: false,
       });
@@ -795,26 +872,40 @@ router.post("/forgot-password/send-otp", async (req, res) => {
         logger.info(`[auth-otp/reset] phone=${normalizedPhone} code=${code} (expires in 10m)`);
       }
 
+      whatsappSent = await sendWhatsAppOTP(normalizedPhone, code).catch(() => false);
+
       if (user.email) {
         const t = renderOtpEmail(code, "Password reset");
         const r = await sendEmail({ to: user.email, subject: t.subject, html: t.html, text: t.text });
         emailChannel = r.channel;
       }
+
+      if (!isDev && !whatsappSent && emailChannel !== "smtp" && otpId) {
+        await db.update(otpsTable).set({ used: true }).where(eq(otpsTable.id, otpId));
+        logger.warn(
+          { otpId, userId: user.id },
+          "password reset OTP could not be delivered through a production channel",
+        );
+      }
     }
 
     const maskedPhone = normalizedPhone.length >= 4
       ? "*".repeat(Math.max(0, normalizedPhone.length - 4)) + normalizedPhone.slice(-4)
-      : normalizedPhone;
+      : "****";
+    const challengeToken = signPurposeToken(
+      { userId: `reset-challenge:${normalizedPhone}`, role: "reset", purpose: "password_reset_challenge" },
+      "10m",
+    );
 
-    res.json({
+    return res.json({
       success: true,
-      resolvedPhone: normalizedPhone,
+      challengeToken,
       maskedPhone,
       emailSent: emailChannel === "smtp",
+      whatsappSent,
       ...(isDev && user ? { code } : {}),
       message: "If an account matches those details, a reset OTP has been sent.",
     });
-    return;
   } catch (e) {
     logger.error({ err: e }, "forgot send otp error");
     res.status(500).json({ error: "Failed to send OTP" });
@@ -825,18 +916,34 @@ router.post("/forgot-password/send-otp", async (req, res) => {
 // 2. Verify reset OTP — marks OTP used and issues a short-lived signed reset token
 router.post("/forgot-password/verify-otp", async (req, res) => {
   try {
-    const { phone, code } = req.body;
+    const { challengeToken, phone, code } = req.body as { challengeToken?: string; phone?: string; code?: string };
 
-    if (!phone || !code) {
-      return res.status(400).json({ error: "Phone and OTP required" });
+    if (!code || (!challengeToken && !phone)) {
+      return res.status(400).json({ error: "Verification challenge and OTP are required" });
     }
 
-    const normalizedPhone = cleanPhone(phone);
+    let normalizedPhone = "";
+    if (challengeToken) {
+      const challenge = verifyToken(challengeToken);
+      if (
+        !challenge ||
+        challenge.tokenType !== "purpose" ||
+        challenge.role !== "reset" ||
+        challenge.purpose !== "password_reset_challenge" ||
+        !String(challenge.userId || "").startsWith("reset-challenge:")
+      ) {
+        return res.status(400).json({ error: "Reset request is invalid or expired. Please start again." });
+      }
+      normalizedPhone = String(challenge.userId).slice("reset-challenge:".length);
+    } else {
+      // Backward compatibility for an older mobile build during rollout.
+      normalizedPhone = cleanPhone(String(phone || ""));
+    }
 
     const otp = await db.query.otpsTable.findFirst({
       where: and(
         eq(otpsTable.phone, normalizedPhone),
-        eq(otpsTable.code, code.trim()),
+        eq(otpsTable.code, hashOtp(normalizedPhone, code.trim())),
         eq(otpsTable.used, false),
         gt(otpsTable.expiresAt, new Date())
       ),

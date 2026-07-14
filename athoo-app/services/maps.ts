@@ -1,16 +1,14 @@
 /**
- * Geocoding helpers for ATHOO.
+ * Open mapping and geocoding helpers for Athoo.
  *
- * All geocoding is proxied through our own API server (/api/geo/*) so we are
- * not dependent on any third-party API key being present on the device.
- * The server uses Nominatim (OpenStreetMap) with proper English locale headers.
+ * Mobile clients never carry a commercial maps key. Address search, reverse
+ * geocoding, and directions are proxied through the Athoo API, which uses
+ * OpenStreetMap data providers (Photon, Nominatim, and OSRM) with bounded
+ * timeouts and server-side caching.
  */
 
-import { api, getToken } from "./api";
-
-function getApiBase(): string {
-  return api.baseUrl;
-}
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { api } from "./api";
 
 export interface PlaceSuggestion {
   placeId: string;
@@ -23,100 +21,94 @@ export interface PlaceCoords {
   formattedAddress: string;
 }
 
-// ─── Address Search ────────────────────────────────────────────────────────────
+const REVERSE_CACHE_KEY = "athoo:reverse-geocode-cache:v1";
+const REVERSE_CACHE_MAX = 40;
+const REVERSE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-/**
- * Search for Pakistani addresses and places via our server-side proxy.
- * Returns up to 8 results with clean English labels and coordinates.
- */
-export async function searchAddressGoogle(
+type ReverseCacheEntry = { key: string; address: string; storedAt: number };
+
+function reverseCacheId(lat: number, lng: number): string {
+  return `${lat.toFixed(4)},${lng.toFixed(4)}`;
+}
+
+async function readReverseCache(id: string): Promise<string | null> {
+  try {
+    const raw = await AsyncStorage.getItem(REVERSE_CACHE_KEY);
+    if (!raw) return null;
+    const entries = JSON.parse(raw) as ReverseCacheEntry[];
+    const found = entries.find((entry) => entry.key === id && Date.now() - entry.storedAt <= REVERSE_CACHE_TTL_MS);
+    return found?.address || null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeReverseCache(id: string, address: string): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(REVERSE_CACHE_KEY);
+    const existing = raw ? (JSON.parse(raw) as ReverseCacheEntry[]) : [];
+    const next = [
+      { key: id, address, storedAt: Date.now() },
+      ...existing.filter((entry) => entry.key !== id && Date.now() - entry.storedAt <= REVERSE_CACHE_TTL_MS),
+    ].slice(0, REVERSE_CACHE_MAX);
+    await AsyncStorage.setItem(REVERSE_CACHE_KEY, JSON.stringify(next));
+  } catch {
+    // Cache failure must never prevent address selection.
+  }
+}
+
+export async function searchAddress(
   query: string,
 ): Promise<{ label: string; lat: number; lng: number; useAsTyped?: boolean }[]> {
-  if (!query.trim() || query.length < 2) return [];
-
+  const trimmed = query.trim();
+  if (trimmed.length < 2) return [];
   try {
-    const base = getApiBase();
-    const url = `${base}/api/geo/search?q=${encodeURIComponent(query)}`;
-    const token = await getToken();
-    const headers: Record<string, string> = {};
-    if (token) headers.Authorization = `Bearer ${token}`;
-    const res = await fetch(url, { headers });
-    if (!res.ok) return [];
-    const data = await res.json();
+    const data = await api.request<{ results?: Array<{ label: string; lat: number; lng: number; useAsTyped?: boolean }> }>(
+      "/api/geo/search",
+      { method: "GET", auth: true, params: { q: trimmed }, timeoutMs: 8_000 },
+    );
     return Array.isArray(data.results) ? data.results : [];
   } catch {
     return [];
   }
 }
 
-// ─── Reverse Geocoding ────────────────────────────────────────────────────────
+export async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const cacheId = reverseCacheId(lat, lng);
+  const cached = await readReverseCache(cacheId);
 
-/**
- * Convert lat/lng to a human-readable Pakistani address via our server proxy.
- * Falls back to the device's built-in reverse geocoder if the server fails.
- */
-export async function reverseGeocodeGoogle(
-  lat: number,
-  lng: number,
-): Promise<string | null> {
   try {
-    const base = getApiBase();
-    const url = `${base}/api/geo/reverse?lat=${lat}&lng=${lng}`;
-    const token = await getToken();
-    const headers: Record<string, string> = {};
-    if (token) headers.Authorization = `Bearer ${token}`;
-    const res = await fetch(url, { headers });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return typeof data.address === "string" && data.address ? data.address : null;
+    const data = await api.request<{ address?: string }>("/api/geo/reverse", {
+      method: "GET",
+      auth: true,
+      params: { lat, lng },
+      timeoutMs: 8_000,
+    });
+    const address = typeof data.address === "string" ? data.address.trim() : "";
+    if (address) {
+      void writeReverseCache(cacheId, address);
+      return address;
+    }
   } catch {
-    return null;
+    // Cached address is preferable to blocking a slow/offline user flow.
   }
+
+  return cached;
 }
 
-// ─── Google Places (kept for any callers that still need placeId resolution) ──
-
-const MAPS_API_KEY =
-  (process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY as string | undefined) || "";
-
-/**
- * Get lat/lng for a Google Place ID (only used if Google Places is separately enabled).
- */
-export async function getPlaceCoords(placeId: string): Promise<PlaceCoords> {
-  const url =
-    `https://maps.googleapis.com/maps/api/place/details/json` +
-    `?place_id=${encodeURIComponent(placeId)}` +
-    `&key=${MAPS_API_KEY}` +
-    `&fields=geometry,formatted_address`;
-
-  const res = await fetch(url);
-  const data = await res.json();
-
-  if (data.status !== "OK") throw new Error(data.status);
-
-  const loc = data.result.geometry.location;
-  return {
-    lat: loc.lat,
-    lng: loc.lng,
-    formattedAddress: data.result.formatted_address || "",
-  };
-}
-
-// ─── Road Directions (polyline + ETA) ────────────────────────────────────────
 
 export interface DirectionsResult {
   polyline: { latitude: number; longitude: number }[];
   distanceKm: number | null;
   durationMin: number | null;
-  source: "google" | "osrm" | "straight_line";
+  source: "osrm" | "straight_line";
 }
 
-/**
- * Fetch a road-following polyline between two points, proxied through the
- * Athoo API server. Uses Google Directions API when key is set; falls back
- * to OSRM (free, no API key required). Always returns at least a straight-
- * line polyline so the map is never blank.
- */
+type DirectionsApiResponse = Omit<DirectionsResult, "source"> & {
+  source?: "osrm" | "osrm-cache" | "straight_line";
+};
+
 export async function getDirections(
   originLat: number,
   originLng: number,
@@ -124,25 +116,19 @@ export async function getDirections(
   destLng: number,
 ): Promise<DirectionsResult> {
   try {
-    const base = getApiBase();
-    const url =
-      `${base}/api/geo/directions` +
-      `?originLat=${originLat}&originLng=${originLng}` +
-      `&destLat=${destLat}&destLng=${destLng}`;
-    const token = await getToken();
-    const headers: Record<string, string> = {};
-    if (token) headers.Authorization = `Bearer ${token}`;
-    const res = await fetch(url, { headers });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await api.request<Partial<DirectionsApiResponse>>("/api/geo/directions", {
+      method: "GET",
+      auth: true,
+      params: { originLat, originLng, destLat, destLng },
+      timeoutMs: 10_000,
+    });
     return {
       polyline: Array.isArray(data.polyline) ? data.polyline : [],
       distanceKm: data.distanceKm ?? null,
       durationMin: data.durationMin ?? null,
-      source: data.source ?? "straight_line",
+      source: data.source === "osrm" || data.source === "osrm-cache" ? "osrm" : "straight_line",
     };
   } catch {
-    // Always return a safe fallback — straight line between the two points
     return {
       polyline: [
         { latitude: originLat, longitude: originLng },
@@ -153,26 +139,4 @@ export async function getDirections(
       source: "straight_line",
     };
   }
-}
-
-/**
- * Build a Google Static Map URL for embedding as an <Image> src.
- */
-export function getStaticMapUrl(
-  lat: number,
-  lng: number,
-  options: { zoom?: number; width?: number; height?: number; marker?: boolean } = {},
-): string {
-  const { zoom = 15, width = 400, height = 200, marker = true } = options;
-  let url =
-    `https://maps.googleapis.com/maps/api/staticmap` +
-    `?center=${lat},${lng}` +
-    `&zoom=${zoom}` +
-    `&size=${width}x${height}` +
-    `&scale=2` +
-    `&key=${MAPS_API_KEY}`;
-  if (marker) {
-    url += `&markers=color:blue%7C${lat},${lng}`;
-  }
-  return url;
 }

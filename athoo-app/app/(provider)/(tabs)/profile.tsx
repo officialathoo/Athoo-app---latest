@@ -34,6 +34,8 @@ import { useLang } from "@/context/LanguageContext";
 import { useCategories } from "@/context/CategoriesContext";
 import { api } from "@/services/api";
 import { uploadPickedImage, PrivateImage } from "@/services/storage";
+import { useTheme } from "@/context/ThemeContext";
+import { apiErrorToMessage } from "@/lib/apiError";
 
 const AVATAR_COLORS = [
   "#FF6B1A", "#1A6EE0", "#8B5CF6", "#22C55E", "#F59E0B", "#EC4899", "#06B6D4",
@@ -42,13 +44,14 @@ const AVATAR_COLORS = [
 export default function ProviderProfileScreen() {
   const { user, logout, updateUser, refreshUser } = useAuth();
   const { getMyBookings } = useBookings();
-  const { t, lang, setLang, isUrdu } = useLang();
+  const { t, lang, translate: tr, textAlign, writingDirection } = useLang();
+  const { theme } = useTheme();
+  const localizedText = { textAlign, writingDirection } as const;
   const { getCategoryBySlug } = useCategories();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const [showColorPicker, setShowColorPicker] = useState(false);
-  const [showLangModal, setShowLangModal] = useState(false);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   const [biometricAvail, setBiometricAvail] = useState(false);
   const [biometricOn, setBiometricOn] = useState(false);
@@ -66,7 +69,7 @@ export default function ProviderProfileScreen() {
       await updateUser({ isAvailable: next });
     } catch (e: any) {
       setIsAvailable(!!user?.isAvailable);
-      Alert.alert("Availability", e?.message || "You cannot turn available while busy on an active job.");
+      Alert.alert("Availability", apiErrorToMessage(e, "You cannot turn available while busy on an active job."));
     } finally {
       setTogglingAvail(false);
     }
@@ -103,7 +106,7 @@ export default function ProviderProfileScreen() {
         setBiometricOn(true);
         Alert.alert("Quick Login Enabled", `You can now log in with ${biometricLabel}.`);
       } else if (!result.success) {
-        Alert.alert("Authentication Failed", result.error || "Could not verify your identity. Please try again.");
+        Alert.alert("Authentication Failed", apiErrorToMessage(result.error, "Could not verify your identity. Please try again."));
       }
     }
   };
@@ -131,7 +134,7 @@ export default function ProviderProfileScreen() {
         const objectPath = await uploadPickedImage(asset.uri, filename, contentType);
         await updateUser({ profileImage: objectPath });
       } catch (error) {
-        Alert.alert("Upload Failed", error instanceof Error ? error.message : "Profile photo could not be saved. Please try again.");
+        Alert.alert("Upload failed", apiErrorToMessage(error, "Your profile photo could not be saved. Please try again."));
       } finally {
         setUploadingPhoto(false);
       }
@@ -232,7 +235,7 @@ export default function ProviderProfileScreen() {
         { icon: "bell", label: t.notifications, color: "#8B5CF6", onPress: () => router.push("/(provider)/notifications") },
         { icon: "sun", label: t.appearance, color: "#6366F1", onPress: () => router.push("/appearance" as any) },
         { icon: "lock", label: t.changePassword, color: "#F59E0B", onPress: () => router.push("/(provider)/change-password") },
-        { icon: "globe", label: t.language, color: "#06B6D4", onPress: () => setShowLangModal(true), rightEl: (
+        { icon: "globe", label: t.language, color: "#06B6D4", onPress: () => router.push("/language" as any), rightEl: (
           <View style={styles.langBadge}>
             <Text style={styles.langBadgeText}>{lang === "en" ? "EN" : "اردو"}</Text>
           </View>
@@ -251,7 +254,7 @@ export default function ProviderProfileScreen() {
   ];
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 80 }]} showsVerticalScrollIndicator={false}>
+    <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 80 }]} showsVerticalScrollIndicator={false}>
       <LinearGradient colors={[Colors.gradientStart, Colors.gradientEnd]} style={[styles.headerGrad, { paddingTop: topPad + 16 }]}>
         <View style={styles.headerRow}>
           <Text style={styles.headerTitle}>{t.myProfile}</Text>
@@ -351,9 +354,9 @@ export default function ProviderProfileScreen() {
             <View style={[styles.availDotInner, { backgroundColor: isAvailable ? "#22C55E" : "#EF4444" }]} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.availTitle}>Available for Jobs</Text>
+            <Text style={[styles.availTitle, localizedText]}>{t.availableForJobs}</Text>
             <Text style={styles.availSub}>
-              {isAvailable ? "Customers can book you right now" : "You are currently unavailable"}
+              {isAvailable ? t.customersCanBook : t.notAvailable}
             </Text>
           </View>
         </View>
@@ -367,7 +370,7 @@ export default function ProviderProfileScreen() {
       </View>
 
       <View style={styles.socialCard}>
-        <Text style={styles.cardTitle}>Contact Us</Text>
+        <Text style={[styles.cardTitle, localizedText]}>{t.connectWithUs}</Text>
         <View style={styles.socialRow}>
           <Pressable style={[styles.socialBtn, { backgroundColor: "#25D36620" }]}
             onPress={() => Linking.openURL("https://wa.me/923390051068")}>
@@ -524,33 +527,7 @@ export default function ProviderProfileScreen() {
         </Pressable>
       </Modal>
 
-      <Modal visible={showLangModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.langBox}>
-            <Text style={styles.colorPickerTitle}>{t.language}</Text>
-            <Text style={styles.langHint}>Language changes apply to the whole app instantly.</Text>
-            {(["en", "ur"] as const).map((l) => (
-              <Pressable
-                key={l}
-                style={[styles.langOption, lang === l && styles.langOptionActive]}
-                onPress={() => { setLang(l); setShowLangModal(false); }}
-              >
-                <Text style={{ fontSize: 22 }}>{l === "en" ? "🇬🇧" : "🇵🇰"}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.langOptionText, lang === l && { color: Colors.primary }]}>
-                    {l === "en" ? "English" : "اردو (Urdu)"}
-                  </Text>
-                  <Text style={styles.langOptionSub}>{l === "en" ? "App in English" : "پوری ایپ اردو میں"}</Text>
-                </View>
-                {lang === l && <Icon name="check-circle" size={20} color={Colors.primary} />}
-              </Pressable>
-            ))}
-            <Pressable style={styles.langCancelBtn} onPress={() => setShowLangModal(false)}>
-              <Text style={styles.langCancelText}>Cancel</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+
     </ScrollView>
   );
 }
@@ -661,7 +638,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1.5,
     borderColor: Colors.error + "30",
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     padding: 16,
     gap: 10,
   },
@@ -681,7 +658,7 @@ const styles = StyleSheet.create({
   version: { textAlign: "center", fontSize: 12, color: Colors.textMuted, marginTop: 12, marginBottom: 4 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   colorPickerBox: {
-    backgroundColor: Colors.white, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    backgroundColor: Colors.card, borderTopLeftRadius: 28, borderTopRightRadius: 28,
     padding: 28, gap: 20,
   },
   colorPickerTitle: { fontSize: 17, fontWeight: "800", color: Colors.text },
@@ -689,7 +666,7 @@ const styles = StyleSheet.create({
   colorCircle: { width: 52, height: 52, borderRadius: 26 },
   colorSelected: { borderWidth: 4, borderColor: Colors.text },
   avatarModalBox: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     padding: 28,
@@ -725,7 +702,7 @@ const styles = StyleSheet.create({
   avatarOptLabel: { fontSize: 14, fontWeight: "700", color: Colors.text },
   avatarOptSub: { fontSize: 12, color: Colors.textSecondary, marginTop: 1 },
   langBox: {
-    backgroundColor: Colors.white, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    backgroundColor: Colors.card, borderTopLeftRadius: 28, borderTopRightRadius: 28,
     padding: 28, gap: 8,
   },
   langHint: { fontSize: 12, color: Colors.textSecondary, marginBottom: 4 },

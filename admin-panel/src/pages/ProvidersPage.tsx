@@ -6,6 +6,7 @@ import { DataTable } from "@/components/ui/DataTable";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useToast } from "@/hooks/use-toast";
+import { BulkActionBar } from "@/components/admin/BulkActionBar";
 import { CheckCircle, ExternalLink, FileText, RefreshCw, Search, X, XCircle } from "lucide-react";
 
 interface ProviderDoc {
@@ -47,6 +48,8 @@ export function ProvidersPage() {
   const [docsLoading, setDocsLoading] = useState(false);
   const [availabilityPolicy, setAvailabilityPolicy] = useState<any>(null);
   const [policyRadius, setPolicyRadius] = useState("15");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -69,10 +72,35 @@ export function ProvidersPage() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
+  useEffect(() => { setSelectedIds(new Set()); }, [filter, search]);
+
   const selectedFromList = useMemo(
     () => selectedProvider ? providers.find((provider) => provider.id === selectedProvider.id) || selectedProvider : null,
     [providers, selectedProvider],
   );
+
+  async function runBulkAccountAction(action: "deactivate" | "reactivate" | "revoke-sessions") {
+    const ids = Array.from(selectedIds);
+    if (!ids.length) return;
+    const label = action === "revoke-sessions" ? "force logout" : action;
+    const reason = window.prompt(`Reason to ${label} ${ids.length} selected provider${ids.length === 1 ? "" : "s"}:`)?.trim() || "";
+    if (reason.length < 3) {
+      toast({ title: "Reason required", description: "Enter at least 3 characters.", variant: "destructive" });
+      return;
+    }
+    setBulkLoading(true);
+    try {
+      const results = await Promise.allSettled(ids.map((id) => api(`/api/admin/users/${id}/${action}`, { method: action === "revoke-sessions" ? "POST" : "PATCH", body: { reason } })));
+      const succeeded = results.filter((result) => result.status === "fulfilled").length;
+      const failed = results.length - succeeded;
+      if (succeeded) toast({ title: `${succeeded} provider${succeeded === 1 ? "" : "s"} updated`, description: failed ? `${failed} action${failed === 1 ? "" : "s"} failed and can be retried.` : reason });
+      if (failed && !succeeded) toast({ title: "Bulk action failed", description: "No selected provider could be updated.", variant: "destructive" });
+      setSelectedIds(new Set());
+      await load();
+    } finally {
+      setBulkLoading(false);
+    }
+  }
 
   async function openProvider(provider: User) {
     setSelectedProvider(provider);
@@ -264,12 +292,24 @@ export function ProvidersPage() {
         </div>
 
         {loadError && <div className="px-5 py-3 text-sm text-red-700 bg-red-50">{loadError}</div>}
+        {canManage ? <div className="border-b border-slate-100 px-5 py-3 space-y-3">
+          <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-600">
+            <input type="checkbox" aria-label="Select all providers in this result" checked={providers.length > 0 && providers.every((provider) => selectedIds.has(provider.id))} onChange={() => setSelectedIds(providers.length > 0 && providers.every((provider) => selectedIds.has(provider.id)) ? new Set() : new Set(providers.map((provider) => provider.id)))} />
+            Select all loaded providers
+          </label>
+          <BulkActionBar count={selectedIds.size} busy={bulkLoading} onClear={() => setSelectedIds(new Set())} actions={[
+            { label: "Deactivate", tone: "danger", onClick: () => runBulkAccountAction("deactivate") },
+            { label: "Reactivate", onClick: () => runBulkAccountAction("reactivate") },
+            { label: "Force logout", tone: "neutral", onClick: () => runBulkAccountAction("revoke-sessions") },
+          ]} />
+        </div> : null}
         <DataTable
           data={providers}
           loading={loading}
           keyExtractor={(item) => item.id}
           emptyMessage="No providers found."
           columns={[
+            ...(canManage ? [{ header: "Select", width: "w-16", render: (item: User) => <input type="checkbox" aria-label={`Select ${item.name}`} checked={selectedIds.has(item.id)} onChange={() => setSelectedIds((current) => { const next = new Set(current); next.has(item.id) ? next.delete(item.id) : next.add(item.id); return next; })} /> }] : []),
             { header: "Provider", render: (item) => <div><p className="font-medium text-slate-800">{item.name}</p><p className="text-xs text-slate-400">{item.phone}</p></div> },
             { header: "Status", render: (item) => <div className="flex flex-col gap-1">{item.isVerified ? <StatusBadge status="verified" /> : <StatusBadge status="unverified" />}{item.isBlocked && <StatusBadge status="blocked" />}<span className="text-xs text-slate-500">{item.isDeactivated ? "Deactivated" : item.isAvailable ? "Online" : "Offline"}</span></div> },
             { header: "Rating", render: (item) => <span className="text-sm">{item.ratingCount ? `${item.rating}/5 (${item.ratingCount})` : "—"}</span> },

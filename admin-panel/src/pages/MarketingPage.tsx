@@ -2,6 +2,9 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePermissions } from "@/hooks/usePermissions";
+import { AdvancedGradientPicker } from "@/components/admin/AdvancedColorPicker";
+import { IconPicker } from "@/components/admin/IconPicker";
+import { SearchableSelect } from "@/components/admin/SearchableSelect";
 import {
   Megaphone, Plus, Pencil, Trash2, X, Check, Loader2,
   ToggleLeft, ToggleRight, Image, Bell, MapPin, Star,
@@ -52,6 +55,15 @@ interface HomeConfig {
   maxProviders: number;
 }
 
+
+interface CategoryOption {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  isActive: boolean;
+}
+
 interface Area {
   id: string;
   name: string;
@@ -65,20 +77,6 @@ const AUDIENCE_OPTS = [
   { value: "all", label: "Everyone", icon: <Globe size={13} /> },
   { value: "customer", label: "Customers", icon: <Users size={13} /> },
   { value: "provider", label: "Providers", icon: <UserCog size={13} /> },
-];
-
-const ICON_OPTS = [
-  "star", "zap", "droplet", "thermometer", "wind", "tool",
-  "home", "package", "shield", "award", "gift", "bell",
-];
-
-const PRESET_COLORS = [
-  { from: "#1A6EE0", to: "#0D4BA0", label: "Blue" },
-  { from: "#14B8A6", to: "#0E8A7E", label: "Teal" },
-  { from: "#F97316", to: "#D45A0E", label: "Orange" },
-  { from: "#8B5CF6", to: "#6D28D9", label: "Purple" },
-  { from: "#EF4444", to: "#B91C1C", label: "Red" },
-  { from: "#10B981", to: "#047857", label: "Green" },
 ];
 
 function AudienceBadge({ audience }: { audience: string }) {
@@ -109,8 +107,8 @@ const EMPTY_BANNER: BannerFormData = {
   linkTarget: "", targetAudience: "all", isActive: true, sortOrder: "0", expiresAt: "",
 };
 
-function BannerModal({ mode, initial, onClose, onSave, saving }: {
-  mode: "create" | "edit"; initial?: Banner | null;
+function BannerModal({ mode, initial, categories, onClose, onSave, saving }: {
+  mode: "create" | "edit"; initial?: Banner | null; categories: CategoryOption[];
   onClose: () => void; onSave: (d: BannerFormData) => void; saving: boolean;
 }) {
   const [form, setForm] = useState<BannerFormData>(
@@ -155,30 +153,17 @@ function BannerModal({ mode, initial, onClose, onSave, saving }: {
               placeholder="https://..." />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Background Color</label>
-            <div className="flex gap-2 flex-wrap mb-2">
-              {PRESET_COLORS.map(c => (
-                <button key={c.from} onClick={() => { set("bgColorFrom", c.from); set("bgColorTo", c.to); }}
-                  className="w-8 h-8 rounded-full border-2 transition-transform hover:scale-110"
-                  style={{
-                    background: `linear-gradient(135deg, ${c.from}, ${c.to})`,
-                    borderColor: form.bgColorFrom === c.from ? "#1e293b" : "transparent",
-                  }}
-                  title={c.label} />
-              ))}
-            </div>
-            <div className="flex gap-3">
-              <div className="flex-1">
-                <label className="block text-xs text-slate-400 mb-1">From</label>
-                <input type="color" value={form.bgColorFrom} onChange={e => set("bgColorFrom", e.target.value)}
-                  className="w-full h-9 border rounded-lg cursor-pointer" />
-              </div>
-              <div className="flex-1">
-                <label className="block text-xs text-slate-400 mb-1">To</label>
-                <input type="color" value={form.bgColorTo} onChange={e => set("bgColorTo", e.target.value)}
-                  className="w-full h-9 border rounded-lg cursor-pointer" />
-              </div>
-            </div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Background Gradient</label>
+            <AdvancedGradientPicker
+              from={form.bgColorFrom}
+              to={form.bgColorTo}
+              onFromChange={(value) => set("bgColorFrom", value)}
+              onToChange={(value) => set("bgColorTo", value)}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Banner Icon</label>
+            <IconPicker value={form.iconName} onChange={(value) => set("iconName", value)} />
           </div>
           <div>
             <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Preview</label>
@@ -199,12 +184,30 @@ function BannerModal({ mode, initial, onClose, onSave, saving }: {
                 <option value="booking">New Booking</option>
               </select>
             </div>
-            {form.linkType !== "none" && form.linkType !== "booking" && (
+            {form.linkType === "category" && (
               <div>
-                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Link Target</label>
+                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Service Category</label>
+                <SearchableSelect
+                  value={form.linkTarget}
+                  onChange={(value) => set("linkTarget", value)}
+                  options={categories.filter((category) => category.isActive).map((category) => ({
+                    value: category.slug,
+                    label: category.name,
+                    description: category.description || category.slug,
+                    keywords: [category.slug, category.id],
+                  }))}
+                  placeholder="Select a live category"
+                  searchPlaceholder="Search categories"
+                  emptyText="No active categories available"
+                />
+              </div>
+            )}
+            {form.linkType === "url" && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">External URL</label>
                 <input value={form.linkTarget} onChange={e => set("linkTarget", e.target.value)}
                   className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder={form.linkType === "category" ? "plumber" : "https://"} />
+                  placeholder="https://" />
               </div>
             )}
           </div>
@@ -398,6 +401,11 @@ export function MarketingPage() {
     queryKey: ["admin-areas"],
     queryFn: () => api<{ areas: Area[] }>("/api/admin/service-areas"),
   });
+  const categoriesQ = useQuery({
+    queryKey: ["admin", "categories", "banner-link-options"],
+    queryFn: () => api<{ categories: CategoryOption[] }>("/api/admin/categories"),
+    staleTime: 30_000,
+  });
   const homeConfigQ = useQuery({
     queryKey: ["admin-home-config"],
     queryFn: () => api<{ config: HomeConfig }>("/api/admin/marketing/home-config"),
@@ -500,6 +508,7 @@ export function MarketingPage() {
   const banners = bannersQ.data?.banners ?? [];
   const announcements = annsQ.data?.announcements ?? [];
   const areas = areasQ.data?.areas ?? [];
+  const categories = categoriesQ.data?.categories ?? [];
 
   const homeConfig = homeConfigQ.data?.config;
 
@@ -800,6 +809,7 @@ export function MarketingPage() {
         <BannerModal
           mode={bannerModal.mode}
           initial={bannerModal.item}
+          categories={categories}
           onClose={() => setBannerModal(null)}
           onSave={d => bannerModal.mode === "create"
             ? createBanner.mutate(d)

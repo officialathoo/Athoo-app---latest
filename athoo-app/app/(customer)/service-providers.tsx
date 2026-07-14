@@ -1,6 +1,5 @@
 import { Icon } from "@/components/ui/Icon";
 import { router, useLocalSearchParams } from "expo-router";
-import * as Location from "expo-location";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -19,6 +18,7 @@ import { ProviderCard } from "@/components/ui/ProviderCard";
 import { Provider } from "@/data/services";
 import { useCategories } from "@/context/CategoriesContext";
 import { api } from "@/services/api";
+import { getFastForegroundLocation } from "@/services/location";
 import { useAuth } from "@/context/AuthContext";
 import { getDistanceKm } from "@/utils/distance";
 
@@ -64,16 +64,16 @@ export default function ServiceProvidersScreen() {
   useEffect(() => {
     const loadLocation = async () => {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") return;
-
-        const loc = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High,
+        const result = await getFastForegroundLocation({
+          timeoutMs: 7_000,
+          rationaleTitle: "Location permission",
+          rationaleBody: "Athoo uses your location to sort nearby providers.",
         });
+        if (!result.location) return;
 
         setUserLocation({
-          latitude: loc.coords.latitude,
-          longitude: loc.coords.longitude,
+          latitude: result.location.latitude,
+          longitude: result.location.longitude,
         });
       } catch (e) {
         // silent fail — GPS unavailable, continue without location

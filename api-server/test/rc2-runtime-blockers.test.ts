@@ -6,13 +6,17 @@ import path from "node:path";
 const root = path.resolve(import.meta.dirname, "../..");
 const read = (file: string) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("native map is permission-aware and has a non-crashing fallback", () => {
+test("open map preview is interactive and location acquisition is bounded", () => {
   const map = read("athoo-app/components/maps/AthooMapFallback.tsx");
+  const preview = read("athoo-app/components/maps/OpenStreetMapPreview.tsx");
   const screen = read("athoo-app/app/(customer)/map.tsx");
-  assert.match(map, /showsUserLocation=\{showsUserLocation\}/);
-  assert.match(map, /Map preview is unavailable right now/);
-  assert.match(screen, /Location\.Accuracy\.Balanced/);
-  assert.match(screen, /Location request timed out/);
+  const location = read("athoo-app/services/location.ts");
+  assert.match(map, /OpenStreetMapPreview/);
+  assert.match(preview, /tile\.openstreetmap\.org/);
+  assert.match(preview, /onCoordinateChange/);
+  assert.match(screen, /getFastForegroundLocation/);
+  assert.match(location, /Location\.Accuracy\.Balanced/);
+  assert.match(location, /LOCATION_TIMEOUT/);
 });
 
 test("mobile storage requires readable positive file size and normalizes metadata", () => {

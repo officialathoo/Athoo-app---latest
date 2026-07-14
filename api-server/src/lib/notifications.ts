@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { db } from "@workspace/db";
 import { notificationsTable, usersTable } from "@workspace/db/schema";
 import { eq, inArray } from "drizzle-orm";
-import { sendExpoPushNotifications } from "./push";
+import { sendExpoPushMessages, sendExpoPushNotifications } from "./push";
 import { logger } from "./logger";
 import { emitToUser } from "./eventBus";
 
@@ -60,7 +60,13 @@ export async function notifyUser(input: NotifyInput): Promise<NotifyResult> {
       const pushRes = await sendExpoPushNotifications([token], {
         title: input.title,
         body: input.body,
-        data: { type: input.type || "info", link: input.link, ...(input.data || {}) },
+        type: input.type || "system",
+        data: {
+          notificationId: id,
+          type: input.type || "system",
+          link: input.link || null,
+          ...(input.data || {}),
+        },
       }).catch(() => undefined);
       if (pushRes && pushRes.sent > 0) result.pushSent = true;
       if (pushRes?.invalidTokens?.includes(token)) {
@@ -107,15 +113,30 @@ export async function notifyUsers(
       .select({ id: usersTable.id, expoPushToken: usersTable.expoPushToken })
       .from(usersTable)
       .where(inArray(usersTable.id, ids));
-    const tokens = recipients
-      .map((r) => r.expoPushToken)
-      .filter((t): t is string => typeof t === "string" && t.length > 0);
-    if (tokens.length > 0) {
-      const pushResult = await sendExpoPushNotifications(tokens, {
-        title: payload.title,
-        body: payload.body,
-        data: { type: payload.type || "info", link: payload.link, ...(payload.data || {}) },
-      }).catch(() => undefined);
+    const rowByUserId = new Map(rows.map((row) => [row.userId, row]));
+    const pushMessages = recipients
+      .filter((recipient): recipient is typeof recipient & { expoPushToken: string } =>
+        typeof recipient.expoPushToken === "string" && recipient.expoPushToken.length > 0
+      )
+      .map((recipient) => {
+        const notificationRow = rowByUserId.get(recipient.id)!;
+        return {
+          token: recipient.expoPushToken,
+          payload: {
+            title: payload.title,
+            body: payload.body,
+            type: payload.type || "system",
+            data: {
+              notificationId: notificationRow.id,
+              type: payload.type || "system",
+              link: payload.link || null,
+              ...(payload.data || {}),
+            },
+          },
+        };
+      });
+    if (pushMessages.length > 0) {
+      const pushResult = await sendExpoPushMessages(pushMessages).catch(() => undefined);
       if (pushResult?.invalidTokens?.length) {
         await db.update(usersTable)
           .set({ expoPushToken: null })

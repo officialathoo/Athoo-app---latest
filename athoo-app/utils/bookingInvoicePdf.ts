@@ -1,6 +1,7 @@
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { Alert, Platform } from "react-native";
+import { apiErrorToMessage } from "@/lib/apiError";
 
 export type InvoiceBookingLike = {
   id: string;
@@ -146,7 +147,7 @@ export async function shareBookingInvoice(
       Alert.alert("Saved", `Invoice saved to: ${uri}`);
     }
   } catch (e: any) {
-    Alert.alert("Error", e?.message || "Could not generate PDF. Please try again.");
+    Alert.alert("Unable to create invoice", apiErrorToMessage(e, "We couldn't create the invoice PDF. Please try again."));
   } finally {
     opts?.onState?.(false);
   }

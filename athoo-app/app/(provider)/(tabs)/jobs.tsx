@@ -15,6 +15,7 @@ import { Colors } from "@/constants/colors";
 import { AppText, ProviderJobsSkeleton, ProviderMetricCard } from "@/components/design";
 import { EmptyView } from "@/components/ui/UiState";
 import { useTheme } from "@/context/ThemeContext";
+import { useLang } from "@/context/LanguageContext";
 import { BookingCard } from "@/components/ui/BookingCard";
 import { useAuth } from "@/context/AuthContext";
 import { useBookings, BookingStatus } from "@/context/BookingContext";
@@ -37,6 +38,7 @@ const FILTERS: {
 export default function ProviderJobsScreen() {
   const { user } = useAuth();
   const { theme } = useTheme();
+  const { t, translate: tr } = useLang();
   const { getMyBookings, loadBookings, isLoading } = useBookings();
   const { getMyNegotiations } = useNegotiation();
   const insets = useSafeAreaInsets();
@@ -51,6 +53,20 @@ export default function ProviderJobsScreen() {
   const negCount = myNegotiations.filter(
     (n) => n.status === "customer_offer" || n.status === "provider_counter"
   ).length;
+
+  const filters = FILTERS.map((filter) => ({
+    ...filter,
+    label: ({
+      all: tr("All"),
+      live: t.live,
+      pending: t.pending,
+      accepted: t.active,
+      in_progress: t.inProgress,
+      completed: t.completed,
+      cancelled: t.cancelled,
+      negotiations: tr("Negotiations"),
+    } as Record<string, string>)[filter.value] ?? filter.label,
+  }));
 
   const filtered =
     activeFilter === "all"
@@ -72,21 +88,21 @@ export default function ProviderJobsScreen() {
   return (
     <View style={[styles.container, { paddingTop: topPad, backgroundColor: theme.colors.background }]}>
       <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
-        <AppText variant="h2" style={{ flex: 1 }}>My Jobs</AppText>
+        <AppText variant="h2" style={{ flex: 1 }}>{t.myJobs}</AppText>
         {pendingCount + negCount > 0 && (
           <View style={styles.alertBadge}>
-            <Text style={styles.alertText}>{pendingCount + negCount} new</Text>
+            <Text style={styles.alertText}>{pendingCount + negCount} {tr("new")}</Text>
           </View>
         )}
       </View>
 
       <View style={[styles.summaryRow, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
-        <ProviderMetricCard testID="provider-jobs-total" label="Total" value={allBookings.length} />
-        <ProviderMetricCard testID="provider-jobs-live" label="Live" value={liveBookings.length} tone="danger" />
-        <ProviderMetricCard testID="provider-jobs-pending" label="Pending" value={pendingCount} tone="warning" />
+        <ProviderMetricCard testID="provider-jobs-total" label={tr("Total")} value={allBookings.length} />
+        <ProviderMetricCard testID="provider-jobs-live" label={t.live} value={liveBookings.length} tone="danger" />
+        <ProviderMetricCard testID="provider-jobs-pending" label={t.pending} value={pendingCount} tone="warning" />
         <ProviderMetricCard
           testID="provider-jobs-completed"
-          label="Done"
+          label={t.doneLabel}
           value={allBookings.filter((b) => b.status === "completed").length}
           tone="success"
         />
@@ -98,7 +114,7 @@ export default function ProviderJobsScreen() {
         style={[styles.filterScroll, { backgroundColor: theme.colors.surface }]}
         contentContainerStyle={styles.filterContent}
       >
-        {FILTERS.map((f) => {
+        {filters.map((f) => {
           const isActive = activeFilter === f.value;
           const hasAlert =
             (f.value === "pending" && pendingCount > 0) ||
@@ -143,8 +159,8 @@ export default function ProviderJobsScreen() {
             <EmptyView
               compact
               icon="dollar-sign"
-              title="No negotiations"
-              message="Customer price offers will appear here when a booking enters negotiation."
+              title={tr("No negotiations")}
+              message={tr("Customer price offers will appear here when a booking enters negotiation.")}
             />
           ) : (
             myNegotiations.map((neg, i) => (
@@ -168,7 +184,7 @@ export default function ProviderJobsScreen() {
 
                   <View style={{ flex: 1 }}>
                     <Text style={styles.negService}>{neg.service}</Text>
-                    <Text style={styles.negCustomer}>From: {neg.customerName}</Text>
+                    <Text style={styles.negCustomer}>{tr("From")}: {neg.customerName}</Text>
                   </View>
 
                   <View
@@ -177,12 +193,12 @@ export default function ProviderJobsScreen() {
                       {
                         backgroundColor:
                           neg.status === "customer_offer"
-                            ? "#FEF9C3"
+                            ? theme.colors.warningSoft
                             : neg.status === "provider_counter"
-                            ? "#EFF6FF"
+                            ? theme.colors.infoSoft
                             : neg.status === "accepted"
-                            ? "#F0FDF4"
-                            : "#FEF2F2",
+                            ? theme.colors.successSoft
+                            : theme.colors.dangerSoft,
                       },
                     ]}
                   >
@@ -192,41 +208,41 @@ export default function ProviderJobsScreen() {
                         {
                           color:
                             neg.status === "customer_offer"
-                              ? "#CA8A04"
+                              ? theme.colors.warning
                               : neg.status === "provider_counter"
-                              ? Colors.primary
+                              ? theme.colors.info
                               : neg.status === "accepted"
-                              ? "#16A34A"
-                              : "#DC2626",
+                              ? theme.colors.success
+                              : theme.colors.danger,
                         },
                       ]}
                     >
                       {neg.status === "customer_offer"
-                        ? "Offer"
+                        ? tr("Offer")
                         : neg.status === "provider_counter"
-                        ? "Countered"
+                        ? tr("Countered")
                         : neg.status === "accepted"
-                        ? "Accepted"
-                        : "Rejected"}
+                        ? t.accepted
+                        : tr("Rejected")}
                     </Text>
                   </View>
                 </View>
 
                 <View style={styles.negAmounts}>
                   <View style={styles.negAmount}>
-                    <Text style={styles.negAmountLabel}>Customer Offer</Text>
+                    <Text style={styles.negAmountLabel}>{tr("Customer Offer")}</Text>
                     <Text style={[styles.negAmountVal, { color: Colors.primary }]}>
-                      Rs. {neg.customerOffer}
+                      {tr("Rs.")} {neg.customerOffer}
                     </Text>
                   </View>
 
                   {neg.providerCounter !== undefined ? (
                     <View style={styles.negAmount}>
-                      <Text style={styles.negAmountLabel}>Your Counter</Text>
+                      <Text style={styles.negAmountLabel}>{tr("Your Counter")}</Text>
                       <Text
                         style={[styles.negAmountVal, { color: Colors.secondary }]}
                       >
-                        Rs. {neg.providerCounter}
+                        {tr("Rs.")} {neg.providerCounter}
                       </Text>
                     </View>
                   ) : null}
@@ -244,7 +260,7 @@ export default function ProviderJobsScreen() {
                       }
                     >
                       <Icon name="check" size={14} color="#fff" />
-                      <Text style={styles.negAcceptText}>Accept</Text>
+                      <Text style={styles.negAcceptText}>{t.accept}</Text>
                     </Pressable>
 
                     <Pressable
@@ -257,7 +273,7 @@ export default function ProviderJobsScreen() {
                       }
                     >
                       <Icon name="refresh-cw" size={14} color={Colors.secondary} />
-                      <Text style={styles.negCounterText}>Counter</Text>
+                      <Text style={styles.negCounterText}>{t.counter}</Text>
                     </Pressable>
 
                     <Pressable
@@ -270,7 +286,7 @@ export default function ProviderJobsScreen() {
                       }
                     >
                       <Icon name="x" size={14} color={Colors.error} />
-                      <Text style={styles.negRejectText}>Reject</Text>
+                      <Text style={styles.negRejectText}>{t.reject}</Text>
                     </Pressable>
                   </View>
                 )}
@@ -281,10 +297,10 @@ export default function ProviderJobsScreen() {
           <EmptyView
             compact
             icon={activeFilter === "live" ? "radio" : "briefcase"}
-            title={activeFilter === "live" ? "No live jobs" : "No jobs here"}
+            title={activeFilter === "live" ? tr("No live jobs") : tr("No jobs here")}
             message={activeFilter === "live"
-              ? "You have no jobs in progress right now."
-              : "Jobs will appear here when customers book your services."}
+              ? tr("You have no jobs in progress right now.")
+              : tr("Jobs will appear here when customers book your services.")}
           />
         ) : (
           filtered.map((b, i) => (
@@ -316,7 +332,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 12,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
   },
 
   title: {
@@ -344,7 +360,7 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
@@ -368,7 +384,7 @@ const styles = StyleSheet.create({
   },
 
   filterScroll: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
   },
 
   filterContent: {

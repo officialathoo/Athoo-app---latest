@@ -1,3 +1,4 @@
+import { appLogger } from "@/lib/logger";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { AppState } from "react-native";
@@ -5,6 +6,7 @@ import { router } from "expo-router";
 import { api, setToken, setRefreshToken, clearToken, getToken, realtime, setUnauthorizedHandler } from "@/services/api";
 import { notificationService } from "@/services/NotificationService";
 import { isBiometricAvailable, authenticateWithBiometric } from "@/services/biometric";
+import { apiErrorToMessage } from "@/lib/apiError";
 
 export type UserRole = "customer" | "provider" | "admin";
 export type AppUserRole = "customer" | "provider";
@@ -170,7 +172,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
         setRequiresBiometric(false);
       } else if (!isTransientNetworkError(error)) {
-        console.warn("Failed to load user profile:", error);
+        appLogger.warn("auth", "Failed to load user profile:", error);
       }
     } finally {
       setIsLoading(false);
@@ -232,7 +234,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!res.success) return { success: false, error: res.message || "Failed to send OTP" };
       return { success: true, code: res.code, message: res.message };
     } catch (e: unknown) {
-      return { success: false, error: (e as Error)?.message || "Failed to send OTP" };
+      return { success: false, error: apiErrorToMessage(e, "We could not send the verification code. Please try again.") };
     }
   }, []);
 
@@ -254,7 +256,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setRequiresBiometric(false);
       return { success: true, isNewUser: false, user: hydrated };
     } catch (e: unknown) {
-      return { success: false, isNewUser: false, error: (e as Error)?.message || "Verification failed" };
+      return { success: false, isNewUser: false, error: apiErrorToMessage(e, "Verification failed. Please request a new code and try again.") };
     }
   }, [attachSavedProviders]);
 
@@ -274,7 +276,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setRequiresBiometric(false);
       return { success: true, user: hydrated };
     } catch (e: unknown) {
-      return { success: false, error: (e as Error)?.message || "Login failed" };
+      return { success: false, error: apiErrorToMessage(e, "Login failed. Please check your details and try again.") };
     }
   }, [attachSavedProviders]);
 
@@ -294,7 +296,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setRequiresBiometric(false);
       return { success: true, user: hydrated };
     } catch (e: unknown) {
-      return { success: false, error: (e as Error)?.message || "Registration failed" };
+      return { success: false, error: apiErrorToMessage(e, "Registration could not be completed. Please try again.") };
     }
   }, [attachSavedProviders]);
 

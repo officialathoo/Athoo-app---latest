@@ -32,8 +32,10 @@ import { useNotifications } from "@/context/NotificationContext";
 import { api } from "@/services/api";
 import { getDistanceKm } from "@/utils/distance";
 import { shareBookingInvoice } from "@/utils/bookingInvoicePdf";
-import MapView, { AnimatedRegion, Marker, Polyline } from "react-native-maps";
-import { getDirections, type DirectionsResult } from "@/services/maps";
+import { OpenStreetMapPreview } from "@/components/maps/OpenStreetMapPreview";
+import { getDirections } from "@/services/maps";
+import { getFastForegroundLocation, cacheForegroundLocation } from "@/services/location";
+import { apiErrorToMessage } from "@/lib/apiError";
 
 type LiveCoords = {
   latitude: number;
@@ -141,7 +143,7 @@ function formatLastUpdated(updatedAt?: string) {
 }
 
 async function openCoordsInMaps(latitude: number, longitude: number, label?: string) {
-  const googleUrl = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+  const openStreetMapUrl = `https://www.openstreetmap.org/?mlat=${latitude}&mlon=${longitude}#map=17/${latitude}/${longitude}`;
   const appleUrl = `http://maps.apple.com/?ll=${latitude},${longitude}&q=${encodeURIComponent(
     label || `${latitude},${longitude}`
   )}`;
@@ -164,7 +166,7 @@ async function openCoordsInMaps(latitude: number, longitude: number, label?: str
       }
     }
 
-    await Linking.openURL(googleUrl);
+    await Linking.openURL(openStreetMapUrl);
   } catch {
     Alert.alert("Unable to Open Maps", "Could not open the location in maps.");
   }
@@ -264,11 +266,6 @@ export default function JobDetailScreen() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const otpInputRef = useRef<TextInput>(null);
   const locationSubRef = useRef<Location.LocationSubscription | null>(null);
-  const mapRef = useRef<MapView | null>(null);
-  const providerAnimCoords = useRef(
-    new AnimatedRegion({ latitude: 0, longitude: 0, latitudeDelta: 0, longitudeDelta: 0 })
-  ).current;
-  const hasMapInit = useRef(false);
 
   const syncBooking = useCallback(
     async (preferred?: Booking | null) => {
@@ -417,32 +414,25 @@ export default function JobDetailScreen() {
       }
 
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
+        const initialResult = await getFastForegroundLocation({
+          timeoutMs: 8_000,
+          requiredAccuracy: 1_000,
+          rationaleTitle: "Location access needed",
+          rationaleBody: "Athoo uses your location while this job is active so the customer can follow your arrival.",
+        });
         if (!mounted) return;
 
-        if (status !== "granted") {
+        if (initialResult.permission !== "granted" || !initialResult.location) {
           setLocationPermission("denied");
-          Alert.alert(
-            "Location Access Needed",
-            "Enable location in your device Settings so customers can track your arrival.",
-            [
-              { text: "Not Now", style: "cancel" },
-              { text: "Open Settings", onPress: () => Linking.openSettings() },
-            ]
-          );
           return;
         }
 
         setLocationPermission("granted");
 
-        const initial = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.BestForNavigation,
-        });
-
         const firstCoords: LiveCoords = {
-          latitude: initial.coords.latitude,
-          longitude: initial.coords.longitude,
-          accuracy: initial.coords.accuracy,
+          latitude: initialResult.location.latitude,
+          longitude: initialResult.location.longitude,
+          accuracy: initialResult.location.accuracy,
           updatedAt: new Date().toISOString(),
         };
 
@@ -471,6 +461,7 @@ export default function JobDetailScreen() {
             };
 
             setProviderLiveCoords(nextCoords);
+            void cacheForegroundLocation(position);
             setLiveSyncing(true);
             await syncProviderLocationToBackend(booking.id, nextCoords);
             setLiveSyncing(false);
@@ -496,42 +487,6 @@ export default function JobDetailScreen() {
     if (!booking) return null;
     return getBookingLatLng(booking);
   }, [booking]);
-
-  // Animate provider marker on map when live coords update
-  useEffect(() => {
-    if (!providerLiveCoords) return;
-    if (!hasMapInit.current) {
-      providerAnimCoords.setValue({
-        latitude: providerLiveCoords.latitude,
-        longitude: providerLiveCoords.longitude,
-        latitudeDelta: 0,
-        longitudeDelta: 0,
-      });
-      hasMapInit.current = true;
-      // Fit map to show both markers
-      if (mapRef.current && customerCoords) {
-        const cc = customerCoords;
-        mapRef.current.fitToCoordinates(
-          [{ latitude: providerLiveCoords.latitude, longitude: providerLiveCoords.longitude }, { latitude: cc.lat, longitude: cc.lng }],
-          { edgePadding: { top: 70, right: 70, bottom: 70, left: 70 }, animated: true }
-        );
-      }
-      return;
-    }
-    (providerAnimCoords as any).timing({
-      latitude: providerLiveCoords.latitude,
-      longitude: providerLiveCoords.longitude,
-      duration: 1000,
-      useNativeDriver: false,
-    }).start();
-    if (mapRef.current && customerCoords) {
-      const cc = customerCoords;
-      mapRef.current.fitToCoordinates(
-        [{ latitude: providerLiveCoords.latitude, longitude: providerLiveCoords.longitude }, { latitude: cc.lat, longitude: cc.lng }],
-        { edgePadding: { top: 70, right: 70, bottom: 70, left: 70 }, animated: true }
-      );
-    }
-  }, [providerLiveCoords]);
 
   const providerCoords = useMemo((): LiveCoords | null => {
     if (providerLiveCoords) return providerLiveCoords;
@@ -589,7 +544,7 @@ export default function JobDetailScreen() {
       if (coords) {
         const { lat, lng } = coords;
 
-        const googleUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+        const openStreetMapUrl = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=17/${lat}/${lng}`;
         const appleUrl = `http://maps.apple.com/?ll=${lat},${lng}&q=${lat},${lng}`;
         const geoUrl = `geo:${lat},${lng}?q=${lat},${lng}`;
 
@@ -609,13 +564,13 @@ export default function JobDetailScreen() {
           }
         }
 
-        await Linking.openURL(googleUrl);
+        await Linking.openURL(openStreetMapUrl);
         return;
       }
 
       if (address) {
         const encoded = encodeURIComponent(address);
-        const googleUrl = `https://www.google.com/maps/search/?api=1&query=${encoded}`;
+        const openStreetMapUrl = `https://www.openstreetmap.org/search?query=${encoded}`;
         const appleUrl = `http://maps.apple.com/?q=${encoded}`;
         const geoUrl = `geo:0,0?q=${encoded}`;
 
@@ -635,7 +590,7 @@ export default function JobDetailScreen() {
           }
         }
 
-        await Linking.openURL(googleUrl);
+        await Linking.openURL(openStreetMapUrl);
         return;
       }
 
@@ -673,7 +628,7 @@ export default function JobDetailScreen() {
       setCounterMessage("");
       Alert.alert("Counter Sent", "Your counter offer has been sent to the customer.");
     } catch (e: any) {
-      Alert.alert("Failed", e?.message || "Could not send counter offer.");
+      Alert.alert("Unable to send offer", apiErrorToMessage(e, "We couldn't send your counter offer. Please try again."));
     } finally {
       setIsCountering(false);
     }
@@ -706,7 +661,7 @@ export default function JobDetailScreen() {
               },
             });
           } catch (e: any) {
-            Alert.alert("Unable to Accept", e?.message || "Could not accept this booking.");
+            Alert.alert("Unable to accept", apiErrorToMessage(e, "We couldn't accept this booking. Please try again."));
           } finally {
             setIsAccepting(false);
           }
@@ -730,7 +685,7 @@ export default function JobDetailScreen() {
             await loadBookings();
             router.back();
           } catch (e: any) {
-            Alert.alert("Unable to Decline", e?.message || "Could not decline this booking.");
+            Alert.alert("Unable to decline", apiErrorToMessage(e, "We couldn't decline this booking. Please try again."));
           } finally {
             setIsDeclining(false);
           }
@@ -752,7 +707,7 @@ export default function JobDetailScreen() {
     } catch (e: any) {
       Alert.alert(
         "Start Code Error",
-        e?.message || "Could not prepare the start code for this booking."
+        apiErrorToMessage(e, "We couldn't prepare the start code for this booking.")
       );
     }
   };
@@ -790,7 +745,7 @@ export default function JobDetailScreen() {
       });
     } catch (e: any) {
       setOtpError(
-        e?.message || "Incorrect PIN. Ask the customer for the correct code."
+        apiErrorToMessage(e, "The PIN is incorrect. Ask the customer for the correct code.")
       );
     } finally {
       setIsVerifying(false);
@@ -853,7 +808,7 @@ export default function JobDetailScreen() {
       });
     } catch (e: any) {
       setOtpError(
-        e?.message || "Incorrect PIN. Ask the customer for the correct code."
+        apiErrorToMessage(e, "The PIN is incorrect. Ask the customer for the correct code.")
       );
     } finally {
       setIsVerifying(false);
@@ -876,7 +831,7 @@ export default function JobDetailScreen() {
         data: { role: "provider", bookingId: booking.id },
       });
     } catch (e: any) {
-      Alert.alert("Error", e?.message || "Could not mark as received. Try again.");
+      Alert.alert("Unable to update payment", apiErrorToMessage(e, "We couldn't mark the payment as received. Please try again."));
     } finally {
       setIsMarkingReceived(false);
     }
@@ -1083,72 +1038,37 @@ export default function JobDetailScreen() {
                 </View>
               </View>
 
-              {/* Live map — shows job site + provider's own moving position */}
+              {/* OpenStreetMap live preview — job site, provider location, and road route. */}
               {customerCoords ? (
-                <MapView
-                  ref={mapRef}
-                  style={styles.trackingMap}
-                  moveOnMarkerPress={false}
-                  initialRegion={{
-                    latitude: customerCoords.lat,
-                    longitude: customerCoords.lng,
-                    latitudeDelta: 0.06,
-                    longitudeDelta: 0.06,
-                  }}
-                  showsUserLocation={false}
-                  showsTraffic={false}
-                >
-                  {/* Job site marker */}
-                  <Marker
-                    coordinate={{ latitude: customerCoords.lat, longitude: customerCoords.lng }}
-                    title="Job Site"
-                    description={booking.address || "Customer address"}
-                    tracksViewChanges={false}
-                  >
-                    <JobSiteMarker />
-                  </Marker>
-
-                  {/* Provider — animated ATHOO marker (your own position) */}
-                  {providerCoords && hasMapInit.current && (
-                    <Marker.Animated
-                      coordinate={providerAnimCoords as any}
-                      title="Your Location"
-                      description="Your live GPS"
-                      tracksViewChanges={false}
-                    >
-                      <AthooMarker />
-                    </Marker.Animated>
-                  )}
-
-                  {/* Fallback static marker before animation init */}
-                  {providerCoords && !hasMapInit.current && (
-                    <Marker
-                      coordinate={{ latitude: providerCoords.latitude, longitude: providerCoords.longitude }}
-                      tracksViewChanges={false}
-                    >
-                      <AthooMarker />
-                    </Marker>
-                  )}
-
-                  {/* Road-following route polyline (falls back to straight line) */}
-                  {roadPolyline.length >= 2 ? (
-                    <Polyline
-                      coordinates={roadPolyline}
-                      strokeWidth={4}
-                      strokeColor={Colors.primary}
-                    />
-                  ) : providerCoords ? (
-                    <Polyline
-                      coordinates={[
-                        { latitude: providerCoords.latitude, longitude: providerCoords.longitude },
-                        { latitude: customerCoords.lat, longitude: customerCoords.lng },
-                      ]}
-                      strokeWidth={3}
-                      strokeColor={Colors.primary + "BB"}
-                      lineDashPattern={[8, 4]}
-                    />
-                  ) : null}
-                </MapView>
+                <OpenStreetMapPreview
+                  height={260}
+                  markers={[
+                    {
+                      id: "job-site",
+                      latitude: customerCoords.lat,
+                      longitude: customerCoords.lng,
+                      kind: "job",
+                      label: booking.address || "Customer address",
+                    },
+                    ...(providerCoords ? [{
+                      id: "provider-location",
+                      latitude: providerCoords.latitude,
+                      longitude: providerCoords.longitude,
+                      kind: "provider" as const,
+                      label: "Your live GPS",
+                    }] : []),
+                  ]}
+                  polyline={
+                    roadPolyline.length >= 2
+                      ? roadPolyline
+                      : providerCoords
+                        ? [
+                            { latitude: providerCoords.latitude, longitude: providerCoords.longitude },
+                            { latitude: customerCoords.lat, longitude: customerCoords.lng },
+                          ]
+                        : []
+                  }
+                />
               ) : null}
 
               {/* Compact stats row */}

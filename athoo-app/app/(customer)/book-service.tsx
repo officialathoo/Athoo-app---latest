@@ -26,14 +26,15 @@ import { api } from "@/services/api";
 import { uploadPickedImage, type UploadProgress } from "@/services/storage";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { searchAddressGoogle, reverseGeocodeGoogle } from "@/services/maps";
-import { ensureForegroundLocation } from "@/lib/permissions";
+import { searchAddress, reverseGeocode } from "@/services/maps";
+import { getFastForegroundLocation } from "@/services/location";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const LIVE_LOCATION_CONSENT_KEY = "athoo_live_location_consent_v1";
 const MATERIALS_DISCLAIMER_KEY = "athoo_materials_disclaimer_v1";
 import { TimePicker, formatTimeValue, type TimeValue } from "@/components/ui/TimePicker";
 import { isPastOrTooSoon } from "@/utils/dateTime";
+import { apiErrorToMessage } from "@/lib/apiError";
 
 function getDates() {
   const dates = [];
@@ -204,7 +205,7 @@ export default function BookServiceScreen() {
     }
     searchTimer.current = setTimeout(async () => {
       setSearchingAddress(true);
-      const results = await searchAddressGoogle(addressQuery);
+      const results = await searchAddress(addressQuery);
       setAddressSuggestions(results);
       setSearchingAddress(false);
     }, 500);
@@ -215,55 +216,22 @@ export default function BookServiceScreen() {
     setLoadingAddress(true);
     setGpsAccuracyText("Acquiring GPS…");
     try {
-      const perm = await ensureForegroundLocation({
+      const result = await getFastForegroundLocation({
+        timeoutMs: 8_000,
+        requiredAccuracy: 1_000,
         rationaleTitle: "Location permission",
         rationaleBody: "ATHOO uses your location to auto-detect your address so the provider can find you.",
       });
-      if (perm !== "granted") {
-        setLoadingAddress(false);
-        setGpsAccuracyText("");
-        return;
-      }
-
-      // Stream positions until accuracy ≤ 150 m or 30-second timeout — whichever comes first.
-      // This avoids the common problem of getCurrentPositionAsync returning a stale
-      // network/WiFi fix (potentially km off) before the GPS chip has locked.
-      // 150 m / 30 s chosen for Pakistan urban environments where GPS can be slow to lock.
-      const GOOD_ACCURACY_M = 150;
-      const TIMEOUT_MS = 30000;
-      let bestPos: Location.LocationObject | null = null;
-      let done = false;
-      let sub: Location.LocationSubscription | null = null;
-
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(() => {
-          if (!done) { done = true; sub?.remove(); resolve(); }
-        }, TIMEOUT_MS);
-
-        Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 5000, distanceInterval: 10 },
-          (pos) => {
-            const acc = pos.coords.accuracy ?? 9999;
-            setGpsAccuracyText(`GPS: ±${Math.round(acc)} m`);
-            if (!bestPos || acc < (bestPos.coords.accuracy ?? 9999)) bestPos = pos;
-            if (acc <= GOOD_ACCURACY_M && !done) {
-              done = true;
-              clearTimeout(timer);
-              sub?.remove();
-              resolve();
-            }
-          }
-        ).then((s) => { sub = s; if (done) s.remove(); });
-      });
-
       setGpsAccuracyText("");
-
-      if (!bestPos) {
-        showError("Location Error", "Could not detect your location. Please try again or search your address manually.");
+      if (!result.location) {
+        showError("Location Error", "Could not detect your location. Please check GPS or search your address manually.");
         return;
       }
 
-      const coords = { latitude: bestPos.coords.latitude, longitude: bestPos.coords.longitude };
+      if (result.location.accuracy != null) {
+        setGpsAccuracyText(`GPS: ±${Math.round(result.location.accuracy)} m${result.stale ? " (cached)" : ""}`);
+      }
+      const coords = { latitude: result.location.latitude, longitude: result.location.longitude };
       setUserLocation(coords);
 
       const { label: resolved } = await smartReverseGeocode(coords.latitude, coords.longitude);
@@ -302,7 +270,7 @@ export default function BookServiceScreen() {
    * Reverse geocode with the best source available on the device.
    *
    * Priority:
-   *  1. Device OS geocoder — Apple Maps on iOS, Google Maps on Android.
+   *  1. Device OS geocoder — the device geocoder available on the operating system.
    *     These both have real street/neighbourhood data for Pakistan.
    *  2. Server Nominatim proxy — fallback when OS geocoder is too vague.
    *  3. Raw coordinates — last resort; always prompts for manual entry.
@@ -311,14 +279,14 @@ export default function BookServiceScreen() {
     lat: number,
     lng: number,
   ): Promise<{ label: string; cityOnly: boolean }> => {
-    // 1. Device OS geocoder — best on-device map data (Apple/Google)
+    // 1. Device OS geocoder — best on-device map data (device)
     try {
       const deviceLabel = await deviceReversGeocode(lat, lng);
       if (deviceLabel && !isCityOnly(deviceLabel)) {
         return { label: deviceLabel, cityOnly: false };
       }
       // Device returned only city; try server Nominatim for more detail
-      const serverLabel = await reverseGeocodeGoogle(lat, lng);
+      const serverLabel = await reverseGeocode(lat, lng);
       const serverIsCoords = serverLabel ? /^\d+\.\d+/.test(serverLabel.trim()) : true;
       if (serverLabel && !isCityOnly(serverLabel) && !serverIsCoords) {
         return { label: serverLabel, cityOnly: false };
@@ -331,7 +299,7 @@ export default function BookServiceScreen() {
 
     // 2. Server-only fallback
     try {
-      const serverLabel = await reverseGeocodeGoogle(lat, lng);
+      const serverLabel = await reverseGeocode(lat, lng);
       if (serverLabel && !/^\d+\.\d+/.test(serverLabel.trim())) {
         return { label: serverLabel, cityOnly: isCityOnly(serverLabel) };
       }
@@ -342,7 +310,7 @@ export default function BookServiceScreen() {
   };
 
   /**
-   * Build a clean label from the device's OS geocoder (Apple Maps / Google Maps).
+   * Build a clean label from the device's OS geocoder (the device geocoder).
    * Skips name when it duplicates the city to avoid "Islamabad, Islamabad".
    */
   const deviceReversGeocode = async (lat: number, lng: number): Promise<string | null> => {
@@ -424,7 +392,7 @@ export default function BookServiceScreen() {
         setPromoError("Invalid or expired promo code.");
       }
     } catch (e: any) {
-      setPromoError(e?.message || "Invalid or expired promo code.");
+      setPromoError(apiErrorToMessage(e, "This promo code is invalid or expired."));
     } finally {
       setPromoValidating(false);
     }
@@ -529,7 +497,7 @@ export default function BookServiceScreen() {
         setVideoUploadProgress({ loaded: 0, percent: 0, stage: "preparing" });
         videoUrl = await uploadPickedImage(videoUri, videoFileName, videoMimeType, setVideoUploadProgress);
       } catch (e: any) {
-        showError("Upload Failed", e?.message || "Could not upload video. Continuing without it.");
+        showError("Video not uploaded", apiErrorToMessage(e, "We couldn't upload the video. You can continue without it."));
         videoUrl = undefined;
       } finally {
         setUploadingVideo(false);
@@ -593,7 +561,7 @@ export default function BookServiceScreen() {
         setBroadcastId(res.request.id);
       }
     } catch (e: any) {
-      const msg = String(e?.message || "Could not submit your request. Please try again.");
+      const msg = apiErrorToMessage(e, "We couldn't submit your request. Please try again.");
       Alert.alert("Request not submitted", msg);
     } finally {
       setSubmitting(false);

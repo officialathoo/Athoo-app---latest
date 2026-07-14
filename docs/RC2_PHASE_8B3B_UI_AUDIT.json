@@ -1,0 +1,163 @@
+{
+  "phase": "RC2 Phase 8B3B",
+  "scopeComplete": true,
+  "fullApplicationUiCertificationComplete": false,
+  "baseline": "ATHOO_RC2_PHASE_8B3A_NESTED_FINANCE_ACCESSIBILITY.zip",
+  "financeRoutesMigrated": [
+    "athoo-app/app/(customer)/invoices.tsx",
+    "athoo-app/app/(customer)/refund-requests.tsx",
+    "athoo-app/app/(customer)/subscription.tsx",
+    "athoo-app/app/(provider)/invoices.tsx",
+    "athoo-app/app/(provider)/pay-commission.tsx",
+    "athoo-app/app/(provider)/withdrawal-requests.tsx",
+    "athoo-app/app/(provider)/subscription.tsx"
+  ],
+  "migratedFilesLegacyColorReferences": 0,
+  "migratedFilesRawDeveloperErrorReferences": 0,
+  "responsiveMaxContentWidth": 760,
+  "cameraAndGalleryEnabledForFinanceEvidence": true,
+  "subscriptionPaymentAccountsApiBacked": true,
+  "appIconApprovedAndReplaced": true,
+  "singleIconAndSplashBackground": "#FFFFFF",
+  "assetAudit": {
+    "icon.png": {
+      "width": 1024,
+      "height": 1024,
+      "background": "white",
+      "contentBoundingBox": [
+        284,
+        226,
+        741,
+        798
+      ],
+      "contentCenter": [
+        512.5,
+        512.0
+      ],
+      "canvasCenter": [
+        512.0,
+        512.0
+      ],
+      "centerOffset": [
+        0.5,
+        0.0
+      ],
+      "sha256": "647edeec66f44e7dcd8e6bd6d612764ad60abcf527d372ae4791ff10ffd8b17f"
+    },
+    "adaptive-icon.png": {
+      "width": 1024,
+      "height": 1024,
+      "background": "white",
+      "contentBoundingBox": [
+        304,
+        252,
+        720,
+        772
+      ],
+      "contentCenter": [
+        512.0,
+        512.0
+      ],
+      "canvasCenter": [
+        512.0,
+        512.0
+      ],
+      "centerOffset": [
+        0.0,
+        0.0
+      ],
+      "sha256": "169b555241bb54f9eef387f9276860c38909a27d169d293ca7a0654a8a7ccfd7"
+    },
+    "splash.png": {
+      "width": 1024,
+      "height": 1024,
+      "background": "white",
+      "contentBoundingBox": [
+        352,
+        312,
+        671,
+        711
+      ],
+      "contentCenter": [
+        511.5,
+        511.5
+      ],
+      "canvasCenter": [
+        512.0,
+        512.0
+      ],
+      "centerOffset": [
+        -0.5,
+        -0.5
+      ],
+      "sha256": "b3ac0b9380999cec263f1895a47ad906ae7888e9969db82ef5deb1b6ea8d910e"
+    },
+    "favicon.png": {
+      "width": 196,
+      "height": 196,
+      "background": "white",
+      "contentBoundingBox": [
+        54,
+        43,
+        142,
+        153
+      ],
+      "contentCenter": [
+        98.0,
+        98.0
+      ],
+      "canvasCenter": [
+        98.0,
+        98.0
+      ],
+      "centerOffset": [
+        0.0,
+        0.0
+      ],
+      "sha256": "49b3423a68461c9e86ec1272d4d8456c120fc67e250ee69c1807a0bfd3cb0987"
+    },
+    "notification-icon.png": {
+      "width": 192,
+      "height": 192,
+      "background": "transparent",
+      "contentBoundingBox": [
+        56,
+        47,
+        135,
+        145
+      ],
+      "contentCenter": [
+        95.5,
+        96.0
+      ],
+      "canvasCenter": [
+        96.0,
+        96.0
+      ],
+      "centerOffset": [
+        -0.5,
+        0.0
+      ],
+      "sha256": "9f89bbe5a1302ca4b8a882513263a2f4996c10054d31849b3c952b30bad3a0ed"
+    }
+  },
+  "remainingAppWideRawErrorUsagesForPhase8B4Audit": 71,
+  "remainingScope": [
+    "Support, policy, notification-center and security/settings route migration",
+    "App-wide replacement of remaining direct raw error-message usage",
+    "Real-device Android and iOS icon, splash, finance and RTL verification",
+    "Dependency-backed typecheck, Expo export and production builds"
+  ],
+  "verification": {
+    "projectValidation": "passed",
+    "jsonFilesChecked": 29,
+    "focusedPhaseTests": 9,
+    "completeSourceTests": 293,
+    "completeSourceTestsPassed": 293,
+    "completeSourceTestsFailed": 0,
+    "changedTypeScriptSyntaxDiagnostics": 0,
+    "dependencyBackedTypecheckBuild": "pending local dependencies",
+    "realDeviceVerification": "pending"
+  },
+  "regressionNote": "Updated the earlier splash/adaptive-icon regression assertion to validate the approved shared white background instead of the superseded blue background."
+}

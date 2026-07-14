@@ -4,16 +4,9 @@ import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/usePermissions";
 import { BulkActionBar } from "@/components/admin/BulkActionBar";
-import {
-  Loader2, Plus, Pencil, Trash2, X, Wrench, Zap, Droplets, Paintbrush,
-  Hammer, Truck, Home, Scissors, Brush, Settings2, AirVent, Fan,
-  Snowflake, Flame, Plug, Lightbulb, PaintBucket, WashingMachine,
-  ShowerHead, Toilet, Bath, CookingPot, Utensils, ChefHat, Sofa, Bed,
-  Armchair, DoorOpen, KeyRound, ShieldCheck, UserCheck, Users, HardHat,
-  Drill, Shovel, Building, Warehouse, Store, MapPin, Phone, MessageCircle,
-  Camera, Video, FileText, ClipboardList, CreditCard, Wallet, Banknote,
-  Receipt, Star, Heart, Bell, type LucideIcon,
-} from "lucide-react";
+import { AdvancedColorPicker } from "@/components/admin/AdvancedColorPicker";
+import { IconPicker, resolveAdminIcon } from "@/components/admin/IconPicker";
+import { Loader2, Plus, Pencil, Trash2, X } from "lucide-react";
 
 type Category = {
   id: string;
@@ -32,54 +25,8 @@ type Category = {
   createdAt: string;
 };
 
-const COLOR_PRESETS = [
-  "#1A6EE0", "#16A34A", "#F59E0B", "#EF4444", "#8B5CF6",
-  "#0EA5E9", "#EC4899", "#14B8A6", "#F97316", "#6366F1",
-];
-
-const ICON_PRESETS = [
-  "wrench", "zap", "droplet", "paintbrush", "hammer", "truck", "home",
-  "scissors", "broom", "air-vent", "fan", "snowflake", "flame", "plug",
-  "lightbulb", "paint-bucket", "washing-machine", "shower-head", "toilet",
-  "bath", "cooking-pot", "utensils", "chef-hat", "sofa", "bed", "armchair",
-  "door-open", "key-round", "shield-check", "user-check", "users", "hard-hat",
-  "drill", "shovel", "building", "warehouse", "store", "map-pin", "phone",
-  "message-circle", "camera", "video", "file-text", "clipboard-list",
-  "credit-card", "wallet", "banknote", "receipt", "star", "heart", "bell",
-];
-
-const ICON_MAP: Record<string, LucideIcon> = {
-  tool: Wrench, wrench: Wrench, zap: Zap, droplet: Droplets, brush: Paintbrush,
-  paintbrush: Paintbrush, hammer: Hammer, truck: Truck, home: Home,
-  scissors: Scissors, broom: Brush, "air-vent": AirVent, fan: Fan,
-  snowflake: Snowflake, flame: Flame, plug: Plug, lightbulb: Lightbulb,
-  "paint-bucket": PaintBucket, "washing-machine": WashingMachine,
-  "shower-head": ShowerHead, toilet: Toilet, bath: Bath, "cooking-pot": CookingPot,
-  utensils: Utensils, "chef-hat": ChefHat, sofa: Sofa, bed: Bed, armchair: Armchair,
-  "door-open": DoorOpen, "key-round": KeyRound, "shield-check": ShieldCheck,
-  "user-check": UserCheck, users: Users, "hard-hat": HardHat, drill: Drill,
-  shovel: Shovel, building: Building, warehouse: Warehouse, store: Store,
-  "map-pin": MapPin, phone: Phone, "message-circle": MessageCircle, camera: Camera,
-  video: Video, "file-text": FileText, "clipboard-list": ClipboardList,
-  "credit-card": CreditCard, wallet: Wallet, banknote: Banknote, receipt: Receipt,
-  star: Star, heart: Heart, bell: Bell,
-};
-
-
-function resolveCategoryIcon(name: string | null): LucideIcon {
-  if (!name) return Settings2;
-  const key = String(name).toLowerCase();
-  const direct = ICON_MAP[key];
-  if (direct) return direct;
-  if (/mechanic|car|auto|bike|vehicle/.test(key)) return Wrench;
-  if (/electric|power|ac|air|cool/.test(key)) return Zap;
-  if (/plumb|water|leak|pipe/.test(key)) return Droplets;
-  if (/paint|clean|wash/.test(key)) return Brush;
-  return Settings2;
-}
-
 function CategoryIcon({ name, size = 16, className = "" }: { name: string | null; size?: number; className?: string }) {
-  const Comp = resolveCategoryIcon(name);
+  const Comp = resolveAdminIcon(name);
   return <Comp size={size} className={className} />;
 }
 
@@ -323,41 +270,10 @@ function CategoryForm({
           <p className="mt-1 text-xs text-slate-500">Comma-separated words customers may use to find this category.</p>
         </Field>
         <Field label="Icon">
-          <div className="max-h-72 overflow-y-auto rounded-xl border border-slate-200 p-3 bg-slate-50">
-            <div className="mb-2 text-xs text-slate-500">150+ professional icons. Search by typing the icon name in the field below.</div>
-            <input value={icon} onChange={(e) => setIcon(e.target.value)} className="input mb-3 bg-white" placeholder="Search/type icon: mechanic, car, ac, plumber, cleaner" />
-            <div className="flex flex-wrap gap-2">
-            {ICON_PRESETS.map((i) => {
-              const IconComp = resolveCategoryIcon(i);
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => setIcon(i)}
-                  title={i}
-                  className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg border transition-colors ${icon === i ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600 hover:border-slate-300"}`}
-                >
-                  <IconComp size={16} />
-                  <span className="text-[10px] leading-none">{i}</span>
-                </button>
-              );
-            })}
-          </div>
-          </div>
+          <IconPicker value={icon} onChange={setIcon} />
         </Field>
         <Field label="Color">
-          <div className="flex items-center gap-2 flex-wrap">
-            {COLOR_PRESETS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setColor(c)}
-                className={`w-8 h-8 rounded-lg border-2 ${color === c ? "border-slate-900" : "border-slate-200"}`}
-                style={{ backgroundColor: c }}
-              />
-            ))}
-            <input value={color} onChange={(e) => setColor(e.target.value)} className="input w-32" />
-          </div>
+          <AdvancedColorPicker value={color} onChange={setColor} label="Category color" />
         </Field>
         <Field label="Visibility">
           <div className="space-y-2 text-sm text-slate-700">

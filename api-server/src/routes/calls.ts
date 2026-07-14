@@ -6,6 +6,7 @@ import { callsTable, usersTable } from "@workspace/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../middlewares/auth";
 import { emitToUser } from "../lib/eventBus";
+import { notifyUser } from "../lib/notifications";
 import { Response } from "express";
 
 const router = Router();
@@ -103,6 +104,21 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
     await db.insert(callsTable).values(call);
     incomingCallCache.delete(receiverId);
     emitToUser(receiverId, "call:incoming", { call });
+    // WebSocket is the fastest path while the app is open. The push-backed
+    // notification is the recovery path when the app is backgrounded or killed.
+    void notifyUser({
+      userId: receiverId,
+      title: "Incoming Athoo call",
+      body: `${callerName || "An Athoo user"} is calling${service ? ` about ${service}` : ""}.`,
+      type: "call",
+      link: "/call",
+      data: {
+        callId: call.id,
+        callerId,
+        role: receiver.role,
+        expiresAt: new Date(Date.now() + 35_000).toISOString(),
+      },
+    });
     res.json({ call });
   } catch (e) {
     logger.error({ err: e }, "call create error");

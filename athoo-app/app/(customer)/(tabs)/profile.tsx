@@ -36,6 +36,8 @@ import { useBookings } from "@/context/BookingContext";
 import { useLang } from "@/context/LanguageContext";
 import { api } from "@/services/api";
 import { uploadPickedImage, PrivateImage } from "@/services/storage";
+import { useTheme } from "@/context/ThemeContext";
+import { apiErrorToMessage } from "@/lib/apiError";
 
 const AVATAR_COLORS = [
   "#1A6EE0", "#FF6B1A", "#8B5CF6", "#22C55E", "#F59E0B", "#EC4899", "#06B6D4",
@@ -61,7 +63,7 @@ function buildMenuSections(t: ReturnType<typeof useLang>["t"]) {
         { icon: "bell", label: t.notifications, subtitle: t.manageAlerts, route: "/(customer)/notifications", color: "#3B82F6" },
         { icon: "sun", label: t.appearance, subtitle: t.appearanceHint, route: "/appearance", color: "#6366F1" },
         { icon: "lock", label: t.changePassword, subtitle: t.updatePassword, route: "/(customer)/change-password", color: "#F59E0B" },
-        { icon: "globe", label: t.language, subtitle: t.languageHint, route: null, color: "#06B6D4" },
+        { icon: "globe", label: t.language, subtitle: t.languageHint, route: "/language", color: "#06B6D4" },
         { icon: "shield", label: t.privacy, subtitle: t.privacyHint, route: "/(customer)/privacy", color: "#10B981" },
       ],
     },
@@ -85,7 +87,9 @@ const SOCIAL = [
 export default function ProfileScreen() {
   const { user, logout, updateUser } = useAuth();
   const { getMyBookings } = useBookings();
-  const { t, lang, setLang, isUrdu } = useLang();
+  const { t, translate: tr, textAlign, writingDirection } = useLang();
+  const { theme } = useTheme();
+  const localizedText = { textAlign, writingDirection } as const;
   const menuSections = buildMenuSections(t);
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -93,7 +97,6 @@ export default function ProfileScreen() {
   const [name, setName] = useState(user?.name || "");
   const [saving, setSaving] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
-  const [showLangModal, setShowLangModal] = useState(false);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   const [biometricAvail, setBiometricAvail] = useState(false);
   const [biometricOn, setBiometricOn] = useState(false);
@@ -138,7 +141,7 @@ export default function ProfileScreen() {
         setBiometricOn(true);
         Alert.alert("Quick Login Enabled", `You can now log in with ${biometricLabel}.`);
       } else if (!result.success) {
-        Alert.alert("Authentication Failed", result.error || "Could not verify your identity. Please try again.");
+        Alert.alert("Authentication Failed", apiErrorToMessage(result.error, "Could not verify your identity. Please try again."));
       }
     }
   };
@@ -172,7 +175,7 @@ export default function ProfileScreen() {
         const objectPath = await uploadPickedImage(asset.uri, filename, contentType);
         await updateUser({ profileImage: objectPath });
       } catch (error) {
-        Alert.alert("Upload Failed", error instanceof Error ? error.message : "Profile photo could not be saved. Please try again.");
+        Alert.alert("Upload failed", apiErrorToMessage(error, "Your profile photo could not be saved. Please try again."));
       } finally {
         setUploadingPhoto(false);
       }
@@ -259,17 +262,13 @@ export default function ProfileScreen() {
   };
 
   const handleMenuPress = (route: string | null) => {
-    if (!route) {
-      setShowLangModal(true);
-      return;
-    }
-    router.push(route as any);
+    if (route) router.push(route as any);
   };
 
 
   return (
     <ScrollView
-      style={[styles.container, { paddingTop: topPad }]}
+      style={[styles.container, { paddingTop: topPad, backgroundColor: theme.colors.background }]}
       contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 80 }]}
       showsVerticalScrollIndicator={false}
     >
@@ -328,7 +327,7 @@ export default function ProfileScreen() {
                 style={styles.nameEdit}
                 value={name}
                 onChangeText={setName}
-                placeholder="Your name"
+                placeholder={tr("Your name")}
                 placeholderTextColor="rgba(255,255,255,0.5)"
               />
             ) : (
@@ -339,7 +338,7 @@ export default function ProfileScreen() {
 
             <View style={styles.verifiedBadge}>
               <Icon name="shield" size={10} color="#fff" />
-              <Text style={styles.verifiedText}>Verified Customer</Text>
+              <Text style={styles.verifiedText}>{tr("Verified Customer")}</Text>
             </View>
           </View>
 
@@ -641,50 +640,7 @@ export default function ProfileScreen() {
         </View>
       </Modal>
 
-      <Modal visible={showLangModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Select Language / زبان</Text>
-            <Text style={styles.langHint}>
-              Language changes apply to the whole app instantly.
-            </Text>
 
-            {[
-              { code: "en", flag: "🇬🇧", label: "English", sub: "App in English" },
-              { code: "ur", flag: "🇵🇰", label: "اردو (Urdu)", sub: "پوری ایپ اردو میں" },
-            ].map((l) => (
-              <Pressable
-                key={l.code}
-                style={[styles.langOption, lang === l.code && styles.langOptionActive]}
-                onPress={() => {
-                  setLang(l.code as "en" | "ur");
-                  setShowLangModal(false);
-                }}
-              >
-                <Text style={{ fontSize: 22 }}>{l.flag}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text
-                    style={[
-                      styles.langLabel,
-                      lang === l.code && { color: Colors.primary },
-                    ]}
-                  >
-                    {l.label}
-                  </Text>
-                  <Text style={styles.langSub}>{l.sub}</Text>
-                </View>
-                {lang === l.code && (
-                  <Icon name="check-circle" size={20} color={Colors.primary} />
-                )}
-              </Pressable>
-            ))}
-
-            <Pressable style={styles.modalClose} onPress={() => setShowLangModal(false)}>
-              <Text style={styles.modalCloseText}>Cancel</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
     </ScrollView>
   );
 }
@@ -784,7 +740,7 @@ const styles = StyleSheet.create({
 
   statsCard: {
     flexDirection: "row",
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     marginHorizontal: 20,
     marginTop: -14,
     borderRadius: 18,
@@ -813,7 +769,7 @@ const styles = StyleSheet.create({
   },
 
   menuCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderRadius: 18,
     overflow: "hidden",
     shadowColor: Colors.shadow,
@@ -853,7 +809,7 @@ const styles = StyleSheet.create({
     gap: 8,
     marginHorizontal: 20,
     paddingVertical: 14,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderRadius: 16,
     borderWidth: 1.5,
     borderColor: Colors.secondary + "40",
@@ -892,7 +848,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1.5,
     borderColor: Colors.error + "30",
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     padding: 16,
     gap: 10,
   },
@@ -940,7 +896,7 @@ const styles = StyleSheet.create({
   },
 
   modalBox: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     padding: 24,
@@ -1020,7 +976,7 @@ const styles = StyleSheet.create({
   },
 
   avatarModalBox: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     padding: 28,
@@ -1093,7 +1049,7 @@ const styles = StyleSheet.create({
   },
   shareCodeBtn: {
     flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: Colors.white, borderRadius: 10,
+    backgroundColor: Colors.card, borderRadius: 10,
     paddingHorizontal: 14, paddingVertical: 9,
     borderWidth: 1, borderColor: Colors.primary + "40",
   },

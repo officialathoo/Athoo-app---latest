@@ -1,7 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
-import * as Location from "expo-location";
-import { reverseGeocodeGoogle } from "@/services/maps";
-import { ensureForegroundLocation } from "@/lib/permissions";
+import { reverseGeocode } from "@/services/maps";
+import { getFastForegroundLocation } from "@/services/location";
 import { useToast } from "@/context/ToastContext";
 import { apiErrorToMessage } from "@/lib/apiError";
 import { router, useFocusEffect } from "expo-router";
@@ -68,19 +67,17 @@ export default function AddressesScreen() {
   const handleUseCurrentLocation = async () => {
     try {
       setLoadingLocation(true);
-      const perm = await ensureForegroundLocation({
+      const result = await getFastForegroundLocation({
+        timeoutMs: 8_000,
         rationaleTitle: "Location permission",
         rationaleBody: "ATHOO needs your location to save your current address for faster bookings.",
       });
-      if (perm !== "granted") {
-        return;
-      }
+      if (!result.location) return;
 
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      setNewLatitude(loc.coords.latitude);
-      setNewLongitude(loc.coords.longitude);
+      setNewLatitude(result.location.latitude);
+      setNewLongitude(result.location.longitude);
 
-      const resolved = await reverseGeocodeGoogle(loc.coords.latitude, loc.coords.longitude);
+      const resolved = await reverseGeocode(result.location.latitude, result.location.longitude);
       if (resolved) setNewAddress(resolved);
 
       if (!newLabel.trim()) setNewLabel("Current Location");

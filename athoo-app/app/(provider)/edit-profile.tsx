@@ -8,6 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useCategories } from "@/context/CategoriesContext";
 import { Provider } from "@/data/services";
 import { api } from "@/services/api";
+import { apiErrorToMessage } from "@/lib/apiError";
 
 export default function EditProfileScreen() {
   const { user, updateUser, refreshUser } = useAuth();
@@ -82,7 +83,7 @@ export default function EditProfileScreen() {
         [{ text: "OK", onPress: () => router.back() }],
       );
     } catch (error: any) {
-      Alert.alert("Could not save", error?.message || "Please review your changes and try again.");
+      Alert.alert("Could not save", apiErrorToMessage(error, "Please review your changes and try again."));
     } finally {
       setSaving(false);
     }

@@ -9,6 +9,7 @@ import {
   ViewStyle,
 } from "react-native";
 import { useTheme } from "@/context/ThemeContext";
+import { useOptionalLang } from "@/context/LanguageContext";
 
 interface ButtonProps {
   title: string;
@@ -36,6 +37,7 @@ export function Button({
   accessibilityLabel,
 }: ButtonProps) {
   const { theme } = useTheme();
+  const language = useOptionalLang();
   const isInactive = disabled || loading;
 
   const handlePress = () => {
@@ -99,6 +101,8 @@ export function Button({
             fontFamily: theme.typography.label.fontFamily,
             fontSize: size === "sm" ? theme.typography.caption.fontSize : size === "lg" ? theme.typography.bodyLg.fontSize : 15,
             lineHeight: size === "sm" ? theme.typography.caption.lineHeight : theme.typography.bodyStrong.lineHeight,
+            writingDirection: language?.writingDirection ?? "ltr",
+            textAlign: "center",
           }}
         >
           {title}

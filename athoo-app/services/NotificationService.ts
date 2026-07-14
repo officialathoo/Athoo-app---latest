@@ -1,5 +1,7 @@
+import { appLogger } from "@/lib/logger";
 import { Alert, Linking, Platform } from "react-native";
 import Constants from "expo-constants";
+
 function normalizeApiBaseUrl(value: string): string {
   return String(value || "").trim().replace(/\/$/, "");
 }
@@ -9,6 +11,68 @@ function isExpoGo(): boolean {
   const owner = String(C?.appOwnership || "").toLowerCase();
   const env = String(C?.executionEnvironment || "").toLowerCase();
   return owner === "expo" || owner === "guest" || env.includes("storeclient") || (!!__DEV__ && owner !== "standalone");
+}
+
+export type NotificationCategory = "job" | "message" | "general" | "call";
+
+type NotificationPolicy = {
+  channelId: string;
+  channelName: string;
+  sound: string;
+  importance: "max" | "high";
+  vibrationPattern: number[];
+  lightColor: string;
+};
+
+const NOTIFICATION_POLICIES: Record<NotificationCategory, NotificationPolicy> = {
+  job: {
+    channelId: "jobs-v2",
+    channelName: "Jobs and Booking Alerts",
+    sound: "athoo_job.wav",
+    importance: "max",
+    vibrationPattern: [0, 500, 180, 500, 180, 500],
+    lightColor: "#F97316",
+  },
+  message: {
+    channelId: "messages-v2",
+    channelName: "Chat Messages",
+    sound: "athoo_message.wav",
+    importance: "high",
+    vibrationPattern: [0, 220, 120, 220],
+    lightColor: "#8B5CF6",
+  },
+  general: {
+    channelId: "general-v2",
+    channelName: "General Updates",
+    sound: "athoo_general.wav",
+    importance: "high",
+    vibrationPattern: [0, 300, 120, 300],
+    lightColor: "#1A6EE0",
+  },
+  call: {
+    channelId: "calls-v2",
+    channelName: "Incoming Calls",
+    sound: "athoo_call.wav",
+    importance: "max",
+    vibrationPattern: [0, 700, 250, 700, 250, 700],
+    lightColor: "#22C55E",
+  },
+};
+
+export function notificationCategoryForType(type: unknown): NotificationCategory {
+  const normalized = String(type || "").trim().toLowerCase();
+  if (normalized === "call" || normalized === "incoming_call") return "call";
+  if (normalized === "message" || normalized === "chat") return "message";
+  if (
+    normalized === "booking" ||
+    normalized === "broadcast" ||
+    normalized === "job" ||
+    normalized === "negotiation" ||
+    normalized === "provider_response"
+  ) {
+    return "job";
+  }
+  return "general";
 }
 
 let Notifications: typeof import("expo-notifications") | null = null;
@@ -41,7 +105,11 @@ class NotificationService {
 
   async init(): Promise<void> {
     if (this.initPromise) return this.initPromise;
-    this.initPromise = this._init();
+    this.initPromise = this._init().catch((error) => {
+      // Allow a later foreground retry after a temporary native-module failure.
+      this.initPromise = null;
+      throw error;
+    });
     return this.initPromise;
   }
 
@@ -49,49 +117,26 @@ class NotificationService {
     if (Platform.OS === "web" || isExpoGo()) return;
     const N = await loadNotifications();
     if (!N) return;
+
     try {
       if (Platform.OS === "android" && !this.channelsCreated) {
+        const visibility = N.AndroidNotificationVisibility?.PRIVATE;
+        for (const policy of Object.values(NOTIFICATION_POLICIES)) {
+          await N.setNotificationChannelAsync(policy.channelId, {
+            name: policy.channelName,
+            importance:
+              policy.importance === "max"
+                ? N.AndroidImportance.MAX
+                : N.AndroidImportance.HIGH,
+            vibrationPattern: policy.vibrationPattern,
+            lightColor: policy.lightColor,
+            sound: policy.sound,
+            enableVibrate: true,
+            enableLights: true,
+            ...(visibility ? { lockscreenVisibility: visibility } : {}),
+          });
+        }
         this.channelsCreated = true;
-        await N.setNotificationChannelAsync("bookings", {
-          name: "Booking Alerts",
-          importance: N.AndroidImportance.MAX,
-          vibrationPattern: [0, 400, 200, 400],
-          lightColor: "#1A6EE0",
-          sound: "default",
-          enableVibrate: true,
-        });
-        await N.setNotificationChannelAsync("messages", {
-          name: "Messages",
-          importance: N.AndroidImportance.HIGH,
-          vibrationPattern: [0, 250],
-          lightColor: "#8B5CF6",
-          sound: "default",
-          enableVibrate: true,
-        });
-        await N.setNotificationChannelAsync("status", {
-          name: "Booking Updates",
-          importance: N.AndroidImportance.HIGH,
-          vibrationPattern: [0, 300, 100, 300],
-          lightColor: "#22C55E",
-          sound: "default",
-          enableVibrate: true,
-        });
-        await N.setNotificationChannelAsync("broadcast", {
-          name: "Broadcast Jobs",
-          importance: N.AndroidImportance.MAX,
-          vibrationPattern: [0, 500, 200, 500, 200, 500],
-          lightColor: "#F97316",
-          sound: "default",
-          enableVibrate: true,
-        });
-        await N.setNotificationChannelAsync("responses", {
-          name: "Provider Responses",
-          importance: N.AndroidImportance.MAX,
-          vibrationPattern: [0, 400, 200, 400],
-          lightColor: "#F97316",
-          sound: "default",
-          enableVibrate: true,
-        });
       }
 
       const { status: existing, canAskAgain: existingCanAsk } = await N.getPermissionsAsync();
@@ -106,21 +151,18 @@ class NotificationService {
 
       this.permissionGranted = final === "granted";
 
-      // Only show the "Open Settings" alert when the permission is permanently
-      // blocked (canAskAgain === false). If the user just tapped "Don't Allow"
-      // for the first time, stay silent — don't nag them immediately.
       if (!this.permissionGranted && canAskAgainFinal === false) {
         Alert.alert(
           "Notifications Disabled",
-          "Enable notifications to receive job alerts, chat messages, and booking updates. Tap Open Settings → Athoo → Notifications.",
+          "Enable notifications to receive job alerts, chat messages, calls, and booking updates. Tap Open Settings → Athoo → Notifications.",
           [
             { text: "Not Now", style: "cancel" },
             { text: "Open Settings", onPress: () => Linking.openSettings() },
-          ]
+          ],
         );
       }
-    } catch (e) {
-      console.log("Notification init error:", e);
+    } catch (error) {
+      appLogger.debug("notifications", "Notification init error:", error);
     }
   }
 
@@ -143,8 +185,8 @@ class NotificationService {
 
       const token = await N.getExpoPushTokenAsync({ projectId });
       return token?.data || null;
-    } catch (e) {
-      console.log("getExpoPushToken error:", e);
+    } catch (error) {
+      appLogger.debug("notifications", "getExpoPushToken error:", error);
       return null;
     }
   }
@@ -166,50 +208,70 @@ class NotificationService {
       });
       if (!response.ok) throw new Error(`Push token sync failed (${response.status})`);
       this.syncedToken = expoPushToken;
-    } catch (e) {
-      console.log("syncPushToken error:", e);
+    } catch (error) {
+      appLogger.debug("notifications", "syncPushToken error:", error);
     }
   }
 
   async scheduleBookingAlert(title: string, body: string, data?: Record<string, unknown>): Promise<void> {
-    await this.schedule("bookings", "booking", title, body, data, [0, 400, 200, 400]);
+    await this.schedule("job", "booking", title, body, data);
   }
 
   async scheduleMessageAlert(title: string, body: string, data?: Record<string, unknown>): Promise<void> {
-    await this.schedule("messages", "message", title, body, data);
+    await this.schedule("message", "message", title, body, data);
   }
 
   async scheduleStatusAlert(title: string, body: string, data?: Record<string, unknown>): Promise<void> {
-    await this.schedule("status", "status", title, body, data, [0, 300, 100, 300]);
+    await this.schedule("general", "status", title, body, data);
   }
 
   async scheduleBroadcastAlert(title: string, body: string, data?: Record<string, unknown>): Promise<void> {
-    await this.schedule("broadcast", "broadcast", title, body, data, [0, 500, 200, 500, 200, 500]);
+    await this.schedule("job", "broadcast", title, body, data);
   }
 
   async scheduleResponseAlert(title: string, body: string, data?: Record<string, unknown>): Promise<void> {
-    await this.schedule("responses", "broadcast", title, body, data, [0, 400, 200, 400]);
+    await this.schedule("job", "provider_response", title, body, data);
   }
 
-  private async schedule(channelId: string, type: string, title: string, body: string, data?: Record<string, unknown>, vibrate?: number[]) {
+  async scheduleCallAlert(title: string, body: string, data?: Record<string, unknown>): Promise<void> {
+    await this.schedule("call", "call", title, body, data);
+  }
+
+  private async schedule(
+    category: NotificationCategory,
+    type: string,
+    title: string,
+    body: string,
+    data?: Record<string, unknown>,
+  ): Promise<void> {
     if (Platform.OS === "web" || isExpoGo()) return;
     await this.init();
     const N = await loadNotifications();
     if (!N || !this.permissionGranted) return;
+
+    const policy = NOTIFICATION_POLICIES[category];
     try {
       await N.scheduleNotificationAsync({
         content: {
           title,
           body,
-          sound: "default",
+          sound: policy.sound,
           priority: N.AndroidNotificationPriority.HIGH,
-          vibrate,
-          data: { type, channelId, ...(data || {}) },
+          vibrate: policy.vibrationPattern,
+          data: {
+            type,
+            notificationCategory: category,
+            channelId: policy.channelId,
+            ...(data || {}),
+          },
         },
-        trigger: null,
+        trigger:
+          Platform.OS === "android"
+            ? ({ seconds: 1, channelId: policy.channelId, repeats: false } as any)
+            : null,
       });
-    } catch (e) {
-      console.log("schedule notification error:", e);
+    } catch (error) {
+      appLogger.debug("notifications", "schedule notification error:", error);
     }
   }
 
@@ -217,9 +279,10 @@ class NotificationService {
     if (Platform.OS === "web" || isExpoGo()) return;
     const N = await loadNotifications();
     if (!N) return;
-    try { await N.setBadgeCountAsync(0); } catch {}
+    try {
+      await N.setBadgeCountAsync(0);
+    } catch {}
   }
 }
 
 export const notificationService = new NotificationService();
-

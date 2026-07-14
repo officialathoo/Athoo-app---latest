@@ -7,7 +7,7 @@ Configure these in the EAS `preview` environment before building:
 - `APP_ENV=staging`
 - `EXPO_PUBLIC_API_BASE_URL=https://<staging-api-host>`
 - `EAS_PROJECT_ID=<Expo project UUID>`
-- `GOOGLE_MAPS_API_KEY=<restricted native key>`
+- No commercial maps key is required. Athoo uses OpenStreetMap tiles plus the server-side Photon/Nominatim/OSRM stack.
 - `ANDROID_PACKAGE=com.athoo26436.athooapp`
 - `IOS_BUNDLE_IDENTIFIER=com.athoo26436.athooapp`
 

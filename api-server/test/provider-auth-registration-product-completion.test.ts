@@ -20,7 +20,8 @@ test("provider registration persists and uniquely validates identity", () => {
 
 test("verification documents are owner-private, typed and replaceable", () => {
   assert.match(me, /Provider account required/);
-  assert.match(me, /uploads\/private\/\$\{req\.user!\.userId\}/);
+  assert.match(me, /isOwnedUploadObjectPath\(normalizedUrl, req\.user!\.userId, \["private"\]\)/);
+  assert.match(me, /normalizeStoredObjectPath/);
   assert.match(me, /providerDocumentsTable\.type, normalizedType/);
   assert.match(me, /verificationStatus = complete \? "in_process" : "pending"/);
   assert.match(migration, /provider_documents_provider_type_uidx/);

@@ -1,58 +1,95 @@
 /**
- * apiErrorToMessage — branded, user-friendly conversion of any thrown error
- * (from services/api.ts or otherwise) to a short, plain-English message that
- * is safe to show in a Toast or inline ErrorView.
+ * Converts any thrown value into short, user-safe copy.
  *
- * The api.ts request() helper throws Error("<server message> [<status> <statusText>] <body>")
- * — this helper strips the noisy diagnostic suffix and maps common network/timeout
- * conditions to friendly copy.
- *
- * Pair with showError(title, apiErrorToMessage(e)) for consistent UX.
+ * Rules:
+ * - Never display stack traces, SQL, cloud-storage XML, credentials, request IDs,
+ *   internal file paths, raw JSON/HTML, or transport diagnostics.
+ * - Preserve concise business validation messages returned by the API.
+ * - Map connectivity, authentication, throttling, and server failures to copy a
+ *   customer can understand and act on.
  */
-export function apiErrorToMessage(err: unknown, fallback = "Something went wrong. Please try again."): string {
+export function apiErrorToMessage(
+  err: unknown,
+  fallback = "Something went wrong. Please try again.",
+): string {
   if (!err) return fallback;
+
   const extracted =
     err instanceof Error
       ? err.message
       : typeof err === "string"
-      ? err
-      : typeof err === "object" && err !== null && "message" in err && typeof (err as { message: unknown }).message === "string"
-      ? (err as { message: string }).message
-      : "";
-  const raw = extracted.trim();
-  if (!raw) return fallback;
+        ? err
+        : typeof err === "object" && err !== null && "message" in err && typeof (err as { message: unknown }).message === "string"
+          ? (err as { message: string }).message
+          : "";
 
+  const raw = extracted.replace(/\u0000/g, "").trim();
+  if (!raw) return fallback;
   const lower = raw.toLowerCase();
 
-  // Network / connectivity
   if (
     lower.includes("network request failed") ||
     lower.includes("failed to fetch") ||
     lower.includes("load failed") ||
-    lower.includes("network error")
+    lower.includes("network error") ||
+    lower.includes("econnreset") ||
+    lower.includes("econnrefused") ||
+    lower.includes("enotfound") ||
+    lower.includes("socket hang up")
   ) {
     return "No internet connection. Please check your network and try again.";
   }
+
   if (lower.includes("timed out") || lower.includes("timeout") || lower.includes("aborted")) {
     return "The request took too long. Please check your connection and try again.";
   }
 
-  // Strip the "[<status> <statusText>] {json...}" tail added by api.ts
-  const stripped = raw.replace(/\s*\[\d{3}[^\]]*\]\s*\{.*$/s, "").trim();
-  const message = stripped || raw;
-
-  // Map common HTTP status to friendly copy when no server message survives
-  const statusMatch = raw.match(/\[(\d{3})/);
-  const status = statusMatch ? Number(statusMatch[1]) : 0;
-  if (!stripped || /^request failed/i.test(stripped)) {
-    if (status === 401) return "Your session has expired. Please sign in again.";
-    if (status === 403) return "You don't have permission to do that.";
-    if (status === 404) return "We couldn't find what you were looking for.";
-    if (status === 409) return "That action conflicts with the current state. Please refresh and try again.";
-    if (status === 429) return "Too many requests. Please slow down and try again in a moment.";
-    if (status >= 500) return "Our servers are having trouble. Please try again shortly.";
+  if (lower.includes("verification code delivery is temporarily unavailable") || lower.includes("otp_delivery_unavailable")) {
+    return "Verification code delivery is temporarily unavailable. Please try again shortly.";
   }
 
-  // Cap length so it fits in a toast
-  return message.length > 180 ? message.slice(0, 177) + "…" : message;
+  const statusMatch = raw.match(/\[(\d{3})\b/) || raw.match(/\bstatus(?:code)?[\s:=]+(\d{3})\b/i);
+  const status = statusMatch ? Number(statusMatch[1]) : 0;
+
+  if (status === 401) return "Your session has expired. Please sign in again.";
+  if (status === 403) return "You don't have permission to complete this action.";
+  if (status === 404) return "We couldn't find what you were looking for.";
+  if (status === 409) return "This request is already completed or no longer available. Please refresh and try again.";
+  if (status === 413) return "This file is too large. Please choose a smaller file and try again.";
+  if (status === 415) return "This file type is not supported. Please choose another file.";
+  if (status === 422) return "Please check the information you entered and try again.";
+  if (status === 429) return "Too many attempts. Please wait a moment and try again.";
+  if (status >= 500) return "Athoo is temporarily unavailable. Please try again shortly.";
+
+  // Remove the diagnostic suffix produced by services/api.ts and common HTTP clients.
+  let message = raw
+    .replace(/\s*\[\d{3}[^\]]*\]\s*(?:\{[\s\S]*|<[\s\S]*)?$/i, "")
+    .replace(/\s*\((?:request|trace|correlation)[-_ ]?id[^)]*\)\s*$/i, "")
+    .replace(/\s*request[-_ ]?id\s*[:=].*$/i, "")
+    .trim();
+
+  const technicalPatterns = [
+    /(?:error|exception):\s*at\s+/i,
+    /\bat\s+[A-Za-z0-9_$<>.]+\s*\([^)]*:\d+:\d+\)/,
+    /\b(?:select|insert|update|delete)\s+.+\b(?:from|into|where)\b/i,
+    /\b(?:postgres|postgresql|drizzle|sqlstate|constraint|relation|column)\b/i,
+    /\b(?:aws|s3|cloudflare|r2|bucket|access key|secret key|credential|signaturedoesnotmatch|invalidargument)\b/i,
+    /<\?xml|<Error>|<html|<!doctype/i,
+    /\{\s*"(?:error|message|stack|code|name)"\s*:/i,
+    /\b(?:node_modules|\/src\/|\\src\\|\.tsx?:\d+|\.mjs:\d+|\.js:\d+)\b/i,
+    /\b(?:typeerror|referenceerror|syntaxerror|rangeerror)\b/i,
+    /\b(?:ECONN|ENOTFOUND|ETIMEDOUT|EAI_AGAIN)\b/i,
+    /\b(?:hostid|requestid|x-amz-|cf-ray|stack trace)\b/i,
+  ];
+
+  if (!message || /^request failed\b/i.test(message) || technicalPatterns.some((pattern) => pattern.test(raw))) {
+    return fallback;
+  }
+
+  // Only allow a compact, sentence-like business message through.
+  message = message.replace(/\s+/g, " ").trim();
+  if (message.length > 180) return fallback;
+  if ((message.match(/[{}<>\[\]\\]/g) || []).length >= 2) return fallback;
+
+  return message;
 }

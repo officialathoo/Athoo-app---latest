@@ -19,7 +19,13 @@ export interface UploadFileInput {
   metadata?: Record<string, string>;
 }
 
-export interface StoredObjectResponse {
+export interface StoredObjectMetadata {
+  contentType?: string;
+  contentLength?: number;
+  cacheControl?: string;
+}
+
+export interface StoredObjectResponse extends StoredObjectMetadata {
   body: Readable;
   contentType?: string;
   contentLength?: number;
@@ -50,6 +56,7 @@ export interface StorageProvider {
   replaceObject(input: UploadFileInput): Promise<{ key: string; objectPath: string }>;
   getSignedReadUrl(keyOrObjectPath: string, ttlSeconds?: number): Promise<string>;
   getSignedUploadUrl(input: SignedUploadInput): Promise<SignedUploadResult>;
+  statObject(keyOrObjectPath: string): Promise<StoredObjectMetadata>;
   getObject(keyOrObjectPath: string): Promise<StoredObjectResponse>;
 }
 
@@ -95,10 +102,32 @@ function buildUploadKey(fileName?: string): string {
   return `${prefix}/${new Date().toISOString().slice(0, 10)}/${randomUUID()}-${safeFileName(fileName)}`;
 }
 
+function envValue(name: string): string {
+  return String(process.env[name] || "").trim();
+}
+
 function boolEnv(name: string, fallback: boolean): boolean {
-  const raw = process.env[name];
-  if (raw === undefined) return fallback;
+  const raw = envValue(name);
+  if (!raw) return fallback;
   return ["1", "true", "yes", "on"].includes(raw.toLowerCase());
+}
+
+function validateR2Configuration(input: {
+  accountId: string;
+  endpoint: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucket: string;
+}): void {
+  const invalid: string[] = [];
+  if (input.accountId && !/^[a-f0-9]{32}$/i.test(input.accountId)) invalid.push("CLOUDFLARE_R2_ACCOUNT_ID must be a 32-character account identifier");
+  if (!/^https:\/\/[^\s/]+(?:\/.*)?$/i.test(input.endpoint)) invalid.push("S3_ENDPOINT must be a valid HTTPS endpoint");
+  if (!/^[A-Za-z0-9]{32}$/.test(input.accessKeyId)) invalid.push("CLOUDFLARE_R2_ACCESS_KEY_ID must be exactly 32 characters");
+  if (input.secretAccessKey.length < 40) invalid.push("CLOUDFLARE_R2_SECRET_ACCESS_KEY is invalid");
+  if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(input.bucket)) invalid.push("CLOUDFLARE_R2_BUCKET must be a valid bucket name without a URL or slash");
+  if (invalid.length) {
+    throw new StorageNotConfiguredError(`Storage provider 'r2' has invalid configuration: ${invalid.join("; ")}.`);
+  }
 }
 
 export class R2StorageProvider implements StorageProvider {
@@ -107,11 +136,11 @@ export class R2StorageProvider implements StorageProvider {
   private readonly bucket: string;
 
   constructor() {
-    const accountId = process.env.CLOUDFLARE_R2_ACCOUNT_ID;
-    const endpoint = process.env.S3_ENDPOINT || (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : undefined);
-    const accessKeyId = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || process.env.S3_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || process.env.S3_SECRET_ACCESS_KEY;
-    this.bucket = process.env.CLOUDFLARE_R2_BUCKET || process.env.S3_BUCKET || "";
+    const accountId = envValue("CLOUDFLARE_R2_ACCOUNT_ID");
+    const endpoint = envValue("S3_ENDPOINT") || (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : "");
+    const accessKeyId = envValue("CLOUDFLARE_R2_ACCESS_KEY_ID") || envValue("S3_ACCESS_KEY_ID");
+    const secretAccessKey = envValue("CLOUDFLARE_R2_SECRET_ACCESS_KEY") || envValue("S3_SECRET_ACCESS_KEY");
+    this.bucket = envValue("CLOUDFLARE_R2_BUCKET") || envValue("S3_BUCKET");
 
     if (!endpoint || !accessKeyId || !secretAccessKey || !this.bucket) {
       const missing: string[] = [];
@@ -124,8 +153,10 @@ export class R2StorageProvider implements StorageProvider {
       );
     }
 
+    validateR2Configuration({ accountId, endpoint, accessKeyId, secretAccessKey, bucket: this.bucket });
+
     const config: S3ClientConfig = {
-      region: process.env.S3_REGION || "auto",
+      region: envValue("S3_REGION") || "auto",
       endpoint,
       credentials: { accessKeyId, secretAccessKey },
       forcePathStyle: boolEnv("S3_FORCE_PATH_STYLE", true),
@@ -179,6 +210,17 @@ export class R2StorageProvider implements StorageProvider {
       key,
       headers: input.contentType ? { "Content-Type": input.contentType } : undefined,
     };
+  }
+
+  async statObject(keyOrObjectPath: string): Promise<StoredObjectMetadata> {
+    try {
+      const key = keyFromObjectPath(keyOrObjectPath);
+      const head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+      return { contentType: head.ContentType, contentLength: head.ContentLength, cacheControl: head.CacheControl };
+    } catch (error: any) {
+      if (error?.name === "NoSuchKey" || error?.$metadata?.httpStatusCode === 404) throw new StorageObjectNotFoundError();
+      throw error;
+    }
   }
 
   async getObject(keyOrObjectPath: string): Promise<StoredObjectResponse> {
@@ -254,6 +296,19 @@ export class LocalStorageProvider implements StorageProvider {
       key,
       headers: input.contentType ? { "Content-Type": input.contentType } : undefined,
     };
+  }
+
+  async statObject(keyOrObjectPath: string): Promise<StoredObjectMetadata> {
+    const full = this.fullPath(keyOrObjectPath);
+    try {
+      const stat = await fs.stat(full);
+      let contentType: string | undefined;
+      try { contentType = JSON.parse(await fs.readFile(`${full}.meta.json`, "utf8")).contentType; } catch {}
+      return { contentType, contentLength: stat.size };
+    } catch (error: any) {
+      if (error?.code === "ENOENT") throw new StorageObjectNotFoundError();
+      throw error;
+    }
   }
 
   async getObject(keyOrObjectPath: string): Promise<StoredObjectResponse> {

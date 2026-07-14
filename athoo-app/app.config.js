@@ -1,15 +1,13 @@
 import "dotenv/config";
 
-const googleMapsApiKey =
-  process.env.GOOGLE_MAPS_API_KEY ||
-  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
-  "";
-
 const appEnvironment = process.env.APP_ENV || "development";
 const apiBaseUrl =
   process.env.EXPO_PUBLIC_API_BASE_URL ||
   process.env.API_BASE_URL ||
   "";
+const mapTileUrl =
+  process.env.EXPO_PUBLIC_MAP_TILE_URL ||
+  "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 
 const easProjectId = process.env.EAS_PROJECT_ID || "";
 const appVersion = process.env.APP_VERSION || "1.0.0";
@@ -19,7 +17,7 @@ const iosBuildNumber = process.env.IOS_BUILD_NUMBER || "1";
 const extra = {
   appEnvironment,
   API_BASE_URL: apiBaseUrl,
-  googleMapsApiKey,
+  MAP_TILE_URL: mapTileUrl,
 };
 
 if (easProjectId) {
@@ -53,7 +51,7 @@ export default {
     splash: {
       image: "./assets/images/splash.png",
       resizeMode: "contain",
-      backgroundColor: "#1A6EE0",
+      backgroundColor: "#FFFFFF",
     },
 
     ios: {
@@ -65,8 +63,7 @@ export default {
       buildNumber: iosBuildNumber,
 
       config: {
-        googleMapsApiKey,
-      },
+            },
 
       infoPlist: {
         NSCameraUsageDescription:
@@ -107,11 +104,6 @@ export default {
         backgroundColor: "#FFFFFF",
       },
 
-      config: {
-        googleMaps: {
-          apiKey: googleMapsApiKey,
-        },
-      },
 
       permissions: [
         "android.permission.USE_BIOMETRIC",
@@ -150,10 +142,15 @@ export default {
       [
         "expo-notifications",
         {
-          icon: "./assets/images/icon.png",
+          icon: "./assets/images/notification-icon.png",
           color: "#1A6EE0",
-          defaultChannel: "bookings",
-          sounds: [],
+          defaultChannel: "general-v2",
+          sounds: [
+            "./assets/sounds/athoo_job.wav",
+            "./assets/sounds/athoo_message.wav",
+            "./assets/sounds/athoo_general.wav",
+            "./assets/sounds/athoo_call.wav",
+          ],
         },
       ],
 

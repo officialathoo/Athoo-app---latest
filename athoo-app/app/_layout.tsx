@@ -17,6 +17,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { ResponsiveViewport } from "@/components/ResponsiveViewport";
 import { OfflineBanner } from "@/components/ui/UiState";
 import { LegalConsentGate } from "@/components/ui/LegalConsentGate";
 import { AuthProvider } from "@/context/AuthContext";
@@ -25,7 +26,7 @@ import { BroadcastProvider } from "@/context/BroadcastContext";
 import { CallProvider } from "@/context/CallContext";
 import { CategoriesProvider } from "@/context/CategoriesContext";
 import { ChatProvider } from "@/context/ChatContext";
-import { LanguageProvider } from "@/context/LanguageContext";
+import { LanguageProvider, useLang } from "@/context/LanguageContext";
 import { NegotiationProvider } from "@/context/NegotiationContext";
 import { NotificationProvider } from "@/context/NotificationContext";
 import { ToastProvider } from "@/context/ToastContext";
@@ -39,21 +40,37 @@ SplashScreen.preventAutoHideAsync();
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30000,
+      staleTime: 60_000,
+      gcTime: 30 * 60_000,
       retry: 1,
+      networkMode: "offlineFirst",
+      refetchOnReconnect: true,
+    },
+    mutations: {
+      networkMode: "online",
+      retry: 0,
     },
   },
 });
 
 function RootLayoutNav() {
+  const { theme } = useTheme();
   return (
     <>
-      <Stack screenOptions={{ headerShown: false }}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: theme.colors.background },
+          animation: "fade_from_bottom",
+        }}
+      >
         <Stack.Screen name="index" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="auth" />
         <Stack.Screen name="(customer)" />
         <Stack.Screen name="(provider)" />
+        <Stack.Screen name="appearance" />
+        <Stack.Screen name="language" />
         <Stack.Screen name="legal" />
         <Stack.Screen name="call" />
         <Stack.Screen name="+not-found" />
@@ -66,12 +83,13 @@ function RootLayoutNav() {
 
 function ApiConfigurationScreen() {
   const { theme } = useTheme();
+  const { translate: tr } = useLang();
   return (
     <View style={[configurationStyles.container, { backgroundColor: theme.colors.background }]}>
       <AppCard style={configurationStyles.card}>
-        <AppText variant="h2" align="center">Athoo is not configured</AppText>
+        <AppText variant="h2" align="center">{tr("Service temporarily unavailable")}</AppText>
         <AppText tone="secondary" align="center" style={{ marginTop: theme.spacing.md }}>
-          Set EXPO_PUBLIC_API_BASE_URL to the Athoo API address, then rebuild the mobile app.
+          {tr("Athoo cannot connect right now. Please install the latest app version or contact Athoo Support.")}
         </AppText>
       </AppCard>
     </View>
@@ -83,10 +101,11 @@ const configurationStyles = StyleSheet.create({
   card: { width: "100%", maxWidth: 480 },
 });
 
-function ThemedApplication() {
-  const { theme, ready } = useTheme();
+function ConfiguredApplication() {
+  const { theme } = useTheme();
+  const { ready: languageReady } = useLang();
 
-  if (!ready) {
+  if (!languageReady) {
     return <AthooLoader />;
   }
 
@@ -102,33 +121,47 @@ function ThemedApplication() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1, backgroundColor: theme.colors.background }}>
-            <LanguageProvider>
-              <SettingsProvider>
-                <ToastProvider>
-                  <AuthProvider>
-                    <CategoriesProvider>
-                      <NotificationProvider>
-                        <BroadcastProvider>
-                          <BookingProvider>
-                            <ChatProvider>
-                              <NegotiationProvider>
-                                <CallProvider>
+            <SettingsProvider>
+              <ToastProvider>
+                <AuthProvider>
+                  <CategoriesProvider>
+                    <NotificationProvider>
+                      <BroadcastProvider>
+                        <BookingProvider>
+                          <ChatProvider>
+                            <NegotiationProvider>
+                              <CallProvider>
+                                <ResponsiveViewport>
                                   <RootLayoutNav />
-                                </CallProvider>
-                              </NegotiationProvider>
-                            </ChatProvider>
-                          </BookingProvider>
-                        </BroadcastProvider>
-                      </NotificationProvider>
-                    </CategoriesProvider>
-                  </AuthProvider>
-                </ToastProvider>
-              </SettingsProvider>
-            </LanguageProvider>
+                                </ResponsiveViewport>
+                              </CallProvider>
+                            </NegotiationProvider>
+                          </ChatProvider>
+                        </BookingProvider>
+                      </BroadcastProvider>
+                    </NotificationProvider>
+                  </CategoriesProvider>
+                </AuthProvider>
+              </ToastProvider>
+            </SettingsProvider>
           </GestureHandlerRootView>
         </QueryClientProvider>
       </ErrorBoundary>
     </>
+  );
+}
+
+function ThemedApplication() {
+  const { ready } = useTheme();
+
+  if (!ready) {
+    return <AthooLoader />;
+  }
+
+  return (
+    <LanguageProvider>
+      <ConfiguredApplication />
+    </LanguageProvider>
   );
 }
 

@@ -4,6 +4,7 @@ import { Feather } from "@expo/vector-icons";
 import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { LegalAcceptanceCheckbox, LEGAL_VERSION } from "@/components/ui/LegalAcceptanceCheckbox";
+import { apiErrorToMessage } from "@/lib/apiError";
 
 /**
  * Blocking modal shown at app launch when the signed-in user's `legalVersion`
@@ -28,7 +29,7 @@ export function LegalConsentGate() {
     setError(null);
     const res = await acceptCurrentLegal();
     setBusy(false);
-    if (!res.success) setError(res.error || "Could not save your acceptance. Please try again.");
+    if (!res.success) setError(apiErrorToMessage(res.error, "Could not save your acceptance. Please try again."));
   };
 
   return (

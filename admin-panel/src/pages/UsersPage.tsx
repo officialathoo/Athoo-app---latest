@@ -7,6 +7,7 @@ import { DataTable } from "@/components/ui/DataTable";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useToast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/usePermissions";
+import { BulkActionBar } from "@/components/admin/BulkActionBar";
 
 type SortKey = "name" | "joinedAt" | "totalJobs";
 type ActionKind = "deactivate" | "reactivate" | "logout";
@@ -32,6 +33,8 @@ export function UsersPage() {
   const [pendingAction, setPendingAction] = useState<ActionKind | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [notes, setNotes] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
@@ -54,7 +57,7 @@ export function UsersPage() {
   }
 
   useEffect(() => { load(); }, [page, status, sort, direction, debouncedSearch]);
-  useEffect(() => { setPage(1); }, [status, sort, direction, debouncedSearch]);
+  useEffect(() => { setPage(1); setSelectedIds(new Set()); }, [status, sort, direction, debouncedSearch]);
 
   const pages = Math.max(1, Math.ceil(total / limit));
   const range = useMemo(() => ({ from: total ? (page - 1) * limit + 1 : 0, to: Math.min(page * limit, total) }), [page, total]);
@@ -114,6 +117,34 @@ export function UsersPage() {
     }
   }
 
+  async function runBulkAction(action: ActionKind) {
+    const ids = Array.from(selectedIds);
+    if (!ids.length) return;
+    const actionLabel = action === "logout" ? "force logout" : action;
+    const reason = window.prompt(`Reason to ${actionLabel} ${ids.length} selected customer${ids.length === 1 ? "" : "s"}:`)?.trim() || "";
+    if (reason.length < 5) {
+      toast({ title: "Reason required", description: "Enter at least 5 characters.", variant: "destructive" });
+      return;
+    }
+    setBulkLoading(true);
+    try {
+      const results = await Promise.allSettled(ids.map((id) => api(
+        action === "logout" ? `/api/admin/customers/${id}/revoke-sessions` : `/api/admin/customers/${id}/${action}`,
+        { method: action === "logout" ? "POST" : "PATCH", body: { reason } },
+      )));
+      const succeeded = results.filter((result) => result.status === "fulfilled").length;
+      const failed = results.length - succeeded;
+      if (succeeded) {
+        toast({ title: `${succeeded} customer${succeeded === 1 ? "" : "s"} updated`, description: failed ? `${failed} action${failed === 1 ? "" : "s"} failed and can be retried.` : reason });
+      }
+      if (failed && !succeeded) toast({ title: "Bulk action failed", description: "No selected customer could be updated.", variant: "destructive" });
+      setSelectedIds(new Set());
+      await load();
+    } finally {
+      setBulkLoading(false);
+    }
+  }
+
   async function saveNotes() {
     if (!selected) return;
     setActionLoading(true);
@@ -144,7 +175,20 @@ export function UsersPage() {
           <button onClick={load} className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50" aria-label="Refresh customers"><RefreshCw size={16} /></button>
         </div>
 
+        {canWrite ? <div className="border-b border-slate-100 px-5 py-3 space-y-3">
+          <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-600">
+            <input type="checkbox" aria-label="Select all customers on this page" checked={customers.length > 0 && customers.every((customer) => selectedIds.has(customer.id))} onChange={() => setSelectedIds(customers.length > 0 && customers.every((customer) => selectedIds.has(customer.id)) ? new Set() : new Set(customers.map((customer) => customer.id)))} />
+            Select all customers on this page
+          </label>
+          <BulkActionBar count={selectedIds.size} busy={bulkLoading} onClear={() => setSelectedIds(new Set())} actions={[
+            { label: "Deactivate", tone: "danger", onClick: () => runBulkAction("deactivate") },
+            { label: "Reactivate", onClick: () => runBulkAction("reactivate") },
+            { label: "Force logout", tone: "neutral", onClick: () => runBulkAction("logout") },
+          ]} />
+        </div> : null}
+
         <DataTable data={customers} loading={loading} keyExtractor={(u) => u.id} emptyMessage="No customers found." columns={[
+          ...(canWrite ? [{ header: "Select", width: "w-16", render: (u: User) => <input type="checkbox" aria-label={`Select ${u.name}`} checked={selectedIds.has(u.id)} onChange={() => setSelectedIds((current) => { const next = new Set(current); next.has(u.id) ? next.delete(u.id) : next.add(u.id); return next; })} /> }] : []),
           { header: "Customer", render: (u) => <div><p className="font-medium text-slate-800">{u.name}</p><p className="text-xs text-slate-400">{u.phone} · {u.email || "No email"}</p></div> },
           { header: "Status", render: (u) => <StatusBadge status={u.isDeactivated ? "deactivated" : "active"} /> },
           { header: "Bookings", key: "totalJobs" },

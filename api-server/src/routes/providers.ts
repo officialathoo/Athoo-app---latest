@@ -42,7 +42,7 @@ function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number): num
   return km < 0.05 ? 0 : km;
 }
 
-// Nearest available providers — Haversine sort, 100% free, no Google Maps.
+// Nearest available providers — Haversine sort, 100% free, OpenStreetMap-compatible.
 // Skips blocked / unavailable / cooldown providers automatically.
 router.get("/nearest", async (req, res) => {
   try {

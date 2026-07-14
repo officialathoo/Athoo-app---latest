@@ -17,7 +17,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import * as Location from "expo-location";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
 import { Button } from "@/components/ui/Button";
@@ -29,6 +28,8 @@ import { getDistanceKm } from "@/utils/distance";
 import { api, realtime, getToken } from "@/services/api";
 import { shareBookingInvoice } from "@/utils/bookingInvoicePdf";
 import { buildRepeatBookingParams } from "@/utils/repeatBooking";
+import { apiErrorToMessage } from "@/lib/apiError";
+import { getFastForegroundLocation } from "@/services/location";
 
 // ── OSRM road-route helper ─────────────────────────────────────────────────
 async function fetchOsrmRoute(
@@ -149,25 +150,25 @@ function getProviderCoords(booking: any) {
 
 function openMapsAt(latitude: number, longitude: number, label?: string) {
   const encodedLabel = encodeURIComponent(label || `${latitude},${longitude}`);
-  const googleUrl = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+  const openStreetMapUrl = `https://www.openstreetmap.org/?mlat=${latitude}&mlon=${longitude}#map=17/${latitude}/${longitude}`;
   const appleUrl = `http://maps.apple.com/?ll=${latitude},${longitude}&q=${encodedLabel}`;
   const geoUrl = `geo:${latitude},${longitude}?q=${latitude},${longitude}(${encodedLabel})`;
 
   if (Platform.OS === "android") {
     Linking.canOpenURL(geoUrl)
-      .then((ok) => (ok ? Linking.openURL(geoUrl) : Linking.openURL(googleUrl)))
-      .catch(() => Linking.openURL(googleUrl));
+      .then((ok) => (ok ? Linking.openURL(geoUrl) : Linking.openURL(openStreetMapUrl)))
+      .catch(() => Linking.openURL(openStreetMapUrl));
     return;
   }
 
   if (Platform.OS === "ios") {
     Linking.canOpenURL(appleUrl)
-      .then((ok) => (ok ? Linking.openURL(appleUrl) : Linking.openURL(googleUrl)))
-      .catch(() => Linking.openURL(googleUrl));
+      .then((ok) => (ok ? Linking.openURL(appleUrl) : Linking.openURL(openStreetMapUrl)))
+      .catch(() => Linking.openURL(openStreetMapUrl));
     return;
   }
 
-  Linking.openURL(googleUrl).catch(() => {});
+  Linking.openURL(openStreetMapUrl).catch(() => {});
 }
 
 // ── Custom map markers ────────────────────────────────────────────────────────
@@ -373,7 +374,7 @@ export default function BookingDetailScreen() {
       setShowInvoiceModal(false);
       showToast(`Cash payment confirmed for ${updated.service}.`);
     } catch (e: any) {
-      showToast(e?.message || "Could not mark as paid. Try again.");
+      showToast(apiErrorToMessage(e, "We couldn't mark this booking as paid. Please try again."));
     } finally {
       setIsMarkingPaid(false);
     }
@@ -383,14 +384,17 @@ export default function BookingDetailScreen() {
     if (!booking || !bookingId) return;
     setIsUpdatingJobLocation(true);
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        showToast("Please allow location access to update job location.");
+      const result = await getFastForegroundLocation({
+        timeoutMs: 8_000,
+        requiredAccuracy: 800,
+        rationaleTitle: "Location permission",
+        rationaleBody: "Athoo uses your location to update the job pin for the provider.",
+      });
+      if (!result.location) {
+        showToast("Could not get a usable location. Please check GPS and try again.");
         return;
       }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
-      const { latitude, longitude } = loc.coords;
-      await api.updateCustomerLocation(bookingId, latitude, longitude);
+      await api.updateCustomerLocation(bookingId, result.location.latitude, result.location.longitude);
       await loadBookings();
       showToast("Job location updated to your current position.");
     } catch {

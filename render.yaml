@@ -19,6 +19,8 @@ services:
         generateValue: true
       - key: SESSION_SECRET
         generateValue: true
+      - key: OTP_HASH_SECRET
+        generateValue: true
       - key: CORS_ORIGIN
         sync: false
       - key: CORS_ORIGINS
@@ -53,8 +55,6 @@ services:
         value: expo
       - key: EXPO_ACCESS_TOKEN
         sync: false
-      - key: GOOGLE_MAPS_API_KEY
-        sync: false
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
@@ -63,6 +63,16 @@ services:
         sync: false
       - key: SMTP_PASS
         sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_GRAPH_API_VERSION
+        value: v25.0
+      - key: ALLOW_DEV_OTP_RESPONSE
+        value: "false"
       - key: SENTRY_DSN
         sync: false
       - key: METRICS_TOKEN

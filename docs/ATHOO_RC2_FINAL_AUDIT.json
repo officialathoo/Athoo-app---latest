@@ -1,0 +1,47 @@
+{
+  "release": "ATHOO_RC2_FINAL_VERSION_FOR_TESTING",
+  "baseline": "ATHOO_RC2_PHASE_8B4_SUPPORT_POLICY_SECURITY_PROFESSIONAL_UX.zip",
+  "cumulative": true,
+  "finalCodeHardening": {
+    "otpDeliveryTruth": true,
+    "opaquePasswordResetChallenge": true,
+    "productionOtpDisplayBlocked": true,
+    "userSafeConfigurationScreen": true,
+    "userSafeCrashScreen": true,
+    "productionSafeMobileLogger": true,
+    "responsiveWideViewport": true,
+    "rootAndMobileEasSynchronized": true,
+    "approvedCenteredIconRetained": true,
+    "singleIconBackgroundRetained": true
+  },
+  "verification": {
+    "projectValidation": "passed",
+    "jsonFilesChecked": 31,
+    "releaseCheck": "passed",
+    "mobileReleaseValidation": "passed",
+    "closedBetaQaValidation": "passed",
+    "operationsReadiness": "passed",
+    "securityScan": "passed",
+    "deviceAcceptancePreparation": "passed",
+    "typescriptFilesParsed": 445,
+    "typescriptSyntaxFailures": 0,
+    "sourceTestsPassed": 309,
+    "sourceTestsFailed": 0,
+    "databaseMigrationRequired": false,
+    "dependencyBackedTypecheckRun": false,
+    "dependencyBackedBuildRun": false,
+    "liveInfrastructureCertificationRun": false,
+    "realDeviceCertificationRun": false
+  },
+  "requiredConnectedServices": [
+    "GitHub",
+    "Render",
+    "Neon PostgreSQL",
+    "Vercel",
+    "Cloudflare R2",
+    "Expo EAS"
+  ],
+  "requiredOtpDelivery": [
+    "WhatsApp Cloud API or SMTP"
+  ]
+}

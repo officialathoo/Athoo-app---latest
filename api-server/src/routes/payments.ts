@@ -1,3 +1,4 @@
+import { isOwnedUploadObjectPath, normalizeStoredObjectPath } from "../lib/storageSecurity";
 import { Router } from "express";
 import { logger } from "../lib/logger";
 import crypto from "crypto";
@@ -68,7 +69,7 @@ router.post("/", async (req: AuthRequest, res) => {
     const amount = Number(req.body?.amount);
     const accountId = String(req.body?.accountId || "").trim();
     const reference = String(req.body?.reference || "").trim();
-    const screenshotUrl = String(req.body?.screenshotUrl || "").trim();
+    const screenshotUrl = normalizeStoredObjectPath(req.body?.screenshotUrl);
     const note = String(req.body?.note || "").trim() || null;
     const clientRequestId = String(req.body?.clientRequestId || "").trim();
 
@@ -77,7 +78,7 @@ router.post("/", async (req: AuthRequest, res) => {
     if (!accountId) return res.status(400).json({ error: "Payment account is required" });
     if (!reference || reference.length > 120) return res.status(400).json({ error: "Transaction reference is required" });
     if (!screenshotUrl) return res.status(400).json({ error: "Payment screenshot is required" });
-    if (!screenshotUrl.startsWith(`uploads/private/${providerId}/`)) return res.status(400).json({ error: "Payment screenshot must be uploaded to your private storage" });
+    if (!isOwnedUploadObjectPath(screenshotUrl, providerId, ["private"])) return res.status(400).json({ error: "Payment screenshot must be uploaded through your private Athoo storage" });
     if (note && note.length > 500) return res.status(400).json({ error: "Note must be 500 characters or fewer" });
 
     const account = await db.query.paymentAccountsTable.findFirst({ where: and(eq(paymentAccountsTable.id, accountId), eq(paymentAccountsTable.isActive, true)) });

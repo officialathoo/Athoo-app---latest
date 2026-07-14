@@ -1,3 +1,4 @@
+import { appLogger } from "@/lib/logger";
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from "expo-av";
 import { Platform } from "react-native";
 
@@ -90,7 +91,7 @@ class SoundService {
         if (s.isLoaded && s.didJustFinish) sound.unloadAsync();
       });
     } catch (e) {
-      console.warn("[SoundService] play error:", e);
+      appLogger.warn("sound", "[SoundService] play error:", e);
     }
   }
 
@@ -114,7 +115,7 @@ class SoundService {
       );
       this.ringtoneSound = sound;
     } catch (e) {
-      console.warn("[SoundService] startRingtone error:", e);
+      appLogger.warn("sound", "[SoundService] startRingtone error:", e);
     }
   }
 

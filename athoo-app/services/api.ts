@@ -319,7 +319,7 @@ export const api = {
   async createPurposeToken(purpose: "realtime" | "object-read") { return request<{ token: string; expiresInSeconds: number }>("/api/auth/purpose-token", { method: "POST", auth: true, body: { purpose } }); },
   baseUrl: API_BASE_URL,
   isConfigured: Boolean(API_BASE_URL),
-  configurationError: API_BASE_URL ? null : "Athoo API is not configured. Set EXPO_PUBLIC_API_BASE_URL and rebuild the app.",
+  configurationError: API_BASE_URL ? null : "Athoo cannot connect right now. Please install the latest app version or contact Athoo Support.",
 
   request<T = any>(path: string, options: RequestOptions = {}) {
     return request<T>(path, options);
@@ -1491,6 +1491,10 @@ export type RealtimeEventName =
   | "negotiation:accepted"
   | "negotiation:rejected"
   | "chat:message"
+  | "call:incoming"
+  | "call:accepted"
+  | "call:rejected"
+  | "call:ended"
   | "notification:new"
   | "broadcast:new"
   | "broadcast:response"

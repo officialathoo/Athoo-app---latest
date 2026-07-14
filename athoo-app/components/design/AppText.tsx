@@ -1,6 +1,7 @@
 import React from "react";
 import { Text, TextProps, TextStyle } from "react-native";
 import { useTheme } from "@/context/ThemeContext";
+import { useOptionalLang } from "@/context/LanguageContext";
 
 export type AppTextVariant = "display" | "h1" | "h2" | "h3" | "bodyLg" | "body" | "bodyStrong" | "label" | "caption";
 
@@ -10,8 +11,16 @@ interface AppTextProps extends TextProps {
   align?: TextStyle["textAlign"];
 }
 
-export function AppText({ variant = "body", tone = "primary", align, style, ...props }: AppTextProps) {
+export function AppText({
+  variant = "body",
+  tone = "primary",
+  align,
+  style,
+  maxFontSizeMultiplier,
+  ...props
+}: AppTextProps) {
   const { theme } = useTheme();
+  const language = useOptionalLang();
   const toneColor = {
     primary: theme.colors.text,
     secondary: theme.colors.textSecondary,
@@ -24,7 +33,16 @@ export function AppText({ variant = "body", tone = "primary", align, style, ...p
   return (
     <Text
       {...props}
-      style={[theme.typography[variant], { color: toneColor, textAlign: align }, style]}
+      maxFontSizeMultiplier={maxFontSizeMultiplier ?? 1.5}
+      style={[
+        theme.typography[variant],
+        {
+          color: toneColor,
+          textAlign: align ?? language?.textAlign ?? "left",
+          writingDirection: language?.writingDirection ?? "ltr",
+        },
+        style,
+      ]}
     />
   );
 }

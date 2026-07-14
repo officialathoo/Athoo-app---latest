@@ -82,7 +82,8 @@ const HOME_CONTENT_CACHE_KEY = "athoo.admin.home.content.cache.v2";
 
 export default function HomeScreen() {
   const { user } = useAuth();
-  const { t, isUrdu } = useLang();
+  const { t, isUrdu, translate: tr, textAlign, writingDirection } = useLang();
+  const localizedText = { textAlign, writingDirection } as const;
   const { unreadCount, push } = useNotifications();
   const { pendingAlerts, consumeNegAlerts } = useNegotiation();
   const { categories } = useCategories();
@@ -255,11 +256,11 @@ export default function HomeScreen() {
     }
   }, [loadFocusData]));
 
-  const firstName = user?.name?.split(" ")[0] || "there";
+  const firstName = user?.name?.split(" ")[0] || tr("there");
   const displayBanners = apiBanners;
   const displayCategories = categories.slice(0, homeConfig.maxCategories);
   const displayProviders = topProviders.slice(0, homeConfig.maxProviders);
-  const locationLabel = user?.location?.trim() || homeConfig.locationLabel || "Pakistan";
+  const locationLabel = user?.location?.trim() || homeConfig.locationLabel || t.pakistan;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -267,7 +268,7 @@ export default function HomeScreen() {
       <Animated.View style={[styles.header, { paddingTop: topPad + 10, backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
         <View style={styles.headerTop}>
           <View>
-            <Text style={[styles.greeting, { color: theme.colors.text }]}>Hello, {firstName} 👋</Text>
+            <Text style={[styles.greeting, localizedText, { color: theme.colors.text }]}>{tr("Hello, {{name}} 👋", { name: firstName })}</Text>
             <View style={styles.locationRow}>
               <Icon name="map-pin" size={13} color={Colors.secondary} />
               <Text style={[styles.location, { color: theme.colors.textSecondary }]}>{locationLabel}</Text>
@@ -296,7 +297,7 @@ export default function HomeScreen() {
           <View style={[styles.searchIconBg, { backgroundColor: theme.colors.surfaceAlt }]}>
             <Icon name="search" size={16} color={Colors.primary} />
           </View>
-          <Text style={[styles.searchPlaceholder, { color: theme.colors.textMuted }]}>Search services, workers...</Text>
+          <Text style={[styles.searchPlaceholder, localizedText, { color: theme.colors.textMuted }]}>{t.searchPlaceholder}</Text>
           <View style={[styles.filterBtn, { backgroundColor: theme.colors.surfaceAlt }]}>
             <Icon name="sliders" size={15} color={Colors.primary} />
           </View>
@@ -329,9 +330,9 @@ export default function HomeScreen() {
         {homeError ? (
           <View style={styles.homeErrorCard} accessibilityRole="alert">
             <Icon name="wifi-off" size={18} color={Colors.error} />
-            <Text style={[styles.homeErrorText, { color: theme.colors.text }]}>{homeError}</Text>
+            <Text style={[styles.homeErrorText, { color: theme.colors.text }]}>{tr(homeError)}</Text>
             <Pressable onPress={() => void loadFocusData("refresh")} accessibilityRole="button">
-              <Text style={[styles.homeRetryText, { color: theme.colors.primary }]}>Retry</Text>
+              <Text style={[styles.homeRetryText, { color: theme.colors.primary }]}>{tr("Retry")}</Text>
             </Pressable>
           </View>
         ) : null}
@@ -413,12 +414,12 @@ export default function HomeScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.activeBroadcastLabel}>LIVE BROADCAST</Text>
                   <Text style={styles.activeBroadcastService} numberOfLines={1}>
-                    {activeBroadcasts[0].serviceLabel || "Broadcast Request"}
+                    {activeBroadcasts[0].serviceLabel || tr("Broadcast Request")}
                   </Text>
                   <Text style={styles.activeBroadcastSub}>
                     {activeBroadcasts[0].responses?.filter((r: any) => r.status === "pending").length > 0
                       ? `${activeBroadcasts[0].responses.filter((r: any) => r.status === "pending").length} provider${activeBroadcasts[0].responses.filter((r: any) => r.status === "pending").length > 1 ? "s" : ""} responded`
-                      : "Waiting for providers to respond..."}
+                      : tr("Waiting for providers to respond...")}
                     {activeBroadcasts.length > 1 ? ` · +${activeBroadcasts.length - 1} more` : ""}
                   </Text>
                 </View>
@@ -665,7 +666,7 @@ export default function HomeScreen() {
                 }
               }}
             >
-              <Text style={styles.announcementBtnText}>{announcement?.buttonText || "Got it"}</Text>
+              <Text style={styles.announcementBtnText}>{announcement?.buttonText || tr("Got it")}</Text>
             </Pressable>
           </View>
         </View>
@@ -677,7 +678,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   header: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     paddingHorizontal: 20,
     paddingBottom: 16,
     shadowColor: "#000",
@@ -999,7 +1000,7 @@ const styles = StyleSheet.create({
     padding: 28,
   },
   announcementCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderRadius: 24,
     padding: 24,
     width: "100%",

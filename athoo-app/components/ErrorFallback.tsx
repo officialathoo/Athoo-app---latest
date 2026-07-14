@@ -7,6 +7,8 @@ import {
   View,
 } from "react-native";
 import { useColors } from "@/hooks/useColors";
+import { useOptionalLang } from "@/context/LanguageContext";
+import { appLogger } from "@/lib/logger";
 
 export type ErrorFallbackProps = {
   error: Error;
@@ -15,11 +17,17 @@ export type ErrorFallbackProps = {
 
 export function ErrorFallback({ resetError }: ErrorFallbackProps) {
   const colors = useColors();
+  const language = useOptionalLang();
+  const tr = language?.translate ?? ((message: string) => message);
+  const localizedText = {
+    textAlign: language?.textAlign ?? ("center" as const),
+    writingDirection: language?.writingDirection ?? ("ltr" as const),
+  };
   const handleRestart = async () => {
     try {
       await reloadAppAsync();
     } catch (restartError) {
-      console.error("Failed to restart app:", restartError);
+      appLogger.error("error-boundary-restart", restartError);
       resetError();
     }
   };
@@ -29,12 +37,12 @@ export function ErrorFallback({ resetError }: ErrorFallbackProps) {
       {/* Customer/provider friendly fallback only. Technical details are hidden from app users. */}
 
       <View style={styles.content}>
-        <Text style={[styles.title, { color: colors.text }]}>
-          Something went wrong
+        <Text style={[styles.title, localizedText, { color: colors.text }]}>
+          {tr("Something went wrong")}
         </Text>
 
-        <Text style={[styles.message, { color: colors.textMuted }]}>
-          Please try again. If the issue continues, contact Athoo Support.
+        <Text style={[styles.message, localizedText, { color: colors.textMuted }]}>
+          {tr("Please try again. If the issue continues, contact Athoo Support.")}
         </Text>
 
         <Pressable
@@ -54,7 +62,7 @@ export function ErrorFallback({ resetError }: ErrorFallbackProps) {
               { color: colors.white },
             ]}
           >
-            Try Again
+            {tr("Try Again")}
           </Text>
         </Pressable>
       </View>
@@ -91,17 +99,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 24,
   },
-  topButton: {
-    position: "absolute",
-    right: 16,
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 10,
-  },
   button: {
     paddingVertical: 16,
     borderRadius: 8,
@@ -121,52 +118,4 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 16,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
-  },
-  modalContainer: {
-    width: "100%",
-    height: "90%",
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "600",
-  },
-  closeButton: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  modalScrollView: {
-    flex: 1,
-  },
-  modalScrollContent: {
-    padding: 16,
-  },
-  errorContainer: {
-    width: "100%",
-    borderRadius: 8,
-    overflow: "hidden",
-    padding: 16,
-  },
-  errorText: {
-    fontSize: 12,
-    lineHeight: 18,
-    width: "100%",
-  },
 });
-

@@ -22,6 +22,7 @@ import { useToast } from "@/context/ToastContext";
 import { realtime } from "@/services/api";
 import { notificationService } from "@/services/NotificationService";
 import { soundService } from "@/services/SoundService";
+import { apiErrorToMessage } from "@/lib/apiError";
 
 function RatingStars({ rating }: { rating: number }) {
   const stars = Math.round((rating || 0) / 10);
@@ -85,7 +86,7 @@ export default function BroadcastStatusScreen() {
       const res = await api.getBroadcastRequest(requestId);
       setRequest(res.request);
     } catch (e: any) {
-      if (!silent) showError("Error", e?.message || "Failed to load request");
+      if (!silent) showError("Unable to load request", apiErrorToMessage(e, "We couldn't load this request. Please try again."));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -141,7 +142,7 @@ export default function BroadcastStatusScreen() {
         ]
       );
     } catch (e: any) {
-      showError("Failed", e?.message || "Could not confirm this provider");
+      showError("Unable to confirm provider", apiErrorToMessage(e, "We couldn't confirm this provider. Please try again."));
     } finally {
       setSelecting(null);
     }
@@ -160,7 +161,7 @@ export default function BroadcastStatusScreen() {
             await api.cancelBroadcastRequest(requestId);
             setRequest((p: any) => ({ ...p, status: "cancelled" }));
           } catch (e: any) {
-            showError("Failed", e?.message || "Could not cancel");
+            showError("Unable to cancel", apiErrorToMessage(e, "We couldn't cancel this request. Please try again."));
           } finally {
             setCancelling(false);
           }

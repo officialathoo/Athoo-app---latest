@@ -1,3 +1,4 @@
+import { appLogger } from "@/lib/logger";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
@@ -7,7 +8,7 @@ import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
 import { Icon } from "@/components/ui/Icon";
 import { soundService } from "@/services/SoundService";
-import { api } from "@/services/api";
+import { api, realtime } from "@/services/api";
 import { useAuth } from "./AuthContext";
 
 // ─── WebRTC dynamic import (native dev build only) ───────────────────────────
@@ -23,7 +24,7 @@ try {
   _RTCIceCandidate = w.RTCIceCandidate;
   WebRTCAvailable = true;
 } catch {
-  console.log("[CallContext] react-native-webrtc unavailable – using WS audio");
+  appLogger.debug("calls", "[CallContext] react-native-webrtc unavailable – using WS audio");
 }
 
 const STUN = {
@@ -227,7 +228,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         interruptionModeAndroid: (Audio as any).INTERRUPTION_MODE_ANDROID_DUCK_OTHERS ?? 2,
       });
     } catch (e) {
-      console.warn("[CallContext] setSpeaker error:", e);
+      appLogger.warn("calls", "[CallContext] setSpeaker error:", e);
     }
   }, []);
 
@@ -282,7 +283,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // Ringtone + call timer management
   useEffect(() => {
     const state = activeCall?.state;
-    console.log("[CallContext] state changed →", state, "callId:", activeCall?.callId);
+    appLogger.debug("calls", "[CallContext] state changed →", state, "callId:", activeCall?.callId);
     if (state === "incoming" || state === "outgoing") {
       soundService.startRingtone();
     } else {
@@ -292,7 +293,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       setCallDuration(0);
       timerRef.current = setInterval(() => setCallDuration((p) => p + 1), 1000);
       const callId = activeCall?.callId;
-      console.log("[CallContext] Call active, starting voice streaming for:", callId);
+      appLogger.debug("calls", "[CallContext] Call active, starting voice streaming for:", callId);
       if (callId) startVoiceStreaming(callId);
 
       // Poll every 2s to detect when the remote side ends the call.
@@ -374,7 +375,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // ── HTTP-based voice streaming (works through all proxies) ──────────────────
   async function startVoiceStreaming(callId: string) {
     if (isStreamingRef.current) return;
-    console.log("[Voice] startVoiceStreaming callId:", callId, "platform:", Platform.OS);
+    appLogger.debug("calls", "[Voice] startVoiceStreaming callId:", callId, "platform:", Platform.OS);
 
     activeCallIdRef.current = callId;
     nextFetchIndexRef.current = 0;
@@ -409,7 +410,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           return;
         }
       } catch (e) {
-        console.warn("[Voice] Permission error:", e);
+        appLogger.warn("calls", "[Voice] Permission error:", e);
       }
 
       try { await soundService.setRecordingMode(true); } catch {}
@@ -421,7 +422,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   }
 
   function stopVoiceStreaming() {
-    console.log("[Voice] stopVoiceStreaming");
+    appLogger.debug("calls", "[Voice] stopVoiceStreaming");
     isStreamingRef.current = false;
     activeCallIdRef.current = null;
 
@@ -467,14 +468,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             encoding: FileSystem.EncodingType.Base64,
           });
           await api.uploadAudioChunk(callId, b64, CHUNK_EXT);
-          console.log("[Voice] Uploaded chunk ext:", CHUNK_EXT, "len:", b64.length);
+          appLogger.debug("calls", "[Voice] Uploaded chunk ext:", CHUNK_EXT, "len:", b64.length);
         } catch (e) {
-          console.warn("[Voice] Upload error:", e);
+          appLogger.warn("calls", "[Voice] Upload error:", e);
         }
         try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch {}
       }
     } catch (e) {
-      console.warn("[Voice] Record error:", e);
+      appLogger.warn("calls", "[Voice] Record error:", e);
       recordingRef.current = null;
       await new Promise<void>((r) => setTimeout(r, 500));
     }
@@ -503,7 +504,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             nextFetchIndexRef.current = chunk.index + 1;
           }
         }
-        console.log("[Voice] Got", chunks.length, "chunks, next:", nextFetchIndexRef.current);
+        appLogger.debug("calls", "[Voice] Got", chunks.length, "chunks, next:", nextFetchIndexRef.current);
         // Keep only the LATEST chunk — drop everything older to avoid backlog/delay
         const latest = chunks[chunks.length - 1];
         playQueueRef.current = [{ data: latest.data, ext: latest.ext ?? ".m4a" }];
@@ -551,55 +552,79 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         }
       });
     } catch (e) {
-      console.warn("[Voice] Chunk play error (ext:", ext, "):", e);
+      appLogger.warn("calls", "[Voice] Chunk play error (ext:", ext, "):", e);
       try { await FileSystem.deleteAsync(tempUri, { idempotent: true }); } catch {}
       drainQueue();
     }
   }
 
-  // ── Poll for incoming calls (every 2s when foregrounded, paused in background) ──
+  const presentIncomingCall = useCallback((rawCall: any) => {
+    if (!rawCall?.id || activeCallRef.current) return;
+    const initials = (rawCall.callerName || "??")
+      .split(" ")
+      .map((name: string) => name[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+
+    setActiveCall({
+      callId: rawCall.id,
+      callerId: rawCall.callerId,
+      callerName: rawCall.callerName || "Unknown",
+      callerInitials: initials,
+      callerColor: rawCall.callerColor || "#FF6B1A",
+      service: rawCall.service,
+      direction: "incoming",
+      state: "incoming",
+      offer: rawCall.offer || undefined,
+    });
+  }, []);
+
+  // Realtime is the primary incoming-call channel. This removes the previous
+  // two-second API loop that kept the mobile app and Render/Neon busy even when
+  // no calls existed.
+  useEffect(() => {
+    if (!user) return;
+    return realtime.on((message) => {
+      if (message.type !== "call:incoming") return;
+      presentIncomingCall(message.payload?.call);
+    });
+  }, [user, presentIncomingCall]);
+
+  // A conservative foreground-only poll remains as recovery for sleeping mobile
+  // sockets. It runs immediately on login/foreground and then every 30 seconds,
+  // rather than every two seconds.
   useEffect(() => {
     if (!user) {
       if (incomingPollRef.current) clearInterval(incomingPollRef.current);
+      incomingPollRef.current = null;
       return;
     }
 
     async function checkIncoming() {
-      // Skip poll if app is not in foreground AND no active call in progress.
-      // During an active call we still need to detect remote hangup in background.
-      if (appStateRef.current !== "active" && !activeCallRef.current) return;
-      if (activeCallRef.current) return; // already in a call
+      if (appStateRef.current !== "active" || activeCallRef.current) return;
       try {
-        const res = await api.getIncomingCall();
-        if (!res.call) return;
-        const c = res.call as any;
-        const initials = (c.callerName || "??").split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
-        setActiveCall({
-          callId: c.id,
-          callerId: c.callerId,
-          callerName: c.callerName || "Unknown",
-          callerInitials: initials,
-          callerColor: c.callerColor || "#FF6B1A",
-          service: c.service,
-          direction: "incoming",
-          state: "incoming",
-          offer: c.offer || undefined,
-        });
-      } catch {}
+        const response = await api.getIncomingCall();
+        presentIncomingCall(response.call);
+      } catch {
+        // A fallback poll must never destabilize the active session.
+      }
     }
 
-    incomingPollRef.current = setInterval(checkIncoming, 2000);
+    void checkIncoming();
+    incomingPollRef.current = setInterval(checkIncoming, 30_000);
 
-    // Pause polling when backgrounded, resume when foregrounded
     const sub = AppState.addEventListener("change", (next: AppStateStatus) => {
       appStateRef.current = next;
+      if (next === "active") void checkIncoming();
     });
 
     return () => {
       if (incomingPollRef.current) clearInterval(incomingPollRef.current);
+      incomingPollRef.current = null;
       sub.remove();
     };
-  }, [user]);
+  }, [user, presentIncomingCall]);
 
   // ── Simulate incoming call ──────────────────────────────────────────────────
   const simulateIncomingCall = useCallback((callerName: string, service?: string) => {

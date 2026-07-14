@@ -19,16 +19,20 @@ import { BookingCard } from "@/components/ui/BookingCard";
 import { useAuth } from "@/context/AuthContext";
 import { useBookings } from "@/context/BookingContext";
 import { useLang } from "@/context/LanguageContext";
+import { useTheme } from "@/context/ThemeContext";
 import { useNotifications } from "@/context/NotificationContext";
 import { useNegotiation } from "@/context/NegotiationContext";
 import { useBroadcast } from "@/context/BroadcastContext";
 import { api, realtime } from "@/services/api";
+import { apiErrorToMessage } from "@/lib/apiError";
 
 export default function ProviderDashboard() {
   const { user, refreshUser } = useAuth();
   const { getMyBookings, pendingAlerts, consumeAlerts } = useBookings();
   const { pendingAlerts: negAlerts, consumeNegAlerts } = useNegotiation();
-  const { t } = useLang();
+  const { t, translate: tr, textAlign, writingDirection, formatCurrency } = useLang();
+  const { theme } = useTheme();
+  const localizedText = { textAlign, writingDirection } as const;
   const { push, unreadCount } = useNotifications();
   const { openBroadcastCount, latestBroadcast, dismissLatestBroadcast } = useBroadcast();
   const [broadcastPopup, setBroadcastPopup] = useState<any>(null);
@@ -48,7 +52,7 @@ export default function ProviderDashboard() {
         setIsAvailable(response.dashboard.provider.isAvailable);
       }
     } catch (error: any) {
-      setDashboardError(error?.message || "Could not load provider dashboard");
+      setDashboardError(apiErrorToMessage(error, "Could not load provider dashboard. Please try again."));
     } finally {
       setDashboardLoading(false);
       setDashboardRefreshing(false);
@@ -148,18 +152,18 @@ export default function ProviderDashboard() {
   const completionRate = Number(summary.completionRate ?? (allBookings.length > 0 ? Math.round((completed.length / allBookings.length) * 100) : 0));
 
   return (
-    <View style={[styles.container, { paddingTop: topPad }]}>
+    <View style={[styles.container, { paddingTop: topPad, backgroundColor: theme.colors.background }]}>
       {/* Broadcast New Job Popup */}
       <Modal visible={!!broadcastPopup} transparent animationType="fade">
         <View style={styles.popupOverlay}>
-          <View style={styles.popupCard}>
+          <View style={[styles.popupCard, { backgroundColor: theme.colors.elevated }]}>
             <View style={styles.popupIconRow}>
               <View style={styles.popupIconBg}>
                 <Icon name="radio" size={24} color="#fff" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.popupTitle}>New Broadcast Job!</Text>
-                <Text style={styles.popupSub}>{broadcastPopup?.serviceLabel ?? "Service request"}</Text>
+                <Text style={[styles.popupTitle, localizedText]}>{tr("New Broadcast Job!")}</Text>
+                <Text style={styles.popupSub}>{broadcastPopup?.serviceLabel ?? tr("Service request")}</Text>
               </View>
             </View>
             {broadcastPopup?.address ? (
@@ -178,7 +182,7 @@ export default function ProviderDashboard() {
               <View style={styles.popupRow}>
                 <Icon name="dollar-sign" size={13} color={Colors.secondary} />
                 <Text style={[styles.popupRowText, { color: Colors.secondary, fontWeight: "700" }]}>
-                  Customer Offer: Rs. {Number(broadcastPopup.customerOffer).toLocaleString()}
+                  {tr("Customer Offer")}: {formatCurrency(Number(broadcastPopup.customerOffer))}
                 </Text>
               </View>
             ) : null}
@@ -187,7 +191,7 @@ export default function ProviderDashboard() {
                 style={styles.popupDismiss}
                 onPress={() => { setBroadcastPopup(null); dismissLatestBroadcast(); }}
               >
-                <Text style={styles.popupDismissText}>Dismiss</Text>
+                <Text style={styles.popupDismissText}>{tr("Dismiss")}</Text>
               </Pressable>
               <Pressable
                 style={styles.popupView}
@@ -197,14 +201,14 @@ export default function ProviderDashboard() {
                   router.push("/(provider)/broadcast-jobs" as any);
                 }}
               >
-                <Text style={styles.popupViewText}>View Job</Text>
+                <Text style={styles.popupViewText}>{tr("View Job")}</Text>
               </Pressable>
             </View>
           </View>
         </View>
       </Modal>
 
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
         <View>
           <Text style={styles.greeting}>{t.providerDashboard}</Text>
           <Text style={styles.subGreeting}>{user?.name}</Text>
@@ -234,7 +238,7 @@ export default function ProviderDashboard() {
         {dashboardError ? (
           <Pressable style={styles.dashboardError} onPress={() => loadDashboard(true)} accessibilityRole="button" testID="provider-dashboard-retry">
             <Icon name="alert-circle" size={16} color={Colors.error} />
-            <Text style={styles.dashboardErrorText}>{dashboardError}. Tap to retry.</Text>
+            <Text style={styles.dashboardErrorText}>{tr(dashboardError)}. {tr("Tap to retry.")}</Text>
           </Pressable>
         ) : null}
         <View
@@ -285,7 +289,7 @@ export default function ProviderDashboard() {
                 await loadDashboard(true);
               } catch (e: any) {
                 setIsAvailable(user?.isAvailable !== false);
-                Alert.alert("Availability", e?.message || "You cannot turn available while busy on an active job.");
+                Alert.alert("Availability", apiErrorToMessage(e, "You cannot turn available while busy on an active job."));
               }
             }}
             trackColor={{
@@ -457,7 +461,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 14,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
@@ -618,7 +622,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   popupCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderRadius: 22,
     padding: 20,
     width: "100%",

@@ -8,6 +8,7 @@ import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { apiErrorToMessage } from "@/lib/apiError";
 
 const REQUIRED = [
   { type: "cnic_front", label: "CNIC Front", cameraOnly: false },
@@ -32,7 +33,7 @@ export default function VerificationDocumentsScreen() {
       setDocuments(result.documents || []);
       await refreshUser();
     } catch (error) {
-      Alert.alert("Could not load documents", (error as Error).message || "Please try again.");
+      Alert.alert("Could not load documents", apiErrorToMessage(error, "We couldn't load your documents. Please try again."));
     } finally {
       setLoading(false);
     }
@@ -62,7 +63,7 @@ export default function VerificationDocumentsScreen() {
       await load();
       Alert.alert("Uploaded", `${item.label} was submitted for review.`);
     } catch (error) {
-      Alert.alert("Upload failed", (error as Error).message || "Please try again.");
+      Alert.alert("Upload failed", apiErrorToMessage(error, "We couldn't upload this document. Please try again."));
     } finally {
       setUploadingType(null);
     }

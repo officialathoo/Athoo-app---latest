@@ -6,6 +6,7 @@ import { adminNotificationsTable, supportTicketsTable, ticketNotesTable, usersTa
 import { eq, desc, and } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../middlewares/auth";
 import { Response } from "express";
+import { validateOwnedUploadObjectPaths } from "../lib/storageSecurity";
 
 const router = Router();
 
@@ -20,7 +21,12 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
     const subject = String(raw.subject || raw.title || "").trim();
     const message = String(raw.message || raw.description || raw.body || "").trim();
     const bookingId = raw.bookingId || raw.relatedBookingId || null;
-    const mediaUrls = Array.isArray(raw.mediaUrls) ? raw.mediaUrls.filter(Boolean).slice(0, 5) : [];
+    const mediaValidation = validateOwnedUploadObjectPaths(raw.mediaUrls, userId, { maxItems: 5 });
+    if (!mediaValidation.ok) {
+      res.status(400).json({ error: mediaValidation.error });
+      return;
+    }
+    const mediaUrls = mediaValidation.paths;
     const priority = String(raw.priority || "normal").trim().toLowerCase();
 
     if (!subject || !message) {

@@ -21,6 +21,7 @@ import { Colors } from "@/constants/colors";
 import { api, realtime } from "@/services/api";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
+import { apiErrorToMessage } from "@/lib/apiError";
 
 function TimeLeft({ expiresAt }: { expiresAt: string }) {
   const [secs, setSecs] = useState(() =>
@@ -61,7 +62,7 @@ export default function BroadcastJobsScreen() {
       const res = await api.getBroadcastRequests({ status: "open" });
       setRequests(res.requests || []);
     } catch (e: any) {
-      if (!silent) showError("Error", e?.message || "Could not load broadcast requests");
+      if (!silent) showError("Unable to load requests", apiErrorToMessage(e, "We couldn't load broadcast requests. Please try again."));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -113,7 +114,7 @@ export default function BroadcastJobsScreen() {
       setTravelInput((p) => ({ ...p, [requestId]: "" }));
       load(true);
     } catch (e: any) {
-      showError("Failed", e?.message || "Could not submit response");
+      showError("Unable to submit response", apiErrorToMessage(e, "We couldn't submit your response. Please try again."));
     } finally {
       setSubmittingId(null);
     }
@@ -130,7 +131,7 @@ export default function BroadcastJobsScreen() {
             await api.withdrawBroadcastResponse(requestId);
             load(true);
           } catch (e: any) {
-            showError("Error", e?.message || "Could not withdraw");
+            showError("Unable to withdraw", apiErrorToMessage(e, "We couldn't withdraw your response. Please try again."));
           }
         },
       },

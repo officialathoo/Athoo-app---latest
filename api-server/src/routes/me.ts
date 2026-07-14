@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { logger } from "../lib/logger";
 import { db } from "@workspace/db";
+import { isOwnedUploadObjectPath, normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { cleanupReplacedOwnedMedia } from "../lib/mediaLifecycle";
 import {
   appSettingsTable,
   notificationsTable,
@@ -98,7 +100,11 @@ router.patch("/", async (req: AuthRequest, res) => {
       if (location.length > 160) return res.status(400).json({ error: "Location must be 160 characters or fewer" });
       update.location = location || null;
     }
-    if (body.profileImage !== undefined) update.profileImage = body.profileImage || null;
+    if (body.profileImage !== undefined) {
+      const profileImage = normalizeStoredObjectPath(body.profileImage);
+      if (profileImage && !isOwnedUploadObjectPath(profileImage, req.user!.userId, ["shared", "private"])) return res.status(400).json({ error: "Profile photo must be uploaded through your Athoo account" });
+      update.profileImage = profileImage || null;
+    }
     if (body.profileColor !== undefined) {
       const color = String(body.profileColor || "").trim();
       if (color && !/^#[0-9a-f]{6}$/i.test(color)) return res.status(400).json({ error: "Invalid profile color" });
@@ -109,6 +115,7 @@ router.patch("/", async (req: AuthRequest, res) => {
     if (attempted.length) return res.status(403).json({ error: `Profile field changes require the approved workflow: ${attempted.join(", ")}` });
     if (Object.keys(update).length === 1) return res.status(400).json({ error: "No valid fields to update" });
     const [updated] = await db.update(usersTable).set(update).where(eq(usersTable.id, req.user!.userId)).returning();
+    if (body.profileImage !== undefined) cleanupReplacedOwnedMedia(user.profileImage, updated.profileImage, req.user!.userId);
     const { password, ...safe } = updated as any;
     return res.json({ user: safe });
   } catch (e) {
@@ -256,9 +263,9 @@ router.post("/documents", async (req: AuthRequest, res) => {
     const { type, label, url } = req.body as { type?: string; label?: string; url?: string };
     const allowedTypes = ["cnic_front", "cnic_back", "selfie", "police", "diploma", "video", "license", "other"];
     const normalizedType = String(type || "").trim();
-    const normalizedUrl = String(url || "").trim();
+    const normalizedUrl = normalizeStoredObjectPath(url);
     if (!allowedTypes.includes(normalizedType) || !normalizedUrl) return res.status(400).json({ error: "Invalid document type or URL" });
-    if (!normalizedUrl.startsWith(`/objects/uploads/private/${req.user!.userId}/`)) {
+    if (!isOwnedUploadObjectPath(normalizedUrl, req.user!.userId, ["private"])) {
       return res.status(400).json({ error: "Verification documents must use your private upload path" });
     }
 

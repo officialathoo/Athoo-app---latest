@@ -1,3 +1,4 @@
+import { appLogger } from "@/lib/logger";
 import React, {
   createContext,
   useCallback,
@@ -203,7 +204,7 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
     } catch (e: any) {
       const msg = String(e?.message || e || "");
       if (!msg.includes("401") && !msg.includes("Unauthorized") && !msg.toLowerCase().includes("timeout")) {
-        console.warn("Failed to load bookings:", e);
+        appLogger.warn("bookings", "Failed to load bookings:", e);
       }
     } finally {
       loadInFlightRef.current = false;

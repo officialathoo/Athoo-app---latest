@@ -142,6 +142,32 @@ async function resolveFileSize(uri: string): Promise<number> {
   throw new Error("The selected file could not be read. Please select it again.");
 }
 
+
+function professionalUploadError(error: unknown): Error {
+  const raw = String((error as any)?.message || error || "").trim();
+  const lower = raw.toLowerCase();
+  if (lower.includes("timed out") || lower.includes("timeout")) {
+    return new Error("Upload timed out. Please try again on a stronger connection.");
+  }
+  if (lower.includes("network") || lower.includes("failed to fetch") || lower.includes("request failed")) {
+    return new Error("The upload could not reach Athoo. Check your internet connection and try again.");
+  }
+  if (lower.includes("too large") || lower.includes("maximum") || lower.includes("413")) {
+    return new Error("This file is too large. Choose a smaller file and try again.");
+  }
+  if (lower.includes("unauthorized") || lower.includes("forbidden") || lower.includes("401") || lower.includes("403")) {
+    return new Error("Your session cannot upload this file. Sign in again and retry.");
+  }
+  if (lower.includes("storage is not configured") || lower.includes("credential") || lower.includes("access key") || lower.includes("signature") || lower.includes("invalidaccesskeyid") || lower.includes("authorizationheadermalformed")) {
+    return new Error("Media upload is temporarily unavailable. Please try again shortly or contact Athoo support.");
+  }
+  if (/<\?xml|<error>|amazon|cloudflare|x-amz-|requestid|hostid/i.test(raw)) {
+    return new Error("Media upload could not be completed. Please try again shortly.");
+  }
+  if (raw && raw.length <= 180 && !/[<>]/.test(raw)) return new Error(raw);
+  return new Error("Media upload could not be completed. Please try again.");
+}
+
 export type UploadUrlResult = {
   provider?: "cloudinary" | "gcs" | "replit-object-storage" | string;
   method?: "POST" | "PUT" | string;
@@ -155,6 +181,21 @@ export type UploadUrlResult = {
 /**
  * Request a presigned PUT URL + objectPath from the API server.
  */
+async function confirmUploadedObject(objectPath: string, size: number, contentType: string): Promise<void> {
+  const token = await getToken();
+  const res = await fetch(`${STORAGE_API_BASE}/api/storage/uploads/complete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ objectPath, size, contentType }),
+  });
+  if (!res.ok) {
+    const raw = await res.text();
+    let parsed: any = {};
+    try { parsed = raw ? JSON.parse(raw) : {}; } catch {}
+    throw professionalUploadError(parsed?.error || parsed?.message || `Upload verification failed (${res.status})`);
+  }
+}
+
 export async function getUploadUrl(
   name: string,
   size: number,
@@ -170,8 +211,10 @@ export async function getUploadUrl(
     body: JSON.stringify({ name, size, contentType }),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error((err as any).error || `Failed to get upload URL (${res.status})`);
+    const raw = await res.text();
+    let parsed: any = {};
+    try { parsed = raw ? JSON.parse(raw) : {}; } catch {}
+    throw professionalUploadError(parsed?.error || parsed?.message || `Upload service unavailable (${res.status})`);
   }
   return res.json() as Promise<UploadUrlResult>;
 }
@@ -257,7 +300,9 @@ async function putFileToPresignedUrl(
       };
       xhr.onerror = () => reject(new Error("Upload failed due to a network error. Check internet and try again."));
       xhr.ontimeout = () => reject(new Error("Upload timed out. Please try again on a stronger connection or use a shorter video."));
-      xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed (${xhr.status})`));
+      xhr.onload = () => xhr.status >= 200 && xhr.status < 300
+        ? resolve()
+        : reject(professionalUploadError(xhr.responseText || `Upload failed (${xhr.status})`));
       xhr.send(blob);
     });
     emitProgress(onProgress, { loaded: 1, total: 1, percent: 100, stage: "done" });
@@ -276,7 +321,7 @@ async function putFileToPresignedUrl(
   });
   const result = await task.uploadAsync();
   if (!result || result.status < 200 || result.status >= 300) {
-    throw new Error(`Upload failed (${result?.status || "unknown"}): ${result?.body || ""}`);
+    throw professionalUploadError(result?.body || `Upload failed (${result?.status || "unknown"})`);
   }
   emitProgress(onProgress, { loaded: 1, total: 1, percent: 100, stage: "done" });
 }
@@ -305,9 +350,22 @@ export async function uploadPickedImage(
         onProgress,
       );
     }
-    await putFileToPresignedUrl(prepared.uri, uploadInstructions.uploadURL, metadata.contentType, onProgress, uploadInstructions.headers || {});
-    emitProgress(onProgress, { loaded: 1, total: 1, percent: 100, stage: "done" });
-    return uploadInstructions.objectPath;
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await putFileToPresignedUrl(prepared.uri, uploadInstructions.uploadURL, metadata.contentType, onProgress, uploadInstructions.headers || {});
+        await confirmUploadedObject(uploadInstructions.objectPath, size, metadata.contentType);
+        emitProgress(onProgress, { loaded: 1, total: 1, percent: 100, stage: "done" });
+        return uploadInstructions.objectPath;
+      } catch (error) {
+        lastError = error;
+        if (attempt >= 2 || !String((error as any)?.message || error).toLowerCase().match(/network|timeout|timed out|failed to fetch/)) break;
+        await new Promise((resolve) => setTimeout(resolve, 800));
+      }
+    }
+    throw lastError;
+  } catch (error) {
+    throw professionalUploadError(error);
   } finally {
     if (prepared.temporary) await FileSystem.deleteAsync(prepared.uri, { idempotent: true }).catch(() => undefined);
   }
@@ -331,6 +389,7 @@ interface PrivateImageProps {
   style?: StyleProp<ImageStyle>;
   fallback?: React.ReactNode;
   resizeMode?: "cover" | "contain" | "stretch" | "repeat" | "center";
+  accessibilityLabel?: string;
 }
 
 /**
@@ -344,6 +403,7 @@ export function PrivateImage({
   style,
   fallback,
   resizeMode = "cover",
+  accessibilityLabel,
 }: PrivateImageProps): React.ReactElement | null {
   const [source, setSource] = useState<{ uri: string } | null>(null);
 
@@ -364,5 +424,14 @@ export function PrivateImage({
 
   if (!source) return fallback ? (fallback as React.ReactElement) : null;
 
-  return React.createElement(Image, { source, style, resizeMode, progressiveRenderingEnabled: true, fadeDuration: 120 });
+  return React.createElement(Image, {
+    source,
+    style,
+    resizeMode,
+    progressiveRenderingEnabled: true,
+    fadeDuration: 120,
+    accessible: Boolean(accessibilityLabel),
+    accessibilityRole: accessibilityLabel ? "image" : undefined,
+    accessibilityLabel,
+  });
 }

@@ -1,6 +1,5 @@
 import { Icon } from "@/components/ui/Icon";
 import { LinearGradient } from "expo-linear-gradient";
-import * as Location from "expo-location";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
@@ -26,7 +25,8 @@ import { Provider } from "@/data/services";
 import { api } from "@/services/api";
 import { pickFromGallery } from "@/utils/mediaPicker";
 import { uploadPickedImage } from "@/services/storage";
-import { reverseGeocodeGoogle } from "@/services/maps";
+import { reverseGeocode } from "@/services/maps";
+import { getFastForegroundLocation } from "@/services/location";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -146,18 +146,14 @@ export default function NegotiateScreen() {
   const handleUseCurrentLocation = async () => {
     setIsGettingLocation(true);
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        showError("Permission Denied", "Please allow location access in your device settings.");
-        return;
-      }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      const resolved = await reverseGeocodeGoogle(loc.coords.latitude, loc.coords.longitude);
-      if (resolved) {
-        setAddress(resolved);
-      } else {
-        setAddress(`${loc.coords.latitude.toFixed(5)}, ${loc.coords.longitude.toFixed(5)}`);
-      }
+      const result = await getFastForegroundLocation({
+        timeoutMs: 8_000,
+        rationaleTitle: "Location permission",
+        rationaleBody: "Athoo uses your location to fill the service address for this negotiation.",
+      });
+      if (!result.location) return;
+      const resolved = await reverseGeocode(result.location.latitude, result.location.longitude);
+      setAddress(resolved || `${result.location.latitude.toFixed(5)}, ${result.location.longitude.toFixed(5)}`);
     } catch {
       showError("Location Error", "Could not get your current location. Please type your address.");
     } finally {
@@ -255,7 +251,7 @@ export default function NegotiateScreen() {
 
       setShowModal(true);
     } catch (error: any) {
-      const raw = String(error?.message || "");
+      const raw = String((error as any)?.message || "");
       if (raw.includes('"negotiation"') && raw.includes('active negotiation')) {
         const found = myNegotiations.find((n) =>
           n.providerId === provider.id &&

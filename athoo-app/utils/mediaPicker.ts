@@ -125,3 +125,43 @@ export async function pickFromCamera(options: PickOptions): Promise<ImagePicker.
   pickerFailedAlert("camera");
   return null;
 }
+
+export type ImageSourceChoiceCopy = {
+  title?: string;
+  message?: string;
+  camera?: string;
+  gallery?: string;
+  cancel?: string;
+};
+
+/**
+ * Gives users both required Athoo media sources without forcing document crop.
+ * The promise resolves once a source is selected, dismissed, or cancelled.
+ */
+export function pickImageWithSourceChoice(
+  options: PickOptions,
+  copy: ImageSourceChoiceCopy = {},
+): Promise<ImagePicker.ImagePickerResult | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value: ImagePicker.ImagePickerResult | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+
+    const openCamera = async () => finish(await pickFromCamera(options));
+    const openGallery = async () => finish(await pickFromGallery(options));
+
+    Alert.alert(
+      copy.title || "Add photo",
+      copy.message || "Choose how you want to add this photo.",
+      [
+        { text: copy.camera || "Camera", onPress: openCamera },
+        { text: copy.gallery || "Gallery", onPress: openGallery },
+        { text: copy.cancel || "Cancel", style: "cancel", onPress: () => finish(null) },
+      ],
+      { cancelable: true, onDismiss: () => finish(null) },
+    );
+  });
+}

@@ -1,0 +1,93 @@
+{
+  "phase": "RC2 Phase 8B2",
+  "scope": "Customer and provider primary tab screens",
+  "routesAudited": 10,
+  "allUseTheme": true,
+  "allUseLanguage": true,
+  "fixedWhiteSurfacesRemaining": 0,
+  "legacyColorReferencesRemaining": 514,
+  "fixedColorLiteralsRemaining": 170,
+  "routes": [
+    {
+      "route": "athoo-app/app/(customer)/(tabs)/bookings.tsx",
+      "usesTheme": true,
+      "usesLanguage": true,
+      "legacyColorReferences": 92,
+      "fixedColorLiterals": 19,
+      "fixedWhiteSurfaces": 0
+    },
+    {
+      "route": "athoo-app/app/(customer)/(tabs)/chat.tsx",
+      "usesTheme": true,
+      "usesLanguage": true,
+      "legacyColorReferences": 0,
+      "fixedColorLiterals": 1,
+      "fixedWhiteSurfaces": 0
+    },
+    {
+      "route": "athoo-app/app/(customer)/(tabs)/home.tsx",
+      "usesTheme": true,
+      "usesLanguage": true,
+      "legacyColorReferences": 43,
+      "fixedColorLiterals": 24,
+      "fixedWhiteSurfaces": 0
+    },
+    {
+      "route": "athoo-app/app/(customer)/(tabs)/profile.tsx",
+      "usesTheme": true,
+      "usesLanguage": true,
+      "legacyColorReferences": 80,
+      "fixedColorLiterals": 43,
+      "fixedWhiteSurfaces": 0
+    },
+    {
+      "route": "athoo-app/app/(customer)/(tabs)/search.tsx",
+      "usesTheme": true,
+      "usesLanguage": true,
+      "legacyColorReferences": 77,
+      "fixedColorLiterals": 11,
+      "fixedWhiteSurfaces": 0
+    },
+    {
+      "route": "athoo-app/app/(provider)/(tabs)/chat.tsx",
+      "usesTheme": true,
+      "usesLanguage": true,
+      "legacyColorReferences": 0,
+      "fixedColorLiterals": 1,
+      "fixedWhiteSurfaces": 0
+    },
+    {
+      "route": "athoo-app/app/(provider)/(tabs)/dashboard.tsx",
+      "usesTheme": true,
+      "usesLanguage": true,
+      "legacyColorReferences": 74,
+      "fixedColorLiterals": 7,
+      "fixedWhiteSurfaces": 0
+    },
+    {
+      "route": "athoo-app/app/(provider)/(tabs)/earnings.tsx",
+      "usesTheme": true,
+      "usesLanguage": true,
+      "legacyColorReferences": 32,
+      "fixedColorLiterals": 11,
+      "fixedWhiteSurfaces": 0
+    },
+    {
+      "route": "athoo-app/app/(provider)/(tabs)/jobs.tsx",
+      "usesTheme": true,
+      "usesLanguage": true,
+      "legacyColorReferences": 37,
+      "fixedColorLiterals": 4,
+      "fixedWhiteSurfaces": 0
+    },
+    {
+      "route": "athoo-app/app/(provider)/(tabs)/profile.tsx",
+      "usesTheme": true,
+      "usesLanguage": true,
+      "legacyColorReferences": 79,
+      "fixedColorLiterals": 49,
+      "fixedWhiteSurfaces": 0
+    }
+  ],
+  "note": "Legacy brand/status color references remain in complex cards and gradients. Theme-breaking white surfaces were removed, all tab roots now consume the runtime theme/language contexts, and chat tabs were fully migrated. Remaining nested card migration is tracked for Phase 8B3."
+}

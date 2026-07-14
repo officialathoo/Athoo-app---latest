@@ -1,18 +1,10 @@
 /**
- * Geocoding proxy routes for ATHOO.
+ * OpenStreetMap-based geocoding and routing proxy for Athoo.
  *
- * Reverse geocoding priority:
- *   1. Google Geocoding API — best Pakistan street/neighbourhood data.
- *      Requires "Geocoding API" enabled in Google Cloud Console for your project.
- *      Once enabled, set GOOGLE_MAPS_API_KEY env var (or it uses the default key).
- *   2. Photon (Komoot) — free, no API key, indexes OSM with better ranking than
- *      plain Nominatim; returns real street names / landmarks in Pakistan.
- *   3. Nominatim (OpenStreetMap) — final fallback.
- *
- * Forward search priority:
- *   1. Google Places API (New) — when enabled.
- *   2. Photon search — free, finds sectors / chowks / roads / landmarks.
- *   3. Nominatim — final fallback.
+ * Search uses Photon and Nominatim, reverse geocoding uses Photon then
+ * Nominatim, and road directions use OSRM. No commercial map key is required
+ * by the API or mobile app. Every upstream request is bounded by a timeout and
+ * successful results are cached briefly to reduce latency and provider load.
  */
 
 import { Router, type Response } from "express";
@@ -21,14 +13,9 @@ import { requireAuth, type AuthRequest } from "../middlewares/auth";
 
 const router = Router();
 
-// Google Maps key — already embedded in the mobile app.
-// IMPORTANT: Enable "Geocoding API" and "Places API (New)" in Google Cloud
-// Console for this key to work server-side.
-// https://console.cloud.google.com/apis/library
-const GOOGLE_KEY =
-  process.env.GOOGLE_MAPS_API_KEY ||
-  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
-  "";
+const PHOTON_BASE_URL = String(process.env.PHOTON_BASE_URL || "https://photon.komoot.io").replace(/\/$/, "");
+const NOMINATIM_BASE_URL = String(process.env.NOMINATIM_BASE_URL || "https://nominatim.openstreetmap.org").replace(/\/$/, "");
+const OSRM_BASE_URL = String(process.env.OSRM_BASE_URL || "https://router.project-osrm.org").replace(/\/$/, "");
 
 const NOMINATIM_HEADERS = {
   "User-Agent": "AthooApp/1.0 (Pakistan home services; contact: admin@athoo.com)",
@@ -45,105 +32,43 @@ interface GeoResult {
   useAsTyped?: boolean;
 }
 
-// ─── Google Geocoding helpers ─────────────────────────────────────────────────
+const GEO_UPSTREAM_TIMEOUT_MS = Number(process.env.GEO_UPSTREAM_TIMEOUT_MS || 6_000);
+const GEO_CACHE_MAX_ITEMS = Number(process.env.GEO_CACHE_MAX_ITEMS || 500);
+type GeoCacheEntry = { value: unknown; expiresAt: number };
+const geoCache = new Map<string, GeoCacheEntry>();
 
-interface GoogleAddressComponent {
-  long_name: string;
-  short_name: string;
-  types: string[];
-}
-interface GoogleGeoResult {
-  formatted_address: string;
-  geometry: { location: { lat: number; lng: number } };
-  address_components: GoogleAddressComponent[];
-}
-interface GoogleGeoResponse {
-  status: string;
-  error_message?: string;
-  results: GoogleGeoResult[];
-}
-
-// Cache to avoid logging the same API-disabled warning on every request
-let googleApiLogged = false;
-
-function getComponent(
-  components: GoogleAddressComponent[],
-  ...types: string[]
-): string | undefined {
-  for (const type of types) {
-    const c = components.find((c) => c.types.includes(type));
-    if (c) return c.long_name;
-  }
-  return undefined;
-}
-
-function buildGoogleLabel(components: GoogleAddressComponent[]): string {
-  const houseNum = getComponent(components, "street_number", "premise");
-  const route = getComponent(components, "route");
-  const neighbourhood = getComponent(
-    components,
-    "neighborhood",
-    "sublocality_level_2",
-    "sublocality_level_1",
-    "sublocality",
-  );
-  const city = getComponent(components, "locality", "administrative_area_level_2");
-
-  const parts: string[] = [];
-  if (houseNum && route) parts.push(`${houseNum} ${route}`);
-  else if (route) parts.push(route);
-  if (neighbourhood && neighbourhood !== city) parts.push(neighbourhood);
-  if (city) parts.push(city);
-
-  return parts.filter(Boolean).join(", ");
-}
-
-async function googleReverseGeocode(
-  lat: number,
-  lng: number,
-): Promise<{ label: string; components: GoogleAddressComponent[] } | null> {
+async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = GEO_UPSTREAM_TIMEOUT_MS): Promise<globalThis.Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const url =
-      `https://maps.googleapis.com/maps/api/geocode/json` +
-      `?latlng=${lat},${lng}&key=${GOOGLE_KEY}&language=en&region=pk`;
-    const res = await (fetch as any)(url);
-    const data: GoogleGeoResponse = await res.json();
-    if (data.status === "REQUEST_DENIED") {
-      if (!googleApiLogged) {
-        logger.warn("Google Geocoding API not enabled — falling back to Photon/Nominatim. Enable via: https://console.cloud.google.com/apis/library");
-        googleApiLogged = true;
-      }
-      return null;
-    }
-    if (data.status !== "OK" || !data.results.length) return null;
-    const best = data.results[0];
-    const label = buildGoogleLabel(best.address_components);
-    if (!label || label.length < 4) return null;
-    return { label, components: best.address_components };
-  } catch {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function getCached<T>(key: string): T | null {
+  const entry = geoCache.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    geoCache.delete(key);
     return null;
   }
+  return entry.value as T;
 }
 
-async function googleSearch(q: string, limit = 8): Promise<GeoResult[]> {
-  try {
-    const url =
-      `https://maps.googleapis.com/maps/api/geocode/json` +
-      `?address=${encodeURIComponent(q + " Pakistan")}` +
-      `&key=${GOOGLE_KEY}&language=en&region=pk&components=country:PK`;
-    const res = await (fetch as any)(url);
-    const data: GoogleGeoResponse = await res.json();
-    if (data.status === "REQUEST_DENIED") return [];
-    if (!data.results?.length) return [];
-    return data.results.slice(0, limit).map((r) => {
-      const label =
-        buildGoogleLabel(r.address_components) ||
-        r.formatted_address.split(",").slice(0, 3).join(",").trim();
-      return { label, lat: r.geometry.location.lat, lng: r.geometry.location.lng };
-    }).filter((r) => !isNaN(r.lat) && !isNaN(r.lng) && r.label.length > 2);
-  } catch {
-    return [];
+function setCached(key: string, value: unknown, ttlMs: number): void {
+  if (geoCache.size >= GEO_CACHE_MAX_ITEMS) {
+    const now = Date.now();
+    for (const [cacheKey, entry] of geoCache) {
+      if (entry.expiresAt <= now || geoCache.size >= GEO_CACHE_MAX_ITEMS) geoCache.delete(cacheKey);
+    }
   }
+  geoCache.set(key, { value, expiresAt: Date.now() + ttlMs });
+}
+
+function validCoordinate(lat: number, lng: number): boolean {
+  return Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
 }
 
 // ─── Photon (Komoot) helpers ───────────────────────────────────────────────────
@@ -171,6 +96,19 @@ interface PhotonFeature {
 
 interface PhotonResponse {
   features: PhotonFeature[];
+}
+
+interface OsrmRoute {
+  distance?: number;
+  duration?: number;
+  geometry?: {
+    coordinates?: [number, number][];
+  };
+}
+
+interface OsrmResponse {
+  code?: string;
+  routes?: OsrmRoute[];
 }
 
 const PHOTON_HEADERS = {
@@ -226,9 +164,9 @@ function buildPhotonLabel(p: PhotonFeature["properties"]): string {
 
 async function photonReverse(lat: number, lng: number): Promise<string | null> {
   try {
-    const url = `https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&limit=5&lang=en`;
-    const res = await (fetch as any)(url, { headers: PHOTON_HEADERS });
-    const data: PhotonResponse = await res.json();
+    const url = `${PHOTON_BASE_URL}/reverse?lat=${lat}&lon=${lng}&limit=5&lang=en`;
+    const res = await fetchWithTimeout(url, { headers: PHOTON_HEADERS });
+    const data = (await res.json()) as PhotonResponse;
     if (!data.features?.length) return null;
 
     // Sort: most specific first (house > landmark > street > area > city)
@@ -256,11 +194,11 @@ async function photonReverse(lat: number, lng: number): Promise<string | null> {
 async function photonSearch(q: string, limit = 8): Promise<GeoResult[]> {
   try {
     const url =
-      `https://photon.komoot.io/api` +
+      `${PHOTON_BASE_URL}/api` +
       `?q=${encodeURIComponent(q)}` +
       `&countrycodes=pk&limit=${limit}&lang=en`;
-    const res = await (fetch as any)(url, { headers: PHOTON_HEADERS });
-    const data: PhotonResponse = await res.json();
+    const res = await fetchWithTimeout(url, { headers: PHOTON_HEADERS });
+    const data = (await res.json()) as PhotonResponse;
     if (!data.features?.length) return [];
 
     return data.features
@@ -320,10 +258,10 @@ function cleanNominatimLabel(item: NominatimItem): string {
 async function nominatimSearch(q: string, limit = 8): Promise<GeoResult[]> {
   try {
     const url =
-      `https://nominatim.openstreetmap.org/search` +
+      `${NOMINATIM_BASE_URL}/search` +
       `?q=${encodeURIComponent(q)}&countrycodes=pk&format=jsonv2` +
       `&limit=${limit}&addressdetails=1&namedetails=1&dedupe=1&accept-language=en`;
-    const res = await (fetch as any)(url, { headers: NOMINATIM_HEADERS });
+    const res = await fetchWithTimeout(url, { headers: NOMINATIM_HEADERS });
     const data = await res.json();
     if (!Array.isArray(data)) return [];
     return data
@@ -341,10 +279,10 @@ async function nominatimSearch(q: string, limit = 8): Promise<GeoResult[]> {
 async function nominatimReverse(lat: number, lng: number): Promise<string | null> {
   try {
     const url =
-      `https://nominatim.openstreetmap.org/reverse` +
+      `${NOMINATIM_BASE_URL}/reverse` +
       `?lat=${lat}&lon=${lng}&format=jsonv2&addressdetails=1&namedetails=1&zoom=18&accept-language=en`;
-    const res = await (fetch as any)(url, { headers: NOMINATIM_HEADERS });
-    const data: NominatimItem = await res.json();
+    const res = await fetchWithTimeout(url, { headers: NOMINATIM_HEADERS });
+    const data = (await res.json()) as NominatimItem;
     const addr = data.address || {};
 
     if (addr.road || addr.neighbourhood || addr.suburb || data.name) {
@@ -354,12 +292,12 @@ async function nominatimReverse(lat: number, lng: number): Promise<string | null
     // Admin-boundary only — try nearby named places
     const delta = 0.005;
     const nearUrl =
-      `https://nominatim.openstreetmap.org/search` +
+      `${NOMINATIM_BASE_URL}/search` +
       `?format=jsonv2&addressdetails=1&limit=5` +
       `&viewbox=${lng - delta},${lat - delta},${lng + delta},${lat + delta}` +
       `&bounded=1&accept-language=en`;
-    const nearRes = await (fetch as any)(nearUrl, { headers: NOMINATIM_HEADERS });
-    const items: NominatimItem[] = await nearRes.json();
+    const nearRes = await fetchWithTimeout(nearUrl, { headers: NOMINATIM_HEADERS });
+    const items = (await nearRes.json()) as NominatimItem[];
     if (Array.isArray(items) && items.length > 0) {
       const named = items.find((i) => i.name && i.name.length > 1);
       if (named) return cleanNominatimLabel(named);
@@ -398,18 +336,19 @@ router.get("/search", requireAuth, async (req: AuthRequest, res: Response) => {
   }
 
   try {
-    // Run Google + Photon + Nominatim in parallel for best coverage
-    const [googleResults, photonResults, nominatimResults] = await Promise.all([
-      googleSearch(q, 5),
+    const cacheKey = `search:${q.toLowerCase()}`;
+    const cached = getCached<GeoResult[]>(cacheKey);
+    if (cached) {
+      res.json({ results: cached, source: "cache" });
+      return;
+    }
+
+    const [photonResults, nominatimResults] = await Promise.all([
       photonSearch(q, 6),
       nominatimSearch(q, 6),
     ]);
 
-    // Priority: Google (most accurate) → Photon (better landmark coverage) → Nominatim
-    let results = mergeResults(googleResults, photonResults, nominatimResults);
-    results = results.slice(0, 8);
-
-    // "Use as typed" sentinel so the user can always confirm a manual address
+    let results = mergeResults(photonResults, nominatimResults).slice(0, 8);
     const useAsTyped: GeoResult = {
       label: q,
       lat: results.length > 0 ? results[0].lat : 0,
@@ -417,11 +356,11 @@ router.get("/search", requireAuth, async (req: AuthRequest, res: Response) => {
       useAsTyped: true,
     };
     results = [...results, useAsTyped];
-
-    res.json({ results });
+    setCached(cacheKey, results, 5 * 60 * 1000);
+    res.json({ results, source: "openstreetmap" });
   } catch (e) {
-    logger.error({ err: e }, "geo search error");
-    res.json({ results: [] });
+    logger.warn({ err: e }, "geo search upstream unavailable");
+    res.json({ results: [{ label: q, lat: 0, lng: 0, useAsTyped: true }], source: "manual" });
   }
 });
 
@@ -430,58 +369,41 @@ router.get("/reverse", requireAuth, async (req: AuthRequest, res: Response) => {
   const lat = parseFloat(String(req.query.lat || ""));
   const lng = parseFloat(String(req.query.lng || ""));
 
-  if (isNaN(lat) || isNaN(lng)) {
+  if (!validCoordinate(lat, lng)) {
     res.status(400).json({ error: "Invalid coordinates" });
     return;
   }
 
+  const cacheKey = `reverse:${lat.toFixed(5)},${lng.toFixed(5)}`;
+  const cached = getCached<{ address: string; source: string }>(cacheKey);
+  if (cached) {
+    res.json({ ...cached, source: `${cached.source}-cache` });
+    return;
+  }
+
   try {
-    // Run all three sources in parallel for speed
-    const [google, photon, nominatim] = await Promise.all([
-      googleReverseGeocode(lat, lng),
+    const [photon, nominatim] = await Promise.all([
       photonReverse(lat, lng),
       nominatimReverse(lat, lng),
     ]);
 
-    // 1. Google — best when enabled
-    if (google && google.label.length > 3) {
-      const c = google.components;
-      res.json({
-        address: google.label,
-        road: getComponent(c, "route") ?? null,
-        neighbourhood: getComponent(c, "neighborhood", "sublocality_level_1", "sublocality") ?? null,
-        city: getComponent(c, "locality", "administrative_area_level_2") ?? null,
-        district: getComponent(c, "administrative_area_level_2") ?? null,
-        province: getComponent(c, "administrative_area_level_1") ?? null,
-        postalCode: getComponent(c, "postal_code") ?? null,
-        source: "google",
-      });
-      return;
-    }
+    const result = photon && photon.length > 4
+      ? { address: photon, source: "photon" }
+      : nominatim
+        ? { address: nominatim, source: "nominatim" }
+        : { address: `${lat.toFixed(5)}, ${lng.toFixed(5)}`, source: "coords" };
 
-    // 2. Photon — free, finds real street names (better than plain Nominatim)
-    if (photon && photon.length > 4) {
-      res.json({ address: photon, source: "photon" });
-      return;
-    }
-
-    // 3. Nominatim — final fallback
-    if (nominatim) {
-      res.json({ address: nominatim, source: "nominatim" });
-      return;
-    }
-
-    // 4. Raw coordinates
-    res.json({ address: `${lat.toFixed(5)}, ${lng.toFixed(5)}`, source: "coords" });
+    setCached(cacheKey, result, result.source === "coords" ? 60_000 : 24 * 60 * 60 * 1000);
+    res.json(result);
   } catch (e) {
-    logger.error({ err: e }, "geo reverse error");
-    res.status(500).json({ error: "Reverse geocode failed" });
+    logger.warn({ err: e }, "geo reverse upstream unavailable");
+    res.json({ address: `${lat.toFixed(5)}, ${lng.toFixed(5)}`, source: "coords" });
   }
 });
 
 // ── GET /api/geo/directions?originLat=&originLng=&destLat=&destLng= ──────────
 // Returns a road polyline, distance (km), and ETA (minutes) for provider navigation.
-// Uses Google Directions API when key is available; falls back to OSRM (free, no key).
+// Uses OSRM road routing with a straight-line fallback; no map key is required.
 // The mobile map component plots the returned `polyline` array as a road route.
 router.get("/directions", requireAuth, async (req: AuthRequest, res: Response) => {
   const originLat = parseFloat(String(req.query.originLat || ""));
@@ -489,63 +411,42 @@ router.get("/directions", requireAuth, async (req: AuthRequest, res: Response) =
   const destLat = parseFloat(String(req.query.destLat || ""));
   const destLng = parseFloat(String(req.query.destLng || ""));
 
-  if ([originLat, originLng, destLat, destLng].some(isNaN)) {
-    res.status(400).json({ error: "originLat, originLng, destLat, destLng are required" });
+  if (!validCoordinate(originLat, originLng) || !validCoordinate(destLat, destLng)) {
+    res.status(400).json({ error: "Valid origin and destination coordinates are required" });
+    return;
+  }
+
+  const cacheKey = `directions:${originLat.toFixed(4)},${originLng.toFixed(4)}:${destLat.toFixed(4)},${destLng.toFixed(4)}`;
+  const cached = getCached<Record<string, unknown>>(cacheKey);
+  if (cached) {
+    res.json({ ...cached, source: "osrm-cache" });
     return;
   }
 
   try {
-    // ── 1. Google Directions API ──────────────────────────────────────────────
-    if (GOOGLE_KEY) {
-      try {
-        const url =
-          `https://maps.googleapis.com/maps/api/directions/json` +
-          `?origin=${originLat},${originLng}` +
-          `&destination=${destLat},${destLng}` +
-          `&mode=driving&region=pk&language=en&key=${GOOGLE_KEY}`;
-        const gRes = await (fetch as any)(url);
-        const gData = await gRes.json();
-
-        if (gData.status === "OK" && gData.routes?.length) {
-          const route = gData.routes[0];
-          const leg = route.legs[0];
-          // Decode Google's encoded polyline into lat/lng pairs
-          const encoded: string = route.overview_polyline?.points ?? "";
-          const polyline = decodePolyline(encoded);
-          res.json({
-            polyline,
-            distanceKm: leg.distance?.value ? leg.distance.value / 1000 : null,
-            durationMin: leg.duration?.value ? Math.ceil(leg.duration.value / 60) : null,
-            source: "google",
-          });
-          return;
-        }
-      } catch {
-        // Fall through to OSRM
-      }
-    }
-
-    // ── 2. OSRM (free, no API key, OpenStreetMap-based routing) ──────────────
+    // ── OSRM (OpenStreetMap-based routing, no API key) ───────────────
     const osrmUrl =
-      `https://router.project-osrm.org/route/v1/driving` +
+      `${OSRM_BASE_URL}/route/v1/driving` +
       `/${originLng},${originLat};${destLng},${destLat}` +
       `?overview=full&geometries=geojson&steps=false`;
-    const osrmRes = await (fetch as any)(osrmUrl, {
+    const osrmRes = await fetchWithTimeout(osrmUrl, {
       headers: { "User-Agent": "AthooApp/1.0 (Pakistan home services)" },
     });
-    const osrmData = await osrmRes.json();
+    const osrmData = (await osrmRes.json()) as OsrmResponse;
 
     if (osrmData.code === "Ok" && osrmData.routes?.length) {
       const route = osrmData.routes[0];
       const coords: [number, number][] = route.geometry?.coordinates ?? [];
       // OSRM returns [lng, lat] — convert to { latitude, longitude }
       const polyline = coords.map(([lng, lat]: [number, number]) => ({ latitude: lat, longitude: lng }));
-      res.json({
+      const result = {
         polyline,
         distanceKm: route.distance ? route.distance / 1000 : null,
         durationMin: route.duration ? Math.ceil(route.duration / 60) : null,
         source: "osrm",
-      });
+      };
+      setCached(cacheKey, result, 5 * 60 * 1000);
+      res.json(result);
       return;
     }
 
@@ -560,8 +461,16 @@ router.get("/directions", requireAuth, async (req: AuthRequest, res: Response) =
       source: "straight_line",
     });
   } catch (e) {
-    logger.error({ err: e }, "geo directions error");
-    res.status(500).json({ error: "Failed to fetch directions" });
+    logger.warn({ err: e }, "geo directions upstream unavailable");
+    res.json({
+      polyline: [
+        { latitude: originLat, longitude: originLng },
+        { latitude: destLat, longitude: destLng },
+      ],
+      distanceKm: haversineKm(originLat, originLng, destLat, destLng),
+      durationMin: null,
+      source: "straight_line",
+    });
   }
 });
 
@@ -580,33 +489,5 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/** Decode a Google Maps encoded polyline string into lat/lng pairs. */
-function decodePolyline(encoded: string): { latitude: number; longitude: number }[] {
-  const points: { latitude: number; longitude: number }[] = [];
-  let index = 0;
-  let lat = 0;
-  let lng = 0;
-  while (index < encoded.length) {
-    let shift = 0;
-    let result = 0;
-    let byte: number;
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20);
-    lat += result & 1 ? ~(result >> 1) : result >> 1;
-    shift = 0;
-    result = 0;
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20);
-    lng += result & 1 ? ~(result >> 1) : result >> 1;
-    points.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
-  }
-  return points;
-}
 
 export default router;

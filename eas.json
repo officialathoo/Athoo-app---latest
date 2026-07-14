@@ -9,7 +9,9 @@
       "distribution": "internal",
       "channel": "development",
       "env": {
-        "APP_ENV": "development"
+        "APP_ENV": "development",
+        "EXPO_PUBLIC_API_BASE_URL": "https://athoo-api.onrender.com",
+        "EAS_PROJECT_ID": "42a7f8fe-68ea-4422-8f46-0def1f55abb9"
       },
       "android": {
         "buildType": "apk"
@@ -22,7 +24,9 @@
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "APP_ENV": "staging"
+        "APP_ENV": "staging",
+        "EXPO_PUBLIC_API_BASE_URL": "https://athoo-api.onrender.com",
+        "EAS_PROJECT_ID": "42a7f8fe-68ea-4422-8f46-0def1f55abb9"
       },
       "android": {
         "buildType": "apk"
@@ -33,7 +37,9 @@
       "channel": "production",
       "autoIncrement": true,
       "env": {
-        "APP_ENV": "production"
+        "APP_ENV": "production",
+        "EXPO_PUBLIC_API_BASE_URL": "https://athoo-api.onrender.com",
+        "EAS_PROJECT_ID": "42a7f8fe-68ea-4422-8f46-0def1f55abb9"
       },
       "android": {
         "buildType": "app-bundle"

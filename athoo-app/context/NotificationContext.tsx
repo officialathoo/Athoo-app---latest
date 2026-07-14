@@ -8,13 +8,14 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, AppState, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import Constants from "expo-constants";
 import { Feather } from "@expo/vector-icons";
 import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { api, realtime } from "@/services/api";
+import { resolveNotificationTarget } from "@/services/notificationRouting";
 
 
 function isExpoGoRuntime(): boolean {
@@ -28,8 +29,15 @@ function isExpoGoRuntime(): boolean {
 
 type NotifType =
   | "booking"
+  | "broadcast"
   | "negotiation"
   | "message"
+  | "premium"
+  | "call"
+  | "refund"
+  | "withdrawal"
+  | "support"
+  | "invoice"
   | "system"
   | "success"
   | "warning";
@@ -46,6 +54,13 @@ export type AppNotif = {
   chatId?: string;
   negotiationId?: string;
   broadcastRequestId?: string;
+  callId?: string;
+  refundId?: string;
+  subscriptionId?: string;
+  withdrawalId?: string;
+  ticketId?: string;
+  invoiceId?: string;
+  link?: string;
   actionLabel?: string;
   onAction?: () => void;
 };
@@ -65,6 +80,14 @@ type NotifContextType = {
       bookingId?: string;
       chatId?: string;
       negotiationId?: string;
+      broadcastRequestId?: string;
+      callId?: string;
+      refundId?: string;
+      subscriptionId?: string;
+      withdrawalId?: string;
+      ticketId?: string;
+      invoiceId?: string;
+      link?: string;
     };
   }) => void;
   markRead: (id: string) => void;
@@ -89,6 +112,13 @@ const ICON_MAP: Record<NotifType, { icon: string; color: string }> = {
   system: { icon: "info", color: Colors.textSecondary },
   success: { icon: "check-circle", color: "#22C55E" },
   warning: { icon: "alert-triangle", color: "#F59E0B" },
+  broadcast: { icon: "radio", color: "#F97316" },
+  premium: { icon: "star", color: "#F59E0B" },
+  call: { icon: "phone-call", color: "#22C55E" },
+  refund: { icon: "rotate-ccw", color: "#0EA5E9" },
+  withdrawal: { icon: "credit-card", color: "#14B8A6" },
+  support: { icon: "help-circle", color: "#6366F1" },
+  invoice: { icon: "file-text", color: "#64748B" },
 };
 
 function toStringValue(value: unknown): string | undefined {
@@ -97,33 +127,49 @@ function toStringValue(value: unknown): string | undefined {
   return undefined;
 }
 
+function normalizeNotificationType(rawType: unknown, data?: Record<string, unknown>): NotifType {
+  const normalized = String(rawType || "").trim().toLowerCase();
+  if (normalized === "chat") return "message";
+  if (normalized === "status" || normalized === "info") return "system";
+  if (
+    normalized === "booking" ||
+    normalized === "broadcast" ||
+    normalized === "negotiation" ||
+    normalized === "message" ||
+    normalized === "premium" ||
+    normalized === "call" ||
+    normalized === "refund" ||
+    normalized === "withdrawal" ||
+    normalized === "support" ||
+    normalized === "invoice" ||
+    normalized === "system" ||
+    normalized === "success" ||
+    normalized === "warning"
+  ) {
+    return normalized as NotifType;
+  }
+  if (toStringValue(data?.callId)) return "call";
+  if (toStringValue(data?.chatId)) return "message";
+  if (toStringValue(data?.negotiationId)) return "negotiation";
+  if (toStringValue(data?.broadcastRequestId)) return "broadcast";
+  if (toStringValue(data?.bookingId)) return "booking";
+  if (toStringValue(data?.refundId)) return "refund";
+  if (toStringValue(data?.subscriptionId)) return "premium";
+  if (toStringValue(data?.withdrawalId)) return "withdrawal";
+  if (toStringValue(data?.ticketId)) return "support";
+  if (toStringValue(data?.invoiceId)) return "invoice";
+  return "system";
+}
+
 function notificationFromResponseData(
   data: Record<string, unknown> | undefined,
-  currentRole: "customer" | "provider"
+  currentRole: "customer" | "provider",
 ): AppNotif | null {
   if (!data) return null;
 
-  const rawType = toStringValue(data.type);
-  const type: NotifType =
-    rawType === "booking" || rawType === "negotiation" || rawType === "message"
-      ? rawType
-      : rawType === "warning" || rawType === "success" || rawType === "system"
-      ? rawType
-      : rawType === "broadcast"
-      ? "booking"
-      : rawType === "chat"
-      ? "message"
-      : toStringValue(data.negotiationId)
-      ? "negotiation"
-      : toStringValue(data.chatId)
-      ? "message"
-      : toStringValue(data.broadcastRequestId) || toStringValue(data.bookingId)
-      ? "booking"
-      : "system";
-
   return {
-    id: `response-${Date.now()}`,
-    type,
+    id: toStringValue(data.notificationId) || `local-response-${Date.now()}`,
+    type: normalizeNotificationType(data.type, data),
     title: toStringValue(data.title) || "Notification",
     message: toStringValue(data.body) || toStringValue(data.message) || "",
     timestamp: new Date().toISOString(),
@@ -138,6 +184,40 @@ function notificationFromResponseData(
     chatId: toStringValue(data.chatId),
     negotiationId: toStringValue(data.negotiationId),
     broadcastRequestId: toStringValue(data.broadcastRequestId),
+    callId: toStringValue(data.callId),
+    refundId: toStringValue(data.refundId),
+    subscriptionId: toStringValue(data.subscriptionId),
+    withdrawalId: toStringValue(data.withdrawalId),
+    ticketId: toStringValue(data.ticketId),
+    invoiceId: toStringValue(data.invoiceId),
+    link: toStringValue(data.link),
+  };
+}
+
+function notificationFromRemoteRecord(
+  record: any,
+  currentRole: "customer" | "provider",
+): AppNotif {
+  const data = (record?.data && typeof record.data === "object" ? record.data : {}) as Record<string, unknown>;
+  return {
+    id: String(record.id),
+    type: normalizeNotificationType(record.type, data),
+    title: record.title || "Notification",
+    message: record.body || record.message || "",
+    timestamp: record.createdAt || record.created_at || new Date().toISOString(),
+    read: !!(record.isRead ?? record.is_read),
+    role: currentRole,
+    bookingId: toStringValue(data.bookingId) || toStringValue(record.bookingId),
+    chatId: toStringValue(data.chatId) || toStringValue(record.chatId),
+    negotiationId: toStringValue(data.negotiationId) || toStringValue(record.negotiationId),
+    broadcastRequestId: toStringValue(data.broadcastRequestId) || toStringValue(record.broadcastRequestId),
+    callId: toStringValue(data.callId),
+    refundId: toStringValue(data.refundId),
+    subscriptionId: toStringValue(data.subscriptionId),
+    withdrawalId: toStringValue(data.withdrawalId),
+    ticketId: toStringValue(data.ticketId),
+    invoiceId: toStringValue(data.invoiceId),
+    link: toStringValue(record.link) || toStringValue(data.link),
   };
 }
 
@@ -238,8 +318,25 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const handledResponseIdsRef = useRef<Set<string>>(new Set());
   const notificationNavigationArmedAtRef = useRef<number>(Number.POSITIVE_INFINITY);
   const coldStartCheckedRef = useRef(false);
+  const knownNotificationIdsRef = useRef<Set<string>>(new Set());
 
   const currentRole = user?.role === "provider" ? "provider" : user?.role === "customer" ? "customer" : null;
+
+  useEffect(() => {
+    knownNotificationIdsRef.current = new Set(notifications.map((notification) => notification.id));
+  }, [notifications]);
+
+  const ingestNotification = useCallback((notification: AppNotif, showToast = true) => {
+    const alreadyKnown = knownNotificationIdsRef.current.has(notification.id);
+    knownNotificationIdsRef.current.add(notification.id);
+    setNotifications((previous) => {
+      const withoutCurrent = previous.filter((item) => item.id !== notification.id);
+      return [notification, ...withoutCurrent].slice(0, 100);
+    });
+    if (showToast && !alreadyKnown) {
+      setQueue((previous) => previous.some((item) => item.id === notification.id) ? previous : [...previous, notification]);
+    }
+  }, []);
 
 
   useEffect(() => {
@@ -272,55 +369,40 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     if (!loadedRef.current) return;
     AsyncStorage.setItem(getStorageKey(user?.id), JSON.stringify(notifications)).catch(() => {});
   }, [notifications, user?.id]);
+  const syncRemoteNotifications = useCallback(async () => {
+    if (!user || !currentRole || remoteFetchInFlightRef.current) return;
+    remoteFetchInFlightRef.current = true;
+    try {
+      const response = await api.getNotifications();
+      const remote = (response.notifications || []).map((record: any) =>
+        notificationFromRemoteRecord(record, currentRole),
+      );
+      setNotifications((previous) => {
+        const preserved = previous.filter((notification) => String(notification.id).startsWith("local-"));
+        const merged = new Map<string, AppNotif>();
+        [...remote, ...preserved].forEach((notification) => merged.set(notification.id, notification));
+        return Array.from(merged.values())
+          .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime())
+          .slice(0, 100);
+      });
+    } catch {
+      // Remote notification sync must not destabilize local notification state.
+    } finally {
+      remoteFetchInFlightRef.current = false;
+    }
+  }, [currentRole, user]);
+
   useEffect(() => {
-    let activeFetch = true;
+    void syncRemoteNotifications();
+  }, [syncRemoteNotifications]);
+
+  useEffect(() => {
     if (!user) return;
-
-    (async () => {
-      if (remoteFetchInFlightRef.current) return;
-      remoteFetchInFlightRef.current = true;
-      try {
-        const res = await api.getNotifications();
-        if (!activeFetch) return;
-        const remote = (res.notifications || []).map((n: any) => {
-          const rawType = n.type;
-          const type: NotifType =
-            rawType === "booking" || rawType === "negotiation" || rawType === "message" || rawType === "warning" || rawType === "success"
-              ? rawType
-              : rawType === "broadcast" || rawType === "chat"
-              ? (rawType === "chat" ? "message" : "booking")
-              : "system";
-          return {
-            id: String(n.id),
-            type,
-            title: n.title || "Notification",
-            message: n.body || n.message || "",
-            timestamp: n.createdAt || n.created_at || new Date().toISOString(),
-            read: !!(n.isRead ?? n.is_read),
-            role: (currentRole as ("customer" | "provider" | undefined)) || undefined,
-            bookingId: n.data?.bookingId || n.bookingId,
-            chatId: n.data?.chatId || n.chatId,
-            negotiationId: n.data?.negotiationId || n.negotiationId,
-            broadcastRequestId: n.data?.broadcastRequestId || n.broadcastRequestId,
-          };
-        }) as AppNotif[];
-        setNotifications((prev) => {
-          const preserved = prev.filter((n) => String(n.id).startsWith("local-"));
-          const map = new Map<string, AppNotif>();
-          [...remote, ...preserved].forEach((item) => map.set(item.id, item));
-          return Array.from(map.values()).sort((a,b)=> new Date(b.timestamp).getTime()-new Date(a.timestamp).getTime());
-        });
-      } catch {
-        // Remote notification sync must not destabilize local notification state.
-      } finally {
-        remoteFetchInFlightRef.current = false;
-      }
-    })();
-
-    return () => {
-      activeFetch = false;
-    };
-  }, [user?.id, currentRole]);
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void syncRemoteNotifications();
+    });
+    return () => subscription.remove();
+  }, [syncRemoteNotifications, user]);
 
 
   const visibleNotifications = useMemo(() => {
@@ -331,6 +413,13 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const unreadCount = useMemo(() => {
     return visibleNotifications.filter((n) => !n.read).length;
   }, [visibleNotifications]);
+
+  useEffect(() => {
+    if (Platform.OS === "web" || isExpoGoRuntime()) return;
+    import("expo-notifications")
+      .then((Notifications) => Notifications.setBadgeCountAsync(user ? unreadCount : 0))
+      .catch(() => undefined);
+  }, [unreadCount, user]);
 
   useEffect(() => {
     if (!user) {
@@ -349,102 +438,36 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const handleNotificationPress = useCallback(
     (notif: AppNotif) => {
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === notif.id ? { ...n, read: true } : n))
+      setNotifications((previous) =>
+        previous.map((item) => item.id === notif.id ? { ...item, read: true } : item),
       );
-      // Opening a notification must mark it read on the server too, or the
-      // next remote sync (app relaunch, another device) will re-show it as
-      // unread and overwrite this local change.
       if (!String(notif.id).startsWith("local-")) {
         api.markNotificationRead(notif.id).catch(() => {});
       }
 
-      if (!user) {
+      if (!user || !currentRole) {
         router.replace("/auth/welcome");
         return;
       }
 
       const role = (notif.role || currentRole) === "provider" ? "provider" : "customer";
-
-      if (role === "provider") {
-        if (notif.chatId) {
-          router.push({
-            pathname: "/(provider)/chat-room",
-            params: { chatId: notif.chatId },
-          });
-          return;
-        }
-
-        if (notif.bookingId) {
-          router.push({
-            pathname: "/(provider)/job-detail",
-            params: { bookingId: notif.bookingId },
-          });
-          return;
-        }
-
-        if (notif.negotiationId || notif.type === "negotiation") {
-          router.push({
-            pathname: "/(provider)/negotiations",
-            params: notif.negotiationId ? { negId: notif.negotiationId } : {},
-          });
-          return;
-        }
-
-        if (notif.broadcastRequestId || notif.type === "broadcast" as any) {
-          router.push("/(provider)/broadcast-jobs" as any);
-          return;
-        }
-
-        if (notif.type === "message") {
-          router.push("/(provider)/(tabs)/chat");
-          return;
-        }
-
-        router.replace("/(provider)/(tabs)/dashboard" as any);
-        return;
-      }
-
-      if (notif.chatId) {
-        router.push({
-          pathname: "/(customer)/chat-room",
-          params: { chatId: notif.chatId },
-        });
-        return;
-      }
-
-      if (notif.bookingId) {
-        router.push({
-          pathname: "/(customer)/booking-detail",
-          params: { bookingId: notif.bookingId },
-        });
-        return;
-      }
-
-      if (notif.negotiationId || notif.type === "negotiation") {
-        router.push({
-          pathname: "/(customer)/negotiate",
-          params: notif.negotiationId ? { negId: notif.negotiationId } : {},
-        });
-        return;
-      }
-
-      if (notif.broadcastRequestId) {
-        router.push({
-          pathname: "/(customer)/broadcast-status",
-          params: { requestId: notif.broadcastRequestId },
-        });
-        return;
-      }
-
-      if (notif.type === "message") {
-        router.push("/(customer)/(tabs)/chat");
-        return;
-      }
-
-      router.replace("/(customer)/(tabs)/home" as any);
+      const target = resolveNotificationTarget({
+        type: notif.type,
+        link: notif.link,
+        bookingId: notif.bookingId,
+        chatId: notif.chatId,
+        negotiationId: notif.negotiationId,
+        broadcastRequestId: notif.broadcastRequestId,
+        callId: notif.callId,
+        refundId: notif.refundId,
+        subscriptionId: notif.subscriptionId,
+        withdrawalId: notif.withdrawalId,
+        ticketId: notif.ticketId,
+        invoiceId: notif.invoiceId,
+      }, role);
+      router.push(target as any);
     },
-    [currentRole, user]
+    [currentRole, user],
   );
 
   const push = useCallback(
@@ -474,6 +497,14 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         bookingId?: string;
         chatId?: string;
         negotiationId?: string;
+        broadcastRequestId?: string;
+        callId?: string;
+        refundId?: string;
+        subscriptionId?: string;
+        withdrawalId?: string;
+        ticketId?: string;
+        invoiceId?: string;
+        link?: string;
       };
     }) => {
       push({
@@ -484,6 +515,14 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         bookingId: n.data?.bookingId,
         chatId: n.data?.chatId,
         negotiationId: n.data?.negotiationId,
+        broadcastRequestId: n.data?.broadcastRequestId,
+        callId: n.data?.callId,
+        refundId: n.data?.refundId,
+        subscriptionId: n.data?.subscriptionId,
+        withdrawalId: n.data?.withdrawalId,
+        ticketId: n.data?.ticketId,
+        invoiceId: n.data?.invoiceId,
+        link: n.data?.link,
       });
     },
     [push, currentRole]
@@ -499,47 +538,56 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   // ── Real-time in-app notification delivery via WebSocket ──
   useEffect(() => {
-    if (!user) return;
-    const off = realtime.on((msg) => {
-      if (msg.type !== "notification:new") return;
-      const p = msg.payload as any;
-      if (!p?.title) return;
-      const rawType: string = p.type || "";
-      const type: NotifType =
-        rawType === "booking" || rawType === "broadcast" ? "booking"
-        : rawType === "negotiation" ? "negotiation"
-        : rawType === "message" ? "message"
-        : rawType === "warning" ? "warning"
-        : rawType === "success" ? "success"
-        : rawType === "system" ? "system"
-        : p.data?.bookingId || p.data?.broadcastRequestId ? "booking"
-        : p.data?.chatId ? "message"
-        : p.data?.negotiationId ? "negotiation"
-        : "system";
-      push({
+    if (!user || !currentRole) return;
+    const off = realtime.on((message) => {
+      if (message.type !== "notification:new") return;
+      const payload = message.payload as any;
+      if (!payload?.title) return;
+      const data = (payload.data && typeof payload.data === "object" ? payload.data : {}) as Record<string, unknown>;
+      const type = normalizeNotificationType(payload.type, data);
+      ingestNotification({
+        id: toStringValue(payload.id) || `local-realtime-${Date.now()}`,
         type,
-        title: p.title,
-        message: p.body || p.message || "",
-        role: currentRole || "customer",
-        bookingId: p.data?.bookingId || p.bookingId,
-        chatId: p.data?.chatId || p.chatId,
-        negotiationId: p.data?.negotiationId || p.negotiationId,
-        broadcastRequestId: p.data?.broadcastRequestId || p.broadcastRequestId,
+        title: String(payload.title),
+        message: String(payload.body || payload.message || ""),
+        timestamp: new Date().toISOString(),
+        read: false,
+        role: currentRole,
+        bookingId: toStringValue(data.bookingId) || toStringValue(payload.bookingId),
+        chatId: toStringValue(data.chatId) || toStringValue(payload.chatId),
+        negotiationId: toStringValue(data.negotiationId) || toStringValue(payload.negotiationId),
+        broadcastRequestId: toStringValue(data.broadcastRequestId) || toStringValue(payload.broadcastRequestId),
+        callId: toStringValue(data.callId),
+        refundId: toStringValue(data.refundId),
+        subscriptionId: toStringValue(data.subscriptionId),
+        withdrawalId: toStringValue(data.withdrawalId),
+        ticketId: toStringValue(data.ticketId),
+        invoiceId: toStringValue(data.invoiceId),
+        link: toStringValue(payload.link) || toStringValue(data.link),
       });
-      // Play a sound for important notification types
-      const isSoundType = type === "booking" || type === "message" || type === "negotiation";
-      if (isSoundType) {
+
+      // Native builds receive the same event through Expo push, which owns the
+      // custom job/message/general sound. Web and Expo Go have no reliable
+      // remote-push sound, so retain the in-app audio fallback there.
+      if (Platform.OS === "web" || isExpoGoRuntime()) {
         import("@/services/SoundService").then(({ soundService }) => {
-          soundService.playNotification().catch(() => {});
+          if (type === "call" || type === "booking" || type === "broadcast" || type === "negotiation") {
+            soundService.playRingtone().catch(() => soundService.playNotification().catch(() => {}));
+          } else if (type === "message") {
+            soundService.playMessage().catch(() => soundService.playNotification().catch(() => {}));
+          } else {
+            soundService.playNotification().catch(() => {});
+          }
         }).catch(() => {});
       }
     });
     return off;
-  }, [user, currentRole, push]);
+  }, [user, currentRole, ingestNotification]);
 
   useEffect(() => {
     let mounted = true;
-    let subscription: { remove: () => void } | null = null;
+    let responseSubscription: { remove: () => void } | null = null;
+    let receivedSubscription: { remove: () => void } | null = null;
 
     (async () => {
       if (Platform.OS === "web" || isExpoGoRuntime() || authLoading) return;
@@ -588,16 +636,31 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         }
 
         if (user && currentRole) {
-          subscription = Notifications.addNotificationResponseReceivedListener(openResponse);
+          receivedSubscription = Notifications.addNotificationReceivedListener((notification: any) => {
+            const content = notification?.request?.content;
+            if (!content) return;
+            const parsed = notificationFromResponseData(
+              content.data as Record<string, unknown>,
+              currentRole,
+            );
+            if (!parsed) return;
+            ingestNotification({
+              ...parsed,
+              title: content.title || parsed.title,
+              message: content.body || parsed.message,
+            });
+          });
+          responseSubscription = Notifications.addNotificationResponseReceivedListener(openResponse);
         }
       } catch {}
     })();
 
     return () => {
       mounted = false;
-      subscription?.remove();
+      responseSubscription?.remove();
+      receivedSubscription?.remove();
     };
-  }, [authLoading, currentRole, handleNotificationPress, user]);
+  }, [authLoading, currentRole, handleNotificationPress, ingestNotification, user]);
 
   const dismissActive = useCallback(() => setActive(null), []);
 

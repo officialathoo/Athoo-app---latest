@@ -1,17 +1,23 @@
 import { Icon } from "@/components/ui/Icon";
-import React from "react";
+import React, { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { Colors } from "@/constants/colors";
 import { Booking, BookingStatus } from "@/context/BookingContext";
+import { useLang } from "@/context/LanguageContext";
+import { useTheme } from "@/context/ThemeContext";
+import { AthooTheme } from "@/design/theme";
 import { PrivateImage } from "@/services/storage";
 
-const STATUS_CONFIG: Record<BookingStatus, { label: string; color: string; bg: string; icon: string }> = {
-  pending: { label: "Pending", color: "#F59E0B", bg: "#FFFBEB", icon: "clock" },
-  accepted: { label: "Active", color: "#3B82F6", bg: "#EFF6FF", icon: "check-circle" },
-  in_progress: { label: "In Progress", color: "#8B5CF6", bg: "#F5F3FF", icon: "play-circle" },
-  completed: { label: "Completed", color: "#22C55E", bg: "#F0FDF4", icon: "check-circle" },
-  cancelled: { label: "Cancelled", color: "#EF4444", bg: "#FEF2F2", icon: "x-circle" },
-};
+type StatusTone = { label: string; color: string; bg: string; icon: string };
+
+function getStatusConfig(theme: AthooTheme, tr: (message: string) => string): Record<BookingStatus, StatusTone> {
+  return {
+    pending: { label: tr("Pending"), color: theme.colors.warning, bg: theme.colors.warningSoft, icon: "clock" },
+    accepted: { label: tr("Active"), color: theme.colors.info, bg: theme.colors.infoSoft, icon: "check-circle" },
+    in_progress: { label: tr("In Progress"), color: theme.colors.accent, bg: theme.dark ? "#33245A" : "#F5F3FF", icon: "play-circle" },
+    completed: { label: tr("Completed"), color: theme.colors.success, bg: theme.colors.successSoft, icon: "check-circle" },
+    cancelled: { label: tr("Cancelled"), color: theme.colors.danger, bg: theme.colors.dangerSoft, icon: "x-circle" },
+  };
+}
 
 const ACTIVE_STATUSES: BookingStatus[] = ["accepted", "in_progress", "pending"];
 
@@ -28,12 +34,16 @@ interface BookingCardProps {
 }
 
 export function BookingCard({ booking, role, onPress, onContact, compact = false }: BookingCardProps) {
-  const status = STATUS_CONFIG[booking.status];
+  const { theme } = useTheme();
+  const { isUrdu, formatCurrency, translate: tr } = useLang();
+  const styles = useMemo(() => createStyles(theme, isUrdu), [theme, isUrdu]);
+  const status = getStatusConfig(theme, tr)[booking.status];
   const person = role === "customer" ? booking.providerName : booking.customerName;
   const personImage = role === "customer" ? booking.providerProfileImage : booking.customerProfileImage;
-  const personColor = role === "customer" ? (booking.providerProfileColor || Colors.primary) : Colors.primary;
+  const personColor = role === "customer" ? (booking.providerProfileColor || theme.colors.primary) : theme.colors.primary;
   const initial = person?.charAt(0)?.toUpperCase() || "?";
   const isActive = ACTIVE_STATUSES.includes(booking.status);
+  const contactRole = role === "customer" ? tr("Provider") : tr("Customer");
 
   const avatarSize = compact ? 30 : 36;
   const avatarRadius = compact ? 8 : 10;
@@ -41,16 +51,20 @@ export function BookingCard({ booking, role, onPress, onContact, compact = false
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${booking.service}, ${person}, ${status.label}${booking.price != null ? `, ${formatCurrency(booking.price)}` : ""}`}
+      accessibilityHint={tr("Opens booking details")}
       style={({ pressed }) => [styles.card, compact && styles.cardCompact, pressed && styles.pressed]}
     >
       <View style={styles.row}>
         {personImage ? (
           <PrivateImage
             objectPath={personImage}
+            accessibilityLabel={`${person} ${tr("profile photo")}`}
             style={[styles.avatar, { width: avatarSize, height: avatarSize, borderRadius: avatarRadius }]}
           />
         ) : (
-          <View style={[styles.avatarFallback, { width: avatarSize, height: avatarSize, borderRadius: avatarRadius, backgroundColor: personColor + "22" }]}>
+          <View style={[styles.avatarFallback, { width: avatarSize, height: avatarSize, borderRadius: avatarRadius, backgroundColor: `${personColor}22` }]}>
             <Text style={[styles.avatarInitial, { color: personColor, fontSize: compact ? 13 : 15 }]}>{initial}</Text>
           </View>
         )}
@@ -58,13 +72,13 @@ export function BookingCard({ booking, role, onPress, onContact, compact = false
           <Text style={[styles.service, compact && styles.serviceCompact]} numberOfLines={1}>{booking.service}</Text>
           <Text style={styles.person} numberOfLines={1}>{person}</Text>
         </View>
-        <View>
-          <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
+        <View style={styles.rightColumn}>
+          <View style={[styles.statusBadge, { backgroundColor: status.bg }]} accessibilityLabel={status.label}>
             <View style={[styles.statusDot, { backgroundColor: status.color }]} />
             <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
           </View>
           {booking.price != null && (
-            <Text style={styles.price}>Rs. {booking.price.toLocaleString()}</Text>
+            <Text style={styles.price}>{formatCurrency(booking.price)}</Text>
           )}
         </View>
       </View>
@@ -72,15 +86,15 @@ export function BookingCard({ booking, role, onPress, onContact, compact = false
       {!compact && (
         <View style={styles.metaRow}>
           <View style={styles.metaItem}>
-            <Icon name="calendar" size={11} color={Colors.textMuted} />
+            <Icon name="calendar" size={11} color={theme.colors.textMuted} />
             <Text style={styles.metaText}>{booking.scheduledDate}</Text>
           </View>
           <View style={styles.metaItem}>
-            <Icon name="clock" size={11} color={Colors.textMuted} />
+            <Icon name="clock" size={11} color={theme.colors.textMuted} />
             <Text style={styles.metaText}>{booking.scheduledTime}</Text>
           </View>
-          <View style={[styles.metaItem, { flex: 1 }]}>
-            <Icon name="map-pin" size={11} color={Colors.textMuted} />
+          <View style={[styles.metaItem, styles.addressItem]}>
+            <Icon name="map-pin" size={11} color={theme.colors.textMuted} />
             <Text style={styles.metaText} numberOfLines={1}>{booking.address}</Text>
           </View>
         </View>
@@ -88,90 +102,61 @@ export function BookingCard({ booking, role, onPress, onContact, compact = false
 
       {!compact && isActive && onContact && (
         <Pressable
-          style={styles.contactBtn}
-          onPress={(e) => { e.stopPropagation(); onContact(); }}
-          hitSlop={4}
+          style={({ pressed }) => [styles.contactBtn, pressed && styles.pressed]}
+          onPress={(event) => { event.stopPropagation(); onContact(); }}
+          accessibilityRole="button"
+          accessibilityLabel={tr("Contact {{role}}", { role: contactRole })}
+          hitSlop={6}
         >
-          <Icon name="message-circle" size={13} color={Colors.primary} />
-          <Text style={styles.contactBtnText}>Contact {role === "customer" ? "Provider" : "Customer"}</Text>
+          <Icon name="message-circle" size={13} color={theme.colors.primary} />
+          <Text style={styles.contactBtnText}>{tr("Contact {{role}}", { role: contactRole })}</Text>
         </Pressable>
       )}
 
       {!compact && booking.status === "completed" && !booking.rating && role === "customer" && (
         <View style={styles.rateHint}>
-          <Icon name="star" size={12} color={Colors.accent} />
-          <Text style={styles.rateHintText}>Tap to rate this job</Text>
+          <Icon name="star" size={12} color={theme.colors.accent} />
+          <Text style={styles.rateHintText}>{tr("Tap to rate this job")}</Text>
         </View>
       )}
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: Colors.card,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 8,
-    shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 6,
-    elevation: 2,
-    gap: 10,
-  },
-  cardCompact: { padding: 11, borderRadius: 12, marginBottom: 6 },
-  pressed: { opacity: 0.85 },
-  row: { flexDirection: "row", alignItems: "center", gap: 10 },
-  avatar: { flexShrink: 0 },
-  avatarFallback: {
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  avatarInitial: { fontWeight: "700" },
-  info: { flex: 1, gap: 2 },
-  service: { fontSize: 14, fontWeight: "700", color: Colors.text },
-  serviceCompact: { fontSize: 13 },
-  person: { fontSize: 11, color: Colors.textSecondary },
-  statusBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 20,
-    alignSelf: "flex-end",
-  },
-  statusDot: { width: 5, height: 5, borderRadius: 2.5 },
-  statusText: { fontSize: 10, fontWeight: "700" },
-  price: { fontSize: 12, fontWeight: "800", color: Colors.primary, textAlign: "right", marginTop: 2 },
-  metaRow: { flexDirection: "row", gap: 12, flexWrap: "wrap" },
-  metaItem: { flexDirection: "row", alignItems: "center", gap: 4 },
-  metaText: { fontSize: 11, color: Colors.textMuted },
-  contactBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: Colors.primary + "12",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: Colors.primary + "25",
-    alignSelf: "flex-start",
-  },
-  contactBtnText: { fontSize: 12, fontWeight: "700", color: Colors.primary },
-  rateHint: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: Colors.accent + "15",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    alignSelf: "flex-start",
-  },
-  rateHintText: { fontSize: 11, fontWeight: "600", color: Colors.accent },
-});
-
+function createStyles(theme: AthooTheme, isUrdu: boolean) {
+  return StyleSheet.create({
+    card: {
+      backgroundColor: theme.colors.surface,
+      borderColor: theme.colors.border,
+      borderWidth: 1,
+      borderRadius: theme.radius.lg,
+      padding: theme.spacing.md,
+      marginBottom: theme.spacing.sm,
+      gap: theme.spacing.sm,
+      ...theme.shadows.sm,
+    },
+    cardCompact: { padding: 11, borderRadius: theme.radius.md, marginBottom: 6 },
+    pressed: { opacity: 0.84 },
+    row: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 10 },
+    rightColumn: { alignItems: isUrdu ? "flex-start" : "flex-end" },
+    avatar: { flexShrink: 0 },
+    avatarFallback: { alignItems: "center", justifyContent: "center", flexShrink: 0 },
+    avatarInitial: { fontWeight: "700" },
+    info: { flex: 1, gap: 2 },
+    service: { fontSize: 14, fontWeight: "700", color: theme.colors.text, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
+    serviceCompact: { fontSize: 13 },
+    person: { fontSize: 11, color: theme.colors.textSecondary, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
+    statusBadge: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
+    statusDot: { width: 5, height: 5, borderRadius: 2.5 },
+    statusText: { fontSize: 10, fontWeight: "700", writingDirection: isUrdu ? "rtl" : "ltr" },
+    price: { fontSize: 12, fontWeight: "800", color: theme.colors.primary, textAlign: isUrdu ? "left" : "right", marginTop: 2 },
+    metaRow: { flexDirection: isUrdu ? "row-reverse" : "row", gap: 12, flexWrap: "wrap" },
+    metaItem: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 4 },
+    addressItem: { flex: 1 },
+    metaText: { fontSize: 11, color: theme.colors.textMuted, writingDirection: isUrdu ? "rtl" : "ltr", textAlign: isUrdu ? "right" : "left" },
+    contactBtn: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: theme.colors.infoSoft, borderRadius: theme.radius.md, minHeight: 44, paddingHorizontal: 12, paddingVertical: 9, borderWidth: 1, borderColor: theme.colors.focusRing, alignSelf: isUrdu ? "flex-end" : "flex-start" },
+    contactBtnText: { fontSize: 12, fontWeight: "700", color: theme.colors.primary, writingDirection: isUrdu ? "rtl" : "ltr" },
+    rateHint: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 5, backgroundColor: theme.dark ? "#33245A" : "#F5F3FF", borderRadius: theme.radius.md, paddingHorizontal: 10, paddingVertical: 7, alignSelf: isUrdu ? "flex-end" : "flex-start" },
+    rateHintText: { fontSize: 11, fontWeight: "600", color: theme.colors.accent, writingDirection: isUrdu ? "rtl" : "ltr" },
+  });
+}

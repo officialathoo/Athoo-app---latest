@@ -1,3 +1,4 @@
+import { isOwnedUploadObjectPath, normalizeStoredObjectPath } from "../lib/storageSecurity";
 import crypto from "crypto";
 import { logger } from "../lib/logger";
 import { Router, type Response } from "express";
@@ -38,7 +39,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
     const bookingId = String(req.body?.bookingId || "");
     const reason = String(req.body?.reason || "").trim();
     const amount = Number(req.body?.amountRequested || req.body?.amount);
-    const evidenceUrl = req.body?.evidenceUrl ? String(req.body.evidenceUrl).trim() : null;
+    const evidenceUrl = normalizeStoredObjectPath(req.body?.evidenceUrl) || null;
     const clientRequestId = String(req.body?.clientRequestId || "").trim();
 
     if (!clientRequestId || clientRequestId.length > 120) {
@@ -79,7 +80,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       res.status(400).json({ error: "A refund cannot be requested until payment has been recorded" });
       return;
     }
-    if (evidenceUrl && !evidenceUrl.startsWith(`uploads/private/${userId}/`)) {
+    if (evidenceUrl && !isOwnedUploadObjectPath(evidenceUrl, userId, ["private"])) {
       res.status(400).json({ error: "Refund evidence must be uploaded to your private storage" });
       return;
     }

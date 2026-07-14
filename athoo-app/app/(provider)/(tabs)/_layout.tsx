@@ -168,7 +168,7 @@ export default function ProviderTabLayout() {
         <Tabs.Screen
           name="earnings"
           options={{
-            title: "Earnings",
+            title: t.earnings,
             tabBarIcon: ({ color, focused }) => (
               <View style={[styles.iconWrap, focused && { backgroundColor: theme.colors.warningSoft, borderRadius: theme.radius.sm }]}>
                 <Icon name="dollar-sign" size={theme.iconSize.md} color={color} />

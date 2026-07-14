@@ -29,7 +29,8 @@ const router: IRouter = Router();
 function storageProvider() {
   return getConfiguredStorageProvider();
 }
-
+
+
 // Sanitized, non-leaking error response for storage failures. Configuration
 // errors (missing R2 env vars) are surfaced as 503 with a diagnostic message
 // naming which setting is absent -- never the secret values themselves -- so
@@ -112,6 +113,33 @@ router.post("/storage/uploads/request-url", async (req: Request, res: Response) 
     });
   } catch (error) {
     respondStorageError(req, res, error, "Failed to generate upload URL");
+  }
+});
+
+router.post("/storage/uploads/complete", async (req: Request, res: Response) => {
+  const token = extractToken(req);
+  const decoded = token ? await verifyActiveAccessToken(token) : null;
+  if (!decoded) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const objectPath = typeof req.body?.objectPath === "string" ? req.body.objectPath.trim() : "";
+  const expectedSize = Number(req.body?.size);
+  const expectedContentType = typeof req.body?.contentType === "string" ? req.body.contentType.trim().toLowerCase() : "";
+  if (!objectPath || !canReadStorageKey(objectPath.replace(/^\/objects\//, ""), decoded) || !objectPath.includes(`/` + decoded.userId + `/`)) {
+    res.status(400).json({ error: "Invalid upload reference" }); return;
+  }
+  try {
+    const metadata = await storageProvider().statObject(objectPath);
+    if (!metadata.contentLength || metadata.contentLength <= 0) { res.status(409).json({ error: "Uploaded file is empty" }); return; }
+    if (Number.isFinite(expectedSize) && expectedSize > 0 && metadata.contentLength !== expectedSize) {
+      res.status(409).json({ error: "Uploaded file size could not be verified" }); return;
+    }
+    const storedType = String(metadata.contentType || "").toLowerCase();
+    if (expectedContentType && storedType && storedType !== expectedContentType) {
+      res.status(409).json({ error: "Uploaded file type could not be verified" }); return;
+    }
+    res.json({ success: true, objectPath, size: metadata.contentLength, contentType: metadata.contentType || expectedContentType });
+  } catch (error) {
+    if (error instanceof StorageObjectNotFoundError) { res.status(409).json({ error: "Uploaded file was not found in storage" }); return; }
+    respondStorageError(req, res, error, "Failed to verify uploaded file");
   }
 });
 

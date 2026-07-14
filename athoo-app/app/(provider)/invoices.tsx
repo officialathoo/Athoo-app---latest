@@ -1,14 +1,26 @@
+import { apiErrorToMessage } from "@/lib/apiError";
+import { AthooTheme } from "@/design/theme";
+import { useLang } from "@/context/LanguageContext";
+import { useTheme } from "@/context/ThemeContext";
 import { Icon } from "@/components/ui/Icon";
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { useBookings } from "@/context/BookingContext";
 import { api } from "@/services/api";
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
 
 type ApiInvoice = {
   id: string;
@@ -34,6 +46,9 @@ type ApiInvoice = {
 };
 
 export default function ProviderInvoicesScreen() {
+  const { theme } = useTheme();
+  const { isUrdu, formatCurrency, formatDate: formatLocalizedDate, translate: tr } = useLang();
+  const styles = useMemo(() => createStyles(theme, isUrdu), [theme, isUrdu]);
   const { user } = useAuth();
   const { getMyBookings } = useBookings();
   const insets = useSafeAreaInsets();
@@ -41,13 +56,22 @@ export default function ProviderInvoicesScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [apiInvoices, setApiInvoices] = useState<ApiInvoice[]>([]);
   const [loadingInvoices, setLoadingInvoices] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
-    api.getInvoices()
-      .then((r) => setApiInvoices(r.invoices || []))
-      .catch(() => {})
-      .finally(() => setLoadingInvoices(false));
-  }, []);
+  const loadInvoices = React.useCallback(async () => {
+    setLoadingInvoices(true);
+    setLoadError(null);
+    try {
+      const response = await api.getInvoices();
+      setApiInvoices(response.invoices || []);
+    } catch (error) {
+      setLoadError(apiErrorToMessage(error, tr("We couldn't load your invoices. Please try again.")));
+    } finally {
+      setLoadingInvoices(false);
+    }
+  }, [tr]);
+
+  useEffect(() => { loadInvoices(); }, [loadInvoices]);
 
   const completed = user ? getMyBookings(user.id, "provider").filter((b) => b.status === "completed") : [];
 
@@ -58,9 +82,9 @@ export default function ProviderInvoicesScreen() {
       service: b.service,
       customer: b.customerName,
       date: b.scheduledDate
-        ? new Date(b.scheduledDate).toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" })
+        ? formatLocalizedDate(b.scheduledDate)
         : b.createdAt
-          ? new Date(b.createdAt).toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" })
+          ? formatLocalizedDate(b.createdAt)
           : "—",
       serviceCharge: match ? match.providerAmount : Number(b.providerAmount ?? b.price ?? 0),
       visitCharge: match ? match.visitCharge : Number((b as any).visitCharge ?? 0),
@@ -80,10 +104,14 @@ export default function ProviderInvoicesScreen() {
   const handleDownloadPdf = async (inv: NonNullable<typeof selected>) => {
     if (generatingPdf) return;
     const total = inv.serviceCharge + inv.visitCharge;
+    const customerName = escapeHtml(inv.customer);
+    const serviceName = escapeHtml(inv.service);
+    const invoiceDate = escapeHtml(inv.date);
+    const direction = isUrdu ? "rtl" : "ltr";
 
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+    const html = `<!DOCTYPE html><html dir="${direction}"><head><meta charset="utf-8">
 <style>
-  body{font-family:Arial,sans-serif;margin:0;padding:0;color:#0f172a;background:#ffffff}
+  body{font-family:Arial,sans-serif;margin:0;padding:0;color:#0f172a;background:#ffffff;direction:${direction}}
   .page{max-width:700px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #0f172a;box-shadow:none}
   .header{background:linear-gradient(135deg,#1A6EE0,#0D4BA0);color:#fff;padding:28px 30px;display:flex;justify-content:space-between;align-items:flex-start}
   .logo{font-size:24px;font-weight:900;letter-spacing:-1px}
@@ -109,22 +137,22 @@ export default function ProviderInvoicesScreen() {
 </style></head><body>
 <div class="page">
   <div class="header">
-    <div><div class="logo">ATHOO</div><div class="logo-sub">Provider Earnings Statement</div></div>
-    <div class="inv-meta"><div class="inv-no">${inv.invoiceNo}</div><div class="inv-date">${inv.date}</div><div class="paid-badge">✓ EARNED</div></div>
+    <div><div class="logo">ATHOO</div><div class="logo-sub">${escapeHtml(tr("Provider Earnings Statement"))}</div></div>
+    <div class="inv-meta"><div class="inv-no">${escapeHtml(inv.invoiceNo)}</div><div class="inv-date">${invoiceDate}</div><div class="paid-badge">✓ ${escapeHtml(tr("EARNED"))}</div></div>
   </div>
   <div class="body">
     <div class="parties">
-      <div class="party"><div class="party-label">Service Provided To</div><div class="party-name">${inv.customer}</div></div>
-      <div class="party"><div class="party-label">Service</div><div class="party-name">${inv.service}</div><div class="party-detail">${inv.date}</div></div>
+      <div class="party"><div class="party-label">${escapeHtml(tr("Service Provided To"))}</div><div class="party-name">${customerName}</div></div>
+      <div class="party"><div class="party-label">${escapeHtml(tr("Service"))}</div><div class="party-name">${serviceName}</div><div class="party-detail">${invoiceDate}</div></div>
     </div>
     <table>
-      <tr><th>Description</th><th style="text-align:right">Amount</th></tr>
-      <tr><td>${inv.service}<br><small style="color:#64748b">${inv.date}</small></td><td class="amount">Rs. ${inv.serviceCharge.toLocaleString()}</td></tr>
-      ${inv.visitCharge > 0 ? `<tr><td>Visit / Call-out Charge</td><td class="amount">Rs. ${inv.visitCharge.toLocaleString()}</td></tr>` : ""}
-      <tr class="total-row"><td>TOTAL EARNED</td><td class="amount">Rs. ${total.toLocaleString()}</td></tr>
+      <tr><th>${escapeHtml(tr("Description"))}</th><th style="text-align:right">${escapeHtml(tr("Amount"))}</th></tr>
+      <tr><td>${serviceName}<br><small style="color:#64748b">${invoiceDate}</small></td><td class="amount">${escapeHtml(formatCurrency(inv.serviceCharge))}</td></tr>
+      ${inv.visitCharge > 0 ? `<tr><td>${escapeHtml(tr("Visit / Call-out Charge"))}</td><td class="amount">${escapeHtml(formatCurrency(inv.visitCharge))}</td></tr>` : ""}
+      <tr class="total-row"><td>${escapeHtml(tr("TOTAL EARNED"))}</td><td class="amount">${escapeHtml(formatCurrency(total))}</td></tr>
     </table>
-    <div class="note">This earnings statement reflects what you received directly from the customer. Keep it for your records.</div>
-    <div class="footer">Athoo · +92 339 0051068 · @athoo_services · Thank you for using Athoo!</div>
+    <div class="note">${escapeHtml(tr("This earnings statement reflects what you received directly from the customer. Keep it for your records."))}</div>
+    <div class="footer">Athoo · +92 339 0051068 · @athoo_services · ${escapeHtml(tr("Thank you for using Athoo!"))}</div>
   </div>
 </div>
 </body></html>`;
@@ -141,10 +169,10 @@ export default function ProviderInvoicesScreen() {
       if (canShare) {
         await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `Invoice ${inv.invoiceNo}` });
       } else {
-        Alert.alert("Saved", `Invoice saved to: ${uri}`);
+        Alert.alert(tr("Invoice ready"), tr("Your invoice was saved and is ready to share."));
       }
     } catch (e: any) {
-      Alert.alert("Error", e?.message || "Could not generate PDF. Please try again.");
+      Alert.alert(tr("Unable to create invoice"), apiErrorToMessage(e, tr("We couldn't create the invoice PDF. Please try again.")));
     } finally {
       setGeneratingPdf(false);
     }
@@ -155,18 +183,18 @@ export default function ProviderInvoicesScreen() {
     return (
       <View style={[styles.container, { paddingTop: topPad }]}>
         <View style={styles.header}>
-          <Pressable style={styles.backBtn} onPress={() => setSelectedId(null)}>
-            <Icon name="arrow-left" size={20} color={Colors.text} />
+          <Pressable style={styles.backBtn} onPress={() => setSelectedId(null)} accessibilityRole="button" accessibilityLabel={tr("Back")}>
+            <Icon name={isUrdu ? "arrow-right" : "arrow-left"} size={20} color={theme.colors.text} />
           </Pressable>
-          <Text style={styles.title}>Invoice</Text>
-          <View style={{ flexDirection: "row", gap: 8 }}>
+          <Text style={styles.title}>{tr("Invoice Details")}</Text>
+          <View style={{ flexDirection: isUrdu ? "row-reverse" : "row", gap: 8 }}>
             <Pressable style={styles.shareBtn} onPress={() => handleShareInvoice(selected)} disabled={generatingPdf}>
-              <Icon name="share-2" size={18} color={Colors.primary} />
+              <Icon name="share-2" size={18} color={theme.colors.primary} />
             </Pressable>
-            <Pressable style={[styles.shareBtn, { backgroundColor: Colors.primary + "15" }]} onPress={() => handleDownloadPdf(selected)} disabled={generatingPdf}>
+            <Pressable style={[styles.shareBtn, { backgroundColor: theme.colors.primary + "15" }]} onPress={() => handleDownloadPdf(selected)} disabled={generatingPdf}>
               {generatingPdf
-                ? <Icon name="loader" size={18} color={Colors.primary} />
-                : <Icon name="download" size={18} color={Colors.primary} />}
+                ? <Icon name="loader" size={18} color={theme.colors.primary} />
+                : <Icon name="download" size={18} color={theme.colors.primary} />}
             </Pressable>
           </View>
         </View>
@@ -178,27 +206,27 @@ export default function ProviderInvoicesScreen() {
             </View>
             <Text style={styles.invoiceDate}>{selected.date}</Text>
             <View style={styles.invDivider} />
-            <Text style={styles.invSection}>Provider Earnings</Text>
-            <View style={styles.invRow}><Text style={styles.invLabel}>Service</Text><Text style={styles.invVal}>{selected.service}</Text></View>
-            <View style={styles.invRow}><Text style={styles.invLabel}>Customer</Text><Text style={styles.invVal}>{selected.customer}</Text></View>
+            <Text style={styles.invSection}>{tr("Provider Earnings")}</Text>
+            <View style={styles.invRow}><Text style={styles.invLabel}>{tr("Service")}</Text><Text style={styles.invVal}>{selected.service}</Text></View>
+            <View style={styles.invRow}><Text style={styles.invLabel}>{tr("Customer")}</Text><Text style={styles.invVal}>{selected.customer}</Text></View>
             <View style={styles.invDivider} />
-            <View style={styles.invRow}><Text style={styles.invLabel}>Provider Amount</Text><Text style={styles.invVal}>Rs. {selected.serviceCharge.toLocaleString()}</Text></View>
+            <View style={styles.invRow}><Text style={styles.invLabel}>{tr("Provider Amount")}</Text><Text style={styles.invVal}>{formatCurrency(selected.serviceCharge)}</Text></View>
             {selected.visitCharge > 0 && (
               <View style={styles.invRow}>
-                <Text style={styles.invLabel}>Visit Charge</Text>
-                <Text style={[styles.invVal, { color: Colors.secondary }]}>Rs. {selected.visitCharge.toLocaleString()}</Text>
+                <Text style={styles.invLabel}>{tr("Visit Charge")}</Text>
+                <Text style={[styles.invVal, { color: theme.colors.secondary }]}>{formatCurrency(selected.visitCharge)}</Text>
               </View>
             )}
             <View style={styles.invDivider} />
             <View style={styles.invRow}>
-              <Text style={styles.invTotalLabel}>Total Earned</Text>
-              <Text style={styles.invTotalVal}>Rs. {total.toLocaleString()}</Text>
+              <Text style={styles.invTotalLabel}>{tr("Total Earned")}</Text>
+              <Text style={styles.invTotalVal}>{formatCurrency(total)}</Text>
             </View>
           </View>
           {selected.visitCharge > 0 && (
             <View style={styles.noteCard}>
-              <Icon name="info" size={13} color={Colors.primary} />
-              <Text style={styles.noteText}>A visit/call-out charge of Rs. {selected.visitCharge.toLocaleString()} was applied for this job.</Text>
+              <Icon name="info" size={13} color={theme.colors.primary} />
+              <Text style={styles.noteText}>{tr("A visit/call-out charge of {{amount}} was applied for this job.", { amount: formatCurrency(selected.visitCharge) })}</Text>
             </View>
           )}
         </ScrollView>
@@ -209,23 +237,23 @@ export default function ProviderInvoicesScreen() {
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
       <View style={styles.header}>
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <Icon name="arrow-left" size={20} color={Colors.text} />
+        <Pressable style={styles.backBtn} onPress={() => router.back()} accessibilityRole="button" accessibilityLabel={tr("Back")}>
+          <Icon name={isUrdu ? "arrow-right" : "arrow-left"} size={20} color={theme.colors.text} />
         </Pressable>
-        <Text style={styles.title}>My Invoices</Text>
+        <Text style={styles.title}>{tr("My Invoices")}</Text>
       </View>
       {loadingInvoices ? (
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-          <ActivityIndicator color={Colors.secondary} />
+          <ActivityIndicator color={theme.colors.secondary} />
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.listContent}>
           {invoices.length === 0 && (
             <View style={{ alignItems: "center", paddingTop: 60, gap: 12 }}>
-              <Icon name="file-text" size={40} color={Colors.textMuted} />
-              <Text style={{ fontSize: 16, fontWeight: "700", color: Colors.text }}>No Invoices Yet</Text>
-              <Text style={{ fontSize: 13, color: Colors.textSecondary, textAlign: "center", lineHeight: 20 }}>
-                Invoices will appear here after completing your first job.
+              <Icon name="file-text" size={40} color={theme.colors.textMuted} />
+              <Text style={{ fontSize: 16, fontWeight: "700", color: theme.colors.text }}>{tr("No Invoices Yet")}</Text>
+              <Text style={{ fontSize: 13, color: theme.colors.textSecondary, textAlign: "center", lineHeight: 20 }}>
+                {tr("Invoices will appear here after completing your first job.")}
               </Text>
             </View>
           )}
@@ -235,15 +263,15 @@ export default function ProviderInvoicesScreen() {
               style={({ pressed }) => [styles.invItem, pressed && styles.invItemPressed]}
               onPress={() => setSelectedId(inv.id)}
             >
-              <View style={styles.invItemIcon}><Icon name="file-text" size={18} color={Colors.secondary} /></View>
+              <View style={styles.invItemIcon}><Icon name="file-text" size={18} color={theme.colors.secondary} /></View>
               <View style={styles.invItemInfo}>
                 <Text style={styles.invItemService}>{inv.service}</Text>
                 <Text style={styles.invItemCustomer}>{inv.customer} • {inv.date}</Text>
                 <Text style={styles.invItemNo}>{inv.invoiceNo}</Text>
               </View>
               <View style={styles.invItemRight}>
-                <Text style={styles.invItemAmount}>Rs. {(inv.serviceCharge + inv.visitCharge).toLocaleString()}</Text>
-                <View style={styles.paidBadge}><Text style={styles.paidText}>PAID</Text></View>
+                <Text style={styles.invItemAmount}>{formatCurrency(inv.serviceCharge + inv.visitCharge)}</Text>
+                <View style={styles.paidBadge}><Text style={styles.paidText}>{tr("PAID")}</Text></View>
               </View>
             </Pressable>
           ))}
@@ -253,48 +281,51 @@ export default function ProviderInvoicesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+function createStyles(theme: AthooTheme, isUrdu: boolean) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
   header: {
-    flexDirection: "row", alignItems: "center", gap: 12,
+    flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 12,
     paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16,
-    backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.border,
+    backgroundColor: theme.colors.surface, borderBottomWidth: 1, borderBottomColor: theme.colors.border,
   },
-  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: Colors.background, alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 18, fontWeight: "800", color: Colors.text, flex: 1 },
-  shareBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: Colors.primary + "12", alignItems: "center", justifyContent: "center" },
+  backBtn: { width: 44, height: 44, borderRadius: 12, backgroundColor: theme.colors.background, alignItems: "center", justifyContent: "center" },
+  title: { fontSize: 18, fontWeight: "800", color: theme.colors.text, flex: 1 },
+  shareBtn: { width: 44, height: 44, borderRadius: 12, backgroundColor: theme.colors.primary + "12", alignItems: "center", justifyContent: "center" },
   paidBadge: { backgroundColor: "#22C55E20", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   paidText: { fontSize: 10, fontWeight: "800", color: "#22C55E" },
-  listContent: { padding: 16, gap: 10, paddingBottom: 40 },
+  listContent: { width: "100%", maxWidth: 760, alignSelf: "center", padding: 16, gap: 10, paddingBottom: 40 },
   invItem: {
-    flexDirection: "row", alignItems: "center", gap: 12,
-    backgroundColor: Colors.card, borderRadius: 16, padding: 14,
-    borderWidth: 1, borderColor: Colors.border,
+    flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 12,
+    backgroundColor: theme.colors.surface, borderRadius: 16, padding: 14,
+    borderWidth: 1, borderColor: theme.colors.border,
   },
   invItemPressed: { opacity: 0.85 },
-  invItemIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.secondary + "20", alignItems: "center", justifyContent: "center" },
+  invItemIcon: { width: 44, height: 44, borderRadius: 12, backgroundColor: theme.colors.secondary + "20", alignItems: "center", justifyContent: "center" },
   invItemInfo: { flex: 1, gap: 2 },
-  invItemService: { fontSize: 14, fontWeight: "700", color: Colors.text },
-  invItemCustomer: { fontSize: 12, color: Colors.textSecondary },
-  invItemNo: { fontSize: 11, color: Colors.textMuted },
+  invItemService: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
+  invItemCustomer: { fontSize: 12, color: theme.colors.textSecondary },
+  invItemNo: { fontSize: 11, color: theme.colors.textMuted },
   invItemRight: { alignItems: "flex-end", gap: 4 },
-  invItemAmount: { fontSize: 14, fontWeight: "800", color: Colors.secondary },
-  invoiceContent: { padding: 16, gap: 12, paddingBottom: 40 },
-  invoiceCard: { backgroundColor: Colors.card, borderRadius: 18, padding: 20, gap: 10, borderWidth: 1, borderColor: Colors.border },
-  invoiceTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  invoiceNo: { fontSize: 12, fontWeight: "700", color: Colors.textSecondary },
-  invoiceDate: { fontSize: 12, color: Colors.textMuted },
-  invDivider: { height: 1, backgroundColor: Colors.border },
-  invSection: { fontSize: 13, fontWeight: "700", color: Colors.textSecondary },
-  invRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 4 },
-  invLabel: { fontSize: 13, color: Colors.textSecondary },
-  invVal: { fontSize: 13, fontWeight: "600", color: Colors.text },
-  invTotalLabel: { fontSize: 15, fontWeight: "800", color: Colors.text },
-  invTotalVal: { fontSize: 18, fontWeight: "900", color: Colors.secondary },
+  invItemAmount: { fontSize: 14, fontWeight: "800", color: theme.colors.secondary },
+  invoiceContent: { width: "100%", maxWidth: 760, alignSelf: "center", padding: 16, gap: 12, paddingBottom: 40 },
+  invoiceCard: { backgroundColor: theme.colors.surface, borderRadius: 18, padding: 20, gap: 10, borderWidth: 1, borderColor: theme.colors.border },
+  invoiceTop: { flexDirection: isUrdu ? "row-reverse" : "row", justifyContent: "space-between", alignItems: "center" },
+  invoiceNo: { fontSize: 12, fontWeight: "700", color: theme.colors.textSecondary },
+  invoiceDate: { fontSize: 12, color: theme.colors.textMuted },
+  invDivider: { height: 1, backgroundColor: theme.colors.border },
+  invSection: { fontSize: 13, fontWeight: "700", color: theme.colors.textSecondary },
+  invRow: { flexDirection: isUrdu ? "row-reverse" : "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 4 },
+  invLabel: { fontSize: 13, color: theme.colors.textSecondary },
+  invVal: { fontSize: 13, fontWeight: "600", color: theme.colors.text },
+  invTotalLabel: { fontSize: 15, fontWeight: "800", color: theme.colors.text },
+  invTotalVal: { fontSize: 18, fontWeight: "900", color: theme.colors.secondary },
   noteCard: {
-    flexDirection: "row", alignItems: "flex-start", gap: 8,
-    backgroundColor: Colors.primary + "10", borderRadius: 12, padding: 12,
-    borderWidth: 1, borderColor: Colors.primary + "30",
+    flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "flex-start", gap: 8,
+    backgroundColor: theme.colors.primary + "10", borderRadius: 12, padding: 12,
+    borderWidth: 1, borderColor: theme.colors.primary + "30",
   },
-  noteText: { flex: 1, fontSize: 12, color: Colors.primary, lineHeight: 17 },
-});
+  noteText: { flex: 1, fontSize: 12, color: theme.colors.primary, lineHeight: 17 },
+  });
+}
+

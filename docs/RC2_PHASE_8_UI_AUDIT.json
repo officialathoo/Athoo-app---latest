@@ -1,0 +1,543 @@
+{
+  "summary": {
+    "routeFiles": 76,
+    "themeAware": 9,
+    "languageAware": 13,
+    "legacyColorRoutes": 61,
+    "hardcodedHexOccurrences": 537
+  },
+  "routes": [
+    {
+      "file": "athoo-app/app/(customer)/(tabs)/_layout.tsx",
+      "usesTheme": true,
+      "usesLanguage": true,
+      "usesLegacyColors": false,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/(customer)/(tabs)/bookings.tsx",
+      "usesTheme": false,
+      "usesLanguage": true,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 14
+    },
+    {
+      "file": "athoo-app/app/(customer)/(tabs)/chat.tsx",
+      "usesTheme": false,
+      "usesLanguage": true,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/(customer)/(tabs)/home.tsx",
+      "usesTheme": true,
+      "usesLanguage": true,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 8
+    },
+    {
+      "file": "athoo-app/app/(customer)/(tabs)/profile.tsx",
+      "usesTheme": false,
+      "usesLanguage": true,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 30
+    },
+    {
+      "file": "athoo-app/app/(customer)/(tabs)/search.tsx",
+      "usesTheme": false,
+      "usesLanguage": true,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 1
+    },
+    {
+      "file": "athoo-app/app/(customer)/_layout.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": false,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/(customer)/about.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 1
+    },
+    {
+      "file": "athoo-app/app/(customer)/addresses.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/(customer)/billing.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 1
+    },
+    {
+      "file": "athoo-app/app/(customer)/book-service.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 7
+    },
+    {
+      "file": "athoo-app/app/(customer)/booking-detail.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 41
+    },
+    {
+      "file": "athoo-app/app/(customer)/broadcast-status.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 1
+    },
+    {
+      "file": "athoo-app/app/(customer)/change-password.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/(customer)/chat-room.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 1
+    },
+    {
+      "file": "athoo-app/app/(customer)/chatbot.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 11
+    },
+    {
+      "file": "athoo-app/app/(customer)/contact-support.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 6
+    },
+    {
+      "file": "athoo-app/app/(customer)/help.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 1
+    },
+    {
+      "file": "athoo-app/app/(customer)/invoices.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 31
+    },
+    {
+      "file": "athoo-app/app/(customer)/map.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 3
+    },
+    {
+      "file": "athoo-app/app/(customer)/negotiate.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 11
+    },
+    {
+      "file": "athoo-app/app/(customer)/notifications.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 9
+    },
+    {
+      "file": "athoo-app/app/(customer)/privacy.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 1
+    },
+    {
+      "file": "athoo-app/app/(customer)/provider-detail.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 4
+    },
+    {
+      "file": "athoo-app/app/(customer)/refund-requests.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 28
+    },
+    {
+      "file": "athoo-app/app/(customer)/saved.tsx",
+      "usesTheme": true,
+      "usesLanguage": false,
+      "usesLegacyColors": false,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/(customer)/service-providers.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 1
+    },
+    {
+      "file": "athoo-app/app/(customer)/subscription.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 8
+    },
+    {
+      "file": "athoo-app/app/(customer)/support-tickets.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 12
+    },
+    {
+      "file": "athoo-app/app/(provider)/(tabs)/_layout.tsx",
+      "usesTheme": true,
+      "usesLanguage": true,
+      "usesLegacyColors": false,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/(provider)/(tabs)/chat.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/(provider)/(tabs)/dashboard.tsx",
+      "usesTheme": false,
+      "usesLanguage": true,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 2
+    },
+    {
+      "file": "athoo-app/app/(provider)/(tabs)/earnings.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 8
+    },
+    {
+      "file": "athoo-app/app/(provider)/(tabs)/jobs.tsx",
+      "usesTheme": true,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 8
+    },
+    {
+      "file": "athoo-app/app/(provider)/(tabs)/profile.tsx",
+      "usesTheme": false,
+      "usesLanguage": true,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 40
+    },
+    {
+      "file": "athoo-app/app/(provider)/_layout.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/(provider)/about.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 3
+    },
+    {
+      "file": "athoo-app/app/(provider)/availability.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 12
+    },
+    {
+      "file": "athoo-app/app/(provider)/broadcast-jobs.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 1
+    },
+    {
+      "file": "athoo-app/app/(provider)/change-password.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/(provider)/chat-room.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 1
+    },
+    {
+      "file": "athoo-app/app/(provider)/chatbot.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 10
+    },
+    {
+      "file": "athoo-app/app/(provider)/contact-support.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 6
+    },
+    {
+      "file": "athoo-app/app/(provider)/earnings.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 9
+    },
+    {
+      "file": "athoo-app/app/(provider)/edit-profile.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 4
+    },
+    {
+      "file": "athoo-app/app/(provider)/help.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/(provider)/invoices.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 22
+    },
+    {
+      "file": "athoo-app/app/(provider)/job-detail.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 49
+    },
+    {
+      "file": "athoo-app/app/(provider)/negotiations.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 15
+    },
+    {
+      "file": "athoo-app/app/(provider)/notifications.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 10
+    },
+    {
+      "file": "athoo-app/app/(provider)/pay-commission.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 7
+    },
+    {
+      "file": "athoo-app/app/(provider)/privacy.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 3
+    },
+    {
+      "file": "athoo-app/app/(provider)/service-radius.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/(provider)/subscription.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/(provider)/support-tickets.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 12
+    },
+    {
+      "file": "athoo-app/app/(provider)/verification-documents.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/(provider)/wallet.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 31
+    },
+    {
+      "file": "athoo-app/app/(provider)/withdrawal-requests.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 17
+    },
+    {
+      "file": "athoo-app/app/(tabs)/_layout.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": false,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/(tabs)/index.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": false,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/+not-found.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": false,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/_layout.tsx",
+      "usesTheme": true,
+      "usesLanguage": true,
+      "usesLegacyColors": false,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/appearance.tsx",
+      "usesTheme": true,
+      "usesLanguage": true,
+      "usesLegacyColors": false,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/auth/_layout.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": false,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/auth/forgot-password.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 8
+    },
+    {
+      "file": "athoo-app/app/auth/login.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 8
+    },
+    {
+      "file": "athoo-app/app/auth/provider-register.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 6
+    },
+    {
+      "file": "athoo-app/app/auth/register.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/auth/welcome.tsx",
+      "usesTheme": true,
+      "usesLanguage": true,
+      "usesLegacyColors": false,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/call.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": false,
+      "hardcodedHexCount": 12
+    },
+    {
+      "file": "athoo-app/app/components/maps/AthooMapFallback.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 2
+    },
+    {
+      "file": "athoo-app/app/index.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": false,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/language.tsx",
+      "usesTheme": true,
+      "usesLanguage": true,
+      "usesLegacyColors": false,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/legal/_layout.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": false,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/legal/privacy.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 0
+    },
+    {
+      "file": "athoo-app/app/legal/terms.tsx",
+      "usesTheme": false,
+      "usesLanguage": false,
+      "usesLegacyColors": true,
+      "hardcodedHexCount": 0
+    }
+  ]
+}

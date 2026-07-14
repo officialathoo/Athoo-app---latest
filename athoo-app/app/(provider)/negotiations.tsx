@@ -16,6 +16,7 @@ import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { useNegotiation, Negotiation } from "@/context/NegotiationContext";
 import { useNotifications } from "@/context/NotificationContext";
+import { apiErrorToMessage } from "@/lib/apiError";
 
 export default function ProviderNegotiationsScreen() {
   const { user } = useAuth();
@@ -75,7 +76,7 @@ export default function ProviderNegotiationsScreen() {
                 router.back();
               }
             } catch (error: any) {
-              Alert.alert("Error", error?.message || "Could not accept offer. Please try again.");
+              Alert.alert("Unable to accept", apiErrorToMessage(error, "Could not accept this offer. Please try again."));
             } finally {
               setProcessingId(null);
             }
@@ -104,7 +105,7 @@ export default function ProviderNegotiationsScreen() {
               negotiationId: neg.id,
             });
           } catch (error: any) {
-            Alert.alert("Unable to Reject", error?.message || "Could not reject this offer.");
+            Alert.alert("Unable to reject", apiErrorToMessage(error, "Could not reject this offer. Please try again."));
           } finally {
             setProcessingId(null);
           }
@@ -141,7 +142,7 @@ export default function ProviderNegotiationsScreen() {
 
       setCounterAmounts((p) => ({ ...p, [neg.id]: "" }));
     } catch (error: any) {
-      Alert.alert("Unable to Counter", error?.message || "Could not send counter offer.");
+      Alert.alert("Unable to counter", apiErrorToMessage(error, "Could not send the counter offer. Please try again."));
     } finally {
       setProcessingId(null);
     }

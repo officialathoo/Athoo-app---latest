@@ -25,6 +25,7 @@ import { useLang } from "@/context/LanguageContext";
 import { useNotifications } from "@/context/NotificationContext";
 import { buildRepeatBookingParams } from "@/utils/repeatBooking";
 import { ServiceHistoryInsights } from "@/components/design/ServiceHistoryInsights";
+import { useTheme } from "@/context/ThemeContext";
 
 export default function BookingsScreen() {
   const { user } = useAuth();
@@ -44,9 +45,9 @@ export default function BookingsScreen() {
       setRateTarget(null);
       setReviewText("");
       setRatingVal(5);
-      push({ type: "success", title: "Review Submitted", message: "Thank you for your feedback!" });
+      push({ type: "success", title: tr("Review Submitted"), message: tr("Thank you for your feedback!") });
     } catch {
-      Alert.alert("Error", "Could not submit rating. Please try again.");
+      Alert.alert(tr("Error"), tr("Could not submit rating. Please try again."));
     } finally {
       setRatingLoading(false);
     }
@@ -81,7 +82,7 @@ export default function BookingsScreen() {
         },
       });
     } catch {
-      Alert.alert("Error", "Could not open chat. Please try again.");
+      Alert.alert(tr("Error"), tr("Could not open chat. Please try again."));
     }
   };
 
@@ -99,7 +100,9 @@ export default function BookingsScreen() {
     }
   }, [pendingAlerts]);
   const { getMyNegotiations, acceptOffer, rejectOffer } = useNegotiation();
-  const { t, isUrdu } = useLang();
+  const { t, isUrdu, translate: tr, textAlign, writingDirection, formatCurrency } = useLang();
+  const { theme } = useTheme();
+  const localizedText = { textAlign, writingDirection } as const;
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const [activeFilter, setActiveFilter] = useState<BookingStatus | "all">("all");
@@ -133,15 +136,15 @@ export default function BookingsScreen() {
   const activeCount = allBookings.filter(b => ["accepted", "in_progress", "pending"].includes(b.status)).length;
 
   const getNegStatus = (status: string) => {
-    if (status === "customer_offer") return { label: "Awaiting Response", bg: "#FEF9C3", text: "#CA8A04" };
-    if (status === "provider_counter") return { label: "Provider Countered", bg: "#EFF6FF", text: Colors.primary };
-    if (status === "accepted") return { label: "Accepted", bg: "#F0FDF4", text: "#16A34A" };
-    return { label: "Rejected", bg: "#FEF2F2", text: "#DC2626" };
+    if (status === "customer_offer") return { label: t.awaitingResponse, bg: theme.colors.warningSoft, text: theme.colors.warning };
+    if (status === "provider_counter") return { label: t.providerCountered, bg: theme.colors.infoSoft, text: theme.colors.info };
+    if (status === "accepted") return { label: t.accepted, bg: theme.colors.successSoft, text: theme.colors.success };
+    return { label: tr("Rejected"), bg: theme.colors.dangerSoft, text: theme.colors.danger };
   };
 
   return (
-    <View style={[styles.container, { paddingTop: topPad }]}>
-      <View style={styles.header}>
+    <View style={[styles.container, { paddingTop: topPad, backgroundColor: theme.colors.background }]}>
+      <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
         <View>
           <Text style={[styles.title, isUrdu && styles.urduText]}>{mainTab === "bookings" ? t.myBookings : t.myOffers}</Text>
           <Text style={[styles.subtitle, isUrdu && styles.urduText]}>
@@ -156,7 +159,7 @@ export default function BookingsScreen() {
         </Pressable>
       </View>
 
-      <View style={styles.mainTabRow}>
+      <View style={[styles.mainTabRow, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
         <Pressable
           style={[styles.mainTab, mainTab === "bookings" && styles.mainTabActive]}
           onPress={() => setMainTab("bookings")}
@@ -184,10 +187,10 @@ export default function BookingsScreen() {
           {myNegotiations.length === 0 ? (
             <View style={styles.empty}>
               <View style={styles.emptyIcon}><Icon name="dollar-sign" size={30} color={Colors.textMuted} /></View>
-              <Text style={styles.emptyTitle}>No price offers yet</Text>
-              <Text style={styles.emptySubtitle}>Negotiate prices with providers on their profile pages</Text>
+              <Text style={[styles.emptyTitle, localizedText]}>{tr("No price offers yet")}</Text>
+              <Text style={[styles.emptySubtitle, localizedText]}>{tr("Negotiate prices with providers on their profile pages")}</Text>
               <Pressable style={styles.findBtn} onPress={() => router.push("/(customer)/(tabs)/search")}>
-                <Text style={styles.findBtnText}>Browse Services</Text>
+                <Text style={styles.findBtnText}>{tr("Browse Services")}</Text>
               </Pressable>
             </View>
           ) : myNegotiations.map((neg, i) => {
@@ -201,7 +204,7 @@ export default function BookingsScreen() {
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.negService}>{neg.service}</Text>
-                      <Text style={styles.negProvider}>with {neg.providerName}</Text>
+                      <Text style={[styles.negProvider, localizedText]}>{tr("with {{name}}", { name: neg.providerName })}</Text>
                     </View>
                     <View style={[styles.negBadge, { backgroundColor: st.bg }]}>
                       <Text style={[styles.negBadgeText, { color: st.text }]}>{st.label}</Text>
@@ -210,19 +213,19 @@ export default function BookingsScreen() {
 
                   <View style={styles.negAmtRow}>
                     <View style={styles.negAmtBox}>
-                      <Text style={styles.negAmtLabel}>Your Offer</Text>
-                      <Text style={[styles.negAmt, { color: Colors.primary }]}>Rs. {neg.customerOffer}</Text>
+                      <Text style={styles.negAmtLabel}>{tr("Your Offer")}</Text>
+                      <Text style={[styles.negAmt, { color: Colors.primary }]}>{formatCurrency(neg.customerOffer)}</Text>
                     </View>
                     {neg.providerCounter !== undefined && (
                       <View style={styles.negAmtBox}>
-                        <Text style={styles.negAmtLabel}>Counter</Text>
-                        <Text style={[styles.negAmt, { color: Colors.secondary }]}>Rs. {neg.providerCounter}</Text>
+                        <Text style={styles.negAmtLabel}>{tr("Counter")}</Text>
+                        <Text style={[styles.negAmt, { color: Colors.secondary }]}>{formatCurrency(neg.providerCounter)}</Text>
                       </View>
                     )}
                     {neg.finalPrice !== undefined && (
                       <View style={styles.negAmtBox}>
-                        <Text style={styles.negAmtLabel}>Agreed</Text>
-                        <Text style={[styles.negAmt, { color: Colors.success }]}>Rs. {neg.finalPrice}</Text>
+                        <Text style={styles.negAmtLabel}>{tr("Agreed")}</Text>
+                        <Text style={[styles.negAmt, { color: Colors.success }]}>{formatCurrency(neg.finalPrice)}</Text>
                       </View>
                     )}
                   </View>
@@ -241,7 +244,7 @@ export default function BookingsScreen() {
                         )}
                       >
                         <Icon name="check" size={14} color="#fff" />
-                        <Text style={styles.negAcceptText}>Accept Rs. {neg.providerCounter}</Text>
+                        <Text style={styles.negAcceptText}>Accept {formatCurrency(neg.providerCounter)}</Text>
                       </Pressable>
                       <Pressable
                         style={styles.negRejectBtn}
@@ -293,7 +296,7 @@ export default function BookingsScreen() {
                         })}
                       >
                         <Icon name="check-circle" size={14} color="#fff" />
-                        <Text style={styles.negBookNowText}>Complete Booking · Rs. {neg.finalPrice}</Text>
+                        <Text style={styles.negBookNowText}>Complete Booking · {formatCurrency(neg.finalPrice)}</Text>
                       </Pressable>
                     </View>
                   )}
@@ -485,7 +488,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 12,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
@@ -501,7 +504,7 @@ const styles = StyleSheet.create({
   },
   summaryStrip: {
     flexDirection: "row",
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     paddingVertical: 12,
     paddingHorizontal: 20,
     alignItems: "center",
@@ -513,7 +516,7 @@ const styles = StyleSheet.create({
   stripLabel: { fontSize: 10, color: Colors.textSecondary, fontWeight: "600" },
   stripDiv: { width: 1, height: 30, backgroundColor: Colors.border },
   filterScroll: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
     flexGrow: 0,
@@ -701,7 +704,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   rateBox: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
     padding: 24, paddingBottom: 40, gap: 16,
   },

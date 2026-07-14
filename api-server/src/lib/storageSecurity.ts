@@ -34,6 +34,33 @@ export function userUploadKey(userId: string, name: string, id: string, date = n
   return `uploads/${scope}/${userId}/${date.toISOString().slice(0, 10)}/${id}-${safeUploadName(name)}`;
 }
 
+
+export function normalizeStoredObjectPath(value: unknown): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (raw.startsWith("/objects/")) return raw;
+  if (raw.startsWith("objects/")) return `/${raw}`;
+  if (raw.startsWith("uploads/")) return `/objects/${raw}`;
+  return raw;
+}
+
+export function isOwnedUploadObjectPath(value: unknown, userId: string, allowedScopes: Array<"private" | "shared"> = ["private", "shared"]): boolean {
+  const normalized = normalizeStoredObjectPath(value);
+  return allowedScopes.some((scope) => normalized.startsWith(`/objects/uploads/${scope}/${userId}/`));
+}
+
+export function validateOwnedUploadObjectPaths(values: unknown, userId: string, options: { maxItems?: number; scopes?: Array<"private" | "shared"> } = {}): { ok: true; paths: string[] } | { ok: false; error: string } {
+  if (!Array.isArray(values)) return { ok: true, paths: [] };
+  const maxItems = Math.max(0, Math.min(20, options.maxItems ?? 5));
+  if (values.length > maxItems) return { ok: false, error: `A maximum of ${maxItems} media files is allowed` };
+  const paths = values.map(normalizeStoredObjectPath).filter(Boolean);
+  if (paths.length !== values.filter(Boolean).length) return { ok: false, error: "Invalid media path" };
+  if (paths.some((path) => !isOwnedUploadObjectPath(path, userId, options.scopes ?? ["private", "shared"]))) {
+    return { ok: false, error: "Media must be uploaded through your Athoo account" };
+  }
+  return { ok: true, paths };
+}
+
 export function canReadStorageKey(key: string, user: { userId: string; role: string }): boolean {
   const normalized = String(key || "").replace(/^\/+/, "");
   if (!normalized.startsWith("uploads/private/")) return true; // shared and legacy objects remain compatible

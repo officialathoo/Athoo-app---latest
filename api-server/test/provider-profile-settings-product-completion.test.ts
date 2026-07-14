@@ -30,7 +30,8 @@ test("rate changes are provider-owned, single-pending and applied only by audite
 
 test("service additions use category slugs and require permissioned audited review", () => {
   const route = read("api-server/src/routes/account.ts");
-  assert.match(route, /Service evidence must use your private upload path/);
+  assert.match(route, /Service-request documents must be uploaded through your private Athoo storage/);
+  assert.match(route, /isOwnedUploadObjectPath\(url, req\.user!\.userId, \["private"\]\)/);
   assert.match(route, /Service is already approved on your profile/);
   assert.match(route, /category\.slug/);
   assert.match(route, /provider_service\.approved/);

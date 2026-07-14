@@ -1,66 +1,94 @@
 import { Icon } from "@/components/ui/Icon";
+import { useAuth } from "@/context/AuthContext";
+import { useBookings } from "@/context/BookingContext";
+import { useLang } from "@/context/LanguageContext";
+import { useTheme } from "@/context/ThemeContext";
+import { AthooTheme } from "@/design/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/colors";
-import { useAuth } from "@/context/AuthContext";
-import { useBookings } from "@/context/BookingContext";
 
-const PERIODS = ["This Week", "This Month", "All Time"];
-
+type Period = "week" | "month" | "all";
 type ChartBar = { label: string; amount: number };
 
-function buildChartData(bookings: any[], period: string): ChartBar[] {
+type Translate = (message: string, params?: Record<string, string | number>) => string;
+
+function buildChartData(bookings: any[], period: Period, tr: Translate): ChartBar[] {
   const now = new Date();
-  if (period === "This Week") {
-    const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  if (period === "week") {
+    const days = [tr("Mon"), tr("Tue"), tr("Wed"), tr("Thu"), tr("Fri"), tr("Sat"), tr("Sun")];
     const buckets: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
     const startOfWeek = new Date(now);
     startOfWeek.setDate(now.getDate() - ((now.getDay() + 6) % 7));
     startOfWeek.setHours(0, 0, 0, 0);
-    bookings.forEach((b) => {
-      const d = new Date(b.scheduledDate || b.createdAt || now);
-      const diff = Math.floor((d.getTime() - startOfWeek.getTime()) / 86400000);
-      if (diff >= 0 && diff < 7) buckets[diff] = (buckets[diff] || 0) + Number(b.providerAmount ?? b.price ?? 0);
+    bookings.forEach((booking) => {
+      const date = new Date(booking.scheduledDate || booking.createdAt || now);
+      const difference = Math.floor((date.getTime() - startOfWeek.getTime()) / 86400000);
+      if (difference >= 0 && difference < 7) {
+        buckets[difference] = (buckets[difference] || 0) + Number(booking.providerAmount ?? booking.price ?? 0);
+      }
     });
-    return days.map((label, i) => ({ label, amount: buckets[i] || 0 }));
-  } else if (period === "This Month") {
-    const weeks: ChartBar[] = [{ label: "Wk 1", amount: 0 }, { label: "Wk 2", amount: 0 }, { label: "Wk 3", amount: 0 }, { label: "Wk 4", amount: 0 }];
-    bookings.forEach((b) => {
-      const d = new Date(b.scheduledDate || b.createdAt || now);
-      if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
-        const wk = Math.min(3, Math.floor((d.getDate() - 1) / 7));
-        weeks[wk].amount += Number(b.providerAmount ?? b.price ?? 0);
+    return days.map((label, index) => ({ label, amount: buckets[index] || 0 }));
+  }
+
+  if (period === "month") {
+    const weeks: ChartBar[] = [1, 2, 3, 4].map((week) => ({ label: tr("Wk {{week}}", { week }), amount: 0 }));
+    bookings.forEach((booking) => {
+      const date = new Date(booking.scheduledDate || booking.createdAt || now);
+      if (date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear()) {
+        const week = Math.min(3, Math.floor((date.getDate() - 1) / 7));
+        weeks[week].amount += Number(booking.providerAmount ?? booking.price ?? 0);
       }
     });
     return weeks;
-  } else {
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const buckets: number[] = new Array(12).fill(0);
-    bookings.forEach((b) => {
-      const d = new Date(b.scheduledDate || b.createdAt || now);
-      if (d.getFullYear() === now.getFullYear()) buckets[d.getMonth()] += Number(b.providerAmount ?? b.price ?? 0);
-    });
-    return months.map((label, i) => ({ label, amount: buckets[i] }));
   }
+
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map((month) => tr(month));
+  const buckets: number[] = new Array(12).fill(0);
+  bookings.forEach((booking) => {
+    const date = new Date(booking.scheduledDate || booking.createdAt || now);
+    if (date.getFullYear() === now.getFullYear()) {
+      buckets[date.getMonth()] += Number(booking.providerAmount ?? booking.price ?? 0);
+    }
+  });
+  return months.map((label, index) => ({ label, amount: buckets[index] }));
 }
 
-function EarningsBarChart({ bars }: { bars: ChartBar[] }) {
-  const maxAmount = Math.max(...bars.map((b) => b.amount), 1);
+interface EarningsBarChartProps {
+  bars: ChartBar[];
+  theme: AthooTheme;
+  isUrdu: boolean;
+  formatNumber: (value: number) => string;
+  label: string;
+}
+
+function EarningsBarChart({ bars, theme, isUrdu, formatNumber, label }: EarningsBarChartProps) {
+  const maxAmount = Math.max(...bars.map((bar) => bar.amount), 1);
+  const styles = useMemo(() => createChartStyles(theme, isUrdu), [theme, isUrdu]);
   return (
-    <View style={chartStyles.container}>
-      <View style={chartStyles.bars}>
-        {bars.map((bar, i) => {
-          const heightPct = bar.amount / maxAmount;
+    <View style={styles.container} accessible accessibilityRole="image" accessibilityLabel={label}>
+      <View style={styles.bars}>
+        {bars.map((bar, index) => {
+          const heightPercent = bar.amount / maxAmount;
           return (
-            <View key={i} style={chartStyles.barCol}>
-              <Text style={chartStyles.barAmt}>{bar.amount > 0 ? (bar.amount >= 1000 ? `${(bar.amount / 1000).toFixed(1)}k` : `${bar.amount}`) : ""}</Text>
-              <View style={chartStyles.barTrack}>
-                <View style={[chartStyles.barFill, { height: `${Math.max(heightPct * 100, bar.amount > 0 ? 4 : 0)}%`, backgroundColor: bar.amount > 0 ? Colors.secondary : Colors.border }]} />
+            <View key={`${bar.label}-${index}`} style={styles.barCol} accessible accessibilityLabel={`${bar.label}: ${formatNumber(bar.amount)}`}>
+              <Text style={styles.barAmt} numberOfLines={1}>
+                {bar.amount > 0 ? (bar.amount >= 1000 ? `${(bar.amount / 1000).toFixed(1)}k` : formatNumber(bar.amount)) : ""}
+              </Text>
+              <View style={styles.barTrack}>
+                <View
+                  style={[
+                    styles.barFill,
+                    {
+                      height: `${Math.max(heightPercent * 100, bar.amount > 0 ? 4 : 0)}%`,
+                      backgroundColor: bar.amount > 0 ? theme.colors.secondary : theme.colors.border,
+                    },
+                  ]}
+                />
               </View>
-              <Text style={chartStyles.barLabel}>{bar.label}</Text>
+              <Text style={styles.barLabel}>{bar.label}</Text>
             </View>
           );
         })}
@@ -69,174 +97,232 @@ function EarningsBarChart({ bars }: { bars: ChartBar[] }) {
   );
 }
 
-const chartStyles = StyleSheet.create({
-  container: { backgroundColor: Colors.card, borderRadius: 18, padding: 16, borderWidth: 1, borderColor: Colors.border },
-  bars: { flexDirection: "row", alignItems: "flex-end", height: 120, gap: 4 },
-  barCol: { flex: 1, alignItems: "center", gap: 4, height: "100%", justifyContent: "flex-end" },
-  barAmt: { fontSize: 8, color: Colors.textMuted, fontWeight: "600" },
-  barTrack: { width: "100%", flex: 1, justifyContent: "flex-end", borderRadius: 5, overflow: "hidden", backgroundColor: Colors.surface, maxWidth: 28 },
-  barFill: { width: "100%", borderRadius: 5, minHeight: 0 },
-  barLabel: { fontSize: 8, color: Colors.textSecondary, fontWeight: "600", marginTop: 2 },
-});
-
 export default function ProviderEarningsScreen() {
   const { user } = useAuth();
   const { getMyBookings } = useBookings();
+  const { theme } = useTheme();
+  const { isUrdu, formatCurrency, formatDate, formatNumber, translate: tr } = useLang();
+  const styles = useMemo(() => createStyles(theme, isUrdu), [theme, isUrdu]);
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const [period, setPeriod] = useState("This Month");
+  const [period, setPeriod] = useState<Period>("month");
 
   const allBookings = user ? getMyBookings(user.id, "provider") : [];
-  const completedBookings = allBookings.filter((b) => b.status === "completed");
-  const pendingPayout = allBookings.filter((b) => b.status === "accepted" || b.status === "in_progress");
+  const completedBookings = allBookings.filter((booking) => booking.status === "completed");
+  const pendingPayout = allBookings.filter((booking) => booking.status === "accepted" || booking.status === "in_progress");
 
   const summary = useMemo(() => {
-    const gross = completedBookings.reduce((sum, booking) => sum + Number(booking.price || 0), 0);
     const providerNet = completedBookings.reduce(
       (sum, booking: any) => sum + Number(booking.providerAmount ?? booking.price ?? 0),
-      0
+      0,
     );
     const commission = completedBookings.reduce(
       (sum, booking: any) => sum + Number(booking.commissionAmount || 0),
-      0
+      0,
     );
     const pendingGross = pendingPayout.reduce((sum, booking) => sum + Number(booking.price || 0), 0);
-
-    return { gross, providerNet, commission, pendingGross };
+    return { providerNet, commission, pendingGross };
   }, [completedBookings, pendingPayout]);
 
-  const chartBars = useMemo(() => buildChartData(completedBookings, period), [completedBookings, period]);
+  const chartBars = useMemo(
+    () => buildChartData(completedBookings, period, tr),
+    [completedBookings, period, tr],
+  );
+
+  const periods: Array<{ value: Period; label: string }> = [
+    { value: "week", label: tr("This Week") },
+    { value: "month", label: tr("This Month") },
+    { value: "all", label: tr("All Time") },
+  ];
 
   return (
-    <View style={[styles.container, { paddingTop: topPad }]}> 
+    <View style={[styles.container, { paddingTop: topPad }]}>
       <View style={styles.header}>
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <Icon name="arrow-left" size={20} color={Colors.text} />
+        <Pressable
+          style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel={tr("Back")}
+          hitSlop={8}
+        >
+          <Icon name="arrow-left" size={20} color={theme.colors.text} />
         </Pressable>
-        <Text style={styles.title}>Earnings</Text>
+        <Text accessibilityRole="header" style={styles.title}>{tr("Earnings")}</Text>
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 60 }]}>
-        <LinearGradient colors={[Colors.gradientStart, Colors.gradientEnd]} style={styles.earningsCard}>
-          <Text style={styles.earningsLabel}>Net Earnings</Text>
-          <Text style={styles.earningsAmount}>Rs. {summary.providerNet.toLocaleString()}</Text>
-          <View style={styles.earningsRow}>
+        <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.earningsCard}>
+          <Text style={styles.earningsLabel}>{tr("Net Earnings")}</Text>
+          <Text style={styles.earningsAmount}>{formatCurrency(summary.providerNet)}</Text>
+          <View style={styles.earningsRow} accessibilityRole="summary">
             <View style={styles.earningsStat}>
-              <Text style={styles.earningsStatVal}>{completedBookings.length}</Text>
-              <Text style={styles.earningsStatLbl}>Completed Jobs</Text>
+              <Text style={styles.earningsStatVal}>{formatNumber(completedBookings.length)}</Text>
+              <Text style={styles.earningsStatLbl}>{tr("Completed Jobs")}</Text>
             </View>
             <View style={styles.earningsDivider} />
             <View style={styles.earningsStat}>
-              <Text style={[styles.earningsStatVal, { color: "#fbbf24" }]}>Rs. {summary.pendingGross.toLocaleString()}</Text>
-              <Text style={styles.earningsStatLbl}>Active Jobs</Text>
+              <Text style={[styles.earningsStatVal, styles.pendingValue]}>{formatCurrency(summary.pendingGross)}</Text>
+              <Text style={styles.earningsStatLbl}>{tr("Active Jobs")}</Text>
             </View>
             <View style={styles.earningsDivider} />
             <View style={styles.earningsStat}>
-              <Text style={[styles.earningsStatVal, { color: "#86efac" }]}>Rs. {summary.commission.toLocaleString()}</Text>
-              <Text style={styles.earningsStatLbl}>Athoo Commission</Text>
+              <Text style={[styles.earningsStatVal, styles.commissionValue]}>{formatCurrency(summary.commission)}</Text>
+              <Text style={styles.earningsStatLbl}>{tr("Athoo Commission")}</Text>
             </View>
           </View>
         </LinearGradient>
 
-        <View style={[styles.infoCard, user?.isBlocked ? styles.warningCard : null]}>
+        <View style={[styles.infoCard, user?.isBlocked && styles.warningCard]} accessibilityRole={user?.isBlocked ? "alert" : "text"}>
           <View style={styles.infoRow}>
-            <Icon name={user?.isBlocked ? "alert-triangle" : "info"} size={16} color={user?.isBlocked ? "#b45309" : Colors.primary} />
-            <Text style={[styles.infoText, user?.isBlocked ? styles.warningText : null]}>
-              Pending Athoo commission: <Text style={styles.bold}>Rs. {Number(user?.pendingCommission || 0).toLocaleString()}</Text>
+            <Icon
+              name={user?.isBlocked ? "alert-triangle" : "info"}
+              size={16}
+              color={user?.isBlocked ? theme.colors.warning : theme.colors.primary}
+            />
+            <Text style={[styles.infoText, user?.isBlocked && styles.warningText]}>
+              {tr("Pending Athoo commission:")} <Text style={styles.bold}>{formatCurrency(Number(user?.pendingCommission || 0))}</Text>
             </Text>
           </View>
-          <Text style={[styles.subInfoText, user?.isBlocked ? styles.warningText : null]}>
-            Limit: Rs. {Number(user?.commissionLimit || 0).toLocaleString()} {user?.isBlocked ? "• New jobs are blocked until payment is cleared." : "• Keep your dues below the limit to continue receiving orders."}
+          <Text style={[styles.subInfoText, user?.isBlocked && styles.warningText]}>
+            {tr("Limit: {{amount}}", { amount: formatCurrency(Number(user?.commissionLimit || 0)) })}{" "}
+            {user?.isBlocked
+              ? tr("New jobs are blocked until payment is cleared.")
+              : tr("Keep your dues below the limit to continue receiving orders.")}
           </Text>
           {user?.blockedReason ? <Text style={[styles.subInfoText, styles.warningText]}>{user.blockedReason}</Text> : null}
         </View>
 
-        <View style={styles.periodRow}>
-          {PERIODS.map((p) => (
-            <Pressable key={p} style={[styles.periodBtn, period === p && styles.periodBtnActive]} onPress={() => setPeriod(p)}>
-              <Text style={[styles.periodText, period === p && styles.periodTextActive]}>{p}</Text>
-            </Pressable>
-          ))}
+        <View style={styles.periodRow} accessibilityRole="tablist">
+          {periods.map((option) => {
+            const selected = period === option.value;
+            return (
+              <Pressable
+                key={option.value}
+                style={({ pressed }) => [styles.periodBtn, selected && styles.periodBtnActive, pressed && styles.pressed]}
+                onPress={() => setPeriod(option.value)}
+                accessibilityRole="tab"
+                accessibilityLabel={option.label}
+                accessibilityState={{ selected }}
+              >
+                <Text style={[styles.periodText, selected && styles.periodTextActive]}>{option.label}</Text>
+              </Pressable>
+            );
+          })}
         </View>
 
         <View>
-          <Text style={[styles.sectionTitle, { marginBottom: 10 }]}>Earnings Chart</Text>
-          <EarningsBarChart bars={chartBars} />
+          <Text accessibilityRole="header" style={[styles.sectionTitle, styles.chartTitle]}>{tr("Earnings Chart")}</Text>
+          <EarningsBarChart
+            bars={chartBars}
+            theme={theme}
+            isUrdu={isUrdu}
+            formatNumber={formatNumber}
+            label={tr("Earnings chart for {{period}}", { period: periods.find((option) => option.value === period)?.label || "" })}
+          />
         </View>
 
-        <Text style={styles.sectionTitle}>Completed Jobs</Text>
-        {completedBookings.map((tx: any) => (
-          <View key={tx.id} style={styles.txCard}>
+        <Text accessibilityRole="header" style={styles.sectionTitle}>{tr("Completed Jobs")}</Text>
+        {completedBookings.map((transaction: any) => (
+          <View
+            key={transaction.id}
+            style={styles.txCard}
+            accessible
+            accessibilityLabel={`${transaction.service}, ${transaction.customerName}, ${formatCurrency(Number(transaction.providerAmount ?? transaction.price ?? 0))}`}
+          >
             <View style={styles.txIcon}>
-              <Icon name="briefcase" size={18} color={Colors.secondary} />
+              <Icon name="briefcase" size={18} color={theme.colors.secondary} />
             </View>
             <View style={styles.txInfo}>
-              <Text style={styles.txService}>{tx.service}</Text>
-              <Text style={styles.txCustomer}>Customer: {tx.customerName}</Text>
-              <Text style={styles.txDate}>{tx.scheduledDate || "Recent"}</Text>
+              <Text style={styles.txService}>{transaction.service}</Text>
+              <Text style={styles.txCustomer}>{tr("Customer: {{name}}", { name: transaction.customerName })}</Text>
+              <Text style={styles.txDate}>{transaction.scheduledDate ? formatDate(transaction.scheduledDate) : tr("Recent")}</Text>
             </View>
             <View style={styles.txRight}>
-              <Text style={styles.txAmount}>Rs. {Number(tx.providerAmount ?? tx.price ?? 0).toLocaleString()}</Text>
-              <View style={styles.txBreakdown}><Text style={styles.txBreakdownText}>Gross Rs. {Number(tx.price || 0).toLocaleString()} • Athoo Rs. {Number(tx.commissionAmount || 0).toLocaleString()}</Text></View>
-              <View style={styles.paidBadge}><Text style={styles.paidText}>COMPLETED</Text></View>
+              <Text style={styles.txAmount}>{formatCurrency(Number(transaction.providerAmount ?? transaction.price ?? 0))}</Text>
+              <View style={styles.txBreakdown}>
+                <Text style={styles.txBreakdownText}>
+                  {tr("Gross {{gross}} · Athoo {{commission}}", {
+                    gross: formatCurrency(Number(transaction.price || 0)),
+                    commission: formatCurrency(Number(transaction.commissionAmount || 0)),
+                  })}
+                </Text>
+              </View>
+              <View style={styles.paidBadge}><Text style={styles.paidText}>{tr("COMPLETED")}</Text></View>
             </View>
           </View>
         ))}
 
-        {completedBookings.length === 0 && (
-          <View style={styles.empty}>
-            <Icon name="dollar-sign" size={40} color={Colors.textMuted} />
-            <Text style={styles.emptyTitle}>No Earnings Yet</Text>
-            <Text style={styles.emptySubtitle}>Complete jobs to see your provider earnings and Athoo commission here.</Text>
+        {completedBookings.length === 0 ? (
+          <View style={styles.empty} accessibilityRole="text">
+            <Icon name="dollar-sign" size={40} color={theme.colors.textMuted} />
+            <Text style={styles.emptyTitle}>{tr("No Earnings Yet")}</Text>
+            <Text style={styles.emptySubtitle}>{tr("Complete jobs to see your provider earnings and Athoo commission here.")}</Text>
           </View>
-        )}
+        ) : null}
       </ScrollView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  header: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16, backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: Colors.background, alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 18, fontWeight: "800", color: Colors.text },
-  scroll: { flex: 1 },
-  content: { padding: 16, gap: 14, paddingBottom: 60 },
-  earningsCard: { borderRadius: 22, padding: 22, gap: 16 },
-  earningsLabel: { fontSize: 13, color: "rgba(255,255,255,0.75)", fontWeight: "600" },
-  earningsAmount: { fontSize: 40, fontWeight: "800", color: "#fff" },
-  earningsRow: { flexDirection: "row", backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 14, padding: 12, alignItems: "center" },
-  earningsStat: { flex: 1, alignItems: "center" },
-  earningsStatVal: { fontSize: 16, fontWeight: "800", color: "#fff" },
-  earningsStatLbl: { fontSize: 10, color: "rgba(255,255,255,0.7)", fontWeight: "500" },
-  earningsDivider: { width: 1, height: 28, backgroundColor: "rgba(255,255,255,0.2)" },
-  infoCard: { backgroundColor: Colors.primary + "10", borderRadius: 12, padding: 12, borderWidth: 1, borderColor: Colors.primary + "30", gap: 6 },
-  warningCard: { backgroundColor: "#fef3c7", borderColor: "#f59e0b66" },
-  infoRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  infoText: { flex: 1, fontSize: 13, color: Colors.primary },
-  subInfoText: { fontSize: 12, color: Colors.textSecondary },
-  warningText: { color: "#92400e" },
-  bold: { fontWeight: "700" },
-  periodRow: { flexDirection: "row", gap: 8 },
-  periodBtn: { flex: 1, paddingVertical: 8, borderRadius: 10, backgroundColor: Colors.surface, alignItems: "center", borderWidth: 1, borderColor: Colors.border },
-  periodBtnActive: { backgroundColor: Colors.secondary, borderColor: Colors.secondary },
-  periodText: { fontSize: 11, fontWeight: "600", color: Colors.textSecondary },
-  periodTextActive: { color: "#fff" },
-  sectionTitle: { fontSize: 13, fontWeight: "700", color: Colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
-  txCard: { flexDirection: "row", alignItems: "flex-start", gap: 12, backgroundColor: Colors.card, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: Colors.border },
-  txIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.secondary + "20", alignItems: "center", justifyContent: "center" },
-  txInfo: { flex: 1, gap: 2 },
-  txService: { fontSize: 14, fontWeight: "700", color: Colors.text },
-  txCustomer: { fontSize: 12, color: Colors.textSecondary },
-  txDate: { fontSize: 11, color: Colors.textMuted },
-  txRight: { alignItems: "flex-end", gap: 3 },
-  txAmount: { fontSize: 15, fontWeight: "800", color: "#22C55E" },
-  txBreakdown: { backgroundColor: Colors.surface, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  txBreakdownText: { fontSize: 9, color: Colors.textMuted },
-  paidBadge: { backgroundColor: "#22C55E20", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
-  paidText: { fontSize: 10, fontWeight: "700", color: "#22C55E" },
-  empty: { alignItems: "center", paddingVertical: 60, gap: 10 },
-  emptyTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
-  emptySubtitle: { fontSize: 13, color: Colors.textSecondary, textAlign: "center" },
-});
+function createChartStyles(theme: AthooTheme, isUrdu: boolean) {
+  return StyleSheet.create({
+    container: { backgroundColor: theme.colors.surface, borderRadius: 18, padding: 16, borderWidth: 1, borderColor: theme.colors.border },
+    bars: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "flex-end", height: 120, gap: 4 },
+    barCol: { flex: 1, alignItems: "center", gap: 4, height: "100%", justifyContent: "flex-end" },
+    barAmt: { fontSize: 8, color: theme.colors.textMuted, fontWeight: "600" },
+    barTrack: { width: "100%", flex: 1, justifyContent: "flex-end", borderRadius: 5, overflow: "hidden", backgroundColor: theme.colors.surfaceAlt, maxWidth: 28 },
+    barFill: { width: "100%", borderRadius: 5, minHeight: 0 },
+    barLabel: { fontSize: 8, color: theme.colors.textSecondary, fontWeight: "600", marginTop: 2, writingDirection: isUrdu ? "rtl" : "ltr" },
+  });
+}
 
+function createStyles(theme: AthooTheme, isUrdu: boolean) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: theme.colors.background },
+    header: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 12, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16, backgroundColor: theme.colors.surface, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+    backBtn: { width: 44, height: 44, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt, alignItems: "center", justifyContent: "center" },
+    title: { flex: 1, fontSize: 18, fontWeight: "800", color: theme.colors.text, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
+    scroll: { flex: 1 },
+    content: { padding: 16, gap: 14, paddingBottom: 60 },
+    earningsCard: { borderRadius: 22, padding: 22, gap: 16 },
+    earningsLabel: { fontSize: 13, color: "rgba(255,255,255,0.78)", fontWeight: "600", textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
+    earningsAmount: { fontSize: 38, fontWeight: "800", color: theme.colors.white, textAlign: isUrdu ? "right" : "left" },
+    earningsRow: { flexDirection: isUrdu ? "row-reverse" : "row", backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 14, padding: 12, alignItems: "center" },
+    earningsStat: { flex: 1, alignItems: "center" },
+    earningsStatVal: { fontSize: 15, fontWeight: "800", color: theme.colors.white, textAlign: "center" },
+    earningsStatLbl: { fontSize: 10, color: "rgba(255,255,255,0.74)", fontWeight: "500", textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
+    pendingValue: { color: "#FDE68A" },
+    commissionValue: { color: "#BBF7D0" },
+    earningsDivider: { width: 1, height: 28, backgroundColor: "rgba(255,255,255,0.2)" },
+    infoCard: { backgroundColor: theme.colors.infoSoft, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: theme.colors.focusRing, gap: 6 },
+    warningCard: { backgroundColor: theme.colors.warningSoft, borderColor: theme.colors.warning },
+    infoRow: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 8 },
+    infoText: { flex: 1, fontSize: 13, color: theme.colors.primary, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
+    subInfoText: { fontSize: 12, color: theme.colors.textSecondary, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
+    warningText: { color: theme.colors.warning },
+    bold: { fontWeight: "700" },
+    periodRow: { flexDirection: isUrdu ? "row-reverse" : "row", gap: 8 },
+    periodBtn: { flex: 1, minHeight: 44, paddingHorizontal: 8, borderRadius: 10, backgroundColor: theme.colors.surfaceAlt, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: theme.colors.border },
+    periodBtnActive: { backgroundColor: theme.colors.secondary, borderColor: theme.colors.secondary },
+    periodText: { fontSize: 11, fontWeight: "600", color: theme.colors.textSecondary, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
+    periodTextActive: { color: theme.colors.white },
+    sectionTitle: { fontSize: 13, fontWeight: "700", color: theme.colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
+    chartTitle: { marginBottom: 10 },
+    txCard: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "flex-start", gap: 12, backgroundColor: theme.colors.surface, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: theme.colors.border },
+    txIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: theme.dark ? "#4A2D14" : "#FFF7ED", alignItems: "center", justifyContent: "center" },
+    txInfo: { flex: 1, gap: 2 },
+    txService: { fontSize: 14, fontWeight: "700", color: theme.colors.text, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
+    txCustomer: { fontSize: 12, color: theme.colors.textSecondary, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
+    txDate: { fontSize: 11, color: theme.colors.textMuted, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
+    txRight: { alignItems: isUrdu ? "flex-start" : "flex-end", gap: 3, maxWidth: "48%" },
+    txAmount: { fontSize: 15, fontWeight: "800", color: theme.colors.success },
+    txBreakdown: { backgroundColor: theme.colors.surfaceAlt, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 },
+    txBreakdownText: { fontSize: 9, color: theme.colors.textMuted, textAlign: isUrdu ? "left" : "right", writingDirection: isUrdu ? "rtl" : "ltr" },
+    paidBadge: { backgroundColor: theme.colors.successSoft, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+    paidText: { fontSize: 10, fontWeight: "700", color: theme.colors.success, writingDirection: isUrdu ? "rtl" : "ltr" },
+    empty: { alignItems: "center", paddingVertical: 56, gap: 10, backgroundColor: theme.colors.surface, borderRadius: 18, borderWidth: 1, borderColor: theme.colors.border },
+    emptyTitle: { fontSize: 18, fontWeight: "700", color: theme.colors.text, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
+    emptySubtitle: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr", paddingHorizontal: 20 },
+    pressed: { opacity: 0.82 },
+  });
+}

@@ -1,9 +1,12 @@
+import { apiErrorToMessage } from "@/lib/apiError";
+import { AthooTheme } from "@/design/theme";
+import { useLang } from "@/context/LanguageContext";
+import { useTheme } from "@/context/ThemeContext";
 import { Icon } from "@/components/ui/Icon";
-import { Colors } from "@/constants/colors";
 import { api } from "@/services/api";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useRef, useState, useMemo } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -41,15 +44,10 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   rejected: { label: "Rejected", color: "#DC2626", bg: "#FEE2E2", icon: "x-circle" },
 };
 
-function formatDate(d: string) {
-  return new Date(d).toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" });
-}
-
-function currency(n: number) {
-  return `Rs. ${n.toLocaleString("en-PK")}`;
-}
-
 export default function WithdrawalRequestsScreen() {
+  const { theme } = useTheme();
+  const { isUrdu, formatCurrency, formatDate: formatLocalizedDate, translate: tr } = useLang();
+  const styles = useMemo(() => createStyles(theme, isUrdu), [theme, isUrdu]);
   const insets = useSafeAreaInsets();
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,7 +70,7 @@ export default function WithdrawalRequestsScreen() {
       const res = await api.getMyWithdrawals();
       setWithdrawals(res.withdrawals || []);
     } catch (e: any) {
-      setError(e?.message || "Failed to load withdrawal requests. Pull down to retry.");
+      setError(apiErrorToMessage(e, tr("We couldn't load your withdrawal requests. Please try again.")));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -84,15 +82,15 @@ export default function WithdrawalRequestsScreen() {
   async function handleSubmit() {
     const amt = parseFloat(amount);
     if (!amount || isNaN(amt) || amt < 500) {
-      Alert.alert("Invalid Amount", "Minimum withdrawal amount is Rs. 500");
+      Alert.alert(tr("Invalid Amount"), tr("Minimum withdrawal amount is Rs. 500."));
       return;
     }
     if (!accountTitle.trim()) {
-      Alert.alert("Missing Info", "Please enter account title");
+      Alert.alert(tr("Account title required"), tr("Please enter the account title."));
       return;
     }
     if (!accountNumber.trim()) {
-      Alert.alert("Missing Info", "Please enter account number");
+      Alert.alert(tr("Account number required"), tr("Please enter the account or mobile wallet number."));
       return;
     }
     if (!requestIdRef.current) requestIdRef.current = `withdrawal-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -108,7 +106,7 @@ export default function WithdrawalRequestsScreen() {
         clientRequestId: requestIdRef.current,
       });
       requestIdRef.current = null;
-      Alert.alert("Request Submitted", "Your withdrawal request has been submitted. Admin will review it shortly.");
+      Alert.alert(tr("Request Submitted"), tr("Your withdrawal request has been submitted for review."));
       setShowForm(false);
       setAmount("");
       setAccountTitle("");
@@ -118,7 +116,7 @@ export default function WithdrawalRequestsScreen() {
       setNote("");
       load();
     } catch (e: any) {
-      Alert.alert("Error", e?.message || "Failed to submit request");
+      Alert.alert(tr("Unable to submit request"), apiErrorToMessage(e, tr("We couldn't submit your withdrawal request. Please try again.")));
     } finally {
       setSubmitting(false);
     }
@@ -128,13 +126,13 @@ export default function WithdrawalRequestsScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 0 : insets.top }]}>
-      <LinearGradient colors={[Colors.gradientStart, Colors.gradientEnd]} style={styles.header}>
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <Icon name="arrow-left" size={20} color="#fff" />
+      <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.header}>
+        <Pressable style={styles.backBtn} onPress={() => router.back()} accessibilityRole="button" accessibilityLabel={tr("Back")}>
+          <Icon name={isUrdu ? "arrow-right" : "arrow-left"} size={20} color="#fff" />
         </Pressable>
         <View>
-          <Text style={styles.headerTitle}>Withdrawal Requests</Text>
-          <Text style={styles.headerSub}>Request your earnings payout</Text>
+          <Text style={styles.headerTitle}>{tr("Withdrawal Requests")}</Text>
+          <Text style={styles.headerSub}>{tr("Request your earnings payout")}</Text>
         </View>
       </LinearGradient>
 
@@ -142,70 +140,70 @@ export default function WithdrawalRequestsScreen() {
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 24 }]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={[Colors.primary]} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={[theme.colors.primary]} />}
         >
           {!showForm ? (
             <Pressable
               style={({ pressed }) => [styles.newBtn, pressed && { opacity: 0.85 }, hasPending && styles.newBtnDisabled]}
               onPress={() => {
                 if (hasPending) {
-                  Alert.alert("Pending Request", "You already have a pending withdrawal request. Please wait for it to be processed.");
+                  Alert.alert(tr("Pending Request"), tr("You already have a pending withdrawal request. Please wait for it to be reviewed."));
                   return;
                 }
                 setShowForm(true);
               }}
             >
               <Icon name="plus" size={18} color="#fff" />
-              <Text style={styles.newBtnText}>New Withdrawal Request</Text>
+              <Text style={styles.newBtnText}>{tr("New Withdrawal Request")}</Text>
             </Pressable>
           ) : (
             <View style={styles.form}>
               <View style={styles.formHeader}>
-                <Text style={styles.formTitle}>New Withdrawal Request</Text>
-                <Pressable onPress={() => setShowForm(false)}>
-                  <Icon name="x" size={20} color={Colors.textSecondary} />
+                <Text style={styles.formTitle}>{tr("New Withdrawal Request")}</Text>
+                <Pressable onPress={() => setShowForm(false)} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel={tr("Close")}>
+                  <Icon name="x" size={20} color={theme.colors.textSecondary} />
                 </Pressable>
               </View>
               <View style={styles.field}>
-                <Text style={styles.label}>Amount (Rs.) *</Text>
+                <Text style={styles.label}>{tr("Amount (Rs.) *")}</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Minimum Rs. 500"
+                  placeholder={tr("Minimum Rs. 500")}
                   keyboardType="numeric"
                   value={amount}
                   onChangeText={setAmount}
                 />
               </View>
               <View style={styles.field}>
-                <Text style={styles.label}>Account Title *</Text>
+                <Text style={styles.label}>{tr("Account Title *")}</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="e.g. Muhammad Ali"
+                  placeholder={tr("e.g. Muhammad Ali")}
                   value={accountTitle}
                   onChangeText={setAccountTitle}
                 />
               </View>
               <View style={styles.field}>
-                <Text style={styles.label}>Account Number / EasyPaisa / JazzCash *</Text>
+                <Text style={styles.label}>{tr("Account Number / EasyPaisa / JazzCash *")}</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Account number or mobile wallet number"
+                  placeholder={tr("Account number or mobile wallet number")}
                   keyboardType="phone-pad"
                   value={accountNumber}
                   onChangeText={setAccountNumber}
                 />
               </View>
               <View style={styles.field}>
-                <Text style={styles.label}>Bank Name (optional)</Text>
+                <Text style={styles.label}>{tr("Bank Name (optional)")}</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="e.g. Meezan Bank, EasyPaisa, JazzCash"
+                  placeholder={tr("e.g. Meezan Bank, EasyPaisa, JazzCash")}
                   value={bankName}
                   onChangeText={setBankName}
                 />
               </View>
               <View style={styles.field}>
-                <Text style={styles.label}>IBAN (optional)</Text>
+                <Text style={styles.label}>{tr("IBAN (optional)")}</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="PK36 MEZN 0001 2345 0702 5307"
@@ -215,10 +213,10 @@ export default function WithdrawalRequestsScreen() {
                 />
               </View>
               <View style={styles.field}>
-                <Text style={styles.label}>Note (optional)</Text>
+                <Text style={styles.label}>{tr("Note (optional)")}</Text>
                 <TextInput
                   style={[styles.input, styles.textarea]}
-                  placeholder="Any additional information for the admin"
+                  placeholder={tr("Any additional information for the admin")}
                   value={note}
                   onChangeText={setNote}
                   multiline
@@ -236,7 +234,7 @@ export default function WithdrawalRequestsScreen() {
                 ) : (
                   <>
                     <Icon name="send" size={16} color="#fff" />
-                    <Text style={styles.submitBtnText}>Submit Request</Text>
+                    <Text style={styles.submitBtnText}>{tr("Submit Request")}</Text>
                   </>
                 )}
               </Pressable>
@@ -245,52 +243,52 @@ export default function WithdrawalRequestsScreen() {
 
           {loading ? (
             <View style={styles.loadingBox}>
-              <ActivityIndicator color={Colors.primary} size="large" />
-              <Text style={styles.loadingText}>Loading withdrawals…</Text>
+              <ActivityIndicator color={theme.colors.primary} size="large" />
+              <Text style={styles.loadingText}>{tr("Loading withdrawals…")}</Text>
             </View>
           ) : error ? (
             <View style={styles.emptyBox}>
               <View style={[styles.emptyIcon, { backgroundColor: "#FEE2E2" }]}>
-                <Icon name="alert-circle" size={32} color={Colors.error} />
+                <Icon name="alert-circle" size={32} color={theme.colors.danger} />
               </View>
-              <Text style={[styles.emptyTitle, { color: Colors.error }]}>Failed to Load</Text>
+              <Text style={[styles.emptyTitle, { color: theme.colors.danger }]}>{tr("Failed to Load")}</Text>
               <Text style={styles.emptySub}>{error}</Text>
-              <Pressable onPress={load} style={{ marginTop: 14, paddingVertical: 10, paddingHorizontal: 28, backgroundColor: Colors.primary, borderRadius: 12 }}>
-                <Text style={{ color: "#fff", fontWeight: "600", fontSize: 14 }}>Retry</Text>
+              <Pressable onPress={load} style={{ marginTop: 14, paddingVertical: 10, paddingHorizontal: 28, backgroundColor: theme.colors.primary, borderRadius: 12 }}>
+                <Text style={{ color: theme.colors.white, fontWeight: "600", fontSize: 14 }}>{tr("Retry")}</Text>
               </Pressable>
             </View>
           ) : withdrawals.length === 0 ? (
             <View style={styles.emptyBox}>
               <View style={styles.emptyIcon}>
-                <Icon name="credit-card" size={32} color={Colors.textSecondary} />
+                <Icon name="credit-card" size={32} color={theme.colors.textSecondary} />
               </View>
-              <Text style={styles.emptyTitle}>No Withdrawal Requests</Text>
-              <Text style={styles.emptySub}>Submit your first withdrawal request above</Text>
+              <Text style={styles.emptyTitle}>{tr("No Withdrawal Requests")}</Text>
+              <Text style={styles.emptySub}>{tr("Submit your first withdrawal request above.")}</Text>
             </View>
           ) : (
             <View style={styles.list}>
-              <Text style={styles.sectionLabel}>Request History</Text>
+              <Text style={styles.sectionLabel}>{tr("Request History")}</Text>
               {withdrawals.map((w) => {
                 const cfg = STATUS_CONFIG[w.status] || STATUS_CONFIG.pending;
                 return (
                   <View key={w.id} style={styles.card}>
                     <View style={styles.cardTop}>
                       <View>
-                        <Text style={styles.cardAmount}>{currency(w.amount)}</Text>
-                        <Text style={styles.cardDate}>{formatDate(w.createdAt)}</Text>
+                        <Text style={styles.cardAmount}>{formatCurrency(w.amount)}</Text>
+                        <Text style={styles.cardDate}>{formatLocalizedDate(w.createdAt)}</Text>
                       </View>
                       <View style={[styles.statusBadge, { backgroundColor: cfg.bg }]}>
                         <Icon name={cfg.icon as never} size={12} color={cfg.color} />
-                        <Text style={[styles.statusText, { color: cfg.color }]}>{cfg.label}</Text>
+                        <Text style={[styles.statusText, { color: cfg.color }]}>{tr(cfg.label)}</Text>
                       </View>
                     </View>
                     <View style={styles.cardDetails}>
-                      <Icon name="credit-card" size={14} color={Colors.textSecondary} />
+                      <Icon name="credit-card" size={14} color={theme.colors.textSecondary} />
                       <Text style={styles.cardDetailText}>{w.accountTitle} · {w.bankName ? `${w.bankName} · ` : ""}{w.accountNumber}</Text>
                     </View>
                     {w.iban && (
                       <View style={styles.cardDetails}>
-                        <Icon name="hash" size={14} color={Colors.textSecondary} />
+                        <Icon name="hash" size={14} color={theme.colors.textSecondary} />
                         <Text style={styles.cardDetailText}>{w.iban}</Text>
                       </View>
                     )}
@@ -303,7 +301,7 @@ export default function WithdrawalRequestsScreen() {
                     {w.status === "paid" && w.paymentReference && (
                       <View style={styles.noteBox}>
                         <Icon name="check-circle" size={13} color="#059669" />
-                        <Text style={[styles.noteText, { color: "#059669" }]}>Ref: {w.paymentReference}</Text>
+                        <Text style={[styles.noteText, { color: "#059669" }]}>{tr("Reference")}: {w.paymentReference}</Text>
                       </View>
                     )}
                   </View>
@@ -317,10 +315,11 @@ export default function WithdrawalRequestsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.surface },
+function createStyles(theme: AthooTheme, isUrdu: boolean) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.surfaceAlt },
   header: {
-    flexDirection: "row",
+    flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "center",
     gap: 14,
     paddingHorizontal: 20,
@@ -337,21 +336,21 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 18, fontWeight: "700", color: "#fff" },
   headerSub: { fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 2 },
-  scroll: { flex: 1 },
-  scrollContent: { padding: 16, gap: 16 },
+  scroll: { width: "100%", maxWidth: 760, alignSelf: "center", flex: 1 },
+  scrollContent: { width: "100%", maxWidth: 760, alignSelf: "center", padding: 16, gap: 16 },
   newBtn: {
-    flexDirection: "row",
+    flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    backgroundColor: Colors.primary,
+    backgroundColor: theme.colors.primary,
     borderRadius: 14,
     paddingVertical: 14,
   },
   newBtnDisabled: { opacity: 0.5 },
   newBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
   form: {
-    backgroundColor: "#fff",
+    backgroundColor: theme.colors.surface,
     borderRadius: 16,
     padding: 18,
     gap: 14,
@@ -361,51 +360,52 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
-  formHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  formTitle: { fontSize: 16, fontWeight: "700", color: Colors.text },
+  formHeader: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between" },
+  formTitle: { fontSize: 16, fontWeight: "700", color: theme.colors.text },
+  closeBtn: { width: 44, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.surfaceAlt },
   field: { gap: 6 },
-  label: { fontSize: 12, fontWeight: "600", color: Colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
+  label: { fontSize: 12, fontWeight: "600", color: theme.colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
   input: {
     borderWidth: 1.5,
-    borderColor: "#E2E8F0",
+    borderColor: theme.colors.border,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 11,
     fontSize: 14,
-    color: Colors.text,
-    backgroundColor: "#FAFAFA",
+    color: theme.colors.text,
+    backgroundColor: theme.colors.input,
   },
   textarea: { height: 80, paddingTop: 11 },
   submitBtn: {
-    flexDirection: "row",
+    flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    backgroundColor: Colors.primary,
+    backgroundColor: theme.colors.primary,
     borderRadius: 12,
     paddingVertical: 14,
     marginTop: 4,
   },
   submitBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
   loadingBox: { alignItems: "center", paddingVertical: 48, gap: 12 },
-  loadingText: { fontSize: 14, color: Colors.textSecondary },
+  loadingText: { fontSize: 14, color: theme.colors.textSecondary },
   emptyBox: { alignItems: "center", paddingVertical: 48, gap: 10 },
   emptyIcon: {
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1.5,
-    borderColor: "#E2E8F0",
+    borderColor: theme.colors.border,
   },
-  emptyTitle: { fontSize: 16, fontWeight: "700", color: Colors.text },
-  emptySub: { fontSize: 13, color: Colors.textSecondary, textAlign: "center" },
+  emptyTitle: { fontSize: 16, fontWeight: "700", color: theme.colors.text },
+  emptySub: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center" },
   list: { gap: 12 },
-  sectionLabel: { fontSize: 12, fontWeight: "700", color: Colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
+  sectionLabel: { fontSize: 12, fontWeight: "700", color: theme.colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
   card: {
-    backgroundColor: "#fff",
+    backgroundColor: theme.colors.surface,
     borderRadius: 14,
     padding: 16,
     gap: 8,
@@ -415,11 +415,11 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  cardTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  cardAmount: { fontSize: 20, fontWeight: "800", color: Colors.text },
-  cardDate: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  cardTop: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between" },
+  cardAmount: { fontSize: 20, fontWeight: "800", color: theme.colors.text },
+  cardDate: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 },
   statusBadge: {
-    flexDirection: "row",
+    flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "center",
     gap: 5,
     paddingHorizontal: 10,
@@ -427,16 +427,18 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   statusText: { fontSize: 12, fontWeight: "600" },
-  cardDetails: { flexDirection: "row", alignItems: "center", gap: 6 },
-  cardDetailText: { fontSize: 13, color: Colors.textSecondary, flex: 1 },
+  cardDetails: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 6 },
+  cardDetailText: { fontSize: 13, color: theme.colors.textSecondary, flex: 1 },
   noteBox: {
-    flexDirection: "row",
+    flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "flex-start",
     gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
-    backgroundColor: "#FFF7ED",
+    backgroundColor: theme.colors.warningSoft,
   },
   noteText: { fontSize: 12, flex: 1, lineHeight: 17 },
-});
+  });
+}
+

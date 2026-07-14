@@ -17,6 +17,8 @@ import { AnimatedCard } from "@/components/ui/AnimatedCard";
 import { BookingCard } from "@/components/ui/BookingCard";
 import { useAuth } from "@/context/AuthContext";
 import { useBookings, Booking } from "@/context/BookingContext";
+import { useTheme } from "@/context/ThemeContext";
+import { useLang } from "@/context/LanguageContext";
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -30,11 +32,11 @@ function getWeekStart(offset = 0): Date {
   return mon;
 }
 
-function formatWeekLabel(weekStart: Date): string {
+function formatWeekLabel(weekStart: Date, locale: string): string {
   const end = new Date(weekStart);
   end.setDate(weekStart.getDate() + 6);
   const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" };
-  return `${weekStart.toLocaleDateString("en-PK", opts)} – ${end.toLocaleDateString("en-PK", opts)}`;
+  return `${weekStart.toLocaleDateString(locale, opts)} – ${end.toLocaleDateString(locale, opts)}`;
 }
 
 function getEarningsByDay(bookings: Booking[], weekStart: Date): number[] {
@@ -77,9 +79,10 @@ interface BarChartProps {
   color: string;
   max: number;
   isCurrentWeek: boolean;
+  labels: string[];
 }
 
-function BarChart({ data, color, max, isCurrentWeek }: BarChartProps) {
+function BarChart({ data, color, max, isCurrentWeek, labels }: BarChartProps) {
   const { width: screenW } = useWindowDimensions();
   const barAreaW = screenW - 80;
   const todayIdx = getTodayDayIndex();
@@ -103,7 +106,7 @@ function BarChart({ data, color, max, isCurrentWeek }: BarChartProps) {
               }}
             />
             <Text style={{ fontSize: 9, color: isToday ? color : Colors.textMuted, fontWeight: isToday ? "700" : "600" }}>
-              {DAY_LABELS[i]}
+              {labels[i]}
             </Text>
           </View>
         );
@@ -115,6 +118,8 @@ function BarChart({ data, color, max, isCurrentWeek }: BarChartProps) {
 export default function EarningsScreen() {
   const { user } = useAuth();
   const { getMyBookings } = useBookings();
+  const { theme } = useTheme();
+  const { t, isUrdu, translate: tr, formatCurrency } = useLang();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
@@ -129,7 +134,9 @@ export default function EarningsScreen() {
   const avgRating = user?.rating ? (user.rating / 10).toFixed(1) : "–";
 
   const weekStart = useMemo(() => getWeekStart(weekOffset), [weekOffset]);
-  const weekLabel = useMemo(() => formatWeekLabel(weekStart), [weekStart]);
+  const locale = isUrdu ? "ur-PK" : "en-PK";
+  const dayLabels = useMemo(() => DAY_LABELS.map((day) => tr(day)), [tr]);
+  const weekLabel = useMemo(() => formatWeekLabel(weekStart, locale), [locale, weekStart]);
   const isCurrentWeek = weekOffset === 0;
 
   const earningsByDay = useMemo(() => getEarningsByDay(allBookings, weekStart), [allBookings, weekStart]);
@@ -151,31 +158,31 @@ export default function EarningsScreen() {
     .slice(0, 10);
 
   return (
-    <View style={[styles.container, { paddingTop: topPad }]}>
+    <View style={[styles.container, { paddingTop: topPad, backgroundColor: theme.colors.background }]}>
       <LinearGradient colors={[Colors.primary, "#0D4BA0"]} style={styles.headerGrad}>
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
           <Icon name="arrow-left" size={20} color="#fff" />
         </Pressable>
-        <Text style={styles.headerTitle}>My Earnings</Text>
+        <Text style={styles.headerTitle}>{t.earningsHistory}</Text>
         <View style={styles.headerStats}>
           <View style={styles.hStatItem}>
-            <Text style={styles.hStatVal}>Rs. {totalEarnings.toLocaleString()}</Text>
-            <Text style={styles.hStatLbl}>Total Earned</Text>
+            <Text style={styles.hStatVal}>{formatCurrency(totalEarnings)}</Text>
+            <Text style={styles.hStatLbl}>{tr("Total Earned")}</Text>
           </View>
           <View style={styles.hStatDiv} />
           <View style={styles.hStatItem}>
             <Text style={styles.hStatVal}>{totalJobs}</Text>
-            <Text style={styles.hStatLbl}>Jobs Done</Text>
+            <Text style={styles.hStatLbl}>{t.jobsDone}</Text>
           </View>
           <View style={styles.hStatDiv} />
           <View style={styles.hStatItem}>
             <Text style={styles.hStatVal}>{avgRating}</Text>
-            <Text style={styles.hStatLbl}>Avg Rating</Text>
+            <Text style={styles.hStatLbl}>{t.avgRating}</Text>
           </View>
           <View style={styles.hStatDiv} />
           <View style={styles.hStatItem}>
-            <Text style={styles.hStatVal}>Rs. {avgPerJob.toLocaleString()}</Text>
-            <Text style={styles.hStatLbl}>Avg/Job</Text>
+            <Text style={styles.hStatVal}>{formatCurrency(avgPerJob)}</Text>
+            <Text style={styles.hStatLbl}>{tr("Average per job")}</Text>
           </View>
         </View>
       </LinearGradient>
@@ -211,7 +218,7 @@ export default function EarningsScreen() {
                   style={[styles.chartToggleBtn, chartMode === "jobs" && { backgroundColor: Colors.secondary + "20" }]}
                   onPress={() => setChartMode("jobs")}
                 >
-                  <Text style={[styles.chartToggleText, chartMode === "jobs" && { color: Colors.secondary }]}>Jobs</Text>
+                  <Text style={[styles.chartToggleText, chartMode === "jobs" && { color: Colors.secondary }]}>{t.jobs}</Text>
                 </Pressable>
               </View>
             </View>
@@ -219,13 +226,13 @@ export default function EarningsScreen() {
             <View style={styles.weekSummaryRow}>
               <View style={styles.weekSummaryItem}>
                 <Text style={[styles.weekSummaryVal, { color: "#22C55E" }]}>
-                  Rs. {weekEarnings.toLocaleString()}
+                  {formatCurrency(weekEarnings)}
                 </Text>
-                <Text style={styles.weekSummaryLbl}>This Week</Text>
+                <Text style={styles.weekSummaryLbl}>{t.weeklyEarnings}</Text>
               </View>
               <View style={styles.weekSummaryItem}>
                 <Text style={[styles.weekSummaryVal, { color: Colors.secondary }]}>{weekJobs}</Text>
-                <Text style={styles.weekSummaryLbl}>Jobs</Text>
+                <Text style={styles.weekSummaryLbl}>{t.jobs}</Text>
               </View>
             </View>
 
@@ -235,13 +242,14 @@ export default function EarningsScreen() {
                 color={chartColor}
                 max={chartMax}
                 isCurrentWeek={isCurrentWeek}
+                labels={dayLabels}
               />
             </View>
 
             {weekEarnings === 0 && (
               <View style={styles.noDataRow}>
                 <Icon name="bar-chart-2" size={16} color={Colors.textMuted} />
-                <Text style={styles.noDataText}>No completed jobs this week</Text>
+                <Text style={styles.noDataText}>{tr("No completed jobs this week")}</Text>
               </View>
             )}
           </View>
@@ -252,44 +260,44 @@ export default function EarningsScreen() {
             <View style={styles.commCard}>
               <View style={styles.commHeader}>
                 <Icon name="percent" size={16} color="#8B5CF6" />
-                <Text style={styles.commTitle}>Commission Overview</Text>
+                <Text style={styles.commTitle}>{tr("Commission Overview")}</Text>
               </View>
               <View style={styles.commRow}>
                 <View style={styles.commItem}>
-                  <Text style={styles.commVal}>Rs. {(user?.totalCommission || 0).toLocaleString()}</Text>
-                  <Text style={styles.commLbl}>Total Deducted</Text>
+                  <Text style={styles.commVal}>{formatCurrency(user?.totalCommission || 0)}</Text>
+                  <Text style={styles.commLbl}>{tr("Total Deducted")}</Text>
                 </View>
                 <View style={styles.commDivider} />
                 <View style={styles.commItem}>
-                  <Text style={[styles.commVal, { color: Colors.error }]}>Rs. {(user?.pendingCommission || 0).toLocaleString()}</Text>
-                  <Text style={styles.commLbl}>Pending Due</Text>
+                  <Text style={[styles.commVal, { color: Colors.error }]}>{formatCurrency(user?.pendingCommission || 0)}</Text>
+                  <Text style={styles.commLbl}>{tr("Pending Due")}</Text>
                 </View>
                 {user?.commissionLimit != null && (
                   <>
                     <View style={styles.commDivider} />
                     <View style={styles.commItem}>
-                      <Text style={styles.commVal}>Rs. {(user.commissionLimit).toLocaleString()}</Text>
-                      <Text style={styles.commLbl}>Monthly Limit</Text>
+                      <Text style={styles.commVal}>{formatCurrency(user.commissionLimit)}</Text>
+                      <Text style={styles.commLbl}>{tr("Monthly Limit")}</Text>
                     </View>
                   </>
                 )}
               </View>
-              <Text style={styles.commNote}>Commission is 10% per booking, deducted from your earnings on completion.</Text>
+              <Text style={styles.commNote}>{tr("Commission is 10% per booking, deducted from your earnings on completion.")}</Text>
             </View>
           </AnimatedCard>
         )}
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Completed Jobs</Text>
-          <Text style={styles.sectionCount}>{completed.length} total</Text>
+          <Text style={styles.sectionTitle}>{tr("Recent Completed Jobs")}</Text>
+          <Text style={styles.sectionCount}>{completed.length} {tr("total")}</Text>
         </View>
 
         {recentCompleted.length === 0 ? (
           <AnimatedCard delay={120}>
             <View style={styles.empty}>
               <Icon name="briefcase" size={36} color={Colors.border} />
-              <Text style={styles.emptyTitle}>No completed jobs yet</Text>
-              <Text style={styles.emptySubtitle}>Earnings will appear here once you complete bookings</Text>
+              <Text style={styles.emptyTitle}>{tr("No completed jobs yet")}</Text>
+              <Text style={styles.emptySubtitle}>{tr("Earnings will appear here once you complete bookings")}</Text>
             </View>
           </AnimatedCard>
         ) : (
@@ -308,7 +316,7 @@ export default function EarningsScreen() {
                 />
                 {b.price ? (
                   <View style={styles.earningBadge}>
-                    <Text style={styles.earningBadgeText}>+Rs. {b.price.toLocaleString()}</Text>
+                    <Text style={styles.earningBadgeText}>+{formatCurrency(b.price)}</Text>
                   </View>
                 ) : null}
               </View>

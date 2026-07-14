@@ -1,4 +1,4 @@
-import { AthooMapFallback } from "@/components/maps/AthooMapFallback";
+import { OpenStreetMapPreview } from "@/components/maps/OpenStreetMapPreview";
 import { Icon } from "@/components/ui/Icon";
 import { AnimatedCard } from "@/components/ui/AnimatedCard";
 import { ProviderCard } from "@/components/ui/ProviderCard";
@@ -7,9 +7,8 @@ import { Provider } from "@/data/services";
 import { useCategories } from "@/context/CategoriesContext";
 import { api } from "@/services/api";
 import { getDistanceKm } from "@/utils/distance";
-import * as Location from "expo-location";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -19,20 +18,15 @@ import {
   Text,
   View,
 } from "react-native";
-import { reverseGeocodeGoogle } from "@/services/maps";
+import { reverseGeocode } from "@/services/maps";
+import { getFastForegroundLocation } from "@/services/location";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { apiErrorToMessage } from "@/lib/apiError";
 
 type ExtendedProvider = Provider & {
   latitude: number;
   longitude: number;
   distanceKm?: number;
-};
-
-type Region = {
-  latitude: number;
-  longitude: number;
-  latitudeDelta: number;
-  longitudeDelta: number;
 };
 
 function isValidMapCoord(latitude: number, longitude: number) {
@@ -48,7 +42,6 @@ export default function CustomerMapScreen() {
   }>();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const mapRef = useRef<any | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [providers, setProviders] = useState<ExtendedProvider[]>([]);
@@ -66,23 +59,17 @@ export default function CustomerMapScreen() {
     async function load() {
       try {
         setLoadError("");
-        const permission = await Location.requestForegroundPermissionsAsync();
-        const status = permission.status;
-        if (alive) setLocationGranted(status === "granted");
-        let currentCoords: { latitude: number; longitude: number } | null = null;
-
-        if (status === "granted") {
-          const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 120000, requiredAccuracy: 1000 }).catch(() => null);
-          const loc = lastKnown || await Promise.race([
-            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Location request timed out")), 12000)),
-          ]);
-          currentCoords = {
-            latitude: loc.coords.latitude,
-            longitude: loc.coords.longitude,
-          };
-          if (alive) setUserLocation(currentCoords);
-        }
+        const locationResult = await getFastForegroundLocation({
+          timeoutMs: 8_000,
+          maxCacheAgeMs: 10 * 60 * 1000,
+          rationaleTitle: "Location permission",
+          rationaleBody: "Athoo uses your location to show nearby providers and let you choose a service address.",
+        });
+        if (alive) setLocationGranted(locationResult.permission === "granted");
+        const currentCoords = locationResult.location
+          ? { latitude: locationResult.location.latitude, longitude: locationResult.location.longitude }
+          : null;
+        if (alive && currentCoords) setUserLocation(currentCoords);
 
         const res = await api.getProviders(serviceId && serviceId !== "all" ? serviceId : undefined);
         const raw = (res.providers as Provider[]) || [];
@@ -113,25 +100,8 @@ export default function CustomerMapScreen() {
           setSelectedProvider(mapped[0] || null);
         }
 
-        const initialRegion: Region = currentCoords
-          ? {
-              latitude: currentCoords.latitude,
-              longitude: currentCoords.longitude,
-              latitudeDelta: 0.09,
-              longitudeDelta: 0.09,
-            }
-          : {
-              latitude: mapped[0]?.latitude || 33.6844,
-              longitude: mapped[0]?.longitude || 73.0479,
-              latitudeDelta: 0.12,
-              longitudeDelta: 0.12,
-            };
-
-        setTimeout(() => {
-          mapRef.current?.animateToRegion(initialRegion, 500);
-        }, 80);
       } catch (error) {
-        if (alive) setLoadError(error instanceof Error ? error.message : "Map could not be loaded");
+        if (alive) setLoadError(apiErrorToMessage(error, "The map could not be loaded. Please try again."));
       } finally {
         if (alive) setLoading(false);
       }
@@ -157,7 +127,7 @@ export default function CustomerMapScreen() {
   async function resolveAddress(latitude: number, longitude: number) {
     setResolving(true);
     try {
-      const resolved = await reverseGeocodeGoogle(latitude, longitude);
+      const resolved = await reverseGeocode(latitude, longitude);
       setPickedAddress(resolved || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
     } catch {
       setPickedAddress(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
@@ -203,15 +173,8 @@ export default function CustomerMapScreen() {
           <Pressable
             style={styles.iconBtn}
             onPress={() => {
-              mapRef.current?.animateToRegion(
-                {
-                  latitude: userLocation.latitude,
-                  longitude: userLocation.longitude,
-                  latitudeDelta: 0.08,
-                  longitudeDelta: 0.08,
-                },
-                450
-              );
+              setPickedLocation(userLocation);
+              void resolveAddress(userLocation.latitude, userLocation.longitude);
             }}
           >
             <Icon name="crosshair" size={18} color={Colors.primary} />
@@ -226,7 +189,26 @@ export default function CustomerMapScreen() {
             <Text style={styles.loadingText}>Loading map...</Text>
           </View>
         ) : (
-          <AthooMapFallback latitude={pickedLocation?.latitude ?? selectedProvider?.latitude ?? userLocation?.latitude} longitude={pickedLocation?.longitude ?? selectedProvider?.longitude ?? userLocation?.longitude} draggable={!!returnTo} showsUserLocation={locationGranted} onCoordinateChange={(latitude, longitude) => { setPickedLocation({ latitude, longitude }); void resolveAddress(latitude, longitude); }} />
+          <OpenStreetMapPreview
+            latitude={pickedLocation?.latitude ?? selectedProvider?.latitude ?? userLocation?.latitude}
+            longitude={pickedLocation?.longitude ?? selectedProvider?.longitude ?? userLocation?.longitude}
+            markers={[
+              ...sortedProviders.map((provider) => ({
+                id: `provider-${provider.id}`,
+                latitude: provider.latitude,
+                longitude: provider.longitude,
+                kind: "provider" as const,
+                label: provider.name,
+              })),
+              ...(userLocation ? [{ id: "customer-location", ...userLocation, kind: "customer" as const }] : []),
+              ...(pickedLocation ? [{ id: "picked-location", ...pickedLocation, kind: "selected" as const }] : []),
+            ]}
+            interactive={Boolean(returnTo)}
+            onCoordinateChange={(latitude, longitude) => {
+              setPickedLocation({ latitude, longitude });
+              void resolveAddress(latitude, longitude);
+            }}
+          />
         )}
       </View>
 

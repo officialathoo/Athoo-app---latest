@@ -5,6 +5,8 @@ import { logger } from "../lib/logger";
 import crypto from "crypto";
 import * as bcrypt from "bcryptjs";
 import { db } from "@workspace/db";
+import { isOwnedUploadObjectPath, normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { cleanupReplacedOwnedMedia } from "../lib/mediaLifecycle";
 import {
   usersTable,
   accountDeletionRequestsTable,
@@ -110,7 +112,11 @@ router.patch("/profile", async (req: AuthRequest, res) => {
       if (location.length > 160) return res.status(400).json({ error: "Location must be 160 characters or fewer" });
       patch.location = location || null;
     }
-    if (body.profileImage !== undefined) patch.profileImage = body.profileImage || null;
+    if (body.profileImage !== undefined) {
+      const profileImage = normalizeStoredObjectPath(body.profileImage);
+      if (profileImage && !isOwnedUploadObjectPath(profileImage, user.id, ["shared", "private"])) return res.status(400).json({ error: "Profile photo must be uploaded through your Athoo account" });
+      patch.profileImage = profileImage || null;
+    }
     if (body.profileColor !== undefined) {
       const color = String(body.profileColor || "").trim();
       if (color && !/^#[0-9a-f]{6}$/i.test(color)) return res.status(400).json({ error: "Invalid profile color" });
@@ -123,6 +129,7 @@ router.patch("/profile", async (req: AuthRequest, res) => {
     if (attempted.length) return res.status(403).json({ error: `Profile field changes require the approved workflow: ${attempted.join(", ")}` });
     if (Object.keys(patch).length === 1) return res.status(400).json({ error: "No valid fields to update" });
     const [updated] = await db.update(usersTable).set(patch).where(eq(usersTable.id, user.id)).returning();
+    if (body.profileImage !== undefined) cleanupReplacedOwnedMedia(user.profileImage, updated.profileImage, user.id);
     const { password, ...safe } = updated as any;
     return res.json({ user: safe });
   } catch (e) {
@@ -345,6 +352,7 @@ router.post("/services/request", async (req: AuthRequest, res) => {
     const serviceCategoryId = String(req.body?.serviceCategoryId || "").trim();
     const note = String(req.body?.note || "").trim();
     const documents = Array.isArray(req.body?.documents) ? req.body.documents : [];
+    if (documents.length > 10) return res.status(400).json({ error: "A maximum of 10 supporting documents is allowed" });
     if (!serviceCategoryId) return res.status(400).json({ error: "serviceCategoryId is required" });
     if (note.length > 500) return res.status(400).json({ error: "Note must be 500 characters or fewer" });
     const category = await db.query.serviceCategoriesTable.findFirst({ where: eq(serviceCategoriesTable.id, serviceCategoryId) });
@@ -359,10 +367,11 @@ router.post("/services/request", async (req: AuthRequest, res) => {
     });
     if (pending) return res.status(409).json({ error: "A request for this service is already pending", request: pending });
     for (const document of documents) {
-      const url = String(document?.url || "");
-      if (!url.startsWith(`/objects/uploads/private/${provider.id}/`)) {
-        return res.status(400).json({ error: "Service evidence must use your private upload path" });
+      const url = normalizeStoredObjectPath(document?.url);
+      if (!isOwnedUploadObjectPath(url, req.user!.userId, ["private"])) {
+        return res.status(400).json({ error: "Service-request documents must be uploaded through your private Athoo storage" });
       }
+      document.url = url;
     }
     const newId = id();
     await db.insert(serviceAddRequestsTable).values({

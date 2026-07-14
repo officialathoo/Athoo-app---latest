@@ -5,6 +5,8 @@ import type { ProviderDocument, User } from "@/lib/types";
 import { StorageImage } from "@/components/ui/StorageImage";
 import { DataTable } from "@/components/ui/DataTable";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { BulkActionBar } from "@/components/admin/BulkActionBar";
+import { usePermissions } from "@/hooks/usePermissions";
 import {
   ShieldCheck,
   ShieldX,
@@ -56,6 +58,8 @@ function getStatus(p: User): Tab {
 
 export function VerificationPage() {
   const { toast } = useToast();
+  const { hasPermission } = usePermissions();
+  const canWrite = hasPermission("verification.write");
   const [providers, setProviders] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -65,6 +69,8 @@ export function VerificationPage() {
   const [docs, setDocs] = useState<ProviderDocument[]>([]);
   const [docsLoading, setDocsLoading] = useState(false);
   const [imageModal, setImageModal] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
   const [rejectionDialog, setRejectionDialog] = useState<{
     target: User;
     note: string;
@@ -137,6 +143,33 @@ export function VerificationPage() {
     }
   }
 
+  async function runBulkStatus(status: "in_process" | "rejected") {
+    const ids = Array.from(selectedIds);
+    if (!ids.length) return;
+    const note = status === "rejected"
+      ? (window.prompt(`Rejection reason for ${ids.length} selected provider${ids.length === 1 ? "" : "s"}:`)?.trim() || "")
+      : "Verification review started by admin";
+    if (status === "rejected" && note.length < 3) {
+      toast({ title: "Rejection reason required", description: "Enter a clear reason before rejecting providers.", variant: "destructive" });
+      return;
+    }
+    setBulkLoading(true);
+    try {
+      const results = await Promise.allSettled(ids.map((id) => api(`/api/admin/users/${id}/verification-status`, {
+        method: "PATCH",
+        body: { status, note },
+      })));
+      const succeeded = results.filter((result) => result.status === "fulfilled").length;
+      const failed = results.length - succeeded;
+      if (succeeded) toast({ title: `${succeeded} verification record${succeeded === 1 ? "" : "s"} updated`, description: failed ? `${failed} record${failed === 1 ? "" : "s"} could not be updated.` : undefined });
+      if (failed && !succeeded) toast({ title: "Bulk verification failed", description: "No selected provider could be updated.", variant: "destructive" });
+      setSelectedIds(new Set());
+      await load();
+    } finally {
+      setBulkLoading(false);
+    }
+  }
+
   const grouped: Record<Tab, User[]> = {
     pending: [],
     in_process: [],
@@ -147,6 +180,18 @@ export function VerificationPage() {
   const displayList = grouped[tab];
 
   const columns = [
+    ...(canWrite ? [{
+      header: "Select",
+      width: "w-16",
+      render: (provider: User) => (
+        <input
+          type="checkbox"
+          aria-label={`Select ${provider.name}`}
+          checked={selectedIds.has(provider.id)}
+          onChange={() => setSelectedIds((current) => { const next = new Set(current); next.has(provider.id) ? next.delete(provider.id) : next.add(provider.id); return next; })}
+        />
+      ),
+    }] : []),
     {
       header: "Provider",
       render: (p: User) => (
@@ -238,7 +283,7 @@ export function VerificationPage() {
               {(Object.keys(TAB_LABEL) as Tab[]).map((t) => (
                 <button
                   key={t}
-                  onClick={() => setTab(t)}
+                  onClick={() => { setTab(t); setSelectedIds(new Set()); }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     tab === t
                       ? "bg-white text-slate-800 shadow-sm"
@@ -264,6 +309,26 @@ export function VerificationPage() {
             <button onClick={load} className="underline text-red-700 hover:text-red-900 ml-3">Retry</button>
           </div>
         )}
+        {canWrite ? <div className="border-b border-slate-100 px-5 py-3 space-y-3">
+          <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-600">
+            <input
+              type="checkbox"
+              aria-label={`Select all ${TAB_LABEL[tab].toLowerCase()} providers`}
+              checked={displayList.length > 0 && displayList.every((provider) => selectedIds.has(provider.id))}
+              onChange={() => setSelectedIds(displayList.length > 0 && displayList.every((provider) => selectedIds.has(provider.id)) ? new Set() : new Set(displayList.map((provider) => provider.id)))}
+            />
+            Select all providers in this queue
+          </label>
+          <BulkActionBar
+            count={selectedIds.size}
+            busy={bulkLoading}
+            onClear={() => setSelectedIds(new Set())}
+            actions={[
+              { label: "Mark in process", onClick: () => runBulkStatus("in_process") },
+              { label: "Reject selected", tone: "danger", onClick: () => runBulkStatus("rejected") },
+            ]}
+          />
+        </div> : null}
         <DataTable
           data={displayList}
           loading={loadError ? false : loading}

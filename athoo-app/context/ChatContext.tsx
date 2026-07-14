@@ -6,6 +6,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { AppState, type AppStateStatus } from "react-native";
 import { api, realtime } from "@/services/api";
 import { useAuth } from "./AuthContext";
 
@@ -63,13 +64,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const chatPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastMsgTimeRef = useRef<Record<string, string>>({});
   const chatsLoadedRef = useRef(false);
+  const chatsInFlightRef = useRef(false);
+  const messagesInFlightRef = useRef<Set<string>>(new Set());
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
   const loadChats = useCallback(async () => {
-    if (!user) return;
+    if (!user || appStateRef.current !== "active" || chatsInFlightRef.current) return;
+    chatsInFlightRef.current = true;
     try {
       const res = await api.getChats();
       setChats(res.chats as Chat[]);
-    } catch {} finally {
+    } catch {
+      // Cached chat state remains visible during temporary network failures.
+    } finally {
+      chatsInFlightRef.current = false;
       if (!chatsLoadedRef.current) {
         chatsLoadedRef.current = true;
         setLoadingChats(false);
@@ -88,6 +96,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       chatPollRef.current = null;
       msgPollRef.current = null;
       chatsLoadedRef.current = false;
+      chatsInFlightRef.current = false;
+      messagesInFlightRef.current.clear();
       lastMsgTimeRef.current = {};
       setChats([]);
       setMessages({});
@@ -96,11 +106,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       setLoadingMessages(false);
       return;
     }
-    chatPollRef.current = setInterval(loadChats, 45000); // Reduced from 8 seconds to 30 seconds
+    chatPollRef.current = setInterval(() => {
+      if (appStateRef.current === "active") void loadChats();
+    }, 60_000);
     return () => { if (chatPollRef.current) clearInterval(chatPollRef.current); };
   }, [user, loadChats]);
 
   const loadMessages = useCallback(async (chatId: string, showLoading = false) => {
+    if (appStateRef.current !== "active" || messagesInFlightRef.current.has(chatId)) return;
+    messagesInFlightRef.current.add(chatId);
     if (showLoading) setLoadingMessages(true);
     try {
       // Load recent messages only (last 50) for better performance
@@ -120,7 +134,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       if (incoming.length > 0) {
         lastMsgTimeRef.current[chatId] = incoming[incoming.length - 1].createdAt;
       }
-    } catch {} finally {
+    } catch {
+      // Keep existing messages available when the device is offline.
+    } finally {
+      messagesInFlightRef.current.delete(chatId);
       if (showLoading) setLoadingMessages(false);
     }
   }, []);
@@ -133,9 +150,21 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
     const hasExisting = !!(messages[activeChatId]);
     loadMessages(activeChatId, !hasExisting);
-    msgPollRef.current = setInterval(() => loadMessages(activeChatId), 15000); // Reduced from 3 seconds to 10 seconds
+    msgPollRef.current = setInterval(() => {
+      if (appStateRef.current === "active") void loadMessages(activeChatId);
+    }, 30_000);
     return () => { if (msgPollRef.current) clearInterval(msgPollRef.current); };
   }, [activeChatId, loadMessages]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      appStateRef.current = nextState;
+      if (nextState !== "active" || !user) return;
+      void loadChats();
+      if (activeChatId) void loadMessages(activeChatId);
+    });
+    return () => subscription.remove();
+  }, [user, activeChatId, loadChats, loadMessages]);
 
   const getOrCreateChat = useCallback(
     async (

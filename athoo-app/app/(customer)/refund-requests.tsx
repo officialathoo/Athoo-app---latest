@@ -1,13 +1,14 @@
+import { AthooTheme } from "@/design/theme";
+import { useLang } from "@/context/LanguageContext";
+import { useTheme } from "@/context/ThemeContext";
 import { Icon } from "@/components/ui/Icon";
-import { Colors } from "@/constants/colors";
 import { api } from "@/services/api";
 import { useToast } from "@/context/ToastContext";
 import { apiErrorToMessage } from "@/lib/apiError";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
-import * as ImagePicker from "expo-image-picker";
-import { pickFromCamera, pickFromGallery } from "@/utils/mediaPicker";
-import React, { useCallback, useEffect, useState } from "react";
+import { pickImageWithSourceChoice } from "@/utils/mediaPicker";
+import React, { useCallback, useEffect, useState, useMemo } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -42,15 +43,10 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   paid: { label: "Refund Paid", color: "#047857", bg: "#D1FAE5", icon: "check-circle" },
 };
 
-function formatDate(d: string) {
-  return new Date(d).toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" });
-}
-
-function currency(n: number) {
-  return `Rs. ${n.toLocaleString("en-PK")}`;
-}
-
 export default function RefundRequestsScreen() {
+  const { theme } = useTheme();
+  const { isUrdu, formatCurrency, formatDate: formatLocalizedDate, translate: tr } = useLang();
+  const styles = useMemo(() => createStyles(theme, isUrdu), [theme, isUrdu]);
   const insets = useSafeAreaInsets();
   const { showError, showSuccess } = useToast();
   const [refunds, setRefunds] = useState<Refund[]>([]);
@@ -79,7 +75,7 @@ export default function RefundRequestsScreen() {
       const res = await api.getMyRefunds();
       setRefunds(res.refunds || []);
     } catch (e: any) {
-      setError(e?.message || "Failed to load refund requests. Pull down to retry.");
+      setError(apiErrorToMessage(e, tr("We couldn't load your refund requests. Please try again.")));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -112,18 +108,33 @@ export default function RefundRequestsScreen() {
     loadBookings();
   }
 
+  async function pickEvidencePhoto() {
+    const result = await pickImageWithSourceChoice(
+      { mediaTypes: "images" as const, quality: 0.7, base64: true, allowsEditing: false, aspect: [4, 3] },
+      { title: tr("Add photo evidence"), message: tr("Take a new photo or choose one from your gallery."), camera: tr("Camera"), gallery: tr("Gallery"), cancel: tr("Cancel") },
+    );
+    if (!result || result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    if (!asset.base64) {
+      showError(tr("Photo unavailable"), tr("We couldn't read that photo. Please choose another one."));
+      return;
+    }
+    const mimeType = asset.mimeType || "image/jpeg";
+    setEvidencePhoto(`data:${mimeType};base64,${asset.base64}`);
+  }
+
   async function handleSubmit() {
     if (!bookingId) {
-      showError("Select Booking", "Please select the booking you want a refund for.");
+      showError(tr("Select Booking"), tr("Please select the booking you want a refund for."));
       return;
     }
     if (!reason.trim() || reason.trim().length < 10) {
-      showError("Reason Required", "Please describe the reason (at least 10 characters).");
+      showError(tr("Reason Required"), tr("Please describe the reason (at least 10 characters)."));
       return;
     }
     const amt = parseFloat(amount);
     if (!amount || isNaN(amt) || amt <= 0) {
-      showError("Invalid Amount", "Please enter a valid refund amount.");
+      showError(tr("Invalid Amount"), tr("Please enter a valid refund amount."));
       return;
     }
     setSubmitting(true);
@@ -131,7 +142,7 @@ export default function RefundRequestsScreen() {
       const requestId = refundRequestId || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       if (!refundRequestId) setRefundRequestId(requestId);
       await api.requestRefund({ bookingId, reason: reason.trim(), amountRequested: amt, evidenceUrl: evidencePhoto || undefined, clientRequestId: requestId });
-      showSuccess("Refund Submitted", "Our team will review your request within 24-48 hours.");
+      showSuccess(tr("Refund Submitted"), tr("Our team will review your request within 24-48 hours."));
       setShowForm(false);
       setBookingId("");
       setReason("");
@@ -141,7 +152,7 @@ export default function RefundRequestsScreen() {
       setRefundRequestId(null);
       load();
     } catch (e) {
-      showError("Could not submit", apiErrorToMessage(e, "Failed to submit refund request."));
+      showError(tr("Unable to submit refund"), apiErrorToMessage(e, tr("We couldn't submit your refund request. Please try again.")));
     } finally {
       setSubmitting(false);
     }
@@ -154,13 +165,13 @@ export default function RefundRequestsScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 0 : insets.top }]}>
-      <LinearGradient colors={[Colors.gradientStart, Colors.gradientEnd]} style={styles.header}>
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <Icon name="arrow-left" size={20} color="#fff" />
+      <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.header}>
+        <Pressable style={styles.backBtn} onPress={() => router.back()} accessibilityRole="button" accessibilityLabel={tr("Back")}>
+          <Icon name={isUrdu ? "arrow-right" : "arrow-left"} size={20} color="#fff" />
         </Pressable>
         <View>
-          <Text style={styles.headerTitle}>Refund Requests</Text>
-          <Text style={styles.headerSub}>Request a refund for completed bookings</Text>
+          <Text style={styles.headerTitle}>{tr("Refund Requests")}</Text>
+          <Text style={styles.headerSub}>{tr("Request a refund for completed bookings")}</Text>
         </View>
       </LinearGradient>
 
@@ -168,7 +179,7 @@ export default function RefundRequestsScreen() {
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 24 }]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={[Colors.primary]} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={[theme.colors.primary]} />}
           keyboardShouldPersistTaps="handled"
         >
           {!showForm ? (
@@ -177,40 +188,40 @@ export default function RefundRequestsScreen() {
               onPress={openForm}
             >
               <Icon name="rotate-ccw" size={18} color="#fff" />
-              <Text style={styles.newBtnText}>New Refund Request</Text>
+              <Text style={styles.newBtnText}>{tr("New Refund Request")}</Text>
             </Pressable>
           ) : (
             <View style={styles.form}>
               <View style={styles.formHeader}>
-                <Text style={styles.formTitle}>Request a Refund</Text>
+                <Text style={styles.formTitle}>{tr("Request a Refund")}</Text>
                 <Pressable onPress={() => setShowForm(false)}>
-                  <Icon name="x" size={20} color={Colors.textSecondary} />
+                  <Icon name="x" size={20} color={theme.colors.textSecondary} />
                 </Pressable>
               </View>
 
               <View style={styles.field}>
-                <Text style={styles.label}>Select Booking *</Text>
+                <Text style={styles.label}>{tr("Select Booking *")}</Text>
                 <Pressable
                   style={styles.input}
                   onPress={() => setShowBookingPicker(!showBookingPicker)}
                 >
                   <Text style={selectedBooking ? styles.inputText : styles.inputPlaceholder}>
-                    {selectedBooking ? `${selectedBooking.service} — ${currency(selectedBooking.price)}` : "Tap to select booking"}
+                    {selectedBooking ? `${selectedBooking.service} — ${formatCurrency(selectedBooking.price)}` : "Tap to select booking"}
                   </Text>
-                  <Icon name={showBookingPicker ? "chevron-up" : "chevron-down"} size={16} color={Colors.textSecondary} />
+                  <Icon name={showBookingPicker ? "chevron-up" : "chevron-down"} size={16} color={theme.colors.textSecondary} />
                 </Pressable>
                 {showBookingPicker && (
                   <View style={styles.bookingPicker}>
                     <TextInput
                       style={styles.pickerSearch}
-                      placeholder="Search by service..."
+                      placeholder={tr("Search by service...")}
                       value={bookingSearch}
                       onChangeText={setBookingSearch}
                     />
                     {loadingBookings ? (
-                      <ActivityIndicator color={Colors.primary} style={{ padding: 16 }} />
+                      <ActivityIndicator color={theme.colors.primary} style={{ padding: 16 }} />
                     ) : filteredBookings.length === 0 ? (
-                      <Text style={styles.pickerEmpty}>No eligible bookings (completed/cancelled only)</Text>
+                      <Text style={styles.pickerEmpty}>{tr("No eligible bookings. Only completed or cancelled bookings can be refunded.")}</Text>
                     ) : (
                       filteredBookings.map((b) => (
                         <Pressable
@@ -224,7 +235,7 @@ export default function RefundRequestsScreen() {
                           }}
                         >
                           <Text style={styles.pickerItemTitle}>{b.service}</Text>
-                          <Text style={styles.pickerItemSub}>{currency(b.price)} · {b.status} · {formatDate(b.createdAt || b.scheduledAt)}</Text>
+                          <Text style={styles.pickerItemSub}>{formatCurrency(b.price)} · {b.status} · {formatLocalizedDate(b.createdAt || b.scheduledAt)}</Text>
                         </Pressable>
                       ))
                     )}
@@ -233,10 +244,10 @@ export default function RefundRequestsScreen() {
               </View>
 
               <View style={styles.field}>
-                <Text style={styles.label}>Refund Amount (Rs.) *</Text>
+                <Text style={styles.label}>{tr("Refund Amount (Rs.) *")}</Text>
                 <TextInput
                   style={styles.inputText2}
-                  placeholder="Enter amount to refund"
+                  placeholder={tr("Enter amount to refund")}
                   keyboardType="numeric"
                   value={amount}
                   onChangeText={setAmount}
@@ -244,10 +255,10 @@ export default function RefundRequestsScreen() {
               </View>
 
               <View style={styles.field}>
-                <Text style={styles.label}>Reason *</Text>
+                <Text style={styles.label}>{tr("Reason *")}</Text>
                 <TextInput
                   style={[styles.inputText2, styles.textarea]}
-                  placeholder="Describe why you need a refund (minimum 10 characters)"
+                  placeholder={tr("Describe why you need a refund (minimum 10 characters)")}
                   value={reason}
                   onChangeText={setReason}
                   multiline
@@ -257,38 +268,25 @@ export default function RefundRequestsScreen() {
               </View>
 
               <View style={styles.field}>
-                <Text style={styles.label}>Photo Evidence (optional)</Text>
+                <Text style={styles.label}>{tr("Photo Evidence (optional)")}</Text>
                 <Pressable
                   style={styles.photoBtn}
-                  onPress={async () => {
-                    await new Promise<void>((resolve) => setTimeout(resolve, 200));
-                    const result = await pickFromGallery({
-                      mediaTypes: "images" as const,
-                      quality: 0.7,
-                      base64: true,
-                      allowsEditing: false,
-                      aspect: [4, 3],
-                    });
-                    if (!result || result.canceled || !result.assets?.[0]) return;
-                    {
-                      const asset = result.assets[0];
-                      const ext = (asset.uri.split(".").pop() || "jpg").toLowerCase();
-                      setEvidencePhoto(`data:image/${ext};base64,${asset.base64}`);
-                    }
-                  }}
+                  onPress={pickEvidencePhoto}
+                  accessibilityRole="button"
+                  accessibilityLabel={tr("Add photo evidence")}
                 >
                   {evidencePhoto ? (
                     <View style={styles.photoPreviewRow}>
                       <Image source={{ uri: evidencePhoto }} style={styles.photoPreview} />
                       <Pressable onPress={() => setEvidencePhoto(null)} style={styles.photoRemove}>
-                        <Icon name="x" size={14} color={Colors.error} />
-                        <Text style={styles.photoRemoveText}>Remove</Text>
+                        <Icon name="x" size={14} color={theme.colors.danger} />
+                        <Text style={styles.photoRemoveText}>{tr("Remove")}</Text>
                       </Pressable>
                     </View>
                   ) : (
                     <View style={styles.photoBtnInner}>
-                      <Icon name="camera" size={20} color={Colors.primary} />
-                      <Text style={styles.photoBtnText}>Attach Photo Evidence</Text>
+                      <Icon name="camera" size={20} color={theme.colors.primary} />
+                      <Text style={styles.photoBtnText}>{tr("Attach Photo Evidence")}</Text>
                     </View>
                   )}
                 </Pressable>
@@ -296,7 +294,7 @@ export default function RefundRequestsScreen() {
 
               <View style={styles.infoBox}>
                 <Icon name="info" size={14} color="#2563EB" />
-                <Text style={styles.infoText}>Refunds are processed within 3-5 business days after approval. You'll receive a notification when reviewed.</Text>
+                <Text style={styles.infoText}>{tr("Approved refunds are normally processed within 3–5 business days. We will notify you when your request is reviewed.")}</Text>
               </View>
 
               <Pressable
@@ -309,7 +307,7 @@ export default function RefundRequestsScreen() {
                 ) : (
                   <>
                     <Icon name="send" size={16} color="#fff" />
-                    <Text style={styles.submitBtnText}>Submit Refund Request</Text>
+                    <Text style={styles.submitBtnText}>{tr("Submit Refund Request")}</Text>
                   </>
                 )}
               </Pressable>
@@ -318,47 +316,47 @@ export default function RefundRequestsScreen() {
 
           {loading ? (
             <View style={styles.loadingBox}>
-              <ActivityIndicator color={Colors.primary} size="large" />
-              <Text style={styles.loadingText}>Loading refunds…</Text>
+              <ActivityIndicator color={theme.colors.primary} size="large" />
+              <Text style={styles.loadingText}>{tr("Loading refunds…")}</Text>
             </View>
           ) : error ? (
             <View style={styles.emptyBox}>
               <View style={[styles.emptyIcon, { backgroundColor: "#FEE2E2" }]}>
-                <Icon name="alert-circle" size={32} color={Colors.error} />
+                <Icon name="alert-circle" size={32} color={theme.colors.danger} />
               </View>
-              <Text style={[styles.emptyTitle, { color: Colors.error }]}>Failed to Load</Text>
+              <Text style={[styles.emptyTitle, { color: theme.colors.danger }]}>{tr("Unable to load refunds")}</Text>
               <Text style={styles.emptySub}>{error}</Text>
-              <Pressable onPress={load} style={{ marginTop: 14, paddingVertical: 10, paddingHorizontal: 28, backgroundColor: Colors.primary, borderRadius: 12 }}>
-                <Text style={{ color: "#fff", fontWeight: "600", fontSize: 14 }}>Retry</Text>
+              <Pressable onPress={load} style={{ marginTop: 14, paddingVertical: 10, paddingHorizontal: 28, backgroundColor: theme.colors.primary, borderRadius: 12 }}>
+                <Text style={{ color: theme.colors.white, fontWeight: "600", fontSize: 14 }}>{tr("Retry")}</Text>
               </Pressable>
             </View>
           ) : refunds.length === 0 ? (
             <View style={styles.emptyBox}>
               <View style={styles.emptyIcon}>
-                <Icon name="rotate-ccw" size={32} color={Colors.textSecondary} />
+                <Icon name="rotate-ccw" size={32} color={theme.colors.textSecondary} />
               </View>
-              <Text style={styles.emptyTitle}>No Refund Requests</Text>
-              <Text style={styles.emptySub}>Submit a refund request if you have an issue with a completed booking</Text>
+              <Text style={styles.emptyTitle}>{tr("No Refund Requests")}</Text>
+              <Text style={styles.emptySub}>{tr("Submit a refund request if you have an issue with a completed booking.")}</Text>
             </View>
           ) : (
             <View style={styles.list}>
-              <Text style={styles.sectionLabel}>Refund History</Text>
+              <Text style={styles.sectionLabel}>{tr("Refund History")}</Text>
               {refunds.map((r) => {
                 const cfg = STATUS_CONFIG[r.status] || STATUS_CONFIG.pending;
                 return (
                   <View key={r.id} style={styles.card}>
                     <View style={styles.cardTop}>
                       <View>
-                        <Text style={styles.cardAmount}>{currency(r.amountRequested)}</Text>
-                        <Text style={styles.cardDate}>{formatDate(r.createdAt)}</Text>
+                        <Text style={styles.cardAmount}>{formatCurrency(r.amountRequested)}</Text>
+                        <Text style={styles.cardDate}>{formatLocalizedDate(r.createdAt)}</Text>
                       </View>
                       <View style={[styles.statusBadge, { backgroundColor: cfg.bg }]}>
                         <Icon name={cfg.icon as never} size={12} color={cfg.color} />
-                        <Text style={[styles.statusText, { color: cfg.color }]}>{cfg.label}</Text>
+                        <Text style={[styles.statusText, { color: cfg.color }]}>{tr(cfg.label)}</Text>
                       </View>
                     </View>
                     <View style={styles.cardDetails}>
-                      <Icon name="file-text" size={14} color={Colors.textSecondary} />
+                      <Icon name="file-text" size={14} color={theme.colors.textSecondary} />
                       <Text style={styles.cardDetailText} numberOfLines={2}>{r.reason}</Text>
                     </View>
                     {r.resolutionNote && (
@@ -378,10 +376,11 @@ export default function RefundRequestsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.surface },
+function createStyles(theme: AthooTheme, isUrdu: boolean) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.surfaceAlt },
   header: {
-    flexDirection: "row",
+    flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "center",
     gap: 14,
     paddingHorizontal: 20,
@@ -398,20 +397,20 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 18, fontWeight: "700", color: "#fff" },
   headerSub: { fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 2 },
-  scroll: { flex: 1 },
-  scrollContent: { padding: 16, gap: 16 },
+  scroll: { width: "100%", maxWidth: 760, alignSelf: "center", flex: 1 },
+  scrollContent: { width: "100%", maxWidth: 760, alignSelf: "center", padding: 16, gap: 16 },
   newBtn: {
-    flexDirection: "row",
+    flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    backgroundColor: Colors.primary,
+    backgroundColor: theme.colors.primary,
     borderRadius: 14,
     paddingVertical: 14,
   },
   newBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
   form: {
-    backgroundColor: "#fff",
+    backgroundColor: theme.colors.surface,
     borderRadius: 16,
     padding: 18,
     gap: 14,
@@ -421,39 +420,39 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
-  formHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  formTitle: { fontSize: 16, fontWeight: "700", color: Colors.text },
+  formHeader: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between" },
+  formTitle: { fontSize: 16, fontWeight: "700", color: theme.colors.text },
   field: { gap: 6 },
-  label: { fontSize: 12, fontWeight: "600", color: Colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
+  label: { fontSize: 12, fontWeight: "600", color: theme.colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
   input: {
     borderWidth: 1.5,
-    borderColor: "#E2E8F0",
+    borderColor: theme.colors.border,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 11,
-    flexDirection: "row",
+    flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "#FAFAFA",
+    backgroundColor: theme.colors.input,
   },
-  inputText: { fontSize: 14, color: Colors.text, flex: 1 },
+  inputText: { fontSize: 14, color: theme.colors.text, flex: 1 },
   inputText2: {
     borderWidth: 1.5,
-    borderColor: "#E2E8F0",
+    borderColor: theme.colors.border,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 11,
     fontSize: 14,
-    color: Colors.text,
-    backgroundColor: "#FAFAFA",
+    color: theme.colors.text,
+    backgroundColor: theme.colors.input,
   },
-  inputPlaceholder: { fontSize: 14, color: Colors.textSecondary, flex: 1 },
+  inputPlaceholder: { fontSize: 14, color: theme.colors.textSecondary, flex: 1 },
   textarea: { height: 100, paddingTop: 11 },
   bookingPicker: {
     borderWidth: 1.5,
-    borderColor: "#E2E8F0",
+    borderColor: theme.colors.border,
     borderRadius: 12,
-    backgroundColor: "#fff",
+    backgroundColor: theme.colors.surface,
     overflow: "hidden",
     marginTop: 4,
     maxHeight: 240,
@@ -464,15 +463,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     borderBottomWidth: 1,
     borderBottomColor: "#F1F5F9",
-    color: Colors.text,
+    color: theme.colors.text,
   },
-  pickerEmpty: { padding: 16, textAlign: "center", fontSize: 13, color: Colors.textSecondary },
+  pickerEmpty: { padding: 16, textAlign: "center", fontSize: 13, color: theme.colors.textSecondary },
   pickerItem: { paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#F1F5F9" },
   pickerItemSelected: { backgroundColor: "#EFF6FF" },
-  pickerItemTitle: { fontSize: 14, fontWeight: "600", color: Colors.text },
-  pickerItemSub: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  pickerItemTitle: { fontSize: 14, fontWeight: "600", color: theme.colors.text },
+  pickerItemSub: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 },
   infoBox: {
-    flexDirection: "row",
+    flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "flex-start",
     gap: 8,
     backgroundColor: "#EFF6FF",
@@ -483,35 +482,35 @@ const styles = StyleSheet.create({
   },
   infoText: { fontSize: 12, color: "#1E40AF", flex: 1, lineHeight: 18 },
   submitBtn: {
-    flexDirection: "row",
+    flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    backgroundColor: Colors.primary,
+    backgroundColor: theme.colors.primary,
     borderRadius: 12,
     paddingVertical: 14,
     marginTop: 4,
   },
   submitBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
   loadingBox: { alignItems: "center", paddingVertical: 48, gap: 12 },
-  loadingText: { fontSize: 14, color: Colors.textSecondary },
+  loadingText: { fontSize: 14, color: theme.colors.textSecondary },
   emptyBox: { alignItems: "center", paddingVertical: 48, gap: 10 },
   emptyIcon: {
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1.5,
-    borderColor: "#E2E8F0",
+    borderColor: theme.colors.border,
   },
-  emptyTitle: { fontSize: 16, fontWeight: "700", color: Colors.text },
-  emptySub: { fontSize: 13, color: Colors.textSecondary, textAlign: "center", paddingHorizontal: 32 },
+  emptyTitle: { fontSize: 16, fontWeight: "700", color: theme.colors.text },
+  emptySub: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center", paddingHorizontal: 32 },
   list: { gap: 12 },
-  sectionLabel: { fontSize: 12, fontWeight: "700", color: Colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
+  sectionLabel: { fontSize: 12, fontWeight: "700", color: theme.colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
   card: {
-    backgroundColor: "#fff",
+    backgroundColor: theme.colors.surface,
     borderRadius: 14,
     padding: 16,
     gap: 8,
@@ -521,11 +520,11 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  cardTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  cardAmount: { fontSize: 20, fontWeight: "800", color: Colors.text },
-  cardDate: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  cardTop: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between" },
+  cardAmount: { fontSize: 20, fontWeight: "800", color: theme.colors.text },
+  cardDate: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 },
   statusBadge: {
-    flexDirection: "row",
+    flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "center",
     gap: 5,
     paddingHorizontal: 10,
@@ -533,10 +532,10 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   statusText: { fontSize: 12, fontWeight: "600" },
-  cardDetails: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
-  cardDetailText: { fontSize: 13, color: Colors.textSecondary, flex: 1 },
+  cardDetails: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "flex-start", gap: 6 },
+  cardDetailText: { fontSize: 13, color: theme.colors.textSecondary, flex: 1 },
   noteBox: {
-    flexDirection: "row",
+    flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "flex-start",
     gap: 6,
     paddingHorizontal: 12,
@@ -546,16 +545,18 @@ const styles = StyleSheet.create({
   noteText: { fontSize: 12, flex: 1, lineHeight: 17 },
   photoBtn: {
     borderWidth: 1.5,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
     borderRadius: 12,
     borderStyle: "dashed",
     padding: 14,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
   },
-  photoBtnInner: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 },
-  photoBtnText: { fontSize: 14, fontWeight: "600", color: Colors.primary },
-  photoPreviewRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  photoPreview: { width: 80, height: 60, borderRadius: 8, backgroundColor: Colors.border },
-  photoRemove: { flexDirection: "row", alignItems: "center", gap: 4 },
-  photoRemoveText: { fontSize: 13, color: Colors.error, fontWeight: "600" },
-});
+  photoBtnInner: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "center", gap: 10 },
+  photoBtnText: { fontSize: 14, fontWeight: "600", color: theme.colors.primary },
+  photoPreviewRow: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 12 },
+  photoPreview: { width: 80, height: 60, borderRadius: 8, backgroundColor: theme.colors.border },
+  photoRemove: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 4 },
+  photoRemoveText: { fontSize: 13, color: theme.colors.danger, fontWeight: "600" },
+  });
+}
+
