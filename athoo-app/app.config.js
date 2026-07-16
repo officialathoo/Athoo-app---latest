@@ -158,6 +158,7 @@ const iosBundleIdentifier = readEnv(
  */
 const easProjectId = readEnv(
   "EAS_PROJECT_ID",
+  "42a7f8fe-68ea-4422-8f46-0def1f55abb9",
 );
 
 /* -------------------------------------------------------------------------- */
