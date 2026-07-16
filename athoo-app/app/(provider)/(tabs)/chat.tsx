@@ -3,10 +3,11 @@ import { useAuth } from "@/context/AuthContext";
 import { useChat } from "@/context/ChatContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 import { api } from "@/services/api";
 import { PrivateImage } from "@/services/storage";
 import { router } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useMemo, useState } from "react";
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { apiErrorToMessage } from "@/lib/apiError";
@@ -25,6 +26,7 @@ export default function ProviderChatScreen() {
   const { getMyChats, loadingChats, deleteChat: contextDeleteChat } = useChat();
   const { t, isUrdu, translate: tr, textAlign, writingDirection } = useLang();
   const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const [profiles, setProfiles] = useState<Record<string, { profileImage?: string | null; profileColor?: string }>>({});
@@ -189,7 +191,7 @@ export default function ProviderChatScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1 },
   header: {
     paddingHorizontal: 20,
@@ -217,7 +219,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   avatarImage: { width: 52, height: 52, borderRadius: 26 },
-  avatarText: { fontSize: 16, fontWeight: "700", color: "#FFFFFF" },
+  avatarText: { fontSize: 16, fontWeight: "700", color: theme.colors.white },
   chatContent: { flex: 1, minWidth: 0 },
   chatHeader: { alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 3 },
   chatName: { flex: 1, fontSize: 15, fontWeight: "700" },

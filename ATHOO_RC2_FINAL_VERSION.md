@@ -1,53 +1,113 @@
-# Athoo RC2 Final Version for Connected Testing
+# Athoo RC2 Final Release-Candidate Source
 
 ## Canonical baseline
 
-This package is cumulative and was built directly on:
+This cumulative package was built directly and only from:
 
-`ATHOO_RC2_PHASE_8B4_SUPPORT_POLICY_SECURITY_PROFESSIONAL_UX.zip`
+```text
+ATHOO_RC2_PHASE_4C_PORTABLE_MAP_CONNECTED_RUNTIME_CERTIFIED.zip
+SHA-256: cf56ae5904636083cd467094fe12967771c259e45f1a95683366f6f0085747c5
+```
 
-It retains all completed Phase 1–8B4 work and adds the final connected-testing hardening listed below.
+It preserves all previously certified authentication, maps, theme, branding, notification/call sound, email and portability work. No older baseline was merged.
 
-## Final hardening completed
+## Phase 5 final release-candidate hardening
 
-- Production OTP endpoints now return success only when WhatsApp or SMTP actually delivers the code.
-- Failed production OTP delivery invalidates the persisted OTP and returns a user-safe temporary-unavailable response.
-- Password-reset requests use a signed opaque challenge instead of returning a customer's full phone number.
-- OTP values returned for local development are never rendered by production mobile builds.
-- Root and mobile EAS configuration are synchronized and point to the connected Render API.
-- Render configuration now declares WhatsApp OTP, SMTP sender, and production dev-OTP controls.
-- App configuration and crash screens show customer-friendly copy rather than environment or developer instructions.
-- Runtime mobile diagnostics now pass through a production-safe logger that suppresses raw call, media, request, and exception details outside development.
-- A responsive viewport prevents stretched web/desktop previews while keeping native phone layouts full width.
-- The approved centered icon, adaptive icon, splash, notification icon, and single white background are retained.
-- Closed beta and feedback-triage operational documents are restored to the canonical source.
+- Added provider-neutral WhatsApp Cloud, verified-email fallback and generic HTTPS SMS authentication OTP adapters.
+- Restricted phone registration to phone-bound OTP channels so email cannot incorrectly prove phone ownership.
+- Restricted phone-login email fallback to already verified account emails.
+- Added safe release version, commit and build identity to health endpoints.
+- Added storage and phone-registration OTP readiness diagnostics.
+- Added strict connected verification for deployed release identity, CORS, Neon, storage, maps, email and controlled OTP delivery.
+- Added Android, iPhone and cross-role evidence schemas and validators.
+- Added a formal RC2 GO/NO-GO decision gate requiring zero open P0/P1 defects and four-role approval.
+- Added a manual, secret-safe connected-runtime GitHub workflow with redacted evidence artifacts.
+- Corrected pnpm setup order in CI and disabled package-manager caching in the secret-bearing connected workflow.
+- Added a distinct registration-code email template so phone registration and email-address verification remain separate security controls.
 
-## Verification performed in this package
+## Source verification completed
 
-- Project validation: passed — 31 JSON files.
-- Release check: passed.
-- Mobile release validation: passed.
-- Closed-beta QA validation: passed.
-- Operations readiness: passed — 6 runbooks.
-- Security scan: passed.
-- Device-acceptance preparation: passed.
-- TypeScript/TSX parser validation: 445 files, 0 syntax failures.
-- Source regression suite: 309 passed, 0 failed.
-- Database migration added by this final phase: no.
-- Existing API route removed: no.
-- Existing cumulative phase work removed: no.
+```text
+Project validation:                    33 JSON files passed
+Release check:                         Passed
+Mobile release validation:             Passed
+Closed-beta validation:                Passed
+Operations readiness:                  Passed — 6 runbooks
+Security scan:                         Passed
+Device preparation:                    Passed
+YAML parsing:                           3 files passed
+TypeScript/TSX syntax-transpile audit: 462 files passed
+Focused Phase 5 tests:                 5 passed, 0 failed
+Complete API source regression:         376 passed, 0 failed
+Production-like environment fixture:    Passed
+Unsafe email-only phone registration:   Correctly rejected
+```
 
-## External release gates still required
+## Honest certification boundary
 
-This source package intentionally excludes dependencies, deployment secrets, signing credentials, and live infrastructure access. The following must be performed through the connected Athoo workflow:
+This package is source-certified. It is not evidence that dependency-backed workspace typecheck/build, Neon, Render, Vercel, R2, Mapbox, Zoho/SMTP, WhatsApp/SMS, Expo push, EAS Android/iOS builds or physical-device tests have already passed.
 
-1. Install dependencies and run the dependency-backed typecheck/build locally.
-2. Push the exact source to GitHub `main`.
-3. Verify Render API deployment and `/api/healthz`.
-4. Run Neon migration verification and integrity checks.
-5. Verify the Vercel admin deployment.
-6. Configure at least one real OTP channel in Render: WhatsApp or SMTP.
-7. Build the EAS development APK and test it on the Android phone.
-8. Complete `CLOSED_BETA_CHECKLIST.md` before production certification.
+Use `RC2_PHASE_5_FINAL_RELEASE_CANDIDATE_INTEGRATION_CERTIFICATION.md`, `FINAL_CONNECTED_DEPLOYMENT.md`, `MOBILE_BETA_RELEASE_RUNBOOK.md`, `device-acceptance-evidence-template.json` and `rc2-evidence-template.json` to complete the final connected and device certification.
 
-This ZIP is the canonical RC2 code-final baseline for connected deployment and device testing. It is not evidence that Render, Neon, Vercel, R2, WhatsApp/SMTP, Android, or iOS live tests have already passed.
+## RC2 Phase 3B — Shared Theme and Runtime Configuration
+
+The latest cumulative source includes source-certified shared-component dark-theme
+migration, semantic icon defaults, approved loading-logo use, runtime-configurable
+support/legal destinations, and the restored safe production environment template.
+See `RC2_PHASE_3B_THEME_SHARED_COMPONENTS_CERTIFICATION.md` for scope, evidence,
+remaining inventory, and local/native verification requirements.
+
+## RC2 Phase 3C — Theme, Branding, Calls and Portable Runtime Configuration
+
+The latest cumulative source now includes centralized light/dark brand configuration,
+configurable native splash and identity assets, approved-logo replacement, theme-safe
+notification/toast/call UI, server-configured STUN/TURN and fallback-audio timing, and
+removal of hosting-vendor API/tile fallbacks from mobile runtime source.
+
+See `RC2_PHASE_3C_THEME_BRANDING_CALL_CONFIGURATION_CERTIFICATION.md` for the exact
+baseline hash, changed scope, regression evidence, remaining color inventory and live
+device certification boundary.
+
+## RC2 Phase 3D — Individual Theme and Portability Certification
+
+The latest cumulative source removes legacy and literal colors from all mobile feature
+screens, introduces contrast-safe rendering for admin-managed category colors, fixes
+two helper-component theme-scope defects, centralizes invoice/support/referral values,
+and removes the final direct mobile route/map-vendor dependency from booking/job flows.
+
+See `RC2_PHASE_3D_INDIVIDUAL_THEME_PORTABILITY_CERTIFICATION.md` for the exact
+baseline hash, scope, regression evidence, measured improvements and physical-device
+certification boundary.
+
+## RC2 Phase 4A — Notification and Call Sound Certification
+
+The cumulative source includes configurable job, message, general, and call notification
+policies; corrected Android channel versioning; foreground/background ringtone ownership;
+push portability; duplicate-sound prevention; and safe push diagnostics.
+
+See `RC2_PHASE_4A_NOTIFICATION_CALL_SOUND_CERTIFICATION.md` for the exact baseline,
+verification evidence, native-build requirement, and physical-device boundary.
+
+## RC2 Phase 4B — Portable Email System Certification
+
+The latest cumulative source adds provider-neutral SMTP delivery, secure email verification
+and email OTP login, recovery/security/account/booking/finance emails, durable delivery
+queues and audit logs, consent/preferences/unsubscribe controls, a permissioned Admin Email
+Center, Urdu UI coverage, retention controls, and additive database migration
+`20260715_portable_email_delivery_verification.sql`.
+
+See `RC2_PHASE_4B_PORTABLE_EMAIL_SYSTEM_CERTIFICATION.md` for the exact baseline hash,
+security model, configuration, regression evidence, deployment order, and connected-testing
+boundary.
+
+## RC2 Phase 4C — Portable Maps and Connected Runtime
+
+The cumulative source includes provider-neutral map tiles, search, reverse geocoding and directions; backend-only Mapbox credentials; Photon saved-address geocoding; cache and tile-size safety; and redacted connected-runtime evidence generation.
+
+See `RC2_PHASE_4C_PORTABLE_MAP_CONNECTED_RUNTIME_CERTIFICATION.md` for the exact scope and source certification boundary.
+
+## RC2 Phase 5 — Final Release-Candidate Integration
+
+The latest source adds portable authentication OTP delivery, phone-registration channel safety, release identity, connected deployment matching, physical-device evidence validation and a formal production GO/NO-GO decision gate.
+
+See `RC2_PHASE_5_FINAL_RELEASE_CANDIDATE_INTEGRATION_CERTIFICATION.md` for the complete audit, test evidence, configuration and remaining live release gates.

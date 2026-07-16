@@ -10,8 +10,6 @@ import { AppState, AppStateStatus } from "react-native";
 import { api, realtime } from "@/services/api";
 import { useAuth } from "@/context/AuthContext";
 import { useNotifications } from "@/context/NotificationContext";
-import { notificationService } from "@/services/NotificationService";
-import { soundService } from "@/services/SoundService";
 
 interface BroadcastContextType {
   openBroadcastCount: number;
@@ -121,15 +119,6 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
           role: "provider",
         });
 
-        notificationService
-          .scheduleBroadcastAlert(title, message, {
-            broadcastRequestId: req?.id,
-            role: "provider",
-            type: "broadcast",
-          })
-          .catch(() => {});
-
-        soundService.playRingtone().catch(() => soundService.playNotification().catch(() => {}));
       }
 
       // ── Customer: a provider responded to their broadcast ────────────────────
@@ -149,12 +138,6 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
           role: "customer",
         });
 
-        notificationService.scheduleResponseAlert(title, message, {
-          broadcastResponseId: resp?.id,
-          broadcastRequestId: resp?.requestId,
-          role: "customer",
-        }).catch(() => {});
-        soundService.playNotification().catch(() => {});
       }
 
       // ── Provider: customer selected YOU ─────────────────────────────────────
@@ -166,8 +149,6 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
         const message = `${customerName ?? "Customer"} selected you for ${serviceLabel ?? "a service"}`;
 
         push({ type: "booking", title, message, role: "provider", bookingId: booking?.id });
-        notificationService.scheduleStatusAlert(title, message).catch(() => {});
-        soundService.playRingtone().catch(() => soundService.playNotification().catch(() => {}));
         refreshBroadcasts();
       }
 
@@ -180,7 +161,6 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
         const message = `${customerName ?? "Customer"}'s ${serviceLabel ?? "request"} was filled by another provider`;
 
         push({ type: "system", title, message, role: "provider" });
-        soundService.playNotification().catch(() => {});
         refreshBroadcasts();
       }
 

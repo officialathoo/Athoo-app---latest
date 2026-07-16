@@ -11,7 +11,6 @@ import { AppState, AppStateStatus } from "react-native";
 import { api, realtime } from "@/services/api";
 import { useAuth } from "./AuthContext";
 import { notificationService } from "@/services/NotificationService";
-import { soundService } from "@/services/SoundService";
 
 export type NegotiationStatus =
   | "customer_offer"
@@ -226,21 +225,7 @@ export function NegotiationProvider({ children }: { children: React.ReactNode })
         }
 
         if (alert) {
-          try {
-            await notificationService.scheduleStatusAlert(alert.title, alert.message, {
-              role: user.role === "provider" ? "provider" : "customer",
-              negotiationId: n.id,
-            });
-          } catch {
-            // ignore notification scheduling errors
-          }
-
-          try {
-            await soundService.playNotification();
-          } catch {
-            // ignore sound errors
-          }
-
+          await notificationService.playRealtimeFallback("negotiation").catch(() => {});
           newAlerts.push(alert);
         }
       }
@@ -378,13 +363,7 @@ export function NegotiationProvider({ children }: { children: React.ReactNode })
       }
 
       if (alert) {
-        soundService.playNotification().catch(() => {});
-        notificationService
-          .scheduleStatusAlert(alert.title, alert.message, {
-            role: user.role === "provider" ? "provider" : "customer",
-            negotiationId: neg.id,
-          })
-          .catch(() => {});
+        notificationService.playRealtimeFallback("negotiation").catch(() => {});
         pendingAlertsRef.current = [...pendingAlertsRef.current, alert];
         setPendingAlerts((prev) => [...prev, alert!]);
       }

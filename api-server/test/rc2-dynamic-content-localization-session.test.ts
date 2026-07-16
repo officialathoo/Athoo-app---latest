@@ -27,7 +27,7 @@ test("profile menus consume runtime translations", () => {
   const provider = read("athoo-app/app/(provider)/(tabs)/profile.tsx");
   const language = read("athoo-app/context/LanguageContext.tsx");
 
-  assert.match(customer, /buildMenuSections\(t\)/);
+  assert.match(customer, /buildMenuSections\(t, theme\)/);
   assert.match(customer, /t\.appearance/);
   assert.match(customer, /t\.contactSupport/);
   assert.match(provider, /title: t\.workEarnings/);

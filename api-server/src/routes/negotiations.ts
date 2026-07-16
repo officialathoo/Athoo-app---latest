@@ -266,6 +266,8 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       type: "negotiation",
       link: `/negotiations/${negotiation.id}`,
       data: { negotiationId: negotiation.id },
+    
+      email: { category: "booking" },
     }).catch(() => undefined);
 
     res.json({ negotiation });
@@ -393,6 +395,8 @@ router.patch("/:id/counter", requireAuth, async (req: AuthRequest, res: Response
         type: "negotiation",
         link: `/negotiations/${updated.id}`,
         data: { negotiationId: updated.id },
+      
+        email: { category: "booking" },
       }).catch(() => undefined);
     }
     res.json({ negotiation: updated });
@@ -557,6 +561,8 @@ router.patch("/:id/accept", requireAuth, async (req: AuthRequest, res: Response)
           type: "booking",
           link: `/bookings/${newBookingId}`,
           data: { bookingId: newBookingId },
+        
+          email: { category: "booking" },
         }).catch(() => undefined);
       }
     });
@@ -576,6 +582,8 @@ router.patch("/:id/accept", requireAuth, async (req: AuthRequest, res: Response)
         type: "negotiation",
         link: `/negotiations/${updated.id}`,
         data: { negotiationId: updated.id },
+      
+        email: { category: "booking" },
       }).catch(() => undefined);
     }
     res.json({ negotiation: updated, bookingId: newBookingId });

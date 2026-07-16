@@ -1,9 +1,10 @@
 import { Icon } from "@/components/ui/Icon";
-import { Colors } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 import { api } from "@/services/api";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState , useMemo} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -59,6 +60,8 @@ function formatTime(t: string) {
 }
 
 function TimeSelector({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [open, setOpen] = useState(false);
   return (
     <View>
@@ -67,7 +70,7 @@ function TimeSelector({ value, onChange }: { value: string; onChange: (v: string
         style={styles.timePicker}
       >
         <Text style={styles.timePickerText}>{formatTime(value)}</Text>
-        <Icon name="chevron-down" size={14} color={Colors.textSecondary} />
+        <Icon name="chevron-down" size={14} color={theme.colors.textSecondary} />
       </Pressable>
       {open && (
         <View style={styles.timeDropdown}>
@@ -78,7 +81,7 @@ function TimeSelector({ value, onChange }: { value: string; onChange: (v: string
                 style={[styles.timeOption, t === value && styles.timeOptionActive]}
                 onPress={() => { onChange(t); setOpen(false); }}
               >
-                <Text style={[styles.timeOptionText, t === value && { color: Colors.primary, fontWeight: "700" }]}>
+                <Text style={[styles.timeOptionText, t === value && { color: theme.colors.primary, fontWeight: "700" }]}>
                   {formatTime(t)}
                 </Text>
               </Pressable>
@@ -91,6 +94,8 @@ function TimeSelector({ value, onChange }: { value: string; onChange: (v: string
 }
 
 export default function AvailabilityScreen() {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
   const [schedule, setSchedule] = useState<WeeklySchedule>(DEFAULT_SCHEDULE);
   const [loading, setLoading] = useState(true);
@@ -142,18 +147,18 @@ export default function AvailabilityScreen() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#F8F9FA" }}>
-        <ActivityIndicator color={Colors.primary} size="large" />
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: theme.colors.background }}>
+        <ActivityIndicator color={theme.colors.primary} size="large" />
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#F8F9FA" }}>
-      <LinearGradient colors={[Colors.gradientStart, Colors.gradientEnd]} style={[styles.header, { paddingTop: insets.top + 12 }]}>
+    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+      <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <View style={styles.headerRow}>
           <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Icon name="arrow-left" size={20} color="#fff" />
+            <Icon name="arrow-left" size={20} color={theme.colors.onBrand} />
           </Pressable>
           <Text style={styles.headerTitle}>Availability Schedule</Text>
           <View style={{ width: 40 }} />
@@ -177,14 +182,14 @@ export default function AvailabilityScreen() {
 
         {/* Quick toggles */}
         <View style={styles.quickRow}>
-          <Pressable style={[styles.quickBtn, { backgroundColor: Colors.primary + "15" }]} onPress={() => setAllEnabled(true)}>
-            <Text style={[styles.quickBtnText, { color: Colors.primary }]}>Enable All</Text>
+          <Pressable style={[styles.quickBtn, { backgroundColor: theme.colors.primary + "15" }]} onPress={() => setAllEnabled(true)}>
+            <Text style={[styles.quickBtnText, { color: theme.colors.primary }]}>Enable All</Text>
           </Pressable>
-          <Pressable style={[styles.quickBtn, { backgroundColor: Colors.error + "12" }]} onPress={() => setAllEnabled(false)}>
-            <Text style={[styles.quickBtnText, { color: Colors.error }]}>Disable All</Text>
+          <Pressable style={[styles.quickBtn, { backgroundColor: theme.colors.danger + "12" }]} onPress={() => setAllEnabled(false)}>
+            <Text style={[styles.quickBtnText, { color: theme.colors.danger }]}>Disable All</Text>
           </Pressable>
           <Pressable
-            style={[styles.quickBtn, { backgroundColor: "#F59E0B15" }]}
+            style={[styles.quickBtn, { backgroundColor: theme.colors.warningSoft }]}
             onPress={() => {
               setSchedule(s => {
                 const next = { ...s };
@@ -198,7 +203,7 @@ export default function AvailabilityScreen() {
               });
             }}
           >
-            <Text style={[styles.quickBtnText, { color: "#D97706" }]}>Weekdays Only</Text>
+            <Text style={[styles.quickBtnText, { color: theme.colors.warning }]}>Weekdays Only</Text>
           </Pressable>
         </View>
 
@@ -212,8 +217,8 @@ export default function AvailabilityScreen() {
                   <Switch
                     value={d.enabled}
                     onValueChange={v => updateDay(day.key, "enabled", v)}
-                    trackColor={{ false: Colors.border, true: Colors.primary + "50" }}
-                    thumbColor={d.enabled ? Colors.primary : "#ccc"}
+                    trackColor={{ false: theme.colors.border, true: theme.colors.primary + "50" }}
+                    thumbColor={d.enabled ? theme.colors.primary : theme.colors.textMuted}
                     style={Platform.OS === "ios" ? { transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] } : {}}
                   />
                   <Text style={[styles.dayLabel, !d.enabled && styles.dayLabelOff]}>
@@ -236,7 +241,7 @@ export default function AvailabilityScreen() {
 
         {/* Info banner */}
         <View style={styles.infoBanner}>
-          <Icon name="info" size={16} color="#2563EB" />
+          <Icon name="info" size={16} color={theme.colors.info} />
           <Text style={styles.infoText}>
             Your schedule affects when customers can make new bookings. Existing bookings are not affected.
           </Text>
@@ -248,12 +253,12 @@ export default function AvailabilityScreen() {
           onPress={handleSave}
           disabled={saving}
         >
-          <LinearGradient colors={[Colors.gradientStart, Colors.gradientEnd]} style={styles.saveBtnGrad}>
+          <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.saveBtnGrad}>
             {saving ? (
-              <ActivityIndicator color="#fff" size="small" />
+              <ActivityIndicator color={theme.colors.onBrand} size="small" />
             ) : (
               <>
-                <Icon name="save" size={18} color="#fff" />
+                <Icon name="save" size={18} color={theme.colors.onBrand} />
                 <Text style={styles.saveBtnText}>Save Schedule</Text>
               </>
             )}
@@ -264,39 +269,39 @@ export default function AvailabilityScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
   header: { paddingHorizontal: 20, paddingBottom: 20 },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
   backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center" },
-  headerTitle: { fontSize: 18, fontWeight: "700", color: "#fff", flex: 1, textAlign: "center" },
+  headerTitle: { fontSize: 18, fontWeight: "700", color: theme.colors.onBrand, flex: 1, textAlign: "center" },
   headerSub: { fontSize: 13, color: "rgba(255,255,255,0.75)", textAlign: "center" },
-  summaryCard: { backgroundColor: "#fff", borderRadius: 16, padding: 16, marginBottom: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderColor: "#E5E7EB", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  summaryCard: { backgroundColor: theme.colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderColor: theme.colors.border, shadowColor: theme.colors.text, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
   summaryLeft: { flex: 1 },
-  summaryTitle: { fontSize: 15, fontWeight: "700", color: Colors.text, marginBottom: 3 },
-  summarySub: { fontSize: 12, color: Colors.textSecondary },
-  summaryBadge: { width: 48, height: 48, borderRadius: 24, backgroundColor: Colors.primary + "15", justifyContent: "center", alignItems: "center" },
-  summaryBadgeText: { fontSize: 15, fontWeight: "800", color: Colors.primary },
+  summaryTitle: { fontSize: 15, fontWeight: "700", color: theme.colors.text, marginBottom: 3 },
+  summarySub: { fontSize: 12, color: theme.colors.textSecondary },
+  summaryBadge: { width: 48, height: 48, borderRadius: 24, backgroundColor: theme.colors.primary + "15", justifyContent: "center", alignItems: "center" },
+  summaryBadgeText: { fontSize: 15, fontWeight: "800", color: theme.colors.primary },
   quickRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
   quickBtn: { flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: "center" },
   quickBtnText: { fontSize: 12, fontWeight: "600" },
-  scheduleCard: { backgroundColor: "#fff", borderRadius: 16, borderWidth: 1, borderColor: "#E5E7EB", overflow: "hidden", marginBottom: 12, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  scheduleCard: { backgroundColor: theme.colors.surface, borderRadius: 16, borderWidth: 1, borderColor: theme.colors.border, overflow: "hidden", marginBottom: 12, shadowColor: theme.colors.text, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
   dayRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 14 },
-  dayRowBorder: { borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
+  dayRowBorder: { borderBottomWidth: 1, borderBottomColor: theme.colors.neutralSoft },
   dayLeft: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
-  dayLabel: { fontSize: 14, fontWeight: "600", color: Colors.text },
-  dayLabelOff: { color: Colors.textSecondary },
+  dayLabel: { fontSize: 14, fontWeight: "600", color: theme.colors.text },
+  dayLabelOff: { color: theme.colors.textSecondary },
   timeRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  timeSep: { fontSize: 14, color: Colors.textSecondary, fontWeight: "500" },
-  offLabel: { fontSize: 13, color: Colors.textSecondary, fontStyle: "italic" },
-  timePicker: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#F3F4F6", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
-  timePickerText: { fontSize: 12, fontWeight: "600", color: Colors.text, minWidth: 66 },
-  timeDropdown: { position: "absolute", right: 0, top: 36, backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", zIndex: 999, width: 120, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 8 },
+  timeSep: { fontSize: 14, color: theme.colors.textSecondary, fontWeight: "500" },
+  offLabel: { fontSize: 13, color: theme.colors.textSecondary, fontStyle: "italic" },
+  timePicker: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: theme.colors.neutralSoft, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  timePickerText: { fontSize: 12, fontWeight: "600", color: theme.colors.text, minWidth: 66 },
+  timeDropdown: { position: "absolute", right: 0, top: 36, backgroundColor: theme.colors.surface, borderRadius: 12, borderWidth: 1, borderColor: theme.colors.border, zIndex: 999, width: 120, shadowColor: theme.colors.text, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 8 },
   timeOption: { paddingVertical: 8, paddingHorizontal: 12 },
-  timeOptionActive: { backgroundColor: Colors.primary + "10" },
-  timeOptionText: { fontSize: 13, color: Colors.text },
-  infoBanner: { flexDirection: "row", gap: 10, backgroundColor: "#EFF6FF", borderRadius: 12, padding: 14, marginBottom: 16, alignItems: "flex-start" },
-  infoText: { flex: 1, fontSize: 13, color: "#1D4ED8", lineHeight: 18 },
+  timeOptionActive: { backgroundColor: theme.colors.primary + "10" },
+  timeOptionText: { fontSize: 13, color: theme.colors.text },
+  infoBanner: { flexDirection: "row", gap: 10, backgroundColor: theme.colors.infoSoft, borderRadius: 12, padding: 14, marginBottom: 16, alignItems: "flex-start" },
+  infoText: { flex: 1, fontSize: 13, color: theme.colors.info, lineHeight: 18 },
   saveBtn: { borderRadius: 16, overflow: "hidden" },
   saveBtnGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 16 },
-  saveBtnText: { fontSize: 16, fontWeight: "700", color: "#fff" },
+  saveBtnText: { fontSize: 16, fontWeight: "700", color: theme.colors.onBrand },
 });

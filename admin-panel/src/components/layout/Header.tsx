@@ -30,6 +30,7 @@ const PAGE_TITLES: Record<string, [string, string]> = {
   "/plans": ["Premium Plans", "Define subscription plans for customers and providers"],
   "/emergency-contacts": ["Emergency Contacts", "Manage emergency contact numbers shown in the app"],
   "/notification-templates": ["Notification Templates", "Edit automated push, SMS, and email message templates"],
+  "/email-center": ["Email Delivery Center", "Configure, test, audit, and manage portable email delivery"],
   "/reports": ["Reports & Analytics", "Platform-wide performance metrics and CSV exports"],
   "/audit-log": ["Audit Log", "Complete history of all admin actions for accountability"],
   "/login-history": ["Login History", "Security log of all admin authentication events"],

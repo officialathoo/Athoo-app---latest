@@ -1,61 +1,92 @@
 # Athoo Production Launch Runbook
 
-This runbook is the final controlled path from a certified source archive to a live production release.
+This is the controlled path from the Phase 5 source candidate to production.
 
-## 1. Prepare the immutable artifact
+## 1. Immutable artifact
 
-Create the release ZIP from the certified repository without `node_modules`, build output, `.env` files, or release evidence. Calculate its SHA-256 digest and store both in the release ticket.
+Create the release ZIP without dependencies, build output, `.env` files, credentials or generated evidence. Record:
 
-## 2. Prepare the production environment
+- full Git commit SHA
+- ZIP SHA-256
+- API release version
+- Android EAS build ID
+- iOS EAS build ID
 
-Keep the production environment file outside the repository. It must include the normal application variables plus:
+All deployed components must trace to the same release source.
 
-- `RELEASE_VERSION`
-- `RELEASE_APPROVED_BY`
-- `RELEASE_CHANGE_TICKET`
-- `RELEASE_SOURCE_REVISION`
-- `INCIDENT_COMMANDER_CONTACT`
-- `SUPPORT_ESCALATION_EMAIL`
-- `STATUS_PAGE_URL`
+## 2. Source and environment gates
 
-Never add secrets or the production environment file to the release ZIP.
-
-## 3. Run the launch preflight
-
-```bash
+```powershell
 pnpm install --frozen-lockfile
-pnpm launch:preflight /secure/production.env /releases/athoo-vX.zip
+pnpm rc2:source-verify
+pnpm db:verify
+pnpm db:integrity
+pnpm mobile:doctor
+pnpm mobile:export
+pnpm launch:preflight /secure/production.env /releases/athoo-rc2.zip
 ```
 
-The preflight stops when any of these fail:
+The production environment must pass `scripts/tools/validate-environment.mjs` and must include a phone-bound OTP channel, remote storage, PostgreSQL queueing, secure secrets, release identity and all selected provider configuration.
 
-- Environment validation
-- Operational readiness
-- Automated tests, TypeScript, and production builds
-- Database migration verification
-- Release approval metadata
-- Artifact hashing and evidence generation
+Use `--skip-code` only when the exact Git SHA already passed the trusted CI source workflow and that evidence is attached.
 
-The generated preflight evidence is written under `release-evidence/` and must be attached to the release ticket, not committed to source control.
+## 3. Backup and migrate
 
-Use `--skip-code` only when the same source revision has already passed `pnpm release:verify:code` in the trusted CI pipeline and that CI evidence is attached to the release ticket.
+- Create a Neon restore point or backup immediately before deployment.
+- Retain the previous API, admin and mobile artifacts.
+- Apply migrations before starting the updated API.
+- Run `pnpm db:verify` and `pnpm db:integrity` after migration.
+- Follow `ROLLBACK_RUNBOOK.md` for any rollback. Do not manually reverse additive migrations without review.
 
-## 4. Back up and deploy
+## 4. Deploy exact source
 
-Create a database backup immediately before deployment. Retain the previous API and admin artifacts. Deploy database migrations before starting the new API. Do not perform destructive schema rollback without following `ROLLBACK_RUNBOOK.md`.
+Deploy the same Git SHA to Render and Vercel. Create EAS builds from that same source. Confirm `/api/healthz` and `/api/healthz/deep` report the expected release version and commit.
 
-## 5. Verify the live deployment
+## 5. Post-deployment smoke and connected runtime evidence
 
-```bash
-SMOKE_API_BASE_URL=https://api.athoo.example pnpm launch:postdeploy
+Run the public post-deployment smoke test first:
+
+```powershell
+$env:SMOKE_API_BASE_URL="https://athoo-api.onrender.com"
+pnpm launch:postdeploy
 ```
 
-For authenticated beta verification, also supply the dedicated staging or production test-account variables described in `CLOSED_BETA_AUTOMATION.md`. Never use a real customer account for automated smoke tests.
+Then run the environment described in `FINAL_CONNECTED_DEPLOYMENT.md`:
 
-## 6. Observe before increasing traffic
+```powershell
+pnpm rc2:connected-verify
+```
 
-Monitor error rate, response latency, background jobs, database connections, storage errors, notification delivery, authentication failures, and manual-finance queues. Keep the release owner and incident commander available during the observation window.
+This must pass release identity, database, migration, storage, maps, CORS, email and controlled OTP checks.
 
-## 7. Sign off or roll back
+## 6. Android and iPhone evidence
 
-Sign off only after smoke tests pass and operational metrics remain healthy. Roll back immediately for authentication failure, data corruption, financial inconsistency, widespread booking failure, privacy exposure, or migration incompatibility.
+Complete `device-acceptance-evidence.json` from its template using the exact preview/release builds:
+
+```powershell
+pnpm device:evidence:validate
+```
+
+Both physical platforms and all cross-role cases must pass.
+
+## 7. Final production decision
+
+Complete `rc2-evidence.json` from its template and attach the evidence locations for every check:
+
+```powershell
+pnpm rc2:decision
+```
+
+Launch is prohibited unless the result is:
+
+```text
+GO
+```
+
+There must be zero open P0 defects and zero open P1 defects, with engineering, QA, product and operations approvals.
+
+## 8. Observe and roll back
+
+Monitor authentication, OTP delivery, email queues, push notifications, map failures, storage uploads, booking workflows, finance queues, database connections, error rate and latency.
+
+Roll back immediately for authentication outage, privacy exposure, data corruption, financial inconsistency, widespread booking failure or incompatible migration behavior.

@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 2,
+  "releaseVersion": "rc2-candidate",
+  "releaseCommitSha": "0000000",
+  "artifactSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "checks": {
+    "sourceVerification": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "securityScan": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "databaseMigrations": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "databaseIntegrity": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "databaseRecoveryRehearsal": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "connectedRuntime": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "releaseIdentity": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "storageUpload": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "mapSearchAndDirections": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "otpDelivery": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "emailDelivery": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "pushDelivery": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "performanceSmoke": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "expoDoctor": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "mobileExport": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "androidPreviewBuild": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "iosPreviewBuild": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "androidDeviceAcceptance": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "iosDeviceAcceptance": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "crossRoleDeviceAcceptance": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "darkThemeMatrix": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "notificationSoundMatrix": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "openP0Defects": {
+      "status": "pending",
+      "evidence": "",
+      "count": 0
+    },
+    "openP1Defects": {
+      "status": "pending",
+      "evidence": "",
+      "count": 0
+    }
+  },
+  "approvals": {
+    "engineering": "",
+    "qa": "",
+    "product": "",
+    "operations": ""
+  }
+}

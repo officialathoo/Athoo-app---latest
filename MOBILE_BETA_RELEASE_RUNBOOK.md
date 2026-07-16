@@ -1,63 +1,123 @@
 # Athoo Mobile Beta Release Runbook
 
-## Required EAS environment values
+## Canonical rule
 
-Configure these in the EAS `preview` environment before building:
+Build Android and iOS only from the exact Git commit verified by the API release identity. Never mix an old APK with a newer authentication/backend contract.
 
-- `APP_ENV=staging`
-- `EXPO_PUBLIC_API_BASE_URL=https://<staging-api-host>`
-- `EAS_PROJECT_ID=<Expo project UUID>`
-- No commercial maps key is required. Athoo uses OpenStreetMap tiles plus the server-side Photon/Nominatim/OSRM stack.
-- `ANDROID_PACKAGE=com.athoo26436.athooapp`
-- `IOS_BUNDLE_IDENTIFIER=com.athoo26436.athooapp`
+## Required EAS values
 
-Do not configure TURN usernames or credentials in `EXPO_PUBLIC_*`. The authenticated calls API returns ICE server configuration.
+Configure non-secret mobile values in the EAS `preview` environment:
 
-## Validate locally
+```env
+APP_ENV=staging
+EAS_PROJECT_ID=42a7f8fe-68ea-4422-8f46-0def1f55abb9
+EXPO_PUBLIC_API_BASE_URL=https://athoo-api.onrender.com
+EXPO_PUBLIC_MAP_TILE_URL=https://athoo-api.onrender.com/api/geo/tiles/{z}/{x}/{y}.png
+EXPO_PUBLIC_MAP_TILE_SIZE=512
+EXPO_PUBLIC_MAP_ATTRIBUTION=© Mapbox © OpenStreetMap contributors
+ANDROID_PACKAGE=com.athoo26436.athooapp
+IOS_BUNDLE_IDENTIFIER=com.athoo26436.athooapp
+```
 
-```bash
-APP_ENV=staging \
-EXPO_PUBLIC_API_BASE_URL=https://api-staging.example.com \
-EAS_PROJECT_ID=00000000-0000-0000-0000-000000000000 \
-pnpm mobile:validate
+Do not put Mapbox, Zoho, WhatsApp, SMS, R2, TURN, database, JWT or admin secrets in `EXPO_PUBLIC_*` values. Protected provider configuration belongs on the API server.
 
-pnpm release:verify:code
+## Local gates
+
+From the monorepo root:
+
+```powershell
+pnpm install --frozen-lockfile
+pnpm rc2:source-verify
+pnpm db:verify
+pnpm db:integrity
+pnpm mobile:doctor
 pnpm mobile:export
 ```
 
-## Create internal beta builds
+From `athoo-app`:
 
-```bash
-eas login
-eas build:configure
-eas build --profile preview --platform android
-eas build --profile preview --platform ios
+```powershell
+pnpm exec expo config --type public
+eas project:info
 ```
 
-The preview Android profile produces an APK for internal installation. The preview iOS build uses internal distribution and requires registered test devices.
+Confirm the Athoo project ID, Android package and iOS bundle identifier before building.
 
-## Beta acceptance checks
+## Internal preview builds
 
-Test on at least one supported Android device and one iPhone:
+```powershell
+eas build --profile preview --platform android --clear-cache
+eas build --profile preview --platform ios --clear-cache
+```
 
-1. Install and launch from a clean device state.
-2. Register/login and confirm secure session restoration after restart.
-3. Allow/deny notifications, camera, photos, microphone, and location.
-4. Complete customer and provider booking journeys.
-5. Verify chat attachments, calls, start/completion PINs, invoices, refunds, and withdrawals.
-6. Tap notifications from foreground, background, and terminated states.
-7. Log out and confirm the device no longer receives account notifications.
-8. Verify app behavior on slow and temporarily disconnected networks.
+The Android preview profile must produce an installable APK. Internal iOS distribution requires registered devices.
 
-## Production build
+## Required devices
 
-Only after closed-beta sign-off:
+- One physical Android phone
+- One physical iPhone
+- Browser admin panel
+- A separate customer and provider account
 
-```bash
+An emulator may supplement testing but cannot replace the required physical-platform evidence.
+
+## Acceptance evidence
+
+Copy the evidence template:
+
+```powershell
+Copy-Item device-acceptance-evidence-template.json device-acceptance-evidence.json
+```
+
+Complete every case in `device-acceptance-checklist.json`. Passed cases require:
+
+- ISO timestamp
+- matching EAS build ID
+- device model
+- OS version
+- screenshot/video/log evidence location
+- meaningful notes
+
+Validate:
+
+```powershell
+pnpm device:evidence:validate
+```
+
+## Critical runtime matrix
+
+Test both light and dark themes and all relevant app states:
+
+- fresh install and native splash
+- customer/provider phone OTP
+- verified-email OTP alternative
+- account-not-found, blocked, deactivated and deleted handling
+- one-device session replacement
+- location permission, accurate current location and named address
+- search suggestions, pin selection and directions
+- R2 media uploads from camera and gallery
+- customer/provider booking and negotiation
+- chat and call lifecycle
+- job, chat, general and call sounds
+- foreground, background and killed-app notification taps
+- logout and token invalidation
+- slow, offline and recovered network states
+
+## Native notification note
+
+Android notification channels are immutable after creation. Phase 4A moved Athoo to the `v3` channels. Install the new preview build cleanly when testing sound changes; an old installation may retain old channel behavior.
+
+## Map note
+
+The mobile app does not call Mapbox directly. Mapbox tiles/directions and Photon search/reverse geocoding are selected by the backend. Verify tile alignment at zoom 12–18, attribution visibility, search accuracy and route polylines.
+
+## Production builds
+
+Only after connected evidence and device evidence pass and `pnpm rc2:decision` returns `GO`:
+
+```powershell
 eas build --profile production --platform android
 eas build --profile production --platform ios
 eas submit --profile production --platform android
 eas submit --profile production --platform ios
 ```
-
-Store credentials and signing keys must remain in Expo/Apple/Google credential stores, not in the repository.

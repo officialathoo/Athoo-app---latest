@@ -259,6 +259,8 @@ withdrawalsAdminRouter.patch("/:id", requireAuth, requireAdmin, requirePermissio
           : `Your Rs. ${w.amount} withdrawal was approved and is being processed`,
       type: "system",
       data: { withdrawalId: id, status: newStatus },
+    
+      email: { category: "transactional" },
     }).catch(() => undefined);
     emitToUser(w.providerId, "notification:new", { withdrawalId: id, status: newStatus });
 

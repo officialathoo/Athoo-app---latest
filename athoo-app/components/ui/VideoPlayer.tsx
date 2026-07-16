@@ -1,22 +1,20 @@
-import React, { useEffect, useRef, useState } from "react";
-import {
-  View,
-  Text,
-  ActivityIndicator,
-  StyleSheet,
-} from "react-native";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { Video, ResizeMode, type AVPlaybackStatus } from "expo-av";
 import { Icon } from "./Icon";
-import { Colors } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 import { getPrivateFileUrl, optimizeCloudinaryVideoUrl } from "@/services/storage";
 import { api } from "@/services/api";
 
 interface VideoPlayerProps {
   uri: string;
-  style?: object;
+  style?: StyleProp<ViewStyle>;
 }
 
 export function VideoPlayer({ uri, style }: VideoPlayerProps) {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const videoRef = useRef<Video>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -24,26 +22,48 @@ export function VideoPlayer({ uri, style }: VideoPlayerProps) {
   const [resolvedUri, setResolvedUri] = useState<string | null>(null);
 
   useEffect(() => {
+    let mounted = true;
+    setError(false);
+    setLoading(true);
+
     if (!uri) {
       setResolvedUri(null);
-      return;
+      return () => {
+        mounted = false;
+      };
     }
-    // Legacy https / data URIs render directly
+
     if (uri.startsWith("http") || uri.startsWith("data:")) {
       setResolvedUri(optimizeCloudinaryVideoUrl(uri));
-      return;
+      return () => {
+        mounted = false;
+      };
     }
-    // /objects/ path — append auth token for authorized serving
+
     const base = getPrivateFileUrl(uri);
-    api.createPurposeToken("object-read").then(({ token }) => setResolvedUri(`${base}?token=${encodeURIComponent(token)}`)).catch(() => setResolvedUri(null));
+    api.createPurposeToken("object-read")
+      .then(({ token }) => {
+        if (mounted) setResolvedUri(`${base}?token=${encodeURIComponent(token)}`);
+      })
+      .catch(() => {
+        if (mounted) {
+          setResolvedUri(null);
+          setLoading(false);
+          setError(true);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, [uri]);
 
   if (error) {
     return (
       <View style={[styles.container, styles.errorBox, style]}>
-        <Icon name="video-off" size={26} color={Colors.textMuted} />
+        <Icon name="video-off" size={26} color={theme.colors.textMuted} />
         <Text style={styles.errorText}>Could not load video</Text>
-        <Text style={styles.errorSub}>Check your internet connection</Text>
+        <Text style={styles.errorSub}>Check your internet connection and try again.</Text>
       </View>
     );
   }
@@ -52,7 +72,8 @@ export function VideoPlayer({ uri, style }: VideoPlayerProps) {
     return (
       <View style={[styles.container, style]}>
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+          <Text style={styles.loadingText}>Preparing video…</Text>
         </View>
       </View>
     );
@@ -68,58 +89,44 @@ export function VideoPlayer({ uri, style }: VideoPlayerProps) {
         resizeMode={ResizeMode.CONTAIN}
         onPlaybackStatusUpdate={setStatus}
         onLoad={() => setLoading(false)}
-        onError={() => { setLoading(false); setError(true); }}
+        onError={() => {
+          setLoading(false);
+          setError(true);
+        }}
         shouldPlay={false}
       />
-      {loading && (
+      {loading ? (
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={theme.colors.primary} />
           <Text style={styles.loadingText}>Loading video…</Text>
         </View>
-      )}
+      ) : null}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    width: "100%",
-    aspectRatio: 16 / 9,
-    backgroundColor: "#000",
-    borderRadius: 10,
-    overflow: "hidden",
-  },
-  video: {
-    width: "100%",
-    height: "100%",
-  },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.65)",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-  },
-  loadingText: {
-    color: "#fff",
-    fontSize: 13,
-    fontWeight: "500",
-  },
-  errorBox: {
-    backgroundColor: "#F8FAFC",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  errorText: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  errorSub: {
-    color: Colors.textMuted,
-    fontSize: 12,
-  },
-});
+function createStyles(theme: AthooTheme) {
+  return StyleSheet.create({
+    container: {
+      width: "100%",
+      aspectRatio: 16 / 9,
+      backgroundColor: theme.colors.background,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      overflow: "hidden",
+    },
+    video: { width: "100%", height: "100%" },
+    loadingOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: theme.colors.overlay,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 10,
+    },
+    loadingText: { color: theme.colors.white, fontSize: 13, fontWeight: "500" },
+    errorBox: { backgroundColor: theme.colors.surfaceAlt, alignItems: "center", justifyContent: "center", gap: 6, padding: 16 },
+    errorText: { color: theme.colors.text, fontSize: 14, fontWeight: "600" },
+    errorSub: { color: theme.colors.textSecondary, fontSize: 12, textAlign: "center" },
+  });
+}

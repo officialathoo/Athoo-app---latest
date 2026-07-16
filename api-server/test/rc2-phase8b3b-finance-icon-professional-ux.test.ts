@@ -108,13 +108,19 @@ test("technical errors are converted to customer-safe messages", () => {
   assert.match(source, /Athoo is temporarily unavailable\. Please try again shortly\./);
 });
 
-test("approved app icon splash and adaptive icon use one centered background", () => {
+test("approved app icon splash and adaptive icon are configurable and centered", () => {
   const config = read("athoo-app/app.config.js");
-  assert.match(config, /icon: "\.\/assets\/images\/icon\.png"/);
-  assert.match(config, /image: "\.\/assets\/images\/splash\.png"/);
-  assert.match(config, /foregroundImage: "\.\/assets\/images\/adaptive-icon\.png"/);
-  assert.equal((config.match(/backgroundColor: "#FFFFFF"/g) || []).length, 2);
-  assert.match(config, /notification-icon\.png/);
+  assert.match(config, /APP_ICON_PATH/);
+  assert.match(config, /SPLASH_IMAGE_PATH/);
+  assert.match(config, /ADAPTIVE_ICON_PATH/);
+  assert.match(config, /NOTIFICATION_ICON_PATH/);
+  assert.match(config, /icon: appIconPath/);
+  assert.match(config, /image: splashImagePath/);
+  assert.match(config, /foregroundImage: adaptiveIconPath/);
+  assert.match(config, /icon: notificationIconPath/);
+  assert.match(config, /backgroundColor: adaptiveIconBackground/);
+  assert.match(config, /backgroundColor: splashBackgroundLight/);
+  assert.match(config, /backgroundColor: splashBackgroundDark/);
 
   assert.deepEqual(pngDimensions("athoo-app/assets/images/icon.png"), { width: 1024, height: 1024 });
   assert.deepEqual(pngDimensions("athoo-app/assets/images/adaptive-icon.png"), { width: 1024, height: 1024 });

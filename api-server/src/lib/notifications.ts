@@ -5,6 +5,14 @@ import { eq, inArray } from "drizzle-orm";
 import { sendExpoPushMessages, sendExpoPushNotifications } from "./push";
 import { logger } from "./logger";
 import { emitToUser } from "./eventBus";
+import { queueEmail, type EmailCategory } from "./emailDelivery";
+
+type NotificationEmailOptions = {
+  category: EmailCategory;
+  templateKey?: string;
+  variables?: Record<string, string | number | boolean | null | undefined>;
+  dedupeKey?: string;
+};
 
 type NotifyInput = {
   userId: string;
@@ -13,6 +21,7 @@ type NotifyInput = {
   type?: string;
   link?: string;
   data?: Record<string, unknown>;
+  email?: NotificationEmailOptions | false;
 };
 
 export type NotifyResult = {
@@ -52,7 +61,7 @@ export async function notifyUser(input: NotifyInput): Promise<NotifyResult> {
 
     const user = await db.query.usersTable.findFirst({
       where: eq(usersTable.id, input.userId),
-      columns: { expoPushToken: true },
+      columns: { expoPushToken: true, email: true, name: true },
     });
     const token = user?.expoPushToken;
     if (token) {
@@ -73,6 +82,28 @@ export async function notifyUser(input: NotifyInput): Promise<NotifyResult> {
         await db.update(usersTable).set({ expoPushToken: null }).where(eq(usersTable.id, input.userId));
       }
     }
+
+    if (input.email && user?.email) {
+      void queueEmail({
+        userId: input.userId,
+        to: user.email,
+        templateKey: input.email.templateKey || "campaign_custom",
+        category: input.email.category,
+        dedupeKey: input.email.dedupeKey || `notification-email:${id}`,
+        variables: {
+          name: user.name || "there",
+          subject: input.title,
+          body: input.body,
+          category: input.email.category,
+          ...(input.email.variables || {}),
+        },
+        metadata: {
+          notificationId: id,
+          notificationType: input.type || "info",
+          link: input.link || null,
+        },
+      }).catch((error) => logger.warn({ err: error, userId: input.userId, notificationId: id }, "notification email queue failed"));
+    }
   } catch (e) {
     logger.error({ err: e }, "notifyUser failed");
   }
@@ -81,7 +112,7 @@ export async function notifyUser(input: NotifyInput): Promise<NotifyResult> {
 
 export async function notifyUsers(
   userIds: string[],
-  payload: { title: string; body: string; type?: string; link?: string; data?: Record<string, unknown> }
+  payload: { title: string; body: string; type?: string; link?: string; data?: Record<string, unknown>; email?: NotificationEmailOptions | false }
 ): Promise<number> {
   if (userIds.length === 0) return 0;
   const ids = [...new Set(userIds)];
@@ -110,7 +141,7 @@ export async function notifyUsers(
     }
 
     const recipients = await db
-      .select({ id: usersTable.id, expoPushToken: usersTable.expoPushToken })
+      .select({ id: usersTable.id, expoPushToken: usersTable.expoPushToken, email: usersTable.email, name: usersTable.name })
       .from(usersTable)
       .where(inArray(usersTable.id, ids));
     const rowByUserId = new Map(rows.map((row) => [row.userId, row]));
@@ -141,6 +172,27 @@ export async function notifyUsers(
         await db.update(usersTable)
           .set({ expoPushToken: null })
           .where(inArray(usersTable.expoPushToken, pushResult.invalidTokens));
+      }
+    }
+    if (payload.email) {
+      for (const recipient of recipients) {
+        if (!recipient.email) continue;
+        const notificationRow = rowByUserId.get(recipient.id)!;
+        void queueEmail({
+          userId: recipient.id,
+          to: recipient.email,
+          templateKey: payload.email.templateKey || "campaign_custom",
+          category: payload.email.category,
+          dedupeKey: payload.email.dedupeKey ? `${payload.email.dedupeKey}:${recipient.id}` : `notification-email:${notificationRow.id}`,
+          variables: {
+            name: recipient.name || "there",
+            subject: payload.title,
+            body: payload.body,
+            category: payload.email.category,
+            ...(payload.email.variables || {}),
+          },
+          metadata: { notificationId: notificationRow.id, notificationType: payload.type || "info", link: payload.link || null },
+        }).catch((error) => logger.warn({ err: error, userId: recipient.id, notificationId: notificationRow.id }, "bulk notification email queue failed"));
       }
     }
     return ids.length;

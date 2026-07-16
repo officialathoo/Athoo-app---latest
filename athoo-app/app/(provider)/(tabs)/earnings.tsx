@@ -12,12 +12,12 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/colors";
 import { AnimatedCard } from "@/components/ui/AnimatedCard";
 import { BookingCard } from "@/components/ui/BookingCard";
 import { useAuth } from "@/context/AuthContext";
 import { useBookings, Booking } from "@/context/BookingContext";
 import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 import { useLang } from "@/context/LanguageContext";
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -83,6 +83,7 @@ interface BarChartProps {
 }
 
 function BarChart({ data, color, max, isCurrentWeek, labels }: BarChartProps) {
+  const { theme } = useTheme();
   const { width: screenW } = useWindowDimensions();
   const barAreaW = screenW - 80;
   const todayIdx = getTodayDayIndex();
@@ -102,10 +103,10 @@ function BarChart({ data, color, max, isCurrentWeek, labels }: BarChartProps) {
                 width: "100%",
                 height: Math.max(h, 4),
                 borderRadius: 6,
-                backgroundColor: isToday ? color : isActive ? color + "80" : Colors.border,
+                backgroundColor: isToday ? color : isActive ? color + "80" : theme.colors.border,
               }}
             />
-            <Text style={{ fontSize: 9, color: isToday ? color : Colors.textMuted, fontWeight: isToday ? "700" : "600" }}>
+            <Text style={{ fontSize: 9, color: isToday ? color : theme.colors.textMuted, fontWeight: isToday ? "700" : "600" }}>
               {labels[i]}
             </Text>
           </View>
@@ -119,6 +120,7 @@ export default function EarningsScreen() {
   const { user } = useAuth();
   const { getMyBookings } = useBookings();
   const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { t, isUrdu, translate: tr, formatCurrency } = useLang();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -147,7 +149,7 @@ export default function EarningsScreen() {
 
   const chartData = chartMode === "earnings" ? earningsByDay : jobsByDay;
   const chartMax = chartData.reduce((a, b) => Math.max(a, b), 1);
-  const chartColor = chartMode === "earnings" ? "#22C55E" : Colors.secondary;
+  const chartColor = chartMode === "earnings" ? theme.colors.success : theme.colors.secondary;
 
   const recentCompleted = [...completed]
     .sort((a, b) => {
@@ -159,9 +161,9 @@ export default function EarningsScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: topPad, backgroundColor: theme.colors.background }]}>
-      <LinearGradient colors={[Colors.primary, "#0D4BA0"]} style={styles.headerGrad}>
+      <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.headerGrad}>
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <Icon name="arrow-left" size={20} color="#fff" />
+          <Icon name="arrow-left" size={20} color={theme.colors.onBrand} />
         </Pressable>
         <Text style={styles.headerTitle}>{t.earningsHistory}</Text>
         <View style={styles.headerStats}>
@@ -196,14 +198,14 @@ export default function EarningsScreen() {
                   style={styles.weekNavBtn}
                   onPress={() => setWeekOffset((w) => w - 1)}
                 >
-                  <Icon name="chevron-left" size={16} color={Colors.text} />
+                  <Icon name="chevron-left" size={16} color={theme.colors.text} />
                 </Pressable>
                 <Text style={styles.weekLabel}>{weekLabel}</Text>
                 <Pressable
                   style={[styles.weekNavBtn, isCurrentWeek && styles.weekNavBtnDisabled]}
                   onPress={() => !isCurrentWeek && setWeekOffset((w) => w + 1)}
                 >
-                  <Icon name="chevron-right" size={16} color={isCurrentWeek ? Colors.border : Colors.text} />
+                  <Icon name="chevron-right" size={16} color={isCurrentWeek ? theme.colors.border : theme.colors.text} />
                 </Pressable>
               </View>
 
@@ -215,23 +217,23 @@ export default function EarningsScreen() {
                   <Text style={[styles.chartToggleText, chartMode === "earnings" && styles.chartToggleTextActive]}>Rs.</Text>
                 </Pressable>
                 <Pressable
-                  style={[styles.chartToggleBtn, chartMode === "jobs" && { backgroundColor: Colors.secondary + "20" }]}
+                  style={[styles.chartToggleBtn, chartMode === "jobs" && { backgroundColor: theme.colors.secondary + "20" }]}
                   onPress={() => setChartMode("jobs")}
                 >
-                  <Text style={[styles.chartToggleText, chartMode === "jobs" && { color: Colors.secondary }]}>{t.jobs}</Text>
+                  <Text style={[styles.chartToggleText, chartMode === "jobs" && { color: theme.colors.secondary }]}>{t.jobs}</Text>
                 </Pressable>
               </View>
             </View>
 
             <View style={styles.weekSummaryRow}>
               <View style={styles.weekSummaryItem}>
-                <Text style={[styles.weekSummaryVal, { color: "#22C55E" }]}>
+                <Text style={[styles.weekSummaryVal, { color: theme.colors.success }]}>
                   {formatCurrency(weekEarnings)}
                 </Text>
                 <Text style={styles.weekSummaryLbl}>{t.weeklyEarnings}</Text>
               </View>
               <View style={styles.weekSummaryItem}>
-                <Text style={[styles.weekSummaryVal, { color: Colors.secondary }]}>{weekJobs}</Text>
+                <Text style={[styles.weekSummaryVal, { color: theme.colors.secondary }]}>{weekJobs}</Text>
                 <Text style={styles.weekSummaryLbl}>{t.jobs}</Text>
               </View>
             </View>
@@ -248,7 +250,7 @@ export default function EarningsScreen() {
 
             {weekEarnings === 0 && (
               <View style={styles.noDataRow}>
-                <Icon name="bar-chart-2" size={16} color={Colors.textMuted} />
+                <Icon name="bar-chart-2" size={16} color={theme.colors.textMuted} />
                 <Text style={styles.noDataText}>{tr("No completed jobs this week")}</Text>
               </View>
             )}
@@ -259,7 +261,7 @@ export default function EarningsScreen() {
           <AnimatedCard delay={90}>
             <View style={styles.commCard}>
               <View style={styles.commHeader}>
-                <Icon name="percent" size={16} color="#8B5CF6" />
+                <Icon name="percent" size={16} color={theme.colors.accent} />
                 <Text style={styles.commTitle}>{tr("Commission Overview")}</Text>
               </View>
               <View style={styles.commRow}>
@@ -269,7 +271,7 @@ export default function EarningsScreen() {
                 </View>
                 <View style={styles.commDivider} />
                 <View style={styles.commItem}>
-                  <Text style={[styles.commVal, { color: Colors.error }]}>{formatCurrency(user?.pendingCommission || 0)}</Text>
+                  <Text style={[styles.commVal, { color: theme.colors.danger }]}>{formatCurrency(user?.pendingCommission || 0)}</Text>
                   <Text style={styles.commLbl}>{tr("Pending Due")}</Text>
                 </View>
                 {user?.commissionLimit != null && (
@@ -295,7 +297,7 @@ export default function EarningsScreen() {
         {recentCompleted.length === 0 ? (
           <AnimatedCard delay={120}>
             <View style={styles.empty}>
-              <Icon name="briefcase" size={36} color={Colors.border} />
+              <Icon name="briefcase" size={36} color={theme.colors.border} />
               <Text style={styles.emptyTitle}>{tr("No completed jobs yet")}</Text>
               <Text style={styles.emptySubtitle}>{tr("Earnings will appear here once you complete bookings")}</Text>
             </View>
@@ -330,15 +332,15 @@ export default function EarningsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
   headerGrad: { paddingHorizontal: 20, paddingBottom: 24, paddingTop: 16 },
   backBtn: {
     width: 38, height: 38, borderRadius: 12,
     backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center",
     marginBottom: 12,
   },
-  headerTitle: { fontSize: 22, fontWeight: "800", color: "#fff", marginBottom: 16 },
+  headerTitle: { fontSize: 22, fontWeight: "800", color: theme.colors.onBrand, marginBottom: 16 },
   headerStats: {
     flexDirection: "row",
     backgroundColor: "rgba(255,255,255,0.15)",
@@ -347,17 +349,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   hStatItem: { flex: 1, alignItems: "center", gap: 2 },
-  hStatVal: { fontSize: 14, fontWeight: "800", color: "#fff" },
+  hStatVal: { fontSize: 14, fontWeight: "800", color: theme.colors.onBrand },
   hStatLbl: { fontSize: 9, color: "rgba(255,255,255,0.75)", fontWeight: "600" },
   hStatDiv: { width: 1, backgroundColor: "rgba(255,255,255,0.2)", marginVertical: 2 },
   scroll: { flex: 1 },
   scrollContent: { padding: 16, paddingBottom: 100 },
   chartCard: {
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderRadius: 20,
     padding: 18,
     marginBottom: 20,
-    shadowColor: Colors.shadow,
+    shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 1,
     shadowRadius: 12,
@@ -368,51 +370,51 @@ const styles = StyleSheet.create({
   weekNav: { flexDirection: "row", alignItems: "center", gap: 8 },
   weekNavBtn: {
     width: 28, height: 28, borderRadius: 8,
-    backgroundColor: Colors.surface, alignItems: "center", justifyContent: "center",
+    backgroundColor: theme.colors.surfaceAlt, alignItems: "center", justifyContent: "center",
   },
   weekNavBtnDisabled: { opacity: 0.3 },
-  weekLabel: { fontSize: 12, fontWeight: "700", color: Colors.text, maxWidth: 120 },
+  weekLabel: { fontSize: 12, fontWeight: "700", color: theme.colors.text, maxWidth: 120 },
   chartToggle: { flexDirection: "row", gap: 4 },
   chartToggleBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
-  chartToggleActive: { backgroundColor: "#22C55E20" },
-  chartToggleText: { fontSize: 11, fontWeight: "700", color: Colors.textSecondary },
-  chartToggleTextActive: { color: "#22C55E" },
+  chartToggleActive: { backgroundColor: theme.colors.successSoft },
+  chartToggleText: { fontSize: 11, fontWeight: "700", color: theme.colors.textSecondary },
+  chartToggleTextActive: { color: theme.colors.success },
   weekSummaryRow: { flexDirection: "row", gap: 20 },
   weekSummaryItem: { gap: 2 },
   weekSummaryVal: { fontSize: 20, fontWeight: "800" },
-  weekSummaryLbl: { fontSize: 11, color: Colors.textSecondary, fontWeight: "600" },
+  weekSummaryLbl: { fontSize: 11, color: theme.colors.textSecondary, fontWeight: "600" },
   barChart: { paddingTop: 4 },
   noDataRow: {
     flexDirection: "row", alignItems: "center", gap: 6,
     justifyContent: "center", paddingVertical: 8,
   },
-  noDataText: { fontSize: 12, color: Colors.textMuted },
+  noDataText: { fontSize: 12, color: theme.colors.textMuted },
   sectionHeader: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     marginBottom: 8,
   },
-  sectionTitle: { fontSize: 15, fontWeight: "700", color: Colors.text },
-  sectionCount: { fontSize: 12, color: Colors.textSecondary },
+  sectionTitle: { fontSize: 15, fontWeight: "700", color: theme.colors.text },
+  sectionCount: { fontSize: 12, color: theme.colors.textSecondary },
   jobRow: { position: "relative" },
   earningBadge: {
     position: "absolute",
     bottom: 14,
     right: 14,
-    backgroundColor: "#22C55E15",
+    backgroundColor: theme.colors.successSoft,
     borderRadius: 20,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
-  earningBadgeText: { fontSize: 11, fontWeight: "800", color: "#22C55E" },
+  earningBadgeText: { fontSize: 11, fontWeight: "800", color: theme.colors.success },
   empty: { alignItems: "center", paddingVertical: 60, gap: 10 },
-  emptyTitle: { fontSize: 16, fontWeight: "700", color: Colors.text },
-  emptySubtitle: { fontSize: 13, color: Colors.textSecondary, textAlign: "center", lineHeight: 19 },
+  emptyTitle: { fontSize: 16, fontWeight: "700", color: theme.colors.text },
+  emptySubtitle: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center", lineHeight: 19 },
   commCard: {
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderRadius: 20,
     padding: 18,
     marginBottom: 16,
-    shadowColor: Colors.shadow,
+    shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 1,
     shadowRadius: 12,
@@ -420,12 +422,12 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   commHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
-  commTitle: { fontSize: 14, fontWeight: "700", color: Colors.text },
+  commTitle: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
   commRow: { flexDirection: "row", alignItems: "center" },
   commItem: { flex: 1, alignItems: "center", gap: 3 },
-  commDivider: { width: 1, height: 36, backgroundColor: Colors.border },
-  commVal: { fontSize: 15, fontWeight: "800", color: Colors.text },
-  commLbl: { fontSize: 10, color: Colors.textSecondary, fontWeight: "600", textAlign: "center" },
-  commNote: { fontSize: 11, color: Colors.textMuted, lineHeight: 16 },
+  commDivider: { width: 1, height: 36, backgroundColor: theme.colors.border },
+  commVal: { fontSize: 15, fontWeight: "800", color: theme.colors.text },
+  commLbl: { fontSize: 10, color: theme.colors.textSecondary, fontWeight: "600", textAlign: "center" },
+  commNote: { fontSize: 11, color: theme.colors.textMuted, lineHeight: 16 },
 });
 

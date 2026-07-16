@@ -1,6 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { api, realtime } from "@/services/api";
+import { brandConfig } from "@/config/brand";
+import { runtimeConfig } from "@/config/runtime";
 
 export interface PublicSettings {
   platformName: string;
@@ -21,9 +23,9 @@ export interface PublicSettings {
 }
 
 const FALLBACK_SETTINGS: PublicSettings = {
-  platformName: "Athoo",
-  supportPhone: "+92 339 0051068",
-  supportEmail: "support@athoo.pk",
+  platformName: brandConfig.displayName,
+  supportPhone: runtimeConfig.support.phoneDisplay || "",
+  supportEmail: runtimeConfig.support.email || "",
   maintenanceMode: false,
   defaultVisitCharge: 200,
   defaultHourlyRate: 500,

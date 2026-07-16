@@ -13,7 +13,9 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
+import { getCategoryAppearance } from "@/utils/categoryAppearance";
 import { ProviderCard } from "@/components/ui/ProviderCard";
 import { Provider } from "@/data/services";
 import { useCategories } from "@/context/CategoriesContext";
@@ -39,6 +41,8 @@ function isValidMapCoord(latitude?: number, longitude?: number) {
 
 
 export default function ServiceProvidersScreen() {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { serviceId } = useLocalSearchParams<{ serviceId: string }>();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -60,6 +64,7 @@ export default function ServiceProvidersScreen() {
   const { getCategoryBySlug } = useCategories();
 
   const category = getCategoryBySlug(serviceId || "");
+  const categoryAppearance = category ? getCategoryAppearance(category, theme) : null;
 
   useEffect(() => {
     const loadLocation = async () => {
@@ -205,7 +210,7 @@ export default function ServiceProvidersScreen() {
     <View style={[styles.container, { paddingTop: topPad }]}>
       <View style={styles.header}>
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <Icon name="arrow-left" size={20} color={Colors.text} />
+          <Icon name="arrow-left" size={20} color={theme.colors.text} />
         </Pressable>
 
         <Pressable
@@ -217,7 +222,7 @@ export default function ServiceProvidersScreen() {
             } as any)
           }
         >
-          <Icon name="map" size={18} color={Colors.primary} />
+          <Icon name="map" size={18} color={theme.colors.primary} />
         </Pressable>
 
         <View style={styles.titleSection}>
@@ -225,13 +230,13 @@ export default function ServiceProvidersScreen() {
             <View
               style={[
                 styles.categoryIcon,
-                { backgroundColor: category.bgColor },
+                { backgroundColor: categoryAppearance?.background || theme.colors.surfaceAlt },
               ]}
             >
               <Icon
                 name={category.icon as any}
                 size={18}
-                color={category.color}
+                color={categoryAppearance?.accent || theme.colors.primary}
               />
             </View>
           )}
@@ -247,13 +252,13 @@ export default function ServiceProvidersScreen() {
 
       <View style={styles.searchWrap}>
         <View style={styles.searchBox}>
-          <Icon name="search" size={16} color={Colors.textMuted} />
+          <Icon name="search" size={16} color={theme.colors.textMuted} />
           <TextInput
             style={styles.searchInput}
             value={areaQuery}
             onChangeText={setAreaQuery}
             placeholder="Search area, sector, or provider"
-            placeholderTextColor={Colors.textMuted}
+            placeholderTextColor={theme.colors.textMuted}
           />
         </View>
 
@@ -321,7 +326,7 @@ export default function ServiceProvidersScreen() {
           <Icon
             name="check-circle"
             size={14}
-            color={onlyAvailable ? Colors.success : Colors.textMuted}
+            color={onlyAvailable ? theme.colors.success : theme.colors.textMuted}
           />
           <Text
             style={[
@@ -336,12 +341,12 @@ export default function ServiceProvidersScreen() {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={theme.colors.primary} />
           <Text style={styles.loadingText}>Finding workers...</Text>
         </View>
       ) : sorted.length === 0 ? (
         <View style={styles.emptyState}>
-          <Icon name="users" size={40} color={Colors.textMuted} />
+          <Icon name="users" size={40} color={theme.colors.textMuted} />
           <Text style={styles.emptyTitle}>No workers found</Text>
           <Text style={styles.emptySubtitle}>
             Try changing area or city filter.
@@ -359,13 +364,13 @@ export default function ServiceProvidersScreen() {
                 <Icon
                   name={isSaved(p.id) ? "heart" : "heart-outline"}
                   size={16}
-                  color={isSaved(p.id) ? "#E53935" : "#666"}
+                  color={isSaved(p.id) ? theme.colors.danger : theme.colors.textSecondary}
                 />
               </Pressable>
 
               {typeof p.distanceKm === "number" && (
                 <View style={styles.distanceBadge}>
-                  <Icon name="navigation" size={11} color={Colors.primary} />
+                  <Icon name="navigation" size={11} color={theme.colors.primary} />
                   <Text style={styles.distanceText}>
                     {p.distanceKm.toFixed(1)} km
                   </Text>
@@ -391,16 +396,16 @@ export default function ServiceProvidersScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
 
   header: {
-    backgroundColor: Colors.white,
+    backgroundColor: theme.colors.surface,
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 14,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: theme.colors.border,
   },
 
   backBtn: {
@@ -410,7 +415,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: Colors.background,
+    backgroundColor: theme.colors.background,
     alignItems: "center",
     justifyContent: "center",
     zIndex: 2,
@@ -420,7 +425,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 16,
     top: 16,
-    backgroundColor: "#fff",
+    backgroundColor: theme.colors.surface,
     padding: 10,
     borderRadius: 12,
     elevation: 5,
@@ -445,17 +450,17 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: "800",
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   subtitle: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     marginTop: 2,
   },
 
   searchWrap: {
-    backgroundColor: Colors.white,
+    backgroundColor: theme.colors.surface,
     paddingHorizontal: 16,
     paddingBottom: 12,
     gap: 12,
@@ -465,18 +470,18 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
 
   searchInput: {
     flex: 1,
     fontSize: 14,
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   cityRow: {
@@ -488,24 +493,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: Colors.background,
+    backgroundColor: theme.colors.background,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
 
   cityChipActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
   },
 
   cityChipText: {
     fontSize: 12,
     fontWeight: "600",
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   cityChipTextActive: {
-    color: "#fff",
+    color: theme.colors.onBrand,
   },
 
   filtersRow: {
@@ -526,24 +531,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 18,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
 
   sortChipActive: {
-    backgroundColor: Colors.secondary,
-    borderColor: Colors.secondary,
+    backgroundColor: theme.colors.secondary,
+    borderColor: theme.colors.secondary,
   },
 
   sortChipText: {
     fontSize: 12,
     fontWeight: "700",
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   sortChipTextActive: {
-    color: "#fff",
+    color: theme.colors.onBrand,
   },
 
   availableToggle: {
@@ -553,24 +558,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 18,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
 
   availableToggleActive: {
-    backgroundColor: Colors.success + "10",
-    borderColor: Colors.success + "40",
+    backgroundColor: theme.colors.success + "10",
+    borderColor: theme.colors.success + "40",
   },
 
   availableToggleText: {
     fontSize: 12,
     fontWeight: "700",
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   availableToggleTextActive: {
-    color: Colors.success,
+    color: theme.colors.success,
   },
 
   loadingContainer: {
@@ -582,7 +587,7 @@ const styles = StyleSheet.create({
 
   loadingText: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   emptyState: {
@@ -596,12 +601,12 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   emptySubtitle: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     textAlign: "center",
     lineHeight: 20,
   },
@@ -625,10 +630,10 @@ const styles = StyleSheet.create({
     right: 14,
     top: 14,
     zIndex: 5,
-    backgroundColor: "#fff",
+    backgroundColor: theme.colors.surface,
     borderRadius: 18,
     padding: 7,
-    shadowColor: "#000",
+    shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
@@ -643,11 +648,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "#fff",
+    backgroundColor: theme.colors.surface,
     paddingHorizontal: 8,
     paddingVertical: 5,
     borderRadius: 16,
-    shadowColor: "#000",
+    shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
@@ -657,6 +662,6 @@ const styles = StyleSheet.create({
   distanceText: {
     fontSize: 11,
     fontWeight: "700",
-    color: Colors.primary,
+    color: theme.colors.primary,
   },
 });

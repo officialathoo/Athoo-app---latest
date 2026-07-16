@@ -5,6 +5,7 @@ import { AppText } from "@/components/design";
 import { useTheme } from "@/context/ThemeContext";
 import { useLang } from "@/context/LanguageContext";
 import { ServiceCategory } from "@/data/services";
+import { getCategoryAppearance } from "@/utils/categoryAppearance";
 
 interface ServiceCardProps {
   service: ServiceCategory;
@@ -17,6 +18,7 @@ export function ServiceCard({ service, onPress, size = "md" }: ServiceCardProps)
   const { theme } = useTheme();
   const isSmall = size === "sm";
   const displayName = isUrdu ? service.nameUrdu : service.name;
+  const appearance = getCategoryAppearance(service, theme);
 
   return (
     <Pressable
@@ -45,11 +47,11 @@ export function ServiceCard({ service, onPress, size = "md" }: ServiceCardProps)
             width: isSmall ? 42 : 52,
             height: isSmall ? 42 : 52,
             borderRadius: theme.radius.md,
-            backgroundColor: service.bgColor,
+            backgroundColor: appearance.background,
           },
         ]}
       >
-        <Icon name={service.icon as any} size={isSmall ? 18 : 22} color={service.color} />
+        <Icon name={service.icon as any} size={isSmall ? 18 : 22} color={appearance.accent} />
       </View>
       <AppText
         variant="caption"

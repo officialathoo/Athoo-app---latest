@@ -122,6 +122,8 @@ adminRouter.patch("/:id", requirePermission("providers.write"), async (req: Auth
         : reviewNote,
       type: "system",
       link: "/profile",
+    
+      email: { category: "transactional" },
     }).catch(() => undefined);
     return res.json({ rateRequest: updated });
   } catch (e) {

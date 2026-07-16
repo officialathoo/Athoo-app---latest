@@ -13,7 +13,7 @@ function getStatusConfig(theme: AthooTheme, tr: (message: string) => string): Re
   return {
     pending: { label: tr("Pending"), color: theme.colors.warning, bg: theme.colors.warningSoft, icon: "clock" },
     accepted: { label: tr("Active"), color: theme.colors.info, bg: theme.colors.infoSoft, icon: "check-circle" },
-    in_progress: { label: tr("In Progress"), color: theme.colors.accent, bg: theme.dark ? "#33245A" : "#F5F3FF", icon: "play-circle" },
+    in_progress: { label: tr("In Progress"), color: theme.colors.accent, bg: theme.colors.surfaceAlt, icon: "play-circle" },
     completed: { label: tr("Completed"), color: theme.colors.success, bg: theme.colors.successSoft, icon: "check-circle" },
     cancelled: { label: tr("Cancelled"), color: theme.colors.danger, bg: theme.colors.dangerSoft, icon: "x-circle" },
   };
@@ -156,7 +156,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     metaText: { fontSize: 11, color: theme.colors.textMuted, writingDirection: isUrdu ? "rtl" : "ltr", textAlign: isUrdu ? "right" : "left" },
     contactBtn: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: theme.colors.infoSoft, borderRadius: theme.radius.md, minHeight: 44, paddingHorizontal: 12, paddingVertical: 9, borderWidth: 1, borderColor: theme.colors.focusRing, alignSelf: isUrdu ? "flex-end" : "flex-start" },
     contactBtnText: { fontSize: 12, fontWeight: "700", color: theme.colors.primary, writingDirection: isUrdu ? "rtl" : "ltr" },
-    rateHint: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 5, backgroundColor: theme.dark ? "#33245A" : "#F5F3FF", borderRadius: theme.radius.md, paddingHorizontal: 10, paddingVertical: 7, alignSelf: isUrdu ? "flex-end" : "flex-start" },
+    rateHint: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 5, backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md, paddingHorizontal: 10, paddingVertical: 7, alignSelf: isUrdu ? "flex-end" : "flex-start" },
     rateHintText: { fontSize: 11, fontWeight: "600", color: theme.colors.accent, writingDirection: isUrdu ? "rtl" : "ltr" },
   });
 }

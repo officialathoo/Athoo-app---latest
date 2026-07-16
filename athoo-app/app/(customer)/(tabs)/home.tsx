@@ -1,7 +1,7 @@
 import { Icon } from "@/components/ui/Icon";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState , useMemo} from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   Animated,
@@ -18,7 +18,6 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
-import { Colors } from "@/constants/colors";
 import { AnimatedCard } from "@/components/ui/AnimatedCard";
 import { ProviderCard } from "@/components/ui/ProviderCard";
 import { ServiceCard } from "@/components/ui/ServiceCard";
@@ -31,6 +30,7 @@ import { useCategories } from "@/context/CategoriesContext";
 import { api } from "@/services/api";
 import { AppText, CustomerHomeSkeleton } from "@/components/design";
 import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 
 type ApiBanner = {
   id: string;
@@ -88,6 +88,7 @@ export default function HomeScreen() {
   const { pendingAlerts, consumeNegAlerts } = useNegotiation();
   const { categories } = useCategories();
   const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -270,7 +271,7 @@ export default function HomeScreen() {
           <View>
             <Text style={[styles.greeting, localizedText, { color: theme.colors.text }]}>{tr("Hello, {{name}} 👋", { name: firstName })}</Text>
             <View style={styles.locationRow}>
-              <Icon name="map-pin" size={13} color={Colors.secondary} />
+              <Icon name="map-pin" size={13} color={theme.colors.secondary} />
               <Text style={[styles.location, { color: theme.colors.textSecondary }]}>{locationLabel}</Text>
             </View>
           </View>
@@ -295,11 +296,11 @@ export default function HomeScreen() {
           onPress={() => router.push("/(customer)/(tabs)/search")}
         >
           <View style={[styles.searchIconBg, { backgroundColor: theme.colors.surfaceAlt }]}>
-            <Icon name="search" size={16} color={Colors.primary} />
+            <Icon name="search" size={16} color={theme.colors.primary} />
           </View>
           <Text style={[styles.searchPlaceholder, localizedText, { color: theme.colors.textMuted }]}>{t.searchPlaceholder}</Text>
           <View style={[styles.filterBtn, { backgroundColor: theme.colors.surfaceAlt }]}>
-            <Icon name="sliders" size={15} color={Colors.primary} />
+            <Icon name="sliders" size={15} color={theme.colors.primary} />
           </View>
         </Pressable>
       </Animated.View>
@@ -329,7 +330,7 @@ export default function HomeScreen() {
           <>
         {homeError ? (
           <View style={styles.homeErrorCard} accessibilityRole="alert">
-            <Icon name="wifi-off" size={18} color={Colors.error} />
+            <Icon name="wifi-off" size={18} color={theme.colors.danger} />
             <Text style={[styles.homeErrorText, { color: theme.colors.text }]}>{tr(homeError)}</Text>
             <Pressable onPress={() => void loadFocusData("refresh")} accessibilityRole="button">
               <Text style={[styles.homeRetryText, { color: theme.colors.primary }]}>{tr("Retry")}</Text>
@@ -370,7 +371,7 @@ export default function HomeScreen() {
                     ) : null}
                     <View style={styles.bannerBtn}>
                       <Text style={styles.bannerBtnText}>{t.bookNow}</Text>
-                      <Icon name="arrow-right" size={12} color="#fff" />
+                      <Icon name="arrow-right" size={12} color={theme.colors.onBrand} />
                     </View>
                   </View>
                   <View style={styles.bannerIconCircle}>
@@ -400,7 +401,7 @@ export default function HomeScreen() {
               }
             >
               <LinearGradient
-                colors={["#1A6B1A", "#2D8A2D"]}
+                colors={[theme.colors.success, theme.colors.primaryPressed]}
                 style={styles.activeBroadcastGrad}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
@@ -426,7 +427,7 @@ export default function HomeScreen() {
 
                 <View style={styles.activeBroadcastBtn}>
                   <Text style={styles.activeBroadcastBtnText}>View</Text>
-                  <Icon name="arrow-right" size={13} color="#fff" />
+                  <Icon name="arrow-right" size={13} color={theme.colors.onBrand} />
                 </View>
               </LinearGradient>
             </Pressable>
@@ -441,7 +442,7 @@ export default function HomeScreen() {
             onPress={() => router.push("/(customer)/book-service" as any)}
           >
             <LinearGradient
-              colors={[Colors.secondary, "#D45A0E"]}
+              colors={[theme.colors.secondary, theme.colors.secondaryPressed]}
               style={styles.broadcastGrad}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
@@ -495,24 +496,24 @@ export default function HomeScreen() {
         <AnimatedCard delay={220}>
           <View style={styles.section}>
             <View style={styles.statsRow}>
-              <View style={[styles.statCard, { backgroundColor: Colors.surface }]}>
-                <Text style={[styles.statValue, { color: Colors.primary }]}>
+              <View style={[styles.statCard, { backgroundColor: theme.colors.surfaceAlt }]}>
+                <Text style={[styles.statValue, { color: theme.colors.primary }]}>
                   {platformStats.providerCount}+
                 </Text>
                 <Text style={[styles.statLabel, { color: theme.colors.textSecondary }, isUrdu && styles.urduText]}>
                   {t.workers}
                 </Text>
               </View>
-              <View style={[styles.statCard, { backgroundColor: "#FFF7ED" }]}>
-                <Text style={[styles.statValue, { color: Colors.secondary }]}>
+              <View style={[styles.statCard, { backgroundColor: theme.colors.premiumSoft }]}>
+                <Text style={[styles.statValue, { color: theme.colors.secondary }]}>
                   {platformStats.categoryCount}
                 </Text>
                 <Text style={[styles.statLabel, { color: theme.colors.textSecondary }, isUrdu && styles.urduText]}>
                   {t.services}
                 </Text>
               </View>
-              <View style={[styles.statCard, { backgroundColor: "#F0FDF4" }]}>
-                <Text style={[styles.statValue, { color: Colors.success }]}>
+              <View style={[styles.statCard, { backgroundColor: theme.colors.successSoft }]}>
+                <Text style={[styles.statValue, { color: theme.colors.success }]}>
                   {platformStats.avgRating}★
                 </Text>
                 <Text style={[styles.statLabel, { color: theme.colors.textSecondary }, isUrdu && styles.urduText]}>
@@ -572,7 +573,7 @@ export default function HomeScreen() {
             }
           >
             <LinearGradient
-              colors={[Colors.secondary, "#D45A0E"]}
+              colors={[theme.colors.secondary, theme.colors.secondaryPressed]}
               style={styles.negotiateGrad}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
@@ -592,7 +593,7 @@ export default function HomeScreen() {
                   >
                     {t.makeAnOffer}
                   </Text>
-                  <Icon name="arrow-right" size={13} color="#fff" />
+                  <Icon name="arrow-right" size={13} color={theme.colors.onBrand} />
                 </View>
               </View>
               <Icon
@@ -612,7 +613,7 @@ export default function HomeScreen() {
             >
               <View style={styles.emergencyLeft}>
                 <View style={styles.emergencyIcon}>
-                  <Icon name={(ec.icon || "phone-call") as any} size={20} color={Colors.error} />
+                  <Icon name={(ec.icon || "phone-call") as any} size={20} color={theme.colors.danger} />
                 </View>
                 <View>
                   <Text style={[styles.emergencyTitle, isUrdu && styles.urduText]}>
@@ -649,10 +650,10 @@ export default function HomeScreen() {
           <View style={[styles.announcementCard, { backgroundColor: theme.colors.elevated }]}>
             <View style={styles.announcementHeader}>
               <View style={styles.announcementIconBg}>
-                <Icon name="bell" size={22} color={Colors.primary} />
+                <Icon name="bell" size={22} color={theme.colors.primary} />
               </View>
               <Pressable style={[styles.announcementClose, { backgroundColor: theme.colors.surfaceAlt }]} onPress={dismissAnnouncement}>
-                <Icon name="x" size={18} color={Colors.textSecondary} />
+                <Icon name="x" size={18} color={theme.colors.textSecondary} />
               </Pressable>
             </View>
             <Text style={[styles.announcementTitle, { color: theme.colors.text }]}>{announcement?.title}</Text>
@@ -675,13 +676,13 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
   header: {
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     paddingHorizontal: 20,
     paddingBottom: 16,
-    shadowColor: "#000",
+    shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 12,
@@ -694,19 +695,19 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     marginBottom: 14,
   },
-  greeting: { fontSize: 20, fontWeight: "800", color: Colors.text },
+  greeting: { fontSize: 20, fontWeight: "800", color: theme.colors.text },
   locationRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     marginTop: 3,
   },
-  location: { fontSize: 12, color: Colors.textSecondary, fontWeight: "500" },
+  location: { fontSize: 12, color: theme.colors.textSecondary, fontWeight: "500" },
   notifBtn: {
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -717,41 +718,41 @@ const styles = StyleSheet.create({
     minWidth: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: Colors.error,
+    backgroundColor: theme.colors.danger,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 3,
   },
   notifBadgeText: {
     fontSize: 9,
-    color: "#fff",
+    color: theme.colors.onBrand,
     fontWeight: "800",
   },
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.background,
+    backgroundColor: theme.colors.background,
     borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 11,
     gap: 10,
     borderWidth: 1.5,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
   searchIconBg: {
     width: 30,
     height: 30,
     borderRadius: 9,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
   },
-  searchPlaceholder: { flex: 1, fontSize: 14, color: Colors.textMuted },
+  searchPlaceholder: { flex: 1, fontSize: 14, color: theme.colors.textMuted },
   filterBtn: {
     width: 34,
     height: 34,
     borderRadius: 10,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -768,7 +769,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   bannerContent: { flex: 1, justifyContent: "space-between" },
-  bannerTitle: { fontSize: 19, fontWeight: "800", color: "#fff" },
+  bannerTitle: { fontSize: 19, fontWeight: "800", color: theme.colors.onBrand },
   bannerSubtitle: {
     fontSize: 12,
     color: "rgba(255,255,255,0.8)",
@@ -784,7 +785,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 20,
   },
-  bannerBtnText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  bannerBtnText: { color: theme.colors.onBrand, fontSize: 12, fontWeight: "700" },
   bannerIconCircle: { position: "absolute", right: 14, bottom: 12 },
   section: { paddingHorizontal: 20, paddingTop: 22 },
   sectionHeader: {
@@ -793,8 +794,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 14,
   },
-  sectionTitle: { fontSize: 18, fontWeight: "800", color: Colors.text },
-  seeAll: { fontSize: 13, fontWeight: "600", color: Colors.primary },
+  sectionTitle: { fontSize: 18, fontWeight: "800", color: theme.colors.text },
+  seeAll: { fontSize: 13, fontWeight: "600", color: theme.colors.primary },
   servicesRow: { flexDirection: "row", gap: 10, paddingRight: 20 },
   statsRow: { flexDirection: "row", gap: 10 },
   statCard: {
@@ -805,7 +806,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   statValue: { fontSize: 20, fontWeight: "800" },
-  statLabel: { fontSize: 11, fontWeight: "600", color: Colors.textSecondary },
+  statLabel: { fontSize: 11, fontWeight: "600", color: theme.colors.textSecondary },
   negotiateCard: {
     marginHorizontal: 20,
     marginTop: 20,
@@ -819,7 +820,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   negotiateLeft: { flex: 1, gap: 6 },
-  negotiateTitle: { fontSize: 17, fontWeight: "800", color: "#fff" },
+  negotiateTitle: { fontSize: 17, fontWeight: "800", color: theme.colors.onBrand },
   negotiateSubtitle: {
     fontSize: 12,
     color: "rgba(255,255,255,0.8)",
@@ -836,59 +837,59 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     marginTop: 4,
   },
-  negotiateBtnText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  negotiateBtnText: { color: theme.colors.onBrand, fontSize: 12, fontWeight: "700" },
   emergencyCard: {
     margin: 20,
-    backgroundColor: Colors.error + "10",
+    backgroundColor: theme.colors.danger + "10",
     borderRadius: 20,
     padding: 18,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     borderWidth: 1,
-    borderColor: Colors.error + "30",
+    borderColor: theme.colors.danger + "30",
   },
   emergencyLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
   emergencyIcon: {
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: Colors.error + "15",
+    backgroundColor: theme.colors.danger + "15",
     alignItems: "center",
     justifyContent: "center",
   },
-  emergencyTitle: { fontSize: 14, fontWeight: "800", color: Colors.error },
+  emergencyTitle: { fontSize: 14, fontWeight: "800", color: theme.colors.danger },
   emergencySubtitle: {
     fontSize: 11,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     marginTop: 2,
   },
   emergencyCallBtn: {
-    backgroundColor: Colors.error,
+    backgroundColor: theme.colors.danger,
     paddingHorizontal: 16,
     paddingVertical: 9,
     borderRadius: 20,
   },
-  emergencyCallText: { fontSize: 13, fontWeight: "700", color: "#fff" },
+  emergencyCallText: { fontSize: 13, fontWeight: "700", color: theme.colors.onBrand },
   homeErrorCard: {
     marginHorizontal: 20,
     marginTop: 12,
     padding: 14,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: Colors.error + "35",
-    backgroundColor: Colors.error + "0D",
+    borderColor: theme.colors.danger + "35",
+    backgroundColor: theme.colors.danger + "0D",
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
   },
   homeErrorText: {
     flex: 1,
-    color: Colors.text,
+    color: theme.colors.text,
     fontSize: 12,
     lineHeight: 17,
   },
-  homeRetryText: { color: Colors.primary, fontSize: 12, fontWeight: "800" },
+  homeRetryText: { color: theme.colors.primary, fontSize: 12, fontWeight: "800" },
   urduText: {
     fontFamily: "System",
     writingDirection: "rtl",
@@ -900,7 +901,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     borderRadius: 18,
     overflow: "hidden",
-    shadowColor: "#1A6B1A",
+    shadowColor: theme.colors.success,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 10,
@@ -924,13 +925,13 @@ const styles = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: "#6EFF6E",
+    backgroundColor: theme.colors.successSoft,
   },
   liveDotInner: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: "#fff",
+    backgroundColor: theme.colors.surface,
   },
   activeBroadcastLabel: {
     fontSize: 9,
@@ -942,7 +943,7 @@ const styles = StyleSheet.create({
   activeBroadcastService: {
     fontSize: 15,
     fontWeight: "800",
-    color: "#fff",
+    color: theme.colors.onBrand,
   },
   activeBroadcastSub: {
     fontSize: 11,
@@ -961,7 +962,7 @@ const styles = StyleSheet.create({
   activeBroadcastBtnText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#fff",
+    color: theme.colors.onBrand,
   },
 
   broadcastCTA: {
@@ -976,7 +977,7 @@ const styles = StyleSheet.create({
     padding: 18,
     gap: 12,
   },
-  broadcastCTATitle: { fontSize: 17, fontWeight: "800", color: "#fff" },
+  broadcastCTATitle: { fontSize: 17, fontWeight: "800", color: theme.colors.onBrand },
   broadcastCTASub: {
     fontSize: 12,
     color: "rgba(255,255,255,0.85)",
@@ -1000,12 +1001,12 @@ const styles = StyleSheet.create({
     padding: 28,
   },
   announcementCard: {
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderRadius: 24,
     padding: 24,
     width: "100%",
     maxWidth: 380,
-    shadowColor: "#000",
+    shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.18,
     shadowRadius: 24,
@@ -1021,7 +1022,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: Colors.primary + "15",
+    backgroundColor: theme.colors.primary + "15",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1029,29 +1030,29 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 10,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
   },
   announcementTitle: {
     fontSize: 17,
     fontWeight: "800",
-    color: Colors.text,
+    color: theme.colors.text,
   },
   announcementMessage: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     lineHeight: 22,
   },
   announcementBtn: {
-    backgroundColor: Colors.primary,
+    backgroundColor: theme.colors.primary,
     borderRadius: 14,
     paddingVertical: 13,
     alignItems: "center",
     marginTop: 4,
   },
   announcementBtnText: {
-    color: "#fff",
+    color: theme.colors.onBrand,
     fontWeight: "700",
     fontSize: 15,
   },

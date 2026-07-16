@@ -6,7 +6,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { pickFromCamera, pickFromGallery } from "@/utils/mediaPicker";
 import * as Location from "expo-location";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState , useMemo} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -19,14 +19,17 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
+import { getCategoryAppearance } from "@/utils/categoryAppearance";
 import { type ServiceCategory } from "@/data/services";
 import { useCategories } from "@/context/CategoriesContext";
 import { api } from "@/services/api";
 import { uploadPickedImage, type UploadProgress } from "@/services/storage";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { searchAddress, reverseGeocode } from "@/services/maps";
+import { reverseGeocode } from "@/services/maps";
+import { LocationSearchPicker, type LocationSelection } from "@/components/maps/LocationSearchPicker";
 import { getFastForegroundLocation } from "@/services/location";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -60,6 +63,9 @@ function getDates() {
 const STEPS = ["Category", "Location", "Details", "Schedule", "Offer"];
 
 export default function BookServiceScreen() {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const liveConsentStyles = useMemo(() => createLiveConsentStyles(theme), [theme]);
   const {
     serviceId: paramServiceId,
     pickedAddress: paramPickedAddress,
@@ -112,10 +118,8 @@ export default function BookServiceScreen() {
 
   const initialAddress = paramPickedAddress || paramPrefillAddress || "";
   const [address, setAddress] = useState(initialAddress);
-  const [addressQuery, setAddressQuery] = useState(initialAddress);
-  const [addressSuggestions, setAddressSuggestions] = useState<{ label: string; lat: number; lng: number; useAsTyped?: boolean }[]>([]);
   const [loadingAddress, setLoadingAddress] = useState(false);
-  const [searchingAddress, setSearchingAddress] = useState(false);
+  const [locationPickerVisible, setLocationPickerVisible] = useState(false);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(
     paramPickedLat && paramPickedLng
       ? { latitude: parseFloat(paramPickedLat), longitude: parseFloat(paramPickedLng) }
@@ -183,7 +187,6 @@ export default function BookServiceScreen() {
   const [manualDetails, setManualDetails] = useState("");
   const [reversingGeo, setReversingGeo] = useState(false);
   const [gpsAccuracyText, setGpsAccuracyText] = useState("");
-  const mapRef = useRef<any | null>(null);
 
   const [promoCode, setPromoCode] = useState("");
   const [promoValidating, setPromoValidating] = useState(false);
@@ -195,35 +198,30 @@ export default function BookServiceScreen() {
   const broadcastRequestIdRef = useRef<string | null>(null);
   const [broadcastId, setBroadcastId] = useState<string | null>(null);
 
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    if (!addressQuery.trim() || addressQuery.length < 3) {
-      setAddressSuggestions([]);
-      return;
+  const applyLocationSelection = (selection: LocationSelection) => {
+    setAddress(selection.address);
+    setUserLocation({ latitude: selection.latitude, longitude: selection.longitude });
+    if (selection.accuracy != null) {
+      setGpsAccuracyText(`GPS: ±${Math.round(selection.accuracy)} m`);
+    } else {
+      setGpsAccuracyText("");
     }
-    searchTimer.current = setTimeout(async () => {
-      setSearchingAddress(true);
-      const results = await searchAddress(addressQuery);
-      setAddressSuggestions(results);
-      setSearchingAddress(false);
-    }, 500);
-    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
-  }, [addressQuery]);
+  };
 
   const detectCurrentLocation = async () => {
     setLoadingAddress(true);
     setGpsAccuracyText("Acquiring GPS…");
     try {
       const result = await getFastForegroundLocation({
-        timeoutMs: 8_000,
-        requiredAccuracy: 1_000,
+        timeoutMs: 12_000,
+        maxCacheAgeMs: 5 * 60 * 1000,
+        requiredAccuracy: 150,
+        freshAccuracy: "high",
         rationaleTitle: "Location permission",
         rationaleBody: "ATHOO uses your location to auto-detect your address so the provider can find you.",
       });
-      setGpsAccuracyText("");
       if (!result.location) {
+        setGpsAccuracyText("");
         showError("Location Error", "Could not detect your location. Please check GPS or search your address manually.");
         return;
       }
@@ -236,12 +234,10 @@ export default function BookServiceScreen() {
 
       const { label: resolved } = await smartReverseGeocode(coords.latitude, coords.longitude);
       setAddress(resolved);
-      setAddressQuery(resolved);
-      setAddressSuggestions([]);
     } catch {
+      setGpsAccuracyText("");
       showError("Location Error", "Could not detect your location.");
     } finally {
-      setGpsAccuracyText("");
       setLoadingAddress(false);
     }
   };
@@ -341,7 +337,6 @@ export default function BookServiceScreen() {
     try {
       const { label } = await smartReverseGeocode(latitude, longitude);
       setAddress(label);
-      setAddressQuery(label);
     } catch { /* keep old address label */ }
     finally { setReversingGeo(false); }
   };
@@ -572,7 +567,7 @@ export default function BookServiceScreen() {
     return (
       <View style={[styles.container, styles.successWrap, { paddingTop: topPad }]}>
         <View style={styles.successCircle}>
-          <Icon name="send" size={40} color="#fff" />
+          <Icon name="send" size={40} color={theme.colors.onBrand} />
         </View>
         <Text style={styles.successTitle}>Request Broadcast!</Text>
         <Text style={styles.successSub}>
@@ -584,7 +579,7 @@ export default function BookServiceScreen() {
             router.replace({ pathname: "/(customer)/broadcast-status", params: { requestId: broadcastId } } as any)
           }
         >
-          <Icon name="users" size={18} color="#fff" />
+          <Icon name="users" size={18} color={theme.colors.onBrand} />
           <Text style={styles.btnText}>View Provider Responses</Text>
         </Pressable>
         <Pressable style={styles.homeBtn} onPress={() => router.replace("/(customer)/(tabs)/home" as any)}>
@@ -598,7 +593,7 @@ export default function BookServiceScreen() {
     <View style={[styles.container, { paddingTop: topPad }]}>
       <View style={styles.header}>
         <Pressable style={styles.backBtn} onPress={() => (step > 0 ? setStep(step - 1) : router.back())}>
-          <Icon name="arrow-left" size={20} color={Colors.text} />
+          <Icon name="arrow-left" size={20} color={theme.colors.text} />
         </Pressable>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Book a Service</Text>
@@ -618,9 +613,18 @@ export default function BookServiceScreen() {
         </View>
       </View>
 
+      <LocationSearchPicker
+        visible={locationPickerVisible}
+        onClose={() => setLocationPickerVisible(false)}
+        onSelect={applyLocationSelection}
+        onChooseOnMap={() => void detectCurrentLocation()}
+        bias={userLocation}
+        savedLocations={savedAddresses}
+      />
+
       {paramPreviousBookingId ? (
         <View style={styles.repeatNotice} testID="repeat-booking-prefill-notice">
-          <Icon name="repeat" size={16} color={Colors.primary} />
+          <Icon name="repeat" size={16} color={theme.colors.primary} />
           <Text style={styles.repeatNoticeText}>
             Reviewing a repeat booking{paramServiceName ? ` for ${paramServiceName}` : ""}. Confirm the date, time, address, and price before submitting.
           </Text>
@@ -640,16 +644,17 @@ export default function BookServiceScreen() {
             <View style={styles.grid}>
               {categories.map((cat) => {
                 const sel = selectedCategory?.id === cat.id;
+                const appearance = getCategoryAppearance(cat, theme);
                 return (
                   <Pressable
                     key={cat.id}
-                    style={[styles.catCard, { borderColor: sel ? cat.color : Colors.border }, sel && styles.catCardActive]}
+                    style={[styles.catCard, { borderColor: sel ? appearance.accent : theme.colors.border }, sel && styles.catCardActive]}
                     onPress={() => setSelectedCategory(cat)}
                   >
-                    <View style={[styles.catIcon, { backgroundColor: sel ? cat.color : cat.bgColor }]}>
-                      <Icon name={cat.icon as any} size={22} color={sel ? "#fff" : cat.color} />
+                    <View style={[styles.catIcon, { backgroundColor: sel ? appearance.accent : appearance.background }]}>
+                      <Icon name={cat.icon as any} size={22} color={sel ? appearance.onAccent : appearance.accent} />
                     </View>
-                    <Text style={[styles.catName, sel && { color: cat.color, fontWeight: "800" }]}>{cat.name}</Text>
+                    <Text style={[styles.catName, sel && { color: appearance.accent, fontWeight: "800" }]}>{cat.name}</Text>
                     <Text style={styles.catDesc} numberOfLines={2}>{cat.description}</Text>
                   </Pressable>
                 );
@@ -676,14 +681,12 @@ export default function BookServiceScreen() {
                           style={[styles.savedChip, isActive && styles.savedChipActive]}
                           onPress={() => {
                             setAddress(sa.address);
-                            setAddressQuery(sa.address);
-                            setAddressSuggestions([]);
                             if (sa.latitude && sa.longitude) {
                               setUserLocation({ latitude: sa.latitude, longitude: sa.longitude });
                             }
                           }}
                         >
-                          <Icon name="bookmark" size={12} color={isActive ? "#fff" : Colors.primary} />
+                          <Icon name="bookmark" size={12} color={isActive ? theme.colors.onBrand : theme.colors.primary} />
                           <Text style={[styles.savedChipText, isActive && styles.savedChipTextActive]} numberOfLines={1}>
                             {sa.label || sa.address}
                           </Text>
@@ -695,55 +698,41 @@ export default function BookServiceScreen() {
               </View>
             )}
 
-            <View style={styles.searchBar}>
-              <Icon name="search" size={16} color={Colors.textMuted} />
-              <TextInput
-                style={styles.searchInput}
-                value={addressQuery}
-                onChangeText={(v) => { setAddressQuery(v); setAddress(v); }}
-                placeholder="Search area, street, landmark..."
-                placeholderTextColor={Colors.textMuted}
-                autoFocus
-              />
-              {searchingAddress && <ActivityIndicator size="small" color={Colors.primary} />}
-              {addressQuery.length > 0 && !searchingAddress && (
-                <Pressable onPress={() => { setAddressQuery(""); setAddress(""); setAddressSuggestions([]); setUserLocation(null); }}>
-                  <Icon name="x" size={15} color={Colors.textMuted} />
-                </Pressable>
-              )}
-            </View>
-
-            {addressSuggestions.length > 0 && (
-              <View style={styles.suggestBox}>
-                {addressSuggestions.map((s, i) => (
-                  <Pressable
-                    key={i}
-                    style={[styles.suggestRow, i < addressSuggestions.length - 1 && styles.suggestBorder, s.useAsTyped && styles.suggestRowTyped]}
-                    onPress={() => {
-                      setAddress(s.label);
-                      setAddressQuery(s.label);
-                      if (s.lat !== 0 || s.lng !== 0) {
-                        setUserLocation({ latitude: s.lat, longitude: s.lng });
-                      }
-                      setAddressSuggestions([]);
-                    }}
-                  >
-                    <Icon name={s.useAsTyped ? "edit-2" : "map-pin"} size={13} color={s.useAsTyped ? Colors.textSecondary : Colors.primary} />
-                    <View style={{ flex: 1 }}>
-                      {s.useAsTyped && (
-                        <Text style={styles.suggestTypedHint}>Use as typed address</Text>
-                      )}
-                      <Text style={[styles.suggestText, s.useAsTyped && styles.suggestTextTyped]} numberOfLines={2}>{s.label}</Text>
-                    </View>
-                  </Pressable>
-                ))}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Search and choose service location"
+              style={styles.searchBar}
+              onPress={() => setLocationPickerVisible(true)}
+            >
+              <Icon name="search" size={16} color={theme.colors.textMuted} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.searchInput, !address && { color: theme.colors.textMuted }]} numberOfLines={2}>
+                  {address || "Search street, area, landmark or city..."}
+                </Text>
               </View>
-            )}
+              {address ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear selected address"
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    setAddress("");
+                    setUserLocation(null);
+                    setGpsAccuracyText("");
+                  }}
+                  style={{ padding: 8 }}
+                >
+                  <Icon name="x" size={15} color={theme.colors.textMuted} />
+                </Pressable>
+              ) : (
+                <Icon name="chevron-right" size={18} color={theme.colors.textMuted} />
+              )}
+            </Pressable>
 
             <Pressable style={styles.detectBtn} onPress={detectCurrentLocation} disabled={loadingAddress}>
               {loadingAddress
-                ? <ActivityIndicator size="small" color={Colors.primary} />
-                : <Icon name="navigation" size={15} color={Colors.primary} />}
+                ? <ActivityIndicator size="small" color={theme.colors.primary} />
+                : <Icon name="navigation" size={15} color={theme.colors.primary} />}
               <Text style={styles.detectText}>
                 {loadingAddress ? (gpsAccuracyText || "Detecting location…") : "Use Current Location"}
               </Text>
@@ -752,16 +741,16 @@ export default function BookServiceScreen() {
             {userLocation && (
               <View style={styles.mapCard}>
                 <View style={styles.mapCardHeader}>
-                  <Icon name="map-pin" size={13} color={Colors.primary} />
+                  <Icon name="map-pin" size={13} color={theme.colors.primary} />
                   <Text style={styles.mapCardTitle}>Confirm Job Location</Text>
-                  {reversingGeo && <ActivityIndicator size="small" color={Colors.primary} style={{ marginLeft: "auto" }} />}
+                  {reversingGeo && <ActivityIndicator size="small" color={theme.colors.primary} style={{ marginLeft: "auto" }} />}
                 </View>
                 <Text style={styles.mapCardHint}>Drag the pin to fine-tune your exact location</Text>
                 <View style={styles.mapWrap}>
                   <AthooMapFallback latitude={userLocation.latitude} longitude={userLocation.longitude} draggable onCoordinateChange={(latitude, longitude) => void onPinDragEnd({ nativeEvent: { coordinate: { latitude, longitude } } })} />
                 </View>
                 <View style={styles.addrPreview}>
-                  <Icon name="check-circle" size={13} color={Colors.success} />
+                  <Icon name="check-circle" size={13} color={theme.colors.success} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.addrLabel}>
                       {reversingGeo ? "Updating address…" : "Detected address"}
@@ -779,7 +768,7 @@ export default function BookServiceScreen() {
             {(userLocation || address.trim().length > 5) && (
               <View style={styles.manualCard}>
                 <View style={styles.manualCardHeader}>
-                  <Icon name="edit-3" size={13} color={Colors.secondary} />
+                  <Icon name="edit-3" size={13} color={theme.colors.secondary} />
                   <Text style={styles.manualCardTitle}>
                     Add House / Street / Landmark
                   </Text>
@@ -793,13 +782,13 @@ export default function BookServiceScreen() {
                   value={manualDetails}
                   onChangeText={setManualDetails}
                   placeholder="House no., street, floor, shop name, landmark…"
-                  placeholderTextColor={Colors.textMuted}
+                  placeholderTextColor={theme.colors.textMuted}
                   returnKeyType="done"
                   maxLength={120}
                 />
                 {addressIsCityOnly && (
                   <View style={styles.cityOnlyWarn}>
-                    <Icon name="alert-triangle" size={12} color={Colors.warning} />
+                    <Icon name="alert-triangle" size={12} color={theme.colors.warning} />
                     <Text style={styles.cityOnlyWarnText}>
                       Address looks like only a city name. Adding house/street details helps the provider find you.
                     </Text>
@@ -810,7 +799,7 @@ export default function BookServiceScreen() {
 
             {address.trim().length > 0 && !userLocation && (
               <View style={styles.addrPreviewNoMap}>
-                <Icon name="alert-circle" size={13} color={Colors.warning} />
+                <Icon name="alert-circle" size={13} color={theme.colors.warning} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.addrLabel}>Address entered (no GPS pin)</Text>
                   <Text style={styles.addrText}>{address}</Text>
@@ -831,7 +820,7 @@ export default function BookServiceScreen() {
                 value={description}
                 onChangeText={setDescription}
                 placeholder={"E.g. \"Kitchen pipe is leaking under the sink, started 2 days ago...\""}
-                placeholderTextColor={Colors.textMuted}
+                placeholderTextColor={theme.colors.textMuted}
                 multiline
                 numberOfLines={5}
                 textAlignVertical="top"
@@ -844,10 +833,10 @@ export default function BookServiceScreen() {
             {videoUri ? (
               <View>
                 <View style={styles.videoChosen}>
-                  <Icon name="video" size={18} color={Colors.success} />
+                  <Icon name="video" size={18} color={theme.colors.success} />
                   <Text style={styles.videoChosenText}>Video attached</Text>
                   <Pressable onPress={() => { setVideoUri(null); setVideoUploadProgress(null); }} style={{ padding: 4 }}>
-                    <Icon name="x" size={16} color={Colors.error} />
+                    <Icon name="x" size={16} color={theme.colors.danger} />
                   </Pressable>
                 </View>
                 {videoUploadProgress ? (
@@ -864,11 +853,11 @@ export default function BookServiceScreen() {
             ) : (
               <View style={styles.videoBtns}>
                 <Pressable style={styles.videoBtn} onPress={() => pickVideo(true)}>
-                  <Icon name="camera" size={17} color={Colors.primary} />
+                  <Icon name="camera" size={17} color={theme.colors.primary} />
                   <Text style={styles.videoBtnText}>Record</Text>
                 </Pressable>
                 <Pressable style={styles.videoBtn} onPress={() => pickVideo(false)}>
-                  <Icon name="film" size={17} color={Colors.primary} />
+                  <Icon name="film" size={17} color={theme.colors.primary} />
                   <Text style={styles.videoBtnText}>Gallery</Text>
                 </Pressable>
               </View>
@@ -908,7 +897,7 @@ export default function BookServiceScreen() {
             {/* Materials & spare parts notice */}
             <View style={styles.materialsWarning}>
               <View style={styles.materialsWarningHeader}>
-                <Icon name="alert-triangle" size={15} color="#92400E" />
+                <Icon name="alert-triangle" size={15} color={theme.colors.warning} />
                 <Text style={styles.materialsWarningTitle}>Important — Materials Not Included</Text>
               </View>
               <Text style={styles.materialsWarningText}>
@@ -925,19 +914,19 @@ export default function BookServiceScreen() {
                     <View style={styles.chargesCard}>
                       <Text style={styles.chargesTitle}>Provider Rate</Text>
                       <View style={[styles.chargesRow, { borderBottomWidth: 0 }]}>
-                        <View style={[styles.chargesIcon, { backgroundColor: Colors.primary + "18" }]}>
-                          <Icon name="clock" size={13} color={Colors.primary} />
+                        <View style={[styles.chargesIcon, { backgroundColor: theme.colors.primary + "18" }]}>
+                          <Icon name="clock" size={13} color={theme.colors.primary} />
                         </View>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.chargesLabel}>Hourly Rate</Text>
                           <Text style={styles.chargesSub}>Rate set by this provider</Text>
                         </View>
-                        <Text style={[styles.chargesAmt, { color: Colors.primary }]}>
+                        <Text style={[styles.chargesAmt, { color: theme.colors.primary }]}>
                           Rs. {providerRateNum.toLocaleString()}/hr
                         </Text>
                       </View>
                       <View style={styles.chargesNote}>
-                        <Icon name="info" size={12} color={Colors.textMuted} />
+                        <Icon name="info" size={12} color={theme.colors.textMuted} />
                         <Text style={styles.chargesNoteText}>
                           Hourly rate applies to actual work time only. Your offer below is a per-hour labor/service rate, not the full job price.
                         </Text>
@@ -949,7 +938,7 @@ export default function BookServiceScreen() {
                   <View style={styles.chargesCard}>
                     <Text style={styles.chargesTitle}>Provider Rate</Text>
                     <View style={styles.chargesNote}>
-                      <Icon name="alert-triangle" size={12} color={Colors.warning} />
+                      <Icon name="alert-triangle" size={12} color={theme.colors.warning} />
                       <Text style={styles.chargesNoteText}>
                         This provider hasn&apos;t set an hourly rate yet. Please contact Athoo support or choose another provider.
                       </Text>
@@ -961,7 +950,7 @@ export default function BookServiceScreen() {
                 <View style={styles.chargesCard}>
                   <Text style={styles.chargesTitle}>Provider Rates</Text>
                   <View style={styles.chargesNote}>
-                    <Icon name="info" size={12} color={Colors.textMuted} />
+                    <Icon name="info" size={12} color={theme.colors.textMuted} />
                     <Text style={styles.chargesNoteText}>
                       Each provider sets their own hourly rate. You&apos;ll see every provider&apos;s rate when they respond to your request.
                     </Text>
@@ -980,7 +969,7 @@ export default function BookServiceScreen() {
                 value={offerHourlyRate}
                 onChangeText={(v) => setOfferHourlyRate(v.replace(/[^0-9]/g, ""))}
                 placeholder="0"
-                placeholderTextColor={Colors.textMuted}
+                placeholderTextColor={theme.colors.textMuted}
                 keyboardType="numeric"
                 returnKeyType="done"
               />
@@ -1016,7 +1005,7 @@ export default function BookServiceScreen() {
                 value={travelCharge}
                 onChangeText={(v) => setTravelCharge(v.replace(/[^0-9]/g, ""))}
                 placeholder="0"
-                placeholderTextColor={Colors.textMuted}
+                placeholderTextColor={theme.colors.textMuted}
                 keyboardType="numeric"
                 returnKeyType="done"
               />
@@ -1048,7 +1037,7 @@ export default function BookServiceScreen() {
                     setAppliedPromo(null);
                   }}
                   placeholder="Enter promo code"
-                  placeholderTextColor={Colors.textMuted}
+                  placeholderTextColor={theme.colors.textMuted}
                   autoCapitalize="characters"
                   returnKeyType="done"
                   onSubmitEditing={validatePromo}
@@ -1059,7 +1048,7 @@ export default function BookServiceScreen() {
                     style={styles.promoRemoveBtn}
                     onPress={() => { setAppliedPromo(null); setPromoCode(""); setPromoError(""); }}
                   >
-                    <Icon name="x" size={16} color={Colors.error} />
+                    <Icon name="x" size={16} color={theme.colors.danger} />
                   </Pressable>
                 ) : (
                   <Pressable
@@ -1068,7 +1057,7 @@ export default function BookServiceScreen() {
                     disabled={!promoCode.trim() || promoValidating}
                   >
                     {promoValidating
-                      ? <ActivityIndicator size="small" color="#fff" />
+                      ? <ActivityIndicator size="small" color={theme.colors.onBrand} />
                       : <Text style={styles.promoBtnText}>Apply</Text>
                     }
                   </Pressable>
@@ -1076,7 +1065,7 @@ export default function BookServiceScreen() {
               </View>
               {appliedPromo && (
                 <View style={styles.promoSuccess}>
-                  <Icon name="check-circle" size={15} color={Colors.success} />
+                  <Icon name="check-circle" size={15} color={theme.colors.success} />
                   <Text style={styles.promoSuccessText}>
                     {appliedPromo.discountType === "fixed"
                       ? `Rs. ${appliedPromo.discountValue.toLocaleString()} discount applied!`
@@ -1087,7 +1076,7 @@ export default function BookServiceScreen() {
               )}
               {promoError ? (
                 <View style={styles.promoErrorRow}>
-                  <Icon name="alert-circle" size={13} color={Colors.error} />
+                  <Icon name="alert-circle" size={13} color={theme.colors.danger} />
                   <Text style={styles.promoErrorText}>{promoError}</Text>
                 </View>
               ) : null}
@@ -1120,32 +1109,32 @@ export default function BookServiceScreen() {
                 },
               ].map((row) => (
                 <View key={row.label} style={styles.summaryRow}>
-                  <Icon name={row.icon as any} size={13} color={Colors.primary} />
+                  <Icon name={row.icon as any} size={13} color={theme.colors.primary} />
                   <Text style={styles.summaryLbl}>{row.label}</Text>
-                  <Text style={[styles.summaryVal, row.highlight && { color: Colors.secondary, fontWeight: "800" }]} numberOfLines={2}>
+                  <Text style={[styles.summaryVal, row.highlight && { color: theme.colors.secondary, fontWeight: "800" }]} numberOfLines={2}>
                     {row.val}
                   </Text>
                 </View>
               ))}
               {description.trim() && (
                 <View style={styles.summaryRow}>
-                  <Icon name="file-text" size={13} color={Colors.primary} />
+                  <Icon name="file-text" size={13} color={theme.colors.primary} />
                   <Text style={styles.summaryLbl}>Details</Text>
                   <Text style={styles.summaryVal} numberOfLines={2}>{description}</Text>
                 </View>
               )}
               {videoUri && (
                 <View style={styles.summaryRow}>
-                  <Icon name="video" size={13} color={Colors.success} />
+                  <Icon name="video" size={13} color={theme.colors.success} />
                   <Text style={styles.summaryLbl}>Video</Text>
-                  <Text style={[styles.summaryVal, { color: Colors.success }]}>Attached</Text>
+                  <Text style={[styles.summaryVal, { color: theme.colors.success }]}>Attached</Text>
                 </View>
               )}
               {appliedPromo && (
                 <View style={styles.summaryRow}>
-                  <Icon name="tag" size={13} color={Colors.success} />
+                  <Icon name="tag" size={13} color={theme.colors.success} />
                   <Text style={styles.summaryLbl}>Promo</Text>
-                  <Text style={[styles.summaryVal, { color: Colors.success, fontWeight: "800" }]}>
+                  <Text style={[styles.summaryVal, { color: theme.colors.success, fontWeight: "800" }]}>
                     {appliedPromo.code} ·{" "}
                     {appliedPromo.discountType === "fixed"
                       ? `Rs. ${appliedPromo.discountValue.toLocaleString()} off`
@@ -1156,7 +1145,7 @@ export default function BookServiceScreen() {
             </View>
 
             <View style={styles.noteBox}>
-              <Icon name="info" size={13} color={Colors.primary} />
+              <Icon name="info" size={13} color={theme.colors.primary} />
               <Text style={styles.noteText}>
                 Your request will be broadcast to all nearby {selectedCategory?.name}s. You'll receive responses within minutes and pick your preferred provider — just like InDrive.
               </Text>
@@ -1173,7 +1162,7 @@ export default function BookServiceScreen() {
             disabled={!canProceed()}
           >
             <Text style={styles.btnText}>Continue</Text>
-            <Icon name="arrow-right" size={18} color="#fff" />
+            <Icon name="arrow-right" size={18} color={theme.colors.onBrand} />
           </Pressable>
         ) : (
           <Pressable
@@ -1183,12 +1172,12 @@ export default function BookServiceScreen() {
           >
             {submitting ? (
               <>
-                <ActivityIndicator size="small" color="#fff" />
+                <ActivityIndicator size="small" color={theme.colors.onBrand} />
                 <Text style={styles.btnText}>{uploadingVideo ? `Uploading video ${videoUploadProgress?.percent ?? 0}%` : isDirectBooking ? "Booking..." : "Broadcasting..."}</Text>
               </>
             ) : (
               <>
-                <Icon name="send" size={18} color="#fff" />
+                <Icon name="send" size={18} color={theme.colors.onBrand} />
                 <Text style={styles.btnText}>Broadcast Request</Text>
               </>
             )}
@@ -1199,8 +1188,8 @@ export default function BookServiceScreen() {
       {showMaterialsDisclaimer ? (
         <View style={liveConsentStyles.backdrop}>
           <View style={[liveConsentStyles.card, { maxHeight: "85%" }]}>
-            <View style={[liveConsentStyles.iconBox, { backgroundColor: "#D97706" }]}>
-              <Icon name="alert-triangle" size={22} color="#fff" />
+            <View style={[liveConsentStyles.iconBox, { backgroundColor: theme.colors.warning }]}>
+              <Icon name="alert-triangle" size={22} color={theme.colors.onBrand} />
             </View>
             <Text style={liveConsentStyles.title}>Important Notice</Text>
             <ScrollView style={{ maxHeight: 280 }} showsVerticalScrollIndicator={false}>
@@ -1225,7 +1214,7 @@ export default function BookServiceScreen() {
               onPress={() => setMaterialsAccepted(!materialsAccepted)}
             >
               <View style={[styles.materialsCheckbox, materialsAccepted && styles.materialsCheckboxChecked]}>
-                {materialsAccepted && <Icon name="check" size={12} color="#fff" />}
+                {materialsAccepted && <Icon name="check" size={12} color={theme.colors.onBrand} />}
               </View>
               <Text style={styles.materialsCheckLabel}>I Understand and Agree</Text>
             </Pressable>
@@ -1248,7 +1237,7 @@ export default function BookServiceScreen() {
         <View style={liveConsentStyles.backdrop}>
           <View style={liveConsentStyles.card}>
             <View style={liveConsentStyles.iconBox}>
-              <Icon name="map-pin" size={22} color="#fff" />
+              <Icon name="map-pin" size={22} color={theme.colors.onBrand} />
             </View>
             <Text style={liveConsentStyles.title}>Share live location with the provider?</Text>
             <Text style={liveConsentStyles.body}>
@@ -1272,303 +1261,303 @@ export default function BookServiceScreen() {
   );
 }
 
-const liveConsentStyles = StyleSheet.create({
+const createLiveConsentStyles = (theme: AthooTheme) => StyleSheet.create({
   backdrop: { position: "absolute", top: 0, bottom: 0, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.55)", padding: 20, justifyContent: "center", zIndex: 200 },
-  card: { backgroundColor: Colors.white, borderRadius: 20, padding: 22, gap: 12 },
-  iconBox: { width: 48, height: 48, borderRadius: 14, backgroundColor: Colors.primary, alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 17, fontWeight: "800", color: Colors.text },
-  body: { fontSize: 13, color: Colors.textSecondary, lineHeight: 19 },
+  card: { backgroundColor: theme.colors.surface, borderRadius: 20, padding: 22, gap: 12 },
+  iconBox: { width: 48, height: 48, borderRadius: 14, backgroundColor: theme.colors.primary, alignItems: "center", justifyContent: "center" },
+  title: { fontSize: 17, fontWeight: "800", color: theme.colors.text },
+  body: { fontSize: 13, color: theme.colors.textSecondary, lineHeight: 19 },
   row: { flexDirection: "row", gap: 10, marginTop: 6 },
   btn: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: "center" },
-  btnPrimary: { backgroundColor: Colors.primary },
-  btnPrimaryText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  btnGhost: { borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white },
-  btnGhostText: { color: Colors.textSecondary, fontWeight: "700", fontSize: 13 },
+  btnPrimary: { backgroundColor: theme.colors.primary },
+  btnPrimaryText: { color: theme.colors.onBrand, fontWeight: "700", fontSize: 14 },
+  btnGhost: { borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+  btnGhostText: { color: theme.colors.textSecondary, fontWeight: "700", fontSize: 13 },
 });
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  repeatNotice: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginHorizontal: 16, marginTop: 8, padding: 12, borderRadius: 12, backgroundColor: Colors.primary + "12", borderWidth: 1, borderColor: Colors.primary + "30" },
-  repeatNoticeText: { flex: 1, color: Colors.textSecondary, fontSize: 13, lineHeight: 18, fontWeight: "600" },
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
+  repeatNotice: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginHorizontal: 16, marginTop: 8, padding: 12, borderRadius: 12, backgroundColor: theme.colors.primary + "12", borderWidth: 1, borderColor: theme.colors.primary + "30" },
+  repeatNoticeText: { flex: 1, color: theme.colors.textSecondary, fontSize: 13, lineHeight: 18, fontWeight: "600" },
 
   successWrap: { alignItems: "center", justifyContent: "center", padding: 32 },
   uploadProgressWrap: { width: "100%", gap: 8, marginTop: 12 },
-  uploadProgressTrack: { height: 8, borderRadius: 4, backgroundColor: Colors.border, overflow: "hidden" },
-  uploadProgressFill: { height: "100%", borderRadius: 4, backgroundColor: Colors.primary },
-  uploadProgressText: { fontSize: 12, color: Colors.textSecondary, textAlign: "center", fontWeight: "600" },
+  uploadProgressTrack: { height: 8, borderRadius: 4, backgroundColor: theme.colors.border, overflow: "hidden" },
+  uploadProgressFill: { height: "100%", borderRadius: 4, backgroundColor: theme.colors.primary },
+  uploadProgressText: { fontSize: 12, color: theme.colors.textSecondary, textAlign: "center", fontWeight: "600" },
   successCircle: {
     width: 100, height: 100, borderRadius: 50,
-    backgroundColor: Colors.success, alignItems: "center", justifyContent: "center", marginBottom: 20,
+    backgroundColor: theme.colors.success, alignItems: "center", justifyContent: "center", marginBottom: 20,
   },
-  successTitle: { fontSize: 24, fontWeight: "800", color: Colors.text, textAlign: "center" },
-  successSub: { fontSize: 14, color: Colors.textSecondary, textAlign: "center", lineHeight: 22, marginTop: 8 },
+  successTitle: { fontSize: 24, fontWeight: "800", color: theme.colors.text, textAlign: "center" },
+  successSub: { fontSize: 14, color: theme.colors.textSecondary, textAlign: "center", lineHeight: 22, marginTop: 8 },
   viewResponsesBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-    backgroundColor: Colors.primary, borderRadius: 16, paddingVertical: 16, paddingHorizontal: 24,
+    backgroundColor: theme.colors.primary, borderRadius: 16, paddingVertical: 16, paddingHorizontal: 24,
     marginTop: 24, width: "100%",
   },
   homeBtn: { alignItems: "center", paddingVertical: 14, marginTop: 8, width: "100%" },
-  homeBtnText: { fontSize: 14, fontWeight: "700", color: Colors.textSecondary },
+  homeBtnText: { fontSize: 14, fontWeight: "700", color: theme.colors.textSecondary },
 
   header: {
-    backgroundColor: Colors.white, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 14,
+    backgroundColor: theme.colors.surface, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 14,
     flexDirection: "row", alignItems: "center", gap: 12,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
+    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
   },
   backBtn: {
-    width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.surface,
+    width: 40, height: 40, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center", justifyContent: "center",
   },
-  headerTitle: { fontSize: 17, fontWeight: "800", color: Colors.text },
-  headerSub: { fontSize: 12, color: Colors.textMuted, marginTop: 1 },
+  headerTitle: { fontSize: 17, fontWeight: "800", color: theme.colors.text },
+  headerSub: { fontSize: 12, color: theme.colors.textMuted, marginTop: 1 },
   dots: { flexDirection: "row", gap: 5 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.border },
-  dotActive: { backgroundColor: Colors.primary, width: 20 },
-  dotDone: { backgroundColor: Colors.primary + "60" },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.border },
+  dotActive: { backgroundColor: theme.colors.primary, width: 20 },
+  dotDone: { backgroundColor: theme.colors.primary + "60" },
 
   section: { padding: 20, gap: 14 },
-  heading: { fontSize: 22, fontWeight: "800", color: Colors.text },
-  sub: { fontSize: 13, color: Colors.textSecondary, marginTop: -8 },
+  heading: { fontSize: 22, fontWeight: "800", color: theme.colors.text },
+  sub: { fontSize: 13, color: theme.colors.textSecondary, marginTop: -8 },
 
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   catCard: {
-    width: "47%", backgroundColor: Colors.white, borderRadius: 16, padding: 14,
-    borderWidth: 2, borderColor: Colors.border, gap: 8, alignItems: "flex-start",
+    width: "47%", backgroundColor: theme.colors.surface, borderRadius: 16, padding: 14,
+    borderWidth: 2, borderColor: theme.colors.border, gap: 8, alignItems: "flex-start",
   },
   catCardActive: {
-    shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.10,
+    shadowColor: theme.colors.text, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.10,
     shadowRadius: 12, elevation: 5,
   },
   catIcon: { width: 44, height: 44, borderRadius: 13, alignItems: "center", justifyContent: "center" },
-  catName: { fontSize: 14, fontWeight: "700", color: Colors.text },
-  catDesc: { fontSize: 11, color: Colors.textMuted, lineHeight: 15 },
+  catName: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
+  catDesc: { fontSize: 11, color: theme.colors.textMuted, lineHeight: 15 },
 
   searchBar: {
     flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: Colors.white, borderRadius: 14, borderWidth: 1.5,
-    borderColor: Colors.primary + "50", paddingHorizontal: 14, paddingVertical: 12,
+    backgroundColor: theme.colors.surface, borderRadius: 14, borderWidth: 1.5,
+    borderColor: theme.colors.primary + "50", paddingHorizontal: 14, paddingVertical: 12,
   },
-  searchInput: { flex: 1, fontSize: 14, color: Colors.text },
+  searchInput: { flex: 1, fontSize: 14, color: theme.colors.text },
 
   suggestBox: {
-    backgroundColor: Colors.white, borderRadius: 14, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: theme.colors.surface, borderRadius: 14, borderWidth: 1, borderColor: theme.colors.border,
     overflow: "hidden", marginTop: -4,
   },
   suggestRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
-  suggestRowTyped: { backgroundColor: "#f8f8f8" },
-  suggestBorder: { borderBottomWidth: 1, borderBottomColor: Colors.border },
-  suggestText: { flex: 1, fontSize: 13, color: Colors.text, lineHeight: 18 },
-  suggestTextTyped: { color: Colors.textSecondary, fontStyle: "italic" },
-  suggestTypedHint: { fontSize: 10, color: Colors.textSecondary, marginBottom: 1, textTransform: "uppercase", letterSpacing: 0.4 },
+  suggestRowTyped: { backgroundColor: theme.colors.surface },
+  suggestBorder: { borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  suggestText: { flex: 1, fontSize: 13, color: theme.colors.text, lineHeight: 18 },
+  suggestTextTyped: { color: theme.colors.textSecondary, fontStyle: "italic" },
+  suggestTypedHint: { fontSize: 10, color: theme.colors.textSecondary, marginBottom: 1, textTransform: "uppercase", letterSpacing: 0.4 },
 
   detectBtn: {
     flexDirection: "row", alignItems: "center", gap: 8, alignSelf: "flex-start",
-    backgroundColor: Colors.primary + "12", borderWidth: 1, borderColor: Colors.primary + "30",
+    backgroundColor: theme.colors.primary + "12", borderWidth: 1, borderColor: theme.colors.primary + "30",
     borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11,
   },
-  detectText: { fontSize: 13, fontWeight: "700", color: Colors.primary },
+  detectText: { fontSize: 13, fontWeight: "700", color: theme.colors.primary },
 
   savedSection: { marginBottom: 12 },
-  savedLabel: { fontSize: 12, fontWeight: "700", color: Colors.textMuted, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 },
+  savedLabel: { fontSize: 12, fontWeight: "700", color: theme.colors.textMuted, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 },
   savedChip: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    backgroundColor: Colors.primary + "12", borderWidth: 1, borderColor: Colors.primary + "30",
+    backgroundColor: theme.colors.primary + "12", borderWidth: 1, borderColor: theme.colors.primary + "30",
     borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8, maxWidth: 200,
   },
-  savedChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  savedChipText: { fontSize: 12, fontWeight: "600", color: Colors.primary },
-  savedChipTextActive: { color: "#fff" },
+  savedChipActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+  savedChipText: { fontSize: 12, fontWeight: "600", color: theme.colors.primary },
+  savedChipTextActive: { color: theme.colors.onBrand },
 
   mapCard: {
-    borderRadius: 16, borderWidth: 1.5, borderColor: Colors.primary + "35",
-    backgroundColor: Colors.white, overflow: "hidden",
+    borderRadius: 16, borderWidth: 1.5, borderColor: theme.colors.primary + "35",
+    backgroundColor: theme.colors.surface, overflow: "hidden",
   },
   mapCardHeader: {
     flexDirection: "row", alignItems: "center", gap: 7,
     paddingHorizontal: 14, paddingTop: 12, paddingBottom: 2,
   },
-  mapCardTitle: { fontSize: 13, fontWeight: "700", color: Colors.primary },
+  mapCardTitle: { fontSize: 13, fontWeight: "700", color: theme.colors.primary },
   mapCardHint: {
-    fontSize: 11, color: Colors.textMuted, paddingHorizontal: 14, paddingBottom: 8,
+    fontSize: 11, color: theme.colors.textMuted, paddingHorizontal: 14, paddingBottom: 8,
   },
   mapWrap: { height: 200, marginHorizontal: 0 },
   map: { flex: 1 },
 
   addrPreview: {
     flexDirection: "row", alignItems: "flex-start", gap: 10,
-    backgroundColor: Colors.success + "10", padding: 12,
-    borderTopWidth: 1, borderTopColor: Colors.success + "30",
+    backgroundColor: theme.colors.success + "10", padding: 12,
+    borderTopWidth: 1, borderTopColor: theme.colors.success + "30",
   },
   addrPreviewNoMap: {
     flexDirection: "row", alignItems: "flex-start", gap: 10,
-    backgroundColor: Colors.warning + "10", borderRadius: 12, padding: 12,
-    borderWidth: 1, borderColor: Colors.warning + "30",
+    backgroundColor: theme.colors.warning + "10", borderRadius: 12, padding: 12,
+    borderWidth: 1, borderColor: theme.colors.warning + "30",
   },
-  addrLabel: { fontSize: 11, color: Colors.textMuted, fontWeight: "600" },
-  addrText: { fontSize: 13, color: Colors.text, lineHeight: 18, marginTop: 2 },
-  coordsText: { fontSize: 11, color: Colors.textMuted, marginTop: 3, fontFamily: Platform.OS === "ios" ? "Courier" : "monospace" },
-  addrHintText: { fontSize: 11, color: Colors.warning, marginTop: 4, lineHeight: 15 },
+  addrLabel: { fontSize: 11, color: theme.colors.textMuted, fontWeight: "600" },
+  addrText: { fontSize: 13, color: theme.colors.text, lineHeight: 18, marginTop: 2 },
+  coordsText: { fontSize: 11, color: theme.colors.textMuted, marginTop: 3, fontFamily: Platform.OS === "ios" ? "Courier" : "monospace" },
+  addrHintText: { fontSize: 11, color: theme.colors.warning, marginTop: 4, lineHeight: 15 },
   gpsPill: {
     flexDirection: "row", alignItems: "center", gap: 3,
-    backgroundColor: Colors.primary + "15", borderRadius: 8, paddingHorizontal: 6, paddingVertical: 3,
+    backgroundColor: theme.colors.primary + "15", borderRadius: 8, paddingHorizontal: 6, paddingVertical: 3,
   },
-  gpsPillText: { fontSize: 10, fontWeight: "700", color: Colors.primary },
+  gpsPillText: { fontSize: 10, fontWeight: "700", color: theme.colors.primary },
 
   manualCard: {
-    borderRadius: 14, borderWidth: 1.5, borderColor: Colors.secondary + "40",
-    backgroundColor: Colors.white, padding: 14, gap: 8,
+    borderRadius: 14, borderWidth: 1.5, borderColor: theme.colors.secondary + "40",
+    backgroundColor: theme.colors.surface, padding: 14, gap: 8,
   },
   manualCardHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
-  manualCardTitle: { fontSize: 13, fontWeight: "700", color: Colors.secondary },
-  manualCardHint: { fontSize: 11, color: Colors.textMuted, lineHeight: 16, marginTop: -4 },
+  manualCardTitle: { fontSize: 13, fontWeight: "700", color: theme.colors.secondary },
+  manualCardHint: { fontSize: 11, color: theme.colors.textMuted, lineHeight: 16, marginTop: -4 },
   manualInput: {
-    backgroundColor: Colors.surface, borderRadius: 10, borderWidth: 1,
-    borderColor: Colors.border, paddingHorizontal: 12, paddingVertical: 11,
-    fontSize: 13, color: Colors.text,
+    backgroundColor: theme.colors.surfaceAlt, borderRadius: 10, borderWidth: 1,
+    borderColor: theme.colors.border, paddingHorizontal: 12, paddingVertical: 11,
+    fontSize: 13, color: theme.colors.text,
   },
   cityOnlyWarn: {
     flexDirection: "row", alignItems: "flex-start", gap: 6,
-    backgroundColor: Colors.warning + "12", borderRadius: 8, padding: 8,
-    borderWidth: 1, borderColor: Colors.warning + "40",
+    backgroundColor: theme.colors.warning + "12", borderRadius: 8, padding: 8,
+    borderWidth: 1, borderColor: theme.colors.warning + "40",
   },
-  cityOnlyWarnText: { flex: 1, fontSize: 11, color: Colors.warning, lineHeight: 16, fontWeight: "600" },
+  cityOnlyWarnText: { flex: 1, fontSize: 11, color: theme.colors.warning, lineHeight: 16, fontWeight: "600" },
 
   textAreaWrap: {
-    backgroundColor: Colors.white, borderRadius: 14, borderWidth: 1.5, borderColor: Colors.border, padding: 14,
+    backgroundColor: theme.colors.surface, borderRadius: 14, borderWidth: 1.5, borderColor: theme.colors.border, padding: 14,
   },
-  textArea: { fontSize: 14, color: Colors.text, minHeight: 120, textAlignVertical: "top", lineHeight: 22 },
+  textArea: { fontSize: 14, color: theme.colors.text, minHeight: 120, textAlignVertical: "top", lineHeight: 22 },
 
-  fieldLabel: { fontSize: 15, fontWeight: "700", color: Colors.text },
-  fieldHint: { fontSize: 12, color: Colors.textMuted, marginTop: -8 },
+  fieldLabel: { fontSize: 15, fontWeight: "700", color: theme.colors.text },
+  fieldHint: { fontSize: 12, color: theme.colors.textMuted, marginTop: -8 },
 
   videoChosen: {
-    flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: Colors.success + "12",
-    borderRadius: 12, padding: 14, borderWidth: 1, borderColor: Colors.success + "30",
+    flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: theme.colors.success + "12",
+    borderRadius: 12, padding: 14, borderWidth: 1, borderColor: theme.colors.success + "30",
   },
-  videoChosenText: { flex: 1, fontSize: 13, fontWeight: "700", color: Colors.success },
+  videoChosenText: { flex: 1, fontSize: 13, fontWeight: "700", color: theme.colors.success },
   videoBtns: { flexDirection: "row", gap: 12 },
   videoBtn: {
     flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: Colors.white, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 12, paddingVertical: 14,
+    backgroundColor: theme.colors.surface, borderWidth: 1.5, borderColor: theme.colors.border, borderRadius: 12, paddingVertical: 14,
   },
-  videoBtnText: { fontSize: 13, fontWeight: "600", color: Colors.primary },
+  videoBtnText: { fontSize: 13, fontWeight: "600", color: theme.colors.primary },
 
   dateCard: {
     width: 70, alignItems: "center", padding: 12, borderRadius: 14,
-    backgroundColor: Colors.white, borderWidth: 1.5, borderColor: Colors.border,
+    backgroundColor: theme.colors.surface, borderWidth: 1.5, borderColor: theme.colors.border,
   },
-  dateCardActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  dayLbl: { fontSize: 10, fontWeight: "600", color: Colors.textSecondary, textTransform: "uppercase" },
-  dateNum: { fontSize: 22, fontWeight: "800", color: Colors.text, marginTop: 2 },
-  monthLbl: { fontSize: 10, color: Colors.textMuted },
-  dateActiveText: { color: "#fff" },
+  dateCardActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+  dayLbl: { fontSize: 10, fontWeight: "600", color: theme.colors.textSecondary, textTransform: "uppercase" },
+  dateNum: { fontSize: 22, fontWeight: "800", color: theme.colors.text, marginTop: 2 },
+  monthLbl: { fontSize: 10, color: theme.colors.textMuted },
+  dateActiveText: { color: theme.colors.onBrand },
 
   chargesCard: {
-    backgroundColor: Colors.white, borderRadius: 16, borderWidth: 1.5,
-    borderColor: Colors.border, overflow: "hidden",
+    backgroundColor: theme.colors.surface, borderRadius: 16, borderWidth: 1.5,
+    borderColor: theme.colors.border, overflow: "hidden",
   },
   chargesTitle: {
-    fontSize: 11, fontWeight: "800", color: Colors.textMuted, textTransform: "uppercase",
+    fontSize: 11, fontWeight: "800", color: theme.colors.textMuted, textTransform: "uppercase",
     letterSpacing: 0.8, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4,
   },
   chargesRow: {
     flexDirection: "row", alignItems: "center", gap: 10,
     paddingHorizontal: 14, paddingVertical: 10,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
+    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
   },
   chargesIcon: {
     width: 30, height: 30, borderRadius: 10, alignItems: "center", justifyContent: "center",
   },
-  chargesLabel: { fontSize: 13, fontWeight: "700", color: Colors.text },
-  chargesSub: { fontSize: 11, color: Colors.textMuted, marginTop: 1 },
+  chargesLabel: { fontSize: 13, fontWeight: "700", color: theme.colors.text },
+  chargesSub: { fontSize: 11, color: theme.colors.textMuted, marginTop: 1 },
   chargesAmt: { fontSize: 15, fontWeight: "900" },
   chargesNote: {
     flexDirection: "row", alignItems: "flex-start", gap: 8,
-    backgroundColor: Colors.surface, paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: theme.colors.surfaceAlt, paddingHorizontal: 14, paddingVertical: 10,
   },
-  chargesNoteText: { flex: 1, fontSize: 11, color: Colors.textMuted, lineHeight: 16 },
+  chargesNoteText: { flex: 1, fontSize: 11, color: theme.colors.textMuted, lineHeight: 16 },
 
   offerWrap: {
-    flexDirection: "row", alignItems: "center", backgroundColor: Colors.white,
-    borderRadius: 16, borderWidth: 2, borderColor: Colors.primary, paddingHorizontal: 16, paddingVertical: 4, gap: 8,
+    flexDirection: "row", alignItems: "center", backgroundColor: theme.colors.surface,
+    borderRadius: 16, borderWidth: 2, borderColor: theme.colors.primary, paddingHorizontal: 16, paddingVertical: 4, gap: 8,
   },
-  rsSign: { fontSize: 20, fontWeight: "800", color: Colors.primary },
-  offerInput: { flex: 1, fontSize: 28, fontWeight: "800", color: Colors.text, paddingVertical: 12 },
+  rsSign: { fontSize: 20, fontWeight: "800", color: theme.colors.primary },
+  offerInput: { flex: 1, fontSize: 28, fontWeight: "800", color: theme.colors.text, paddingVertical: 12 },
 
   promoSection: { gap: 8 },
-  optionalTag: { fontSize: 12, fontWeight: "400", color: Colors.textMuted },
+  optionalTag: { fontSize: 12, fontWeight: "400", color: theme.colors.textMuted },
   promoRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   promoInput: {
-    flex: 1, backgroundColor: Colors.white, borderRadius: 12, borderWidth: 1.5,
-    borderColor: Colors.border, paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 14, fontWeight: "700", color: Colors.text, letterSpacing: 1,
+    flex: 1, backgroundColor: theme.colors.surface, borderRadius: 12, borderWidth: 1.5,
+    borderColor: theme.colors.border, paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 14, fontWeight: "700", color: theme.colors.text, letterSpacing: 1,
   },
-  promoInputApplied: { borderColor: Colors.success, backgroundColor: Colors.success + "08" },
+  promoInputApplied: { borderColor: theme.colors.success, backgroundColor: theme.colors.success + "08" },
   promoBtn: {
-    backgroundColor: Colors.primary, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 13,
+    backgroundColor: theme.colors.primary, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 13,
   },
-  promoBtnText: { fontSize: 13, fontWeight: "800", color: "#fff" },
+  promoBtnText: { fontSize: 13, fontWeight: "800", color: theme.colors.onBrand },
   promoRemoveBtn: {
-    width: 44, height: 44, borderRadius: 12, backgroundColor: Colors.error + "12",
-    alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: Colors.error + "30",
+    width: 44, height: 44, borderRadius: 12, backgroundColor: theme.colors.danger + "12",
+    alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: theme.colors.danger + "30",
   },
   promoSuccess: {
-    flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: Colors.success + "12",
-    borderRadius: 10, padding: 10, borderWidth: 1, borderColor: Colors.success + "30",
+    flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: theme.colors.success + "12",
+    borderRadius: 10, padding: 10, borderWidth: 1, borderColor: theme.colors.success + "30",
   },
-  promoSuccessText: { flex: 1, fontSize: 12, color: Colors.success, fontWeight: "700", lineHeight: 16 },
+  promoSuccessText: { flex: 1, fontSize: 12, color: theme.colors.success, fontWeight: "700", lineHeight: 16 },
   promoErrorRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  promoErrorText: { fontSize: 12, color: Colors.error, fontWeight: "600" },
+  promoErrorText: { fontSize: 12, color: theme.colors.danger, fontWeight: "600" },
 
   quickRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   quickChip: {
     paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
-    backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.border,
+    backgroundColor: theme.colors.surfaceAlt, borderWidth: 1.5, borderColor: theme.colors.border,
   },
-  quickChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  quickText: { fontSize: 13, fontWeight: "700", color: Colors.textSecondary },
-  quickTextActive: { color: "#fff" },
+  quickChipActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+  quickText: { fontSize: 13, fontWeight: "700", color: theme.colors.textSecondary },
+  quickTextActive: { color: theme.colors.onBrand },
 
   summaryCard: {
-    backgroundColor: Colors.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: theme.colors.surface, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: theme.colors.border,
   },
-  summaryTitle: { fontSize: 14, fontWeight: "800", color: Colors.text, marginBottom: 12 },
+  summaryTitle: { fontSize: 14, fontWeight: "800", color: theme.colors.text, marginBottom: 12 },
   summaryRow: {
     flexDirection: "row", alignItems: "flex-start", gap: 8, paddingVertical: 8,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
+    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
   },
-  summaryLbl: { width: 56, fontSize: 12, color: Colors.textMuted, fontWeight: "600" },
-  summaryVal: { flex: 1, fontSize: 13, fontWeight: "600", color: Colors.text },
+  summaryLbl: { width: 56, fontSize: 12, color: theme.colors.textMuted, fontWeight: "600" },
+  summaryVal: { flex: 1, fontSize: 13, fontWeight: "600", color: theme.colors.text },
 
   noteBox: {
-    flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: Colors.primary + "10",
-    borderRadius: 12, padding: 12, borderWidth: 1, borderColor: Colors.primary + "25",
+    flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: theme.colors.primary + "10",
+    borderRadius: 12, padding: 12, borderWidth: 1, borderColor: theme.colors.primary + "25",
   },
-  noteText: { flex: 1, fontSize: 12, color: Colors.primary, lineHeight: 18, fontWeight: "600" },
+  noteText: { flex: 1, fontSize: 12, color: theme.colors.primary, lineHeight: 18, fontWeight: "600" },
 
-  materialsWarning: { padding: 14, backgroundColor: "#FEF3C7", borderRadius: 12, borderWidth: 1, borderColor: "#F59E0B", gap: 8 },
+  materialsWarning: { padding: 14, backgroundColor: theme.colors.warningSoft, borderRadius: 12, borderWidth: 1, borderColor: theme.colors.warning, gap: 8 },
   materialsWarningHeader: { flexDirection: "row" as const, alignItems: "center" as const, gap: 7 },
-  materialsWarningTitle: { fontSize: 13.5, fontWeight: "800" as const, color: "#92400E", flex: 1 },
-  materialsWarningText: { fontSize: 12.5, color: "#78350F", lineHeight: 18 },
-  materialsCheckRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 10, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface },
-  materialsCheckRowActive: { borderColor: Colors.primary, backgroundColor: Colors.primary + "10" },
-  materialsCheckbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: Colors.border, alignItems: "center" as const, justifyContent: "center" as const },
-  materialsCheckboxChecked: { borderColor: Colors.primary, backgroundColor: Colors.primary },
-  materialsCheckLabel: { flex: 1, fontSize: 13.5, fontWeight: "700" as const, color: Colors.text },
+  materialsWarningTitle: { fontSize: 13.5, fontWeight: "800" as const, color: theme.colors.warning, flex: 1 },
+  materialsWarningText: { fontSize: 12.5, color: theme.colors.warning, lineHeight: 18 },
+  materialsCheckRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 10, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surfaceAlt },
+  materialsCheckRowActive: { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary + "10" },
+  materialsCheckbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: theme.colors.border, alignItems: "center" as const, justifyContent: "center" as const },
+  materialsCheckboxChecked: { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary },
+  materialsCheckLabel: { flex: 1, fontSize: 13.5, fontWeight: "700" as const, color: theme.colors.text },
 
   bottomBar: {
-    position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: Colors.white,
+    position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: theme.colors.surface,
     paddingHorizontal: 20, paddingTop: 14,
-    borderTopWidth: 1, borderTopColor: Colors.border,
+    borderTopWidth: 1, borderTopColor: theme.colors.border,
   },
   primaryBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-    backgroundColor: Colors.primary, borderRadius: 16, paddingVertical: 16,
+    backgroundColor: theme.colors.primary, borderRadius: 16, paddingVertical: 16,
   },
   broadcastBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-    backgroundColor: Colors.secondary, borderRadius: 16, paddingVertical: 16,
+    backgroundColor: theme.colors.secondary, borderRadius: 16, paddingVertical: 16,
   },
   btnDisabled: { opacity: 0.5 },
-  btnText: { fontSize: 16, fontWeight: "800", color: "#fff" },
+  btnText: { fontSize: 16, fontWeight: "800", color: theme.colors.onBrand },
 });

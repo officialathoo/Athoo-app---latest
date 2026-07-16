@@ -37,12 +37,14 @@ interface Withdrawal {
   createdAt: string;
 }
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; icon: string }> = {
-  pending: { label: "Pending Review", color: "#D97706", bg: "#FEF3C7", icon: "clock" },
-  approved: { label: "Approved", color: "#2563EB", bg: "#DBEAFE", icon: "check-circle" },
-  paid: { label: "Paid", color: "#059669", bg: "#D1FAE5", icon: "check-circle" },
-  rejected: { label: "Rejected", color: "#DC2626", bg: "#FEE2E2", icon: "x-circle" },
-};
+function getStatusConfig(theme: AthooTheme): Record<string, { label: string; color: string; bg: string; icon: string }> {
+  return {
+    pending: { label: "Pending Review", color: theme.colors.warning, bg: theme.colors.warningSoft, icon: "clock" },
+    approved: { label: "Approved", color: theme.colors.info, bg: theme.colors.infoSoft, icon: "check-circle" },
+    paid: { label: "Paid", color: theme.colors.success, bg: theme.colors.successSoft, icon: "check-circle" },
+    rejected: { label: "Rejected", color: theme.colors.danger, bg: theme.colors.dangerSoft, icon: "x-circle" },
+  };
+}
 
 export default function WithdrawalRequestsScreen() {
   const { theme } = useTheme();
@@ -128,7 +130,7 @@ export default function WithdrawalRequestsScreen() {
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 0 : insets.top }]}>
       <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.header}>
         <Pressable style={styles.backBtn} onPress={() => router.back()} accessibilityRole="button" accessibilityLabel={tr("Back")}>
-          <Icon name={isUrdu ? "arrow-right" : "arrow-left"} size={20} color="#fff" />
+          <Icon name={isUrdu ? "arrow-right" : "arrow-left"} size={20} color={theme.colors.onBrand} />
         </Pressable>
         <View>
           <Text style={styles.headerTitle}>{tr("Withdrawal Requests")}</Text>
@@ -153,7 +155,7 @@ export default function WithdrawalRequestsScreen() {
                 setShowForm(true);
               }}
             >
-              <Icon name="plus" size={18} color="#fff" />
+              <Icon name="plus" size={18} color={theme.colors.onBrand} />
               <Text style={styles.newBtnText}>{tr("New Withdrawal Request")}</Text>
             </Pressable>
           ) : (
@@ -230,10 +232,10 @@ export default function WithdrawalRequestsScreen() {
                 disabled={submitting}
               >
                 {submitting ? (
-                  <ActivityIndicator color="#fff" size="small" />
+                  <ActivityIndicator color={theme.colors.onBrand} size="small" />
                 ) : (
                   <>
-                    <Icon name="send" size={16} color="#fff" />
+                    <Icon name="send" size={16} color={theme.colors.onBrand} />
                     <Text style={styles.submitBtnText}>{tr("Submit Request")}</Text>
                   </>
                 )}
@@ -248,7 +250,7 @@ export default function WithdrawalRequestsScreen() {
             </View>
           ) : error ? (
             <View style={styles.emptyBox}>
-              <View style={[styles.emptyIcon, { backgroundColor: "#FEE2E2" }]}>
+              <View style={[styles.emptyIcon, { backgroundColor: theme.colors.dangerSoft }]}>
                 <Icon name="alert-circle" size={32} color={theme.colors.danger} />
               </View>
               <Text style={[styles.emptyTitle, { color: theme.colors.danger }]}>{tr("Failed to Load")}</Text>
@@ -269,7 +271,8 @@ export default function WithdrawalRequestsScreen() {
             <View style={styles.list}>
               <Text style={styles.sectionLabel}>{tr("Request History")}</Text>
               {withdrawals.map((w) => {
-                const cfg = STATUS_CONFIG[w.status] || STATUS_CONFIG.pending;
+                const statusConfig = getStatusConfig(theme);
+                const cfg = statusConfig[w.status] || statusConfig.pending;
                 return (
                   <View key={w.id} style={styles.card}>
                     <View style={styles.cardTop}>
@@ -294,14 +297,14 @@ export default function WithdrawalRequestsScreen() {
                     )}
                     {w.status === "rejected" && w.rejectionNote && (
                       <View style={styles.noteBox}>
-                        <Icon name="alert-circle" size={13} color="#DC2626" />
-                        <Text style={[styles.noteText, { color: "#DC2626" }]}>{w.rejectionNote}</Text>
+                        <Icon name="alert-circle" size={13} color={theme.colors.danger} />
+                        <Text style={[styles.noteText, { color: theme.colors.danger }]}>{w.rejectionNote}</Text>
                       </View>
                     )}
                     {w.status === "paid" && w.paymentReference && (
                       <View style={styles.noteBox}>
-                        <Icon name="check-circle" size={13} color="#059669" />
-                        <Text style={[styles.noteText, { color: "#059669" }]}>{tr("Reference")}: {w.paymentReference}</Text>
+                        <Icon name="check-circle" size={13} color={theme.colors.success} />
+                        <Text style={[styles.noteText, { color: theme.colors.success }]}>{tr("Reference")}: {w.paymentReference}</Text>
                       </View>
                     )}
                   </View>
@@ -334,7 +337,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     alignItems: "center",
     justifyContent: "center",
   },
-  headerTitle: { fontSize: 18, fontWeight: "700", color: "#fff" },
+  headerTitle: { fontSize: 18, fontWeight: "700", color: theme.colors.onBrand },
   headerSub: { fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 2 },
   scroll: { width: "100%", maxWidth: 760, alignSelf: "center", flex: 1 },
   scrollContent: { width: "100%", maxWidth: 760, alignSelf: "center", padding: 16, gap: 16 },
@@ -348,13 +351,13 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     paddingVertical: 14,
   },
   newBtnDisabled: { opacity: 0.5 },
-  newBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
+  newBtnText: { fontSize: 15, fontWeight: "700", color: theme.colors.onBrand },
   form: {
     backgroundColor: theme.colors.surface,
     borderRadius: 16,
     padding: 18,
     gap: 14,
-    shadowColor: "#000",
+    shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
@@ -386,7 +389,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     paddingVertical: 14,
     marginTop: 4,
   },
-  submitBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
+  submitBtnText: { fontSize: 15, fontWeight: "700", color: theme.colors.onBrand },
   loadingBox: { alignItems: "center", paddingVertical: 48, gap: 12 },
   loadingText: { fontSize: 14, color: theme.colors.textSecondary },
   emptyBox: { alignItems: "center", paddingVertical: 48, gap: 10 },
@@ -409,7 +412,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     borderRadius: 14,
     padding: 16,
     gap: 8,
-    shadowColor: "#000",
+    shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 4,

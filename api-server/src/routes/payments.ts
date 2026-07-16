@@ -316,6 +316,8 @@ adminRouter.post("/commission/:id/approve", requirePermission("finance.write"), 
       title: "Payment approved ✅",
       body: `Your commission payment of Rs ${pay.amount} has been approved.${shouldUnblock ? " Your account has been unblocked." : ""}`,
       type: "system",
+    
+      email: { category: "transactional" },
     });
     return res.json({ success: true });
   } catch (e) {
@@ -354,6 +356,8 @@ adminRouter.post("/commission/:id/reject", requirePermission("finance.write"), a
       title: "Payment rejected ❌",
       body: reason || "Your commission payment was rejected. Please contact support.",
       type: "system",
+    
+      email: { category: "transactional" },
     });
     const adminUser = await db.query.usersTable.findFirst({ where: eq(usersTable.id, req.user!.userId) });
     await db.insert(auditLogTable).values({

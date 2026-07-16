@@ -10,22 +10,16 @@ import React, {
 } from "react";
 import { Animated, AppState, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
-import Constants from "expo-constants";
 import { Feather } from "@expo/vector-icons";
-import { Colors } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 import { useAuth } from "@/context/AuthContext";
 import { api, realtime } from "@/services/api";
 import { resolveNotificationTarget } from "@/services/notificationRouting";
+import { isExpoGoRuntime } from "@/lib/runtimeEnvironment";
+import { notificationService } from "@/services/NotificationService";
 
 
-function isExpoGoRuntime(): boolean {
-  const C = Constants as any;
-  const owner = String(C?.appOwnership || "").toLowerCase();
-  const env = String(C?.executionEnvironment || "").toLowerCase();
-  // Expo Go cannot reliably load remote push notification native modules.
-  // In production/dev-client builds this becomes false, so real notifications still work.
-  return owner === "expo" || owner === "guest" || env.includes("storeclient") || (!!__DEV__ && owner !== "standalone");
-}
 
 type NotifType =
   | "booking"
@@ -105,21 +99,47 @@ function getStorageKey(userId?: string | null) {
   return userId ? `${STORAGE_KEY}_${userId}` : STORAGE_KEY;
 }
 
-const ICON_MAP: Record<NotifType, { icon: string; color: string }> = {
-  booking: { icon: "calendar", color: Colors.primary },
-  negotiation: { icon: "dollar-sign", color: Colors.secondary },
-  message: { icon: "message-circle", color: "#8B5CF6" },
-  system: { icon: "info", color: Colors.textSecondary },
-  success: { icon: "check-circle", color: "#22C55E" },
-  warning: { icon: "alert-triangle", color: "#F59E0B" },
-  broadcast: { icon: "radio", color: "#F97316" },
-  premium: { icon: "star", color: "#F59E0B" },
-  call: { icon: "phone-call", color: "#22C55E" },
-  refund: { icon: "rotate-ccw", color: "#0EA5E9" },
-  withdrawal: { icon: "credit-card", color: "#14B8A6" },
-  support: { icon: "help-circle", color: "#6366F1" },
-  invoice: { icon: "file-text", color: "#64748B" },
+const ICON_MAP: Record<NotifType, string> = {
+  booking: "calendar",
+  negotiation: "dollar-sign",
+  message: "message-circle",
+  system: "info",
+  success: "check-circle",
+  warning: "alert-triangle",
+  broadcast: "radio",
+  premium: "star",
+  call: "phone-call",
+  refund: "rotate-ccw",
+  withdrawal: "credit-card",
+  support: "help-circle",
+  invoice: "file-text",
 };
+
+function notificationAccent(type: NotifType, theme: AthooTheme): string {
+  switch (type) {
+    case "negotiation":
+    case "broadcast":
+      return theme.colors.secondary;
+    case "success":
+    case "call":
+    case "withdrawal":
+      return theme.colors.success;
+    case "warning":
+    case "premium":
+      return theme.colors.warning;
+    case "message":
+    case "support":
+      return theme.colors.accent;
+    case "refund":
+      return theme.colors.info;
+    case "system":
+    case "invoice":
+      return theme.colors.textSecondary;
+    case "booking":
+    default:
+      return theme.colors.primary;
+  }
+}
 
 function toStringValue(value: unknown): string | undefined {
   if (typeof value === "string" && value.trim()) return value;
@@ -232,7 +252,10 @@ function ToastBanner({
 }) {
   const translateY = useRef(new Animated.Value(-100)).current;
   const opacity = useRef(new Animated.Value(0)).current;
-  const { icon, color } = ICON_MAP[notif.type] || ICON_MAP.system;
+  const { theme } = useTheme();
+  const styles = useMemo(() => createNotificationStyles(theme), [theme]);
+  const icon = ICON_MAP[notif.type] || ICON_MAP.system;
+  const color = notificationAccent(notif.type, theme);
   const topPad = Platform.OS === "web" ? 67 : 20;
 
   useEffect(() => {
@@ -299,7 +322,7 @@ function ToastBanner({
         ) : null}
 
         <Pressable onPress={onDismiss} style={styles.toastClose}>
-          <Feather name="x" size={14} color={Colors.textMuted} />
+          <Feather name="x" size={14} color={theme.colors.textMuted} />
         </Pressable>
       </Pressable>
     </Animated.View>
@@ -310,6 +333,8 @@ const SEED_NOTIFICATIONS: AppNotif[] = [];
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const { user, isLoading: authLoading } = useAuth();
+  const { theme } = useTheme();
+  const styles = useMemo(() => createNotificationStyles(theme), [theme]);
   const [notifications, setNotifications] = useState<AppNotif[]>([]);
   const [queue, setQueue] = useState<AppNotif[]>([]);
   const [active, setActive] = useState<AppNotif | null>(null);
@@ -566,20 +591,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         link: toStringValue(payload.link) || toStringValue(data.link),
       });
 
-      // Native builds receive the same event through Expo push, which owns the
-      // custom job/message/general sound. Web and Expo Go have no reliable
-      // remote-push sound, so retain the in-app audio fallback there.
-      if (Platform.OS === "web" || isExpoGoRuntime()) {
-        import("@/services/SoundService").then(({ soundService }) => {
-          if (type === "call" || type === "booking" || type === "broadcast" || type === "negotiation") {
-            soundService.playRingtone().catch(() => soundService.playNotification().catch(() => {}));
-          } else if (type === "message") {
-            soundService.playMessage().catch(() => soundService.playNotification().catch(() => {}));
-          } else {
-            soundService.playNotification().catch(() => {});
-          }
-        }).catch(() => {});
-      }
+      // Native builds receive sound through the remote push channel. Only web
+      // and Expo Go use an in-app fallback, which prevents double foreground
+      // audio when WebSocket and Expo push deliver the same event.
+      notificationService.playRealtimeFallback(type).catch(() => {});
     });
     return off;
   }, [user, currentRole, ingestNotification]);
@@ -742,7 +757,7 @@ export function useNotifications() {
   return ctx;
 }
 
-const styles = StyleSheet.create({
+const createNotificationStyles = (theme: AthooTheme) => StyleSheet.create({
   overlay: {
     position: "absolute",
     top: 0,
@@ -759,16 +774,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    backgroundColor: Colors.white,
+    backgroundColor: theme.colors.surface,
     borderRadius: 18,
     padding: 14,
-    shadowColor: "#000",
+    shadowColor: theme.colors.overlay,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
     shadowRadius: 20,
     elevation: 12,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
 
   toastInner: {
@@ -793,12 +808,12 @@ const styles = StyleSheet.create({
   toastTitle: {
     fontSize: 13,
     fontWeight: "700",
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   toastMsg: {
     fontSize: 12,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     lineHeight: 16,
     marginTop: 2,
   },

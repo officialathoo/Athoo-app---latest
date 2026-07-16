@@ -1,5 +1,4 @@
-import { Colors } from "@/constants/colors";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Platform,
   Pressable,
@@ -9,50 +8,53 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 
 const ITEM_H = 52;
 const VISIBLE = 5;
 const PAD_ITEMS = 2;
 const COL_PAD = ITEM_H * PAD_ITEMS;
 
-export const HOUR_LIST = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0")); // 01..12
-export const MINUTE_LIST = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0")); // 00,05..55
+export const HOUR_LIST = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0"));
+export const MINUTE_LIST = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0"));
 export const PERIOD_LIST = ["AM", "PM"];
 
 export interface TimeValue {
-  hour: number; // 1..12
-  minute: number; // 0,5,10..55
+  hour: number;
+  minute: number;
   period: "AM" | "PM";
 }
 
-export function formatTimeValue(v: TimeValue): string {
-  return `${String(v.hour).padStart(2, "0")}:${String(v.minute).padStart(2, "0")} ${v.period}`;
+export function formatTimeValue(value: TimeValue): string {
+  return `${String(value.hour).padStart(2, "0")}:${String(value.minute).padStart(2, "0")} ${value.period}`;
 }
 
 interface DrumColProps {
   data: string[];
   selectedIndex: number;
-  onChange: (idx: number) => void;
+  onChange: (index: number) => void;
   flex?: number;
   fontSize?: number;
 }
 
 function DrumCol({ data, selectedIndex, onChange, flex = 1, fontSize = 22 }: DrumColProps) {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createDrumStyles(theme), [theme]);
   const ref = useRef<ScrollView>(null);
 
-  const scrollTo = useCallback((idx: number, animated: boolean) => {
-    ref.current?.scrollTo({ y: idx * ITEM_H, animated });
+  const scrollTo = useCallback((index: number, animated: boolean) => {
+    ref.current?.scrollTo({ y: index * ITEM_H, animated });
   }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => scrollTo(selectedIndex, false), 80);
     return () => clearTimeout(timer);
-  }, []);
+  }, [scrollTo, selectedIndex]);
 
   return (
-    <View style={[drumStyles.col, { flex }]}>
-      <View pointerEvents="none" style={drumStyles.selectionFrame} />
-
+    <View style={[styles.col, { flex }]}>
+      <View pointerEvents="none" style={styles.selectionFrame} />
       <ScrollView
         ref={ref}
         style={{ height: ITEM_H * VISIBLE }}
@@ -60,37 +62,34 @@ function DrumCol({ data, selectedIndex, onChange, flex = 1, fontSize = 22 }: Dru
         snapToInterval={ITEM_H}
         decelerationRate={Platform.OS === "ios" ? "fast" : 0.85}
         showsVerticalScrollIndicator={false}
-        onMomentumScrollEnd={(e) => {
-          const idx = Math.max(0, Math.min(
-            Math.round(e.nativeEvent.contentOffset.y / ITEM_H),
-            data.length - 1
-          ));
-          onChange(idx);
+        onMomentumScrollEnd={(event) => {
+          const index = Math.max(
+            0,
+            Math.min(Math.round(event.nativeEvent.contentOffset.y / ITEM_H), data.length - 1),
+          );
+          onChange(index);
         }}
-        onScrollEndDrag={(e) => {
+        onScrollEndDrag={(event) => {
           if (Platform.OS === "web") {
-            const idx = Math.max(0, Math.min(
-              Math.round(e.nativeEvent.contentOffset.y / ITEM_H),
-              data.length - 1
-            ));
-            onChange(idx);
+            const index = Math.max(
+              0,
+              Math.min(Math.round(event.nativeEvent.contentOffset.y / ITEM_H), data.length - 1),
+            );
+            onChange(index);
           }
         }}
       >
-        {data.map((val, i) => (
+        {data.map((value, index) => (
           <Pressable
-            key={val}
-            style={drumStyles.item}
-            onPress={() => { onChange(i); scrollTo(i, true); }}
+            key={value}
+            style={styles.item}
+            onPress={() => {
+              onChange(index);
+              scrollTo(index, true);
+            }}
           >
-            <Text
-              style={[
-                drumStyles.itemText,
-                { fontSize },
-                i === selectedIndex && drumStyles.itemTextSel,
-              ]}
-            >
-              {val}
+            <Text style={[styles.itemText, { fontSize }, index === selectedIndex && styles.itemTextSelected]}>
+              {value}
             </Text>
           </Pressable>
         ))}
@@ -101,44 +100,40 @@ function DrumCol({ data, selectedIndex, onChange, flex = 1, fontSize = 22 }: Dru
 
 interface TimePickerProps {
   value: TimeValue;
-  onChange: (v: TimeValue) => void;
+  onChange: (value: TimeValue) => void;
 }
 
 export function TimePicker({ value, onChange }: TimePickerProps) {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [showManual, setShowManual] = useState(false);
   const [manualText, setManualText] = useState(formatTimeValue(value));
   const [manualError, setManualError] = useState(false);
 
-  const hourIdx = value.hour - 1; // 1→0, 2→1 ... 12→11
-  const minIdx = Math.round(value.minute / 5); // 0→0, 5→1 ... 55→11
-  const perIdx = value.period === "AM" ? 0 : 1;
+  const hourIndex = value.hour - 1;
+  const minuteIndex = Math.round(value.minute / 5);
+  const periodIndex = value.period === "AM" ? 0 : 1;
 
   const handleManualChange = (raw: string) => {
     setManualText(raw);
-    setManualError(false);
     const parsed = parseManualTime(raw);
-    if (parsed) {
-      onChange(parsed);
-    } else {
-      setManualError(true);
-    }
+    setManualError(!parsed);
+    if (parsed) onChange(parsed);
   };
 
   return (
     <View style={styles.wrap}>
-      {/* Displayed time */}
       <View style={styles.displayRow}>
         <Text style={styles.displayTime}>{formatTimeValue(value)}</Text>
         <Pressable
           style={styles.manualToggle}
           onPress={() => {
-            setShowManual(!showManual);
+            setShowManual((current) => !current);
             if (!showManual) setManualText(formatTimeValue(value));
           }}
+          accessibilityRole="button"
         >
-          <Text style={styles.manualToggleText}>
-            {showManual ? "Use scroll" : "Type time"}
-          </Text>
+          <Text style={styles.manualToggleText}>{showManual ? "Use scroll" : "Type time"}</Text>
         </Pressable>
       </View>
 
@@ -149,241 +144,174 @@ export function TimePicker({ value, onChange }: TimePickerProps) {
             value={manualText}
             onChangeText={handleManualChange}
             placeholder="e.g. 02:30 PM or 14:30"
-            placeholderTextColor={Colors.textMuted}
+            placeholderTextColor={theme.colors.textMuted}
             autoFocus
             autoCapitalize="characters"
             returnKeyType="done"
           />
-          {manualError && (
-            <Text style={styles.manualErrTxt}>Use format like "02:30 PM" or "14:30"</Text>
-          )}
+          {manualError ? (
+            <Text style={styles.manualErrorText}>Use format like “02:30 PM” or “14:30”</Text>
+          ) : null}
         </View>
       ) : (
         <View style={styles.drum}>
           <DrumCol
             data={HOUR_LIST}
-            selectedIndex={hourIdx}
+            selectedIndex={hourIndex}
             fontSize={28}
-            onChange={(idx) => onChange({ ...value, hour: idx + 1 })}
+            onChange={(index) => onChange({ ...value, hour: index + 1 })}
           />
-
           <View style={styles.colon}>
             <Text style={styles.colonText}>:</Text>
           </View>
-
           <DrumCol
             data={MINUTE_LIST}
-            selectedIndex={minIdx}
+            selectedIndex={minuteIndex}
             fontSize={28}
-            onChange={(idx) => onChange({ ...value, minute: idx * 5 })}
+            onChange={(index) => onChange({ ...value, minute: index * 5 })}
           />
-
           <View style={styles.separator} />
-
           <DrumCol
             data={PERIOD_LIST}
-            selectedIndex={perIdx}
+            selectedIndex={periodIndex}
             flex={0.8}
             fontSize={18}
-            onChange={(idx) => onChange({ ...value, period: PERIOD_LIST[idx] as "AM" | "PM" })}
+            onChange={(index) => onChange({ ...value, period: PERIOD_LIST[index] as "AM" | "PM" })}
           />
         </View>
       )}
 
-      {/* Quick presets */}
-      {!showManual && (
+      {!showManual ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={styles.presets}>
             {([
-              { label: "Morning", h: 8, m: 0, p: "AM" },
-              { label: "Noon", h: 12, m: 0, p: "PM" },
-              { label: "Afternoon", h: 2, m: 0, p: "PM" },
-              { label: "Evening", h: 5, m: 0, p: "PM" },
-              { label: "Night", h: 8, m: 0, p: "PM" },
-            ] as Array<{ label: string; h: number; m: number; p: "AM" | "PM" }>).map((q) => {
-              const isActive = value.hour === q.h && value.minute === q.m && value.period === q.p;
+              { label: "Morning", hour: 8, minute: 0, period: "AM" },
+              { label: "Noon", hour: 12, minute: 0, period: "PM" },
+              { label: "Afternoon", hour: 2, minute: 0, period: "PM" },
+              { label: "Evening", hour: 5, minute: 0, period: "PM" },
+              { label: "Night", hour: 8, minute: 0, period: "PM" },
+            ] as Array<{ label: string; hour: number; minute: number; period: "AM" | "PM" }>).map((preset) => {
+              const active = value.hour === preset.hour
+                && value.minute === preset.minute
+                && value.period === preset.period;
               return (
                 <Pressable
-                  key={q.label}
-                  style={[styles.preset, isActive && styles.presetActive]}
-                  onPress={() => onChange({ hour: q.h, minute: q.m, period: q.p })}
+                  key={preset.label}
+                  style={[styles.preset, active && styles.presetActive]}
+                  onPress={() => onChange({ hour: preset.hour, minute: preset.minute, period: preset.period })}
                 >
-                  <Text style={[styles.presetText, isActive && styles.presetTextActive]}>
-                    {q.label}
-                  </Text>
+                  <Text style={[styles.presetText, active && styles.presetTextActive]}>{preset.label}</Text>
                 </Pressable>
               );
             })}
           </View>
         </ScrollView>
-      )}
+      ) : null}
     </View>
   );
 }
 
 function parseManualTime(raw: string): TimeValue | null {
-  const s = raw.trim().toUpperCase();
-
-  // 12-hr with AM/PM: "2:30 PM", "02:30PM", "2:30PM"
-  const m12 = s.match(/^(\d{1,2}):(\d{2})\s?(AM|PM)$/);
-  if (m12) {
-    const h = parseInt(m12[1], 10);
-    const min = parseInt(m12[2], 10);
-    const p = m12[3] as "AM" | "PM";
-    if (h < 1 || h > 12 || min < 0 || min > 59) return null;
-    const snappedMin = Math.round(min / 5) * 5;
-    return { hour: h, minute: snappedMin > 55 ? 55 : snappedMin, period: p };
+  const input = raw.trim().toUpperCase();
+  const twelveHour = input.match(/^(\d{1,2}):(\d{2})\s?(AM|PM)$/);
+  if (twelveHour) {
+    const hour = Number.parseInt(twelveHour[1], 10);
+    const minute = Number.parseInt(twelveHour[2], 10);
+    const period = twelveHour[3] as "AM" | "PM";
+    if (hour < 1 || hour > 12 || minute < 0 || minute > 59) return null;
+    const snapped = Math.round(minute / 5) * 5;
+    return { hour, minute: Math.min(snapped, 55), period };
   }
 
-  // 24-hr: "14:30"
-  const m24 = s.match(/^(\d{1,2}):(\d{2})$/);
-  if (m24) {
-    const h24 = parseInt(m24[1], 10);
-    const min = parseInt(m24[2], 10);
-    if (h24 < 0 || h24 > 23 || min < 0 || min > 59) return null;
-    const period: "AM" | "PM" = h24 < 12 ? "AM" : "PM";
-    let h = h24 % 12;
-    if (h === 0) h = 12;
-    const snappedMin = Math.round(min / 5) * 5;
-    return { hour: h, minute: snappedMin > 55 ? 55 : snappedMin, period };
+  const twentyFourHour = input.match(/^(\d{1,2}):(\d{2})$/);
+  if (twentyFourHour) {
+    const hour24 = Number.parseInt(twentyFourHour[1], 10);
+    const minute = Number.parseInt(twentyFourHour[2], 10);
+    if (hour24 < 0 || hour24 > 23 || minute < 0 || minute > 59) return null;
+    const period: "AM" | "PM" = hour24 < 12 ? "AM" : "PM";
+    const hour = hour24 % 12 || 12;
+    const snapped = Math.round(minute / 5) * 5;
+    return { hour, minute: Math.min(snapped, 55), period };
   }
 
   return null;
 }
 
-const drumStyles = StyleSheet.create({
-  col: {
-    alignItems: "center",
-    position: "relative",
-    overflow: "hidden",
-  },
-  selectionFrame: {
-    position: "absolute",
-    top: ITEM_H * PAD_ITEMS,
-    left: 4,
-    right: 4,
-    height: ITEM_H,
-    borderRadius: 12,
-    backgroundColor: Colors.primary + "14",
-    borderWidth: 1.5,
-    borderColor: Colors.primary + "40",
-    zIndex: 1,
-  },
-  item: {
-    height: ITEM_H,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 4,
-  },
-  itemText: {
-    fontWeight: "600",
-    color: Colors.textMuted,
-  },
-  itemTextSel: {
-    color: Colors.primary,
-    fontWeight: "800",
-  },
-});
+function createDrumStyles(theme: AthooTheme) {
+  return StyleSheet.create({
+    col: { alignItems: "center", position: "relative", overflow: "hidden" },
+    selectionFrame: {
+      position: "absolute",
+      top: ITEM_H * PAD_ITEMS,
+      left: 4,
+      right: 4,
+      height: ITEM_H,
+      borderRadius: 12,
+      backgroundColor: theme.colors.infoSoft,
+      borderWidth: 1.5,
+      borderColor: theme.colors.primary,
+      zIndex: 1,
+    },
+    item: { height: ITEM_H, justifyContent: "center", alignItems: "center", paddingHorizontal: 4 },
+    itemText: { fontWeight: "600", color: theme.colors.textMuted },
+    itemTextSelected: { color: theme.colors.primary, fontWeight: "800" },
+  });
+}
 
-const styles = StyleSheet.create({
-  wrap: { gap: 14 },
-
-  displayRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  displayTime: {
-    fontSize: 32,
-    fontWeight: "900",
-    color: Colors.primary,
-    letterSpacing: -1,
-  },
-  manualToggle: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: Colors.primary + "14",
-    borderWidth: 1,
-    borderColor: Colors.primary + "30",
-  },
-  manualToggleText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: Colors.primary,
-  },
-
-  drum: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    overflow: "hidden",
-    paddingHorizontal: 8,
-  },
-  colon: {
-    paddingHorizontal: 4,
-    paddingBottom: 4,
-  },
-  colonText: {
-    fontSize: 28,
-    fontWeight: "900",
-    color: Colors.primary,
-  },
-  separator: {
-    width: 1,
-    height: ITEM_H * 3,
-    backgroundColor: Colors.border,
-    marginHorizontal: 4,
-  },
-
-  manualWrap: { gap: 6 },
-  manualInput: {
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 22,
-    fontWeight: "700",
-    color: Colors.text,
-    textAlign: "center",
-    letterSpacing: 1,
-  },
-  manualInputError: {
-    borderColor: Colors.error,
-    backgroundColor: Colors.error + "08",
-  },
-  manualErrTxt: {
-    fontSize: 12,
-    color: Colors.error,
-    textAlign: "center",
-  },
-
-  presets: {
-    flexDirection: "row",
-    gap: 8,
-    paddingVertical: 2,
-  },
-  preset: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: Colors.surface,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-  },
-  presetActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  presetText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: Colors.textSecondary,
-  },
-  presetTextActive: { color: "#fff" },
-});
+function createStyles(theme: AthooTheme) {
+  return StyleSheet.create({
+    wrap: { gap: 14 },
+    displayRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+    displayTime: { fontSize: 32, fontWeight: "900", color: theme.colors.primary, letterSpacing: -1 },
+    manualToggle: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 20,
+      backgroundColor: theme.colors.infoSoft,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    manualToggleText: { fontSize: 12, fontWeight: "700", color: theme.colors.primary },
+    drum: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: theme.colors.elevated,
+      borderRadius: 16,
+      borderWidth: 1.5,
+      borderColor: theme.colors.border,
+      overflow: "hidden",
+      paddingHorizontal: 8,
+    },
+    colon: { paddingHorizontal: 4, paddingBottom: 4 },
+    colonText: { fontSize: 28, fontWeight: "900", color: theme.colors.primary },
+    separator: { width: 1, height: ITEM_H * 3, backgroundColor: theme.colors.divider, marginHorizontal: 4 },
+    manualWrap: { gap: 6 },
+    manualInput: {
+      backgroundColor: theme.colors.input,
+      borderRadius: 14,
+      borderWidth: 1.5,
+      borderColor: theme.colors.border,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      fontSize: 22,
+      fontWeight: "700",
+      color: theme.colors.text,
+      textAlign: "center",
+      letterSpacing: 1,
+    },
+    manualInputError: { borderColor: theme.colors.danger, backgroundColor: theme.colors.dangerSoft },
+    manualErrorText: { fontSize: 12, color: theme.colors.danger, textAlign: "center" },
+    presets: { flexDirection: "row", gap: 8, paddingVertical: 2 },
+    preset: {
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+      borderRadius: 20,
+      backgroundColor: theme.colors.surface,
+      borderWidth: 1.5,
+      borderColor: theme.colors.border,
+    },
+    presetActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+    presetText: { fontSize: 13, fontWeight: "600", color: theme.colors.textSecondary },
+    presetTextActive: { color: theme.colors.white },
+  });
+}

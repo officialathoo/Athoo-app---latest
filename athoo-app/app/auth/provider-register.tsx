@@ -23,6 +23,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { getCategoryAppearance } from "@/utils/categoryAppearance";
 import { useCategories } from "@/context/CategoriesContext";
 import { api } from "@/services/api";
 import { uploadPickedImage } from "@/services/storage";
@@ -125,7 +126,7 @@ export default function ProviderRegisterScreen() {
   const localizedRow = direction === "rtl" ? styles.rowReverse : undefined;
   const steps = useMemo(() => STEPS.map((item) => ({ ...item, title: tr(item.title), desc: tr(item.desc) })), [tr]);
   const docItems = useMemo(() => DOC_ITEMS.map((item) => ({ ...item, label: tr(item.label), hint: tr(item.hint) })), [tr]);
-  const { phone: phoneParam, preVerified } = useLocalSearchParams<{ phone?: string; preVerified?: string }>();
+  const { phone: phoneParam } = useLocalSearchParams<{ phone?: string }>();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
@@ -133,7 +134,9 @@ export default function ProviderRegisterScreen() {
   const [loading, setLoading] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [otpVerified, setOtpVerified] = useState(preVerified === "true");
+  const [emailVerificationParams, setEmailVerificationParams] = useState<Record<string, string> | null>(null);
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [registrationToken, setRegistrationToken] = useState("");
   const [showCnicNotice, setShowCnicNotice] = useState(true);
   const [declarationAccepted, setDeclarationAccepted] = useState(false);
   const [legalAccepted, setLegalAccepted] = useState(false);
@@ -315,6 +318,7 @@ export default function ProviderRegisterScreen() {
       termsAccepted: true,
       privacyAccepted: true,
       legalVersion: LEGAL_VERSION,
+      registrationToken,
     });
     if (ok.success) {
       // Upload KYC documents to object storage and save to the API
@@ -345,10 +349,20 @@ export default function ProviderRegisterScreen() {
             tr("Your account was created, but these required documents did not upload: {{documents}}. Please upload them again from Verification Documents.", { documents: failedRequired.join(", ") }),
             [{ text: tr("Manage Documents"), onPress: () => router.replace("/(provider)/verification-documents" as any) }],
           );
+          setLoading(false);
           return;
         }
       }
 
+      if (form.email && ok.emailVerificationRequired) {
+        setEmailVerificationParams({
+          role: "provider",
+          sent: String(ok.emailVerificationSent === true),
+          expires: String(ok.emailVerificationExpiresInSeconds || 600),
+          resend: String(ok.emailVerificationResendAfterSeconds || 45),
+          ...(__DEV__ && ok.emailVerificationCode ? { code: ok.emailVerificationCode } : {}),
+        });
+      }
       setShowSuccess(true);
     } else {
       Alert.alert(tr("Registration Error"), tr(apiErrorToMessage(ok.error, "Could not create account. Please try again.")));
@@ -426,7 +440,7 @@ export default function ProviderRegisterScreen() {
                   const cleaned = form.phone.trim().replace(/\D/g, "");
                   const isPakistani = /^(92|0)?3\d{9}$/.test(cleaned);
                   if (!isPakistani) { Alert.alert(tr("Invalid Phone"), tr("Please enter a valid Pakistani mobile number (e.g. 03XX-XXXXXXX).")); return; }
-                  const res = await sendOtp(form.phone);
+                  const res = await sendOtp(form.phone, "registration", "provider", form.email || undefined);
                   if (!res.success || res.error) {
                     Alert.alert(tr("Failed"), tr(apiErrorToMessage(res.error || res.message, "Unable to send OTP. Please try again.")));
                     return;
@@ -455,14 +469,15 @@ export default function ProviderRegisterScreen() {
                 <View style={[styles.servicesGrid, localizedRow]}>
                   {categories.map((s) => {
                     const sel = form.services.includes(s.slug || s.id);
+                    const appearance = getCategoryAppearance(s, theme);
                     return (
                       <Pressable
                         key={s.id}
                         onPress={() => toggleService(s.slug || s.id)}
-                        style={[styles.serviceChip, sel && { backgroundColor: s.bgColor, borderColor: s.color }]}
+                        style={[styles.serviceChip, sel && { backgroundColor: appearance.selectedBackground, borderColor: appearance.accent }]}
                       >
-                        <Icon name={s.icon as any} size={13} color={sel ? s.color : theme.colors.textSecondary} />
-                        <Text style={[styles.serviceChipText, sel && { color: s.color }]}>{s.name}</Text>
+                        <Icon name={s.icon as any} size={13} color={sel ? appearance.accent : theme.colors.textSecondary} />
+                        <Text style={[styles.serviceChipText, sel && { color: appearance.accent }]}>{s.name}</Text>
                       </Pressable>
                     );
                   })}
@@ -674,37 +689,26 @@ export default function ProviderRegisterScreen() {
         sentTo={form.phone}
         hint={otpHint}
         onVerify={async (code: string) => {
-          const res = await verifyOtpAndLogin(form.phone, code);
+          const res = await verifyOtpAndLogin(form.phone, code, true, "registration", "provider");
           if (!res.success) {
             Alert.alert(tr("Invalid Code"), tr(apiErrorToMessage(res.error, "The code you entered is incorrect. Check the code shown above.")));
             return;
           }
 
-          if (!res.isNewUser) {
-            const existingRole = res.user?.role === "provider" ? "provider" : "customer";
-            setShowOtp(false);
-            Alert.alert(
-              tr("Account Already Exists"),
-              existingRole === "provider"
-                ? tr("This phone number is already registered as a provider. Please sign in instead.")
-                : tr("This phone number is already registered as a customer. Please sign in instead."),
-              [
-                {
-                  text: tr("Go to Sign In"),
-                  onPress: () =>
-                    router.replace({
-                      pathname: "/auth/login",
-                      params: { role: existingRole },
-                    }),
-                },
-              ]
-            );
+          if (!res.registrationToken) {
+            Alert.alert(tr("Verification Failed"), tr("Phone verification could not be completed. Please request a new code."));
             return;
           }
 
+          setRegistrationToken(res.registrationToken);
           setOtpVerified(true);
           setShowOtp(false);
           setOtpHint("");
+        }}
+        onResend={async () => {
+          const res = await sendOtp(form.phone, "registration", "provider", form.email || undefined);
+          if (!res.success || res.error) throw new Error(res.error || res.message || "Unable to resend OTP");
+          if (__DEV__) setOtpHint(res.code || "");
         }}
         onCancel={() => setShowOtp(false)}
       />
@@ -713,7 +717,12 @@ export default function ProviderRegisterScreen() {
         visible={showSuccess}
         title={tr("Application Submitted!")}
         subtitle={tr("Your provider registration is under review. Our team will verify your documents and approve your account within 24-48 hours.")}
-        primaryAction={{ label: tr("Go to Home"), onPress: () => router.replace("/(provider)/(tabs)/dashboard") }}
+        primaryAction={{
+          label: emailVerificationParams ? tr("Verify Email") : tr("Go to Home"),
+          onPress: () => emailVerificationParams
+            ? router.replace({ pathname: "/auth/email-verification" as any, params: emailVerificationParams })
+            : router.replace("/(provider)/(tabs)/dashboard"),
+        }}
         secondaryAction={{ label: tr("Back to Login"), onPress: () => router.replace("/auth/welcome") }}
         onClose={() => router.replace("/auth/welcome")}
       />

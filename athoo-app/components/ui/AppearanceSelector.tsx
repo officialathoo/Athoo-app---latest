@@ -25,7 +25,7 @@ export function AppearanceSelector() {
               onPress={() => void setPreference(option.value)}
               style={[styles.option, selected && { backgroundColor: theme.colors.primary }]}
             >
-              <Text style={[styles.optionText, { color: selected ? "#FFFFFF" : theme.colors.textSecondary }]}>{option.label}</Text>
+              <Text style={[styles.optionText, { color: selected ? theme.colors.white : theme.colors.textSecondary }]}>{option.label}</Text>
             </Pressable>
           );
         })}

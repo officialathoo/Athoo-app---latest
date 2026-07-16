@@ -1,6 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState , useMemo} from "react";
 import {
   Alert,
   Modal,
@@ -14,12 +14,12 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/colors";
 import { BookingCard } from "@/components/ui/BookingCard";
 import { useAuth } from "@/context/AuthContext";
 import { useBookings } from "@/context/BookingContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 import { useNotifications } from "@/context/NotificationContext";
 import { useNegotiation } from "@/context/NegotiationContext";
 import { useBroadcast } from "@/context/BroadcastContext";
@@ -32,6 +32,7 @@ export default function ProviderDashboard() {
   const { pendingAlerts: negAlerts, consumeNegAlerts } = useNegotiation();
   const { t, translate: tr, textAlign, writingDirection, formatCurrency } = useLang();
   const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const localizedText = { textAlign, writingDirection } as const;
   const { push, unreadCount } = useNotifications();
   const { openBroadcastCount, latestBroadcast, dismissLatestBroadcast } = useBroadcast();
@@ -159,7 +160,7 @@ export default function ProviderDashboard() {
           <View style={[styles.popupCard, { backgroundColor: theme.colors.elevated }]}>
             <View style={styles.popupIconRow}>
               <View style={styles.popupIconBg}>
-                <Icon name="radio" size={24} color="#fff" />
+                <Icon name="radio" size={24} color={theme.colors.onBrand} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.popupTitle, localizedText]}>{tr("New Broadcast Job!")}</Text>
@@ -168,20 +169,20 @@ export default function ProviderDashboard() {
             </View>
             {broadcastPopup?.address ? (
               <View style={styles.popupRow}>
-                <Icon name="map-pin" size={13} color={Colors.primary} />
+                <Icon name="map-pin" size={13} color={theme.colors.primary} />
                 <Text style={styles.popupRowText} numberOfLines={2}>{broadcastPopup.address}</Text>
               </View>
             ) : null}
             {broadcastPopup?.scheduledDate ? (
               <View style={styles.popupRow}>
-                <Icon name="calendar" size={13} color={Colors.primary} />
+                <Icon name="calendar" size={13} color={theme.colors.primary} />
                 <Text style={styles.popupRowText}>{broadcastPopup.scheduledDate} at {broadcastPopup.scheduledTime}</Text>
               </View>
             ) : null}
             {broadcastPopup?.customerOffer ? (
               <View style={styles.popupRow}>
-                <Icon name="dollar-sign" size={13} color={Colors.secondary} />
-                <Text style={[styles.popupRowText, { color: Colors.secondary, fontWeight: "700" }]}>
+                <Icon name="dollar-sign" size={13} color={theme.colors.secondary} />
+                <Text style={[styles.popupRowText, { color: theme.colors.secondary, fontWeight: "700" }]}>
                   {tr("Customer Offer")}: {formatCurrency(Number(broadcastPopup.customerOffer))}
                 </Text>
               </View>
@@ -218,7 +219,7 @@ export default function ProviderDashboard() {
           style={styles.notifBtn}
           onPress={() => router.push("/(provider)/notifications")}
         >
-          <Icon name="bell" size={20} color={Colors.text} />
+          <Icon name="bell" size={20} color={theme.colors.text} />
           {unreadCount > 0 && (
             <View style={styles.notifBadge}>
               <Text style={styles.notifBadgeText}>
@@ -237,7 +238,7 @@ export default function ProviderDashboard() {
       >
         {dashboardError ? (
           <Pressable style={styles.dashboardError} onPress={() => loadDashboard(true)} accessibilityRole="button" testID="provider-dashboard-retry">
-            <Icon name="alert-circle" size={16} color={Colors.error} />
+            <Icon name="alert-circle" size={16} color={theme.colors.danger} />
             <Text style={styles.dashboardErrorText}>{tr(dashboardError)}. {tr("Tap to retry.")}</Text>
           </Pressable>
         ) : null}
@@ -246,9 +247,9 @@ export default function ProviderDashboard() {
             styles.statusCard,
             {
               borderColor: isAvailable
-                ? Colors.success + "60"
-                : Colors.error + "40",
-              backgroundColor: isAvailable ? "#F0FDF4" : "#FFF5F5",
+                ? theme.colors.success + "60"
+                : theme.colors.danger + "40",
+              backgroundColor: isAvailable ? theme.colors.successSoft : theme.colors.dangerSoft,
             },
           ]}
         >
@@ -256,14 +257,14 @@ export default function ProviderDashboard() {
             <View
               style={[
                 styles.onlineDot,
-                { backgroundColor: isAvailable ? Colors.success : Colors.error },
+                { backgroundColor: isAvailable ? theme.colors.success : theme.colors.danger },
               ]}
             />
             <View>
               <Text
                 style={[
                   styles.statusText,
-                  { color: isAvailable ? Colors.success : Colors.error },
+                  { color: isAvailable ? theme.colors.success : theme.colors.danger },
                 ]}
               >
                 {isAvailable ? t.availableForJobs : t.notAvailable}
@@ -293,10 +294,10 @@ export default function ProviderDashboard() {
               }
             }}
             trackColor={{
-              false: Colors.error + "50",
-              true: Colors.success + "50",
+              false: theme.colors.danger + "50",
+              true: theme.colors.success + "50",
             }}
-            thumbColor={isAvailable ? Colors.success : Colors.error}
+            thumbColor={isAvailable ? theme.colors.success : theme.colors.danger}
           />
         </View>
 
@@ -307,7 +308,7 @@ export default function ProviderDashboard() {
         >
           <View style={styles.broadcastBannerLeft}>
             <View style={styles.broadcastBannerIcon}>
-              <Icon name="radio" size={20} color="#fff" />
+              <Icon name="radio" size={20} color={theme.colors.onBrand} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.broadcastBannerTitle}>
@@ -320,30 +321,30 @@ export default function ProviderDashboard() {
               </Text>
             </View>
           </View>
-          <Icon name="arrow-right" size={18} color={Colors.secondary} />
+          <Icon name="arrow-right" size={18} color={theme.colors.secondary} />
         </Pressable>
 
         <View style={styles.statsGrid}>
-          <View style={[styles.statCard, { backgroundColor: Colors.primary + "15" }]}>
-            <Text style={[styles.statVal, { color: Colors.primary }]}>
+          <View style={[styles.statCard, { backgroundColor: theme.colors.primary + "15" }]}>
+            <Text style={[styles.statVal, { color: theme.colors.primary }]}>
               {dashboardLoading ? "—" : totalJobs}
             </Text>
             <Text style={styles.statLabel}>{t.totalJobs}</Text>
           </View>
-          <View style={[styles.statCard, { backgroundColor: Colors.warning + "15" }]}>
-            <Text style={[styles.statVal, { color: Colors.warning }]}>
+          <View style={[styles.statCard, { backgroundColor: theme.colors.warning + "15" }]}>
+            <Text style={[styles.statVal, { color: theme.colors.warning }]}>
               {dashboardLoading ? "—" : pendingJobs}
             </Text>
             <Text style={styles.statLabel}>{t.pendingJobs}</Text>
           </View>
-          <View style={[styles.statCard, { backgroundColor: Colors.success + "15" }]}>
-            <Text style={[styles.statVal, { color: Colors.success }]}>
+          <View style={[styles.statCard, { backgroundColor: theme.colors.success + "15" }]}>
+            <Text style={[styles.statVal, { color: theme.colors.success }]}>
               {dashboardLoading ? "—" : completedJobs}
             </Text>
             <Text style={styles.statLabel}>{t.done}</Text>
           </View>
-          <View style={[styles.statCard, { backgroundColor: Colors.secondary + "15" }]}>
-            <Text style={[styles.statVal, { color: Colors.secondary }]}>
+          <View style={[styles.statCard, { backgroundColor: theme.colors.secondary + "15" }]}>
+            <Text style={[styles.statVal, { color: theme.colors.secondary }]}>
               {totalEarnings > 0 ? `${Math.round(totalEarnings / 1000)}k` : "0"}
             </Text>
             <Text style={styles.statLabel}>{t.earned}</Text>
@@ -368,9 +369,9 @@ export default function ProviderDashboard() {
                     {bar.amount > 0 ? `${Math.round(bar.amount / 1000)}k` : ""}
                   </Text>
                   <View style={styles.chartBarTrack}>
-                    <View style={[styles.chartBarFill, { height: `${pct * 100}%` as any, backgroundColor: isToday ? Colors.primary : Colors.primary + "55" }]} />
+                    <View style={[styles.chartBarFill, { height: `${pct * 100}%` as any, backgroundColor: isToday ? theme.colors.primary : theme.colors.primary + "55" }]} />
                   </View>
-                  <Text style={[styles.chartBarLabel, isToday && { color: Colors.primary, fontWeight: "700" }]}>{bar.label}</Text>
+                  <Text style={[styles.chartBarLabel, isToday && { color: theme.colors.primary, fontWeight: "700" }]}>{bar.label}</Text>
                 </View>
               );
             })}
@@ -420,7 +421,7 @@ export default function ProviderDashboard() {
         {allBookings.length === 0 && (
           <View style={styles.empty}>
             <View style={styles.emptyIcon}>
-              <Icon name="briefcase" size={32} color={Colors.textMuted} />
+              <Icon name="briefcase" size={32} color={theme.colors.textMuted} />
             </View>
             <Text style={styles.emptyTitle}>{t.noJobsYet}</Text>
             <Text style={styles.emptySubtitle}>{t.noJobsYetSub}</Text>
@@ -430,17 +431,17 @@ export default function ProviderDashboard() {
         <View style={styles.performanceCard}>
           <Text style={styles.perfTitle}>{t.yourPerformance}</Text>
           <View style={styles.perfRow}>
-            <Icon name="star" size={16} color={Colors.accent} />
+            <Icon name="star" size={16} color={theme.colors.accent} />
             <Text style={styles.perfLabel}>Avg Rating</Text>
             <Text style={styles.perfVal}>{user?.rating || "N/A"}</Text>
           </View>
           <View style={styles.perfRow}>
-            <Icon name="clock" size={16} color={Colors.primary} />
+            <Icon name="clock" size={16} color={theme.colors.primary} />
             <Text style={styles.perfLabel}>Response Time</Text>
             <Text style={styles.perfVal}>~15 min</Text>
           </View>
           <View style={styles.perfRow}>
-            <Icon name="check-circle" size={16} color={Colors.success} />
+            <Icon name="check-circle" size={16} color={theme.colors.success} />
             <Text style={styles.perfLabel}>Completion Rate</Text>
             <Text style={styles.perfVal}>{completionRate}%</Text>
           </View>
@@ -450,10 +451,10 @@ export default function ProviderDashboard() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  dashboardError: { marginHorizontal: 16, marginBottom: 12, padding: 12, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: Colors.error + "10", borderWidth: 1, borderColor: Colors.error + "30" },
-  dashboardErrorText: { flex: 1, color: Colors.error, fontSize: 12, fontWeight: "600" },
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
+  dashboardError: { marginHorizontal: 16, marginBottom: 12, padding: 12, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: theme.colors.danger + "10", borderWidth: 1, borderColor: theme.colors.danger + "30" },
+  dashboardErrorText: { flex: 1, color: theme.colors.danger, fontSize: 12, fontWeight: "600" },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -461,21 +462,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 14,
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: theme.colors.border,
   },
-  greeting: { fontSize: 18, fontWeight: "800", color: Colors.text },
+  greeting: { fontSize: 18, fontWeight: "800", color: theme.colors.text },
   subGreeting: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     marginTop: 2,
   },
   notifBtn: {
     width: 42,
     height: 42,
     borderRadius: 13,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -486,14 +487,14 @@ const styles = StyleSheet.create({
     minWidth: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: Colors.error,
+    backgroundColor: theme.colors.danger,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 3,
   },
   notifBadgeText: {
     fontSize: 9,
-    color: "#fff",
+    color: theme.colors.onBrand,
     fontWeight: "800",
   },
   scroll: { flex: 1 },
@@ -520,7 +521,7 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 14, fontWeight: "700" },
   statusSub: {
     fontSize: 11,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     marginTop: 1,
   },
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
@@ -536,13 +537,13 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 11,
     fontWeight: "600",
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
   section: { gap: 4 },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "800",
-    color: Colors.text,
+    color: theme.colors.text,
     marginBottom: 10,
   },
   empty: { alignItems: "center", paddingVertical: 40, gap: 10 },
@@ -550,26 +551,26 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 22,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
   },
-  emptyTitle: { fontSize: 17, fontWeight: "700", color: Colors.text },
+  emptyTitle: { fontSize: 17, fontWeight: "700", color: theme.colors.text },
   emptySubtitle: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     textAlign: "center",
     paddingHorizontal: 30,
   },
   performanceCard: {
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderRadius: 18,
     padding: 16,
     gap: 12,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
-  perfTitle: { fontSize: 15, fontWeight: "700", color: Colors.text },
+  perfTitle: { fontSize: 15, fontWeight: "700", color: theme.colors.text },
   perfRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -578,41 +579,41 @@ const styles = StyleSheet.create({
   perfLabel: {
     flex: 1,
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
-  perfVal: { fontSize: 14, fontWeight: "700", color: Colors.text },
+  perfVal: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
 
-  earningsChart: { backgroundColor: Colors.card, borderRadius: 18, padding: 16, borderWidth: 1, borderColor: Colors.border },
+  earningsChart: { backgroundColor: theme.colors.surface, borderRadius: 18, padding: 16, borderWidth: 1, borderColor: theme.colors.border },
   chartHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 },
-  chartTitle: { fontSize: 14, fontWeight: "700", color: Colors.text },
-  chartTotal: { fontSize: 13, fontWeight: "700", color: Colors.primary },
+  chartTitle: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
+  chartTotal: { fontSize: 13, fontWeight: "700", color: theme.colors.primary },
   chartBars: { flexDirection: "row", alignItems: "flex-end", gap: 6, height: 80 },
   chartBarCol: { flex: 1, alignItems: "center", gap: 4 },
-  chartBarAmt: { fontSize: 9, color: Colors.textSecondary, fontWeight: "600", height: 12, textAlign: "center" },
-  chartBarTrack: { flex: 1, width: "100%", backgroundColor: Colors.surface, borderRadius: 4, overflow: "hidden", justifyContent: "flex-end" },
+  chartBarAmt: { fontSize: 9, color: theme.colors.textSecondary, fontWeight: "600", height: 12, textAlign: "center" },
+  chartBarTrack: { flex: 1, width: "100%", backgroundColor: theme.colors.surfaceAlt, borderRadius: 4, overflow: "hidden", justifyContent: "flex-end" },
   chartBarFill: { width: "100%", borderRadius: 4 },
-  chartBarLabel: { fontSize: 10, color: Colors.textSecondary, fontWeight: "500" },
+  chartBarLabel: { fontSize: 10, color: theme.colors.textSecondary, fontWeight: "500" },
   broadcastBanner: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: Colors.secondary + "12",
+    backgroundColor: theme.colors.secondary + "12",
     borderRadius: 16,
     padding: 14,
     borderWidth: 1.5,
-    borderColor: Colors.secondary + "40",
+    borderColor: theme.colors.secondary + "40",
   },
   broadcastBannerLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
   broadcastBannerIcon: {
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: Colors.secondary,
+    backgroundColor: theme.colors.secondary,
     alignItems: "center",
     justifyContent: "center",
   },
-  broadcastBannerTitle: { fontSize: 14, fontWeight: "800", color: Colors.text },
-  broadcastBannerSub: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
+  broadcastBannerTitle: { fontSize: 14, fontWeight: "800", color: theme.colors.text },
+  broadcastBannerSub: { fontSize: 11, color: theme.colors.textSecondary, marginTop: 2 },
 
   popupOverlay: {
     flex: 1,
@@ -622,12 +623,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   popupCard: {
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderRadius: 22,
     padding: 20,
     width: "100%",
     gap: 14,
-    shadowColor: "#000",
+    shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.25,
     shadowRadius: 20,
@@ -636,23 +637,23 @@ const styles = StyleSheet.create({
   popupIconRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   popupIconBg: {
     width: 48, height: 48, borderRadius: 14,
-    backgroundColor: Colors.secondary,
+    backgroundColor: theme.colors.secondary,
     alignItems: "center", justifyContent: "center",
   },
-  popupTitle: { fontSize: 17, fontWeight: "800", color: Colors.text },
-  popupSub: { fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
+  popupTitle: { fontSize: 17, fontWeight: "800", color: theme.colors.text },
+  popupSub: { fontSize: 13, color: theme.colors.textSecondary, marginTop: 2 },
   popupRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
-  popupRowText: { flex: 1, fontSize: 13, color: Colors.textSecondary, lineHeight: 18 },
+  popupRowText: { flex: 1, fontSize: 13, color: theme.colors.textSecondary, lineHeight: 18 },
   popupBtns: { flexDirection: "row", gap: 10, marginTop: 4 },
   popupDismiss: {
     flex: 1, paddingVertical: 12, borderRadius: 12,
-    backgroundColor: Colors.surface, alignItems: "center",
-    borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: theme.colors.surfaceAlt, alignItems: "center",
+    borderWidth: 1, borderColor: theme.colors.border,
   },
-  popupDismissText: { fontSize: 14, fontWeight: "700", color: Colors.textSecondary },
+  popupDismissText: { fontSize: 14, fontWeight: "700", color: theme.colors.textSecondary },
   popupView: {
     flex: 2, paddingVertical: 12, borderRadius: 12,
-    backgroundColor: Colors.secondary, alignItems: "center",
+    backgroundColor: theme.colors.secondary, alignItems: "center",
   },
-  popupViewText: { fontSize: 14, fontWeight: "800", color: "#fff" },
+  popupViewText: { fontSize: 14, fontWeight: "800", color: theme.colors.onBrand },
 });

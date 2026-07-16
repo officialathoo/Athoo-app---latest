@@ -240,14 +240,14 @@ export default function SubscriptionScreen() {
             <AnimatedCard delay={60}>
               <LinearGradient colors={[theme.colors.primary, theme.colors.secondary]} style={styles.activeBanner} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
                 <View style={styles.activeBannerLeft}>
-                  <Icon name="crown" size={22} color="#fff" />
+                  <Icon name="crown" size={22} color={theme.colors.onBrand} />
                   <View>
                     <Text style={styles.activeBannerTitle}>{tr("Premium Active")}</Text>
                     <Text style={styles.activeBannerSub}>Expires {formatDate(activeSub.expiresAt)} · {activeSub.billingPeriod}</Text>
                   </View>
                 </View>
                 <Pressable style={styles.cancelBtn} onPress={handleCancel} disabled={cancelling}>
-                  {cancelling ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.cancelBtnText}>{tr("Cancel")}</Text>}
+                  {cancelling ? <ActivityIndicator size="small" color={theme.colors.onBrand} /> : <Text style={styles.cancelBtnText}>{tr("Cancel")}</Text>}
                 </Pressable>
               </LinearGradient>
             </AnimatedCard>
@@ -346,7 +346,7 @@ export default function SubscriptionScreen() {
                         style={styles.subscribeBtn}
                         onPress={() => { setSelectedPlan(plan); setShowModal(true); }}
                       >
-                        <Icon name="crown" size={16} color="#fff" />
+                        <Icon name="crown" size={16} color={theme.colors.onBrand} />
                         <Text style={styles.subscribeBtnText}>Subscribe for {formatCurrency(price)}/{billing === "monthly" ? "mo" : "yr"}</Text>
                       </Pressable>
                     )}
@@ -488,10 +488,10 @@ export default function SubscriptionScreen() {
                   disabled={(paymentRequired && (!payRef.trim() || !screenshot || !paymentAccountReady)) || subscribing || uploadingScreenshot}
                 >
                   {subscribing ? (
-                    <ActivityIndicator size="small" color="#fff" />
+                    <ActivityIndicator size="small" color={theme.colors.onBrand} />
                   ) : (
                     <>
-                      <Icon name="crown" size={18} color="#fff" />
+                      <Icon name="crown" size={18} color={theme.colors.onBrand} />
                       <Text style={styles.submitBtnText}>{tr("Submit for Approval")}</Text>
                     </>
                   )}
@@ -528,10 +528,10 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between", gap: 12,
   },
   activeBannerLeft: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 12, flex: 1 },
-  activeBannerTitle: { fontSize: 15, fontWeight: "800", color: "#fff" },
+  activeBannerTitle: { fontSize: 15, fontWeight: "800", color: theme.colors.onBrand },
   activeBannerSub: { fontSize: 12, color: "rgba(255,255,255,0.8)", marginTop: 2 },
   cancelBtn: { backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8 },
-  cancelBtnText: { fontSize: 13, fontWeight: "700", color: "#fff" },
+  cancelBtnText: { fontSize: 13, fontWeight: "700", color: theme.colors.onBrand },
 
   pendingBanner: {
     flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "flex-start", gap: 10,
@@ -564,7 +564,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     alignSelf: "flex-start", backgroundColor: theme.colors.primary, borderRadius: 8,
     paddingHorizontal: 10, paddingVertical: 4,
   },
-  activePillText: { fontSize: 10, fontWeight: "800", color: "#fff", letterSpacing: 1 },
+  activePillText: { fontSize: 10, fontWeight: "800", color: theme.colors.onBrand, letterSpacing: 1 },
   planHeader: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 12 },
   planIconWrap: {
     width: 42, height: 42, borderRadius: 12, backgroundColor: theme.colors.primary + "12",
@@ -584,7 +584,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "center", gap: 8,
     backgroundColor: theme.colors.primary, borderRadius: 14, paddingVertical: 14,
   },
-  subscribeBtnText: { fontSize: 14, fontWeight: "800", color: "#fff" },
+  subscribeBtnText: { fontSize: 14, fontWeight: "800", color: theme.colors.onBrand },
 
   historySection: { backgroundColor: theme.colors.surface, borderRadius: 16, padding: 16, gap: 12, borderWidth: 1, borderColor: theme.colors.border },
   historySectionTitle: { fontSize: 14, fontWeight: "800", color: theme.colors.text },
@@ -648,7 +648,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "center", gap: 10,
     backgroundColor: theme.colors.primary, borderRadius: 16, paddingVertical: 16,
   },
-  submitBtnText: { fontSize: 15, fontWeight: "800", color: "#fff" },
+  submitBtnText: { fontSize: 15, fontWeight: "800", color: theme.colors.onBrand },
   btnDisabled: { opacity: 0.5 },
 
   cancelScheduledBanner: {

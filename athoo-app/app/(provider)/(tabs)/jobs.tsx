@@ -1,6 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useState , useMemo} from "react";
 import {
   Platform,
   Pressable,
@@ -11,10 +11,10 @@ import {
   RefreshControl,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/colors";
 import { AppText, ProviderJobsSkeleton, ProviderMetricCard } from "@/components/design";
 import { EmptyView } from "@/components/ui/UiState";
 import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 import { useLang } from "@/context/LanguageContext";
 import { BookingCard } from "@/components/ui/BookingCard";
 import { useAuth } from "@/context/AuthContext";
@@ -38,6 +38,7 @@ const FILTERS: {
 export default function ProviderJobsScreen() {
   const { user } = useAuth();
   const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { t, translate: tr } = useLang();
   const { getMyBookings, loadBookings, isLoading } = useBookings();
   const { getMyNegotiations } = useNegotiation();
@@ -179,7 +180,7 @@ export default function ProviderJobsScreen() {
               >
                 <View style={styles.negHeader}>
                   <View style={styles.negIcon}>
-                    <Icon name="dollar-sign" size={18} color={Colors.secondary} />
+                    <Icon name="dollar-sign" size={18} color={theme.colors.secondary} />
                   </View>
 
                   <View style={{ flex: 1 }}>
@@ -231,7 +232,7 @@ export default function ProviderJobsScreen() {
                 <View style={styles.negAmounts}>
                   <View style={styles.negAmount}>
                     <Text style={styles.negAmountLabel}>{tr("Customer Offer")}</Text>
-                    <Text style={[styles.negAmountVal, { color: Colors.primary }]}>
+                    <Text style={[styles.negAmountVal, { color: theme.colors.primary }]}>
                       {tr("Rs.")} {neg.customerOffer}
                     </Text>
                   </View>
@@ -240,7 +241,7 @@ export default function ProviderJobsScreen() {
                     <View style={styles.negAmount}>
                       <Text style={styles.negAmountLabel}>{tr("Your Counter")}</Text>
                       <Text
-                        style={[styles.negAmountVal, { color: Colors.secondary }]}
+                        style={[styles.negAmountVal, { color: theme.colors.secondary }]}
                       >
                         {tr("Rs.")} {neg.providerCounter}
                       </Text>
@@ -259,7 +260,7 @@ export default function ProviderJobsScreen() {
                         })
                       }
                     >
-                      <Icon name="check" size={14} color="#fff" />
+                      <Icon name="check" size={14} color={theme.colors.onBrand} />
                       <Text style={styles.negAcceptText}>{t.accept}</Text>
                     </Pressable>
 
@@ -272,7 +273,7 @@ export default function ProviderJobsScreen() {
                         })
                       }
                     >
-                      <Icon name="refresh-cw" size={14} color={Colors.secondary} />
+                      <Icon name="refresh-cw" size={14} color={theme.colors.secondary} />
                       <Text style={styles.negCounterText}>{t.counter}</Text>
                     </Pressable>
 
@@ -285,7 +286,7 @@ export default function ProviderJobsScreen() {
                         })
                       }
                     >
-                      <Icon name="x" size={14} color={Colors.error} />
+                      <Icon name="x" size={14} color={theme.colors.danger} />
                       <Text style={styles.negRejectText}>{t.reject}</Text>
                     </Pressable>
                   </View>
@@ -322,8 +323,8 @@ export default function ProviderJobsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
 
   header: {
     flexDirection: "row",
@@ -332,18 +333,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 12,
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
   },
 
   title: {
     fontSize: 22,
     fontWeight: "800",
-    color: Colors.text,
+    color: theme.colors.text,
     flex: 1,
   },
 
   alertBadge: {
-    backgroundColor: Colors.error + "20",
+    backgroundColor: theme.colors.danger + "20",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 20,
@@ -352,7 +353,7 @@ const styles = StyleSheet.create({
   alertText: {
     fontSize: 12,
     fontWeight: "700",
-    color: Colors.error,
+    color: theme.colors.danger,
   },
 
   summaryRow: {
@@ -360,9 +361,9 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: theme.colors.border,
   },
 
   summaryCard: {
@@ -379,12 +380,12 @@ const styles = StyleSheet.create({
 
   summaryLbl: {
     fontSize: 10,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     fontWeight: "600",
   },
 
   filterScroll: {
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
   },
 
   filterContent: {
@@ -400,28 +401,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 5,
     borderRadius: 14,
-    backgroundColor: Colors.background,
+    backgroundColor: theme.colors.background,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
 
   filterChipActive: {
-    backgroundColor: Colors.secondary,
-    borderColor: Colors.secondary,
+    backgroundColor: theme.colors.secondary,
+    borderColor: theme.colors.secondary,
   },
 
   filterText: {
     fontSize: 12,
     fontWeight: "600",
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   filterTextActive: {
-    color: Colors.white,
+    color: theme.colors.surface,
   },
 
   filterBadge: {
-    backgroundColor: Colors.error,
+    backgroundColor: theme.colors.danger,
     width: 18,
     height: 18,
     borderRadius: 9,
@@ -432,7 +433,7 @@ const styles = StyleSheet.create({
   filterBadgeText: {
     fontSize: 9,
     fontWeight: "700",
-    color: "#fff",
+    color: theme.colors.onBrand,
   },
 
   scroll: {
@@ -454,23 +455,23 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   emptySubtitle: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     textAlign: "center",
   },
 
   negCard: {
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderRadius: 18,
     padding: 16,
     gap: 12,
     borderWidth: 1,
-    borderColor: Colors.secondary + "30",
-    shadowColor: Colors.shadow,
+    borderColor: theme.colors.secondary + "30",
+    shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 1,
     shadowRadius: 8,
@@ -491,7 +492,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: Colors.secondary + "20",
+    backgroundColor: theme.colors.secondary + "20",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -499,12 +500,12 @@ const styles = StyleSheet.create({
   negService: {
     fontSize: 14,
     fontWeight: "700",
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   negCustomer: {
     fontSize: 12,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   negStatusBadge: {
@@ -525,7 +526,7 @@ const styles = StyleSheet.create({
 
   negAmount: {
     flex: 1,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 10,
     padding: 10,
     alignItems: "center",
@@ -534,7 +535,7 @@ const styles = StyleSheet.create({
 
   negAmountLabel: {
     fontSize: 10,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     fontWeight: "600",
   },
 
@@ -554,7 +555,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 5,
-    backgroundColor: "#22C55E",
+    backgroundColor: theme.colors.success,
     borderRadius: 10,
     paddingVertical: 8,
   },
@@ -562,7 +563,7 @@ const styles = StyleSheet.create({
   negAcceptText: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#fff",
+    color: theme.colors.onBrand,
   },
 
   negCounterBtn: {
@@ -571,17 +572,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 5,
-    backgroundColor: Colors.secondary + "15",
+    backgroundColor: theme.colors.secondary + "15",
     borderRadius: 10,
     paddingVertical: 8,
     borderWidth: 1,
-    borderColor: Colors.secondary + "40",
+    borderColor: theme.colors.secondary + "40",
   },
 
   negCounterText: {
     fontSize: 12,
     fontWeight: "700",
-    color: Colors.secondary,
+    color: theme.colors.secondary,
   },
 
   negRejectBtn: {
@@ -590,16 +591,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 5,
-    backgroundColor: Colors.error + "10",
+    backgroundColor: theme.colors.danger + "10",
     borderRadius: 10,
     paddingVertical: 8,
     borderWidth: 1,
-    borderColor: Colors.error + "30",
+    borderColor: theme.colors.danger + "30",
   },
 
   negRejectText: {
     fontSize: 12,
     fontWeight: "700",
-    color: Colors.error,
+    color: theme.colors.danger,
   },
 });

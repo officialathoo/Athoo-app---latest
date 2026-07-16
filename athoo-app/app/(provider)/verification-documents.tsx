@@ -1,5 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
-import { Colors } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/services/api";
 import { uploadPickedImage } from "@/services/storage";
@@ -20,6 +21,8 @@ const REQUIRED = [
 type ProviderDocument = { id: string; type: string; label?: string | null; status: string; rejectionNote?: string | null };
 
 export default function VerificationDocumentsScreen() {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
   const { user, refreshUser } = useAuth();
   const [documents, setDocuments] = useState<ProviderDocument[]>([]);
@@ -73,7 +76,7 @@ export default function VerificationDocumentsScreen() {
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]} testID="provider-verification-documents">
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" style={styles.backButton}>
-          <Icon name="arrow-left" size={20} color={Colors.text} />
+          <Icon name="arrow-left" size={20} color={theme.colors.text} />
         </Pressable>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Verification Documents</Text>
@@ -83,7 +86,7 @@ export default function VerificationDocumentsScreen() {
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 36 }]}>
         {user?.verificationNote ? (
           <View style={styles.noteBox}>
-            <Icon name="alert-circle" size={18} color={Colors.error} />
+            <Icon name="alert-circle" size={18} color={theme.colors.danger} />
             <Text style={styles.noteText}>{user.verificationNote}</Text>
           </View>
         ) : null}
@@ -93,7 +96,7 @@ export default function VerificationDocumentsScreen() {
           return (
             <View key={item.type} style={styles.card} testID={`verification-document-${item.type}`}>
               <View style={[styles.statusIcon, rejected && styles.statusIconRejected]}>
-                <Icon name={document?.status === "approved" ? "check" : rejected ? "x" : document ? "clock" : "upload"} size={18} color={document?.status === "approved" ? Colors.success : rejected ? Colors.error : Colors.primary} />
+                <Icon name={document?.status === "approved" ? "check" : rejected ? "x" : document ? "clock" : "upload"} size={18} color={document?.status === "approved" ? theme.colors.success : rejected ? theme.colors.danger : theme.colors.primary} />
               </View>
               <View style={styles.cardBody}>
                 <Text style={styles.cardTitle}>{item.label}</Text>
@@ -113,7 +116,7 @@ export default function VerificationDocumentsScreen() {
           );
         })}
         <Pressable onPress={load} disabled={loading} style={styles.refreshButton} testID="provider-verification-refresh">
-          <Icon name="refresh-cw" size={16} color={Colors.primary} />
+          <Icon name="refresh-cw" size={16} color={theme.colors.primary} />
           <Text style={styles.refreshText}>{loading ? "Refreshing…" : "Refresh review status"}</Text>
         </Pressable>
       </ScrollView>
@@ -121,24 +124,24 @@ export default function VerificationDocumentsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  header: { flexDirection: "row", alignItems: "center", gap: 12, padding: 18, backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  backButton: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: Colors.background },
-  title: { color: Colors.text, fontSize: 19, fontWeight: "800" },
-  subtitle: { color: Colors.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 2 },
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
+  header: { flexDirection: "row", alignItems: "center", gap: 12, padding: 18, backgroundColor: theme.colors.surfaceAlt, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  backButton: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.background },
+  title: { color: theme.colors.text, fontSize: 19, fontWeight: "800" },
+  subtitle: { color: theme.colors.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 2 },
   content: { padding: 18, gap: 12 },
-  noteBox: { flexDirection: "row", gap: 10, padding: 14, borderRadius: 14, backgroundColor: Colors.error + "12", borderWidth: 1, borderColor: Colors.error + "30" },
-  noteText: { flex: 1, color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
-  card: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 16, padding: 14 },
-  statusIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: Colors.primary + "12" },
-  statusIconRejected: { backgroundColor: Colors.error + "12" },
+  noteBox: { flexDirection: "row", gap: 10, padding: 14, borderRadius: 14, backgroundColor: theme.colors.danger + "12", borderWidth: 1, borderColor: theme.colors.danger + "30" },
+  noteText: { flex: 1, color: theme.colors.textSecondary, fontSize: 13, lineHeight: 18 },
+  card: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 16, padding: 14 },
+  statusIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.primary + "12" },
+  statusIconRejected: { backgroundColor: theme.colors.danger + "12" },
   cardBody: { flex: 1, gap: 3 },
-  cardTitle: { color: Colors.text, fontSize: 14, fontWeight: "700" },
-  cardStatus: { color: Colors.textSecondary, fontSize: 12, textTransform: "capitalize" },
-  rejection: { color: Colors.error, fontSize: 11, lineHeight: 15 },
-  uploadButton: { minWidth: 76, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 10, backgroundColor: Colors.primary },
-  uploadText: { color: "#fff", fontSize: 12, fontWeight: "700", textAlign: "center" },
+  cardTitle: { color: theme.colors.text, fontSize: 14, fontWeight: "700" },
+  cardStatus: { color: theme.colors.textSecondary, fontSize: 12, textTransform: "capitalize" },
+  rejection: { color: theme.colors.danger, fontSize: 11, lineHeight: 15 },
+  uploadButton: { minWidth: 76, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 10, backgroundColor: theme.colors.primary },
+  uploadText: { color: theme.colors.onBrand, fontSize: 12, fontWeight: "700", textAlign: "center" },
   refreshButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, padding: 14, marginTop: 6 },
-  refreshText: { color: Colors.primary, fontWeight: "700", fontSize: 13 },
+  refreshText: { color: theme.colors.primary, fontWeight: "700", fontSize: 13 },
 });

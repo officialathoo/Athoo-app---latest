@@ -47,3 +47,15 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# environment files (keep only the non-secret production template)
+.env
+.env.*
+!.env.production.example
+
+# Connected deployment evidence is generated locally/CI and may contain operational metadata.
+release-evidence/
+
+# Local release acceptance records contain private test-account and device metadata.
+device-acceptance-evidence.json
+rc2-evidence.json

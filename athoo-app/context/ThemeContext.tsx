@@ -26,7 +26,7 @@ function syncLegacyColors(theme: AthooTheme) {
   Colors.primary = theme.colors.primary;
   Colors.primaryDark = theme.colors.primaryPressed;
   Colors.gradientStart = theme.colors.primary;
-  Colors.gradientEnd = theme.dark ? "#17263C" : "#0D4BA0";
+  Colors.gradientEnd = theme.colors.primaryPressed;
   Colors.background = theme.colors.background;
   Colors.surface = theme.colors.surfaceAlt;
   Colors.card = theme.colors.surface;
@@ -43,7 +43,7 @@ function syncLegacyColors(theme: AthooTheme) {
   Colors.warning = theme.colors.warning;
   Colors.accent = theme.colors.accent;
   Colors.border = theme.colors.border;
-  Colors.shadow = theme.dark ? "#000000" : "#000000";
+  Colors.shadow = theme.colors.overlay;
 }
 
 const ThemeContext = createContext<ThemeContextValue>({

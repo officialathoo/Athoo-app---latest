@@ -12,7 +12,6 @@ import { AppState, AppStateStatus } from "react-native";
 import { api, realtime } from "@/services/api";
 import { useAuth } from "./AuthContext";
 import { notificationService } from "@/services/NotificationService";
-import { soundService } from "@/services/SoundService";
 
 export type BookingStatus =
   | "pending"
@@ -258,19 +257,14 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
         );
 
         if (myNewPending.length > 0) {
-          await notificationService.init();
           const newAlerts: BookingAlert[] = [];
 
           for (const b of myNewPending) {
             const title = "📋 New Booking Request!";
             const message = `${b.customerName} needs ${b.service} at ${b.address}`;
-            await notificationService.scheduleBookingAlert(title, message, {
-              role: "provider",
-              bookingId: b.id,
-            });
-            await soundService.playNotification();
             newAlerts.push({ type: "booking", title, message, booking: b });
           }
+          await notificationService.playRealtimeFallback("booking").catch(() => {});
 
           setPendingAlerts((prev) => [...prev, ...newAlerts]);
           await markIdsSeen(myNewPending.map((b) => b.id));
@@ -308,10 +302,6 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
             }
 
             if (title) {
-              await notificationService.scheduleStatusAlert(title, message, {
-                role: "customer",
-                bookingId: b.id,
-              });
               statusAlerts.push({ type: "status", title, message, booking: b });
               notified = true;
             }
@@ -321,10 +311,6 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
           if (arrivedAt && seenArrivals[b.id] !== arrivedAt) {
             const title = "📍 Provider Arrived";
             const message = `${b.providerName} has arrived near your location for ${b.service}`;
-            await notificationService.scheduleStatusAlert(title, message, {
-              role: "customer",
-              bookingId: b.id,
-            });
             statusAlerts.push({ type: "status", title, message, booking: b });
             notified = true;
             changedArrivals[b.id] = arrivedAt;
@@ -340,7 +326,7 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (notified) {
-          await soundService.playNotification();
+          await notificationService.playRealtimeFallback("status").catch(() => {});
           await saveSeenStatuses(changedStatuses);
           await saveSeenArrivals(changedArrivals);
         } else if (
@@ -454,11 +440,7 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
           return [fresh, ...prev];
         });
         if (msg.type === "booking:new" && user?.role === "provider") {
-          soundService.playNotification().catch(() => {});
-          notificationService.scheduleStatusAlert(
-            "New Booking Request!",
-            `${(fresh as any).customerName || "A customer"} needs ${fresh.service}`
-          ).catch(() => {});
+          notificationService.playRealtimeFallback("booking").catch(() => {});
         }
       }
     });

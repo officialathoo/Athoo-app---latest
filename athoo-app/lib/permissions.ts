@@ -1,15 +1,6 @@
 import { Alert, Linking, Platform } from "react-native";
 import * as Location from "expo-location";
-import Constants from "expo-constants";
-
-function isExpoGoRuntime(): boolean {
-  const C = Constants as any;
-  const owner = String(C?.appOwnership || "").toLowerCase();
-  const env = String(C?.executionEnvironment || "").toLowerCase();
-  // Expo Go cannot reliably load remote push notification native modules.
-  // In production/dev-client builds this becomes false, so real notifications still work.
-  return owner === "expo" || owner === "guest" || env.includes("storeclient") || (!!__DEV__ && owner !== "standalone");
-}
+import { isExpoGoRuntime } from "@/lib/runtimeEnvironment";
 
 export type PermissionResult = "granted" | "denied" | "blocked" | "services_disabled";
 

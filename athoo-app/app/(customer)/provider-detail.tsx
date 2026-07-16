@@ -1,7 +1,7 @@
 import { Icon } from "@/components/ui/Icon";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState , useMemo} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -15,7 +15,9 @@ import {
 } from "react-native";
 import { PrivateImage } from "@/services/storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
+import { getCategoryAppearance } from "@/utils/categoryAppearance";
 import { AnimatedCard } from "@/components/ui/AnimatedCard";
 import { useAuth } from "@/context/AuthContext";
 import { useChat } from "@/context/ChatContext";
@@ -46,6 +48,8 @@ function timeAgo(ts: string) {
 }
 
 export default function ProviderDetailScreen() {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { providerId } = useLocalSearchParams<{ providerId: string }>();
   const { user, toggleSaved } = useAuth();
   const { getOrCreateChat } = useChat();
@@ -110,7 +114,7 @@ export default function ProviderDetailScreen() {
     return (
       <View style={[styles.container, { paddingTop: topPad }]}>
         <View style={styles.loadingCenter}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
       </View>
     );
@@ -120,7 +124,7 @@ export default function ProviderDetailScreen() {
     return (
       <View style={[styles.container, { paddingTop: topPad }]}>
         <View style={styles.notFound}>
-          <Icon name="alert-circle" size={36} color={Colors.error} />
+          <Icon name="alert-circle" size={36} color={theme.colors.danger} />
           <Text style={styles.notFoundText}>Provider not found</Text>
           <Pressable onPress={() => router.back()}>
             <Text style={styles.backLink}>Go back</Text>
@@ -131,7 +135,7 @@ export default function ProviderDetailScreen() {
   }
 
   const initials = getInitials(provider.name);
-  const color = provider.profileColor || Colors.primary;
+  const color = provider.profileColor || theme.colors.primary;
   const firstServiceId = provider.services?.[0];
   const category = getCategoryBySlug(firstServiceId || "");
   const serviceLabel = category?.name || (firstServiceId || "General Services");
@@ -142,13 +146,13 @@ export default function ProviderDetailScreen() {
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-        <LinearGradient colors={[Colors.primary, "#0D4BA0"]} style={styles.headerGrad}>
+        <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.headerGrad}>
           <Pressable style={styles.backBtn} onPress={() => router.back()}>
-            <Icon name="arrow-left" size={20} color="#fff" />
+            <Icon name="arrow-left" size={20} color={theme.colors.onBrand} />
           </Pressable>
           <Pressable style={styles.heartBtn} onPress={handleToggleSaved}>
-            <Icon name={isSaved ? "heart" : "heart-outline"} size={18} color={isSaved ? "#FF6B6B" : "rgba(255,255,255,0.85)"} />
-            <Text style={[styles.heartBtnLabel, isSaved && { color: "#FF6B6B" }]}>
+            <Icon name={isSaved ? "heart" : "heart-outline"} size={18} color={isSaved ? theme.colors.danger : "rgba(255,255,255,0.85)"} />
+            <Text style={[styles.heartBtnLabel, isSaved && { color: theme.colors.danger }]}>
               {isSaved ? "Saved" : "Save"}
             </Text>
           </Pressable>
@@ -166,18 +170,18 @@ export default function ProviderDetailScreen() {
           <View style={styles.badgesRow}>
             {category && (
               <View style={styles.serviceTag}>
-                <Icon name={category.icon as any} size={13} color="#fff" />
+                <Icon name={category.icon as any} size={13} color={theme.colors.onBrand} />
                 <Text style={styles.serviceTagText}>{serviceLabel}</Text>
               </View>
             )}
             {provider.isVerified && (
               <View style={styles.serviceTag}>
-                <Icon name="check-circle" size={13} color="#fff" />
+                <Icon name="check-circle" size={13} color={theme.colors.onBrand} />
                 <Text style={styles.serviceTagText}>Verified Pro</Text>
               </View>
             )}
             <View style={styles.serviceTag}>
-              <Icon name="map-pin" size={13} color="#fff" />
+              <Icon name="map-pin" size={13} color={theme.colors.onBrand} />
               <Text style={styles.serviceTagText}>{provider.location ? provider.location : "RWP & ISB"}</Text>
             </View>
           </View>
@@ -189,7 +193,7 @@ export default function ProviderDetailScreen() {
               <Text style={styles.statVal}>{ratingDisplay}</Text>
               <View style={styles.starsRow}>
                 {[1, 2, 3, 4, 5].map((i) => (
-                  <Icon key={i} name="star" size={9} color={i <= Math.round(ratingNum) ? Colors.accent : Colors.border} />
+                  <Icon key={i} name="star" size={9} color={i <= Math.round(ratingNum) ? theme.colors.accent : theme.colors.border} />
                 ))}
               </View>
               <Text style={styles.statLbl}>Rating</Text>
@@ -206,7 +210,7 @@ export default function ProviderDetailScreen() {
             </View>
             <View style={styles.statDiv} />
             <View style={styles.statItem}>
-              <Text style={[styles.statVal, { color: Colors.secondary, fontSize: 14 }]}>
+              <Text style={[styles.statVal, { color: theme.colors.secondary, fontSize: 14 }]}>
                 {provider.ratePerHour ? `Rs.${provider.ratePerHour}/h` : "Open"}
               </Text>
               <Text style={styles.statLbl}>Hourly Rate</Text>
@@ -241,24 +245,24 @@ export default function ProviderDetailScreen() {
                 {provider.location ? (
                   <View style={styles.infoRow}>
                     <View style={styles.infoIconBg}>
-                      <Icon name="map-pin" size={15} color={Colors.primary} />
+                      <Icon name="map-pin" size={15} color={theme.colors.primary} />
                     </View>
                     <Text style={styles.infoLabel}>Location</Text>
                     <Text style={styles.infoVal}>{provider.location}</Text>
                   </View>
                 ) : null}
-                <View style={[styles.infoRow, provider.location ? { borderTopWidth: 1, borderTopColor: Colors.border } : {}]}>
+                <View style={[styles.infoRow, provider.location ? { borderTopWidth: 1, borderTopColor: theme.colors.border } : {}]}>
                   <View style={styles.infoIconBg}>
-                    <Icon name="dollar-sign" size={15} color={Colors.primary} />
+                    <Icon name="dollar-sign" size={15} color={theme.colors.primary} />
                   </View>
                   <Text style={styles.infoLabel}>Hourly Rate</Text>
-                  <Text style={[styles.infoVal, { color: Colors.secondary, fontWeight: "700" }]}>
+                  <Text style={[styles.infoVal, { color: theme.colors.secondary, fontWeight: "700" }]}>
                     {rateLabel}
                   </Text>
                 </View>
-                <View style={[styles.infoRow, { borderTopWidth: 1, borderTopColor: Colors.border }]}>
+                <View style={[styles.infoRow, { borderTopWidth: 1, borderTopColor: theme.colors.border }]}>
                   <View style={styles.infoIconBg}>
-                    <Icon name="message-circle" size={15} color={Colors.primary} />
+                    <Icon name="message-circle" size={15} color={theme.colors.primary} />
                   </View>
                   <Text style={styles.infoLabel}>Contact</Text>
                   <Text style={styles.infoVal}>Via in-app chat only</Text>
@@ -268,7 +272,7 @@ export default function ProviderDetailScreen() {
 
             <AnimatedCard delay={180}>
               <View style={styles.privacyCard}>
-                <Icon name="shield" size={16} color={Colors.success} />
+                <Icon name="shield" size={16} color={theme.colors.success} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.privacyTitle}>Your number is private</Text>
                   <Text style={styles.privacyText}>
@@ -284,10 +288,11 @@ export default function ProviderDetailScreen() {
                 <View style={styles.skillsRow}>
                   {provider.services.map((sid, i) => {
                     const cat = getCategoryBySlug(sid);
+                    const appearance = cat ? getCategoryAppearance(cat, theme) : null;
                     return (
-                      <View key={i} style={[styles.skillChip, cat ? { backgroundColor: cat.bgColor } : {}]}>
-                        {cat && <Icon name={cat.icon as any} size={11} color={cat.color} />}
-                        <Text style={[styles.skillText, cat ? { color: cat.color } : {}]}>{cat?.name || sid}</Text>
+                      <View key={i} style={[styles.skillChip, appearance ? { backgroundColor: appearance.background, borderColor: appearance.accent } : {}]}>
+                        {cat && appearance && <Icon name={cat.icon as any} size={11} color={appearance.accent} />}
+                        <Text style={[styles.skillText, appearance ? { color: appearance.accent } : {}]}>{cat?.name || sid}</Text>
                       </View>
                     );
                   })}
@@ -298,10 +303,10 @@ export default function ProviderDetailScreen() {
         ) : (
           <View style={styles.section}>
             {reviewsLoading ? (
-              <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 40 }} />
+              <ActivityIndicator size="large" color={theme.colors.primary} style={{ marginTop: 40 }} />
             ) : reviews.length === 0 ? (
               <View style={styles.emptyReviews}>
-                <Icon name="star" size={40} color={Colors.border} />
+                <Icon name="star" size={40} color={theme.colors.border} />
                 <Text style={styles.emptyReviewsTitle}>No Reviews Yet</Text>
                 <Text style={styles.emptyReviewsText}>Reviews appear here after customers complete bookings</Text>
               </View>
@@ -316,11 +321,11 @@ export default function ProviderDetailScreen() {
                       <View style={{ flex: 1 }}>
                         <View style={styles.reviewNameRow}>
                           <Text style={styles.reviewName}>{r.customerName}</Text>
-                          <Icon name="check-circle" size={12} color={Colors.primary} />
+                          <Icon name="check-circle" size={12} color={theme.colors.primary} />
                         </View>
                         <View style={styles.reviewStars}>
                           {[1, 2, 3, 4, 5].map((j) => (
-                            <Icon key={j} name="star" size={11} color={j <= (r.rating || 0) ? Colors.accent : Colors.border} />
+                            <Icon key={j} name="star" size={11} color={j <= (r.rating || 0) ? theme.colors.accent : theme.colors.border} />
                           ))}
                         </View>
                       </View>
@@ -351,7 +356,7 @@ export default function ProviderDetailScreen() {
         </View>
         <View style={styles.footerBtns}>
           <Pressable style={styles.chatBtn} onPress={handleChat}>
-            <Icon name="message-circle" size={20} color={Colors.primary} />
+            <Icon name="message-circle" size={20} color={theme.colors.primary} />
           </Pressable>
           <Pressable
             style={styles.negotiateBtn}
@@ -364,7 +369,7 @@ export default function ProviderDetailScreen() {
                   })
             }
           >
-            <Icon name="trending-down" size={16} color={Colors.secondary} />
+            <Icon name="trending-down" size={16} color={theme.colors.secondary} />
             <Text style={styles.negotiateBtnText}>Negotiate</Text>
           </Pressable>
           <Pressable
@@ -382,7 +387,7 @@ export default function ProviderDetailScreen() {
             }
           >
             <LinearGradient
-              colors={[Colors.primary, "#0D4BA0"]}
+              colors={[theme.colors.primary, theme.colors.primaryPressed]}
               style={styles.bookBtnGrad}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
@@ -396,12 +401,12 @@ export default function ProviderDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
   loadingCenter: { flex: 1, alignItems: "center", justifyContent: "center" },
   notFound: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
-  notFoundText: { fontSize: 16, color: Colors.text, fontWeight: "600" },
-  backLink: { fontSize: 14, color: Colors.primary, fontWeight: "700" },
+  notFoundText: { fontSize: 16, color: theme.colors.text, fontWeight: "600" },
+  backLink: { fontSize: 14, color: theme.colors.primary, fontWeight: "700" },
   scroll: { flex: 1 },
   headerGrad: { paddingTop: 16, paddingBottom: 36, alignItems: "center", gap: 8, paddingHorizontal: 20 },
   backBtn: {
@@ -424,111 +429,111 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
     borderWidth: 3,
   },
-  avatarText: { fontSize: 30, fontWeight: "800", color: "#fff" },
+  avatarText: { fontSize: 30, fontWeight: "800", color: theme.colors.onBrand },
   availableDot: {
     position: "absolute", bottom: 4, right: 4,
     width: 22, height: 22, borderRadius: 11,
-    backgroundColor: Colors.success, borderWidth: 3, borderColor: "#fff",
+    backgroundColor: theme.colors.success, borderWidth: 3, borderColor: theme.colors.onBrand,
   },
-  providerName: { fontSize: 22, fontWeight: "800", color: "#fff", marginTop: 4 },
+  providerName: { fontSize: 22, fontWeight: "800", color: theme.colors.onBrand, marginTop: 4 },
   badgesRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
   serviceTag: {
     flexDirection: "row", alignItems: "center", gap: 5,
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
     backgroundColor: "rgba(255,255,255,0.2)",
   },
-  serviceTagText: { fontSize: 12, fontWeight: "700", color: "#fff" },
+  serviceTagText: { fontSize: 12, fontWeight: "700", color: theme.colors.onBrand },
   statsCard: {
-    flexDirection: "row", backgroundColor: Colors.white,
+    flexDirection: "row", backgroundColor: theme.colors.surface,
     marginTop: -20, marginHorizontal: 20, borderRadius: 18, padding: 16,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.1,
+    shadowColor: theme.colors.text, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.1,
     shadowRadius: 12, elevation: 5,
   },
   statItem: { flex: 1, alignItems: "center", gap: 3 },
-  statVal: { fontSize: 17, fontWeight: "800", color: Colors.text },
+  statVal: { fontSize: 17, fontWeight: "800", color: theme.colors.text },
   starsRow: { flexDirection: "row", gap: 1 },
-  statLbl: { fontSize: 10, color: Colors.textSecondary, fontWeight: "600" },
-  statDiv: { width: 1, backgroundColor: Colors.border, marginVertical: 4 },
+  statLbl: { fontSize: 10, color: theme.colors.textSecondary, fontWeight: "600" },
+  statDiv: { width: 1, backgroundColor: theme.colors.border, marginVertical: 4 },
   tabs: {
     flexDirection: "row", marginHorizontal: 20, marginTop: 20,
-    backgroundColor: Colors.surface, borderRadius: 14, padding: 4,
+    backgroundColor: theme.colors.surfaceAlt, borderRadius: 14, padding: 4,
   },
   tab: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 10 },
-  tabActive: { backgroundColor: Colors.white, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 2 },
-  tabText: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
-  tabTextActive: { color: Colors.text },
+  tabActive: { backgroundColor: theme.colors.surface, shadowColor: theme.colors.text, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 2 },
+  tabText: { fontSize: 13, fontWeight: "600", color: theme.colors.textSecondary },
+  tabTextActive: { color: theme.colors.text },
   section: { padding: 20, gap: 16 },
-  bio: { fontSize: 14, color: Colors.text, lineHeight: 22 },
-  infoCard: { backgroundColor: Colors.white, borderRadius: 16, overflow: "hidden", borderWidth: 1, borderColor: Colors.border },
+  bio: { fontSize: 14, color: theme.colors.text, lineHeight: 22 },
+  infoCard: { backgroundColor: theme.colors.surface, borderRadius: 16, overflow: "hidden", borderWidth: 1, borderColor: theme.colors.border },
   infoRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14 },
-  infoIconBg: { width: 34, height: 34, borderRadius: 10, backgroundColor: Colors.primary + "15", alignItems: "center", justifyContent: "center" },
-  infoLabel: { fontSize: 13, color: Colors.textSecondary, width: 80 },
-  infoVal: { flex: 1, fontSize: 13, fontWeight: "600", color: Colors.text },
+  infoIconBg: { width: 34, height: 34, borderRadius: 10, backgroundColor: theme.colors.primary + "15", alignItems: "center", justifyContent: "center" },
+  infoLabel: { fontSize: 13, color: theme.colors.textSecondary, width: 80 },
+  infoVal: { flex: 1, fontSize: 13, fontWeight: "600", color: theme.colors.text },
   privacyCard: {
     flexDirection: "row", alignItems: "flex-start", gap: 12,
-    backgroundColor: Colors.success + "10", borderRadius: 14, padding: 14,
-    borderWidth: 1, borderColor: Colors.success + "25",
+    backgroundColor: theme.colors.success + "10", borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: theme.colors.success + "25",
   },
-  privacyTitle: { fontSize: 13, fontWeight: "700", color: Colors.text },
-  privacyText: { fontSize: 12, color: Colors.textSecondary, lineHeight: 18, marginTop: 2 },
-  skillsTitle: { fontSize: 14, fontWeight: "700", color: Colors.text, marginBottom: 8 },
+  privacyTitle: { fontSize: 13, fontWeight: "700", color: theme.colors.text },
+  privacyText: { fontSize: 12, color: theme.colors.textSecondary, lineHeight: 18, marginTop: 2 },
+  skillsTitle: { fontSize: 14, fontWeight: "700", color: theme.colors.text, marginBottom: 8 },
   skillsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   skillChip: {
     flexDirection: "row", alignItems: "center", gap: 5,
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
   },
-  skillText: { fontSize: 12, color: Colors.text, fontWeight: "600" },
+  skillText: { fontSize: 12, color: theme.colors.text, fontWeight: "600" },
   emptyReviews: { alignItems: "center", paddingVertical: 60, gap: 10 },
-  emptyReviewsTitle: { fontSize: 16, fontWeight: "700", color: Colors.text },
-  emptyReviewsText: { fontSize: 13, color: Colors.textSecondary, textAlign: "center", lineHeight: 19 },
+  emptyReviewsTitle: { fontSize: 16, fontWeight: "700", color: theme.colors.text },
+  emptyReviewsText: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center", lineHeight: 19 },
   reviewCard: {
-    backgroundColor: Colors.white, borderRadius: 14, padding: 14,
-    borderWidth: 1, borderColor: Colors.border, gap: 10,
+    backgroundColor: theme.colors.surface, borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: theme.colors.border, gap: 10,
   },
   reviewHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   reviewAvatar: {
     width: 34, height: 34, borderRadius: 17,
-    backgroundColor: Colors.primary + "20", alignItems: "center", justifyContent: "center",
+    backgroundColor: theme.colors.primary + "20", alignItems: "center", justifyContent: "center",
   },
-  reviewAvatarText: { fontSize: 13, fontWeight: "700", color: Colors.primary },
+  reviewAvatarText: { fontSize: 13, fontWeight: "700", color: theme.colors.primary },
   reviewNameRow: { flexDirection: "row", alignItems: "center", gap: 5 },
-  reviewName: { fontSize: 13, fontWeight: "700", color: Colors.text },
+  reviewName: { fontSize: 13, fontWeight: "700", color: theme.colors.text },
   reviewStars: { flexDirection: "row", gap: 2, marginTop: 2 },
-  reviewDate: { fontSize: 11, color: Colors.textMuted },
-  reviewText: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20 },
-  reviewService: { fontSize: 11, color: Colors.textMuted, fontWeight: "500" },
+  reviewDate: { fontSize: 11, color: theme.colors.textMuted },
+  reviewText: { fontSize: 13, color: theme.colors.textSecondary, lineHeight: 20 },
+  reviewService: { fontSize: 11, color: theme.colors.textMuted, fontWeight: "500" },
   footer: {
-    backgroundColor: Colors.white, paddingHorizontal: 20, paddingTop: 14,
-    borderTopWidth: 1, borderTopColor: Colors.border,
-    shadowColor: "#000", shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 10,
+    backgroundColor: theme.colors.surface, paddingHorizontal: 20, paddingTop: 14,
+    borderTopWidth: 1, borderTopColor: theme.colors.border,
+    shadowColor: theme.colors.text, shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 10,
   },
   footerPriceRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  footerPriceLabel: { fontSize: 11, color: Colors.textSecondary },
-  footerPrice: { fontSize: 18, fontWeight: "800", color: Colors.primary },
+  footerPriceLabel: { fontSize: 11, color: theme.colors.textSecondary },
+  footerPrice: { fontSize: 18, fontWeight: "800", color: theme.colors.primary },
   availBadge: {
     flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: Colors.success + "15", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
+    backgroundColor: theme.colors.success + "15", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
   },
-  busyBadge: { backgroundColor: Colors.error + "15" },
-  availDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: Colors.success },
-  busyDot: { backgroundColor: Colors.error },
-  availText: { fontSize: 12, fontWeight: "700", color: Colors.success },
-  busyText: { color: Colors.error },
+  busyBadge: { backgroundColor: theme.colors.danger + "15" },
+  availDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: theme.colors.success },
+  busyDot: { backgroundColor: theme.colors.danger },
+  availText: { fontSize: 12, fontWeight: "700", color: theme.colors.success },
+  busyText: { color: theme.colors.danger },
   footerBtns: { flexDirection: "row", gap: 10, alignItems: "center" },
   chatBtn: {
     width: 48, height: 48, borderRadius: 14,
-    backgroundColor: Colors.primary + "15", alignItems: "center", justifyContent: "center",
-    borderWidth: 1.5, borderColor: Colors.primary + "30",
+    backgroundColor: theme.colors.primary + "15", alignItems: "center", justifyContent: "center",
+    borderWidth: 1.5, borderColor: theme.colors.primary + "30",
   },
   negotiateBtn: {
     flexDirection: "row", alignItems: "center", gap: 6,
     paddingHorizontal: 14, paddingVertical: 12, borderRadius: 14,
-    backgroundColor: Colors.secondary + "15", borderWidth: 1.5, borderColor: Colors.secondary + "30",
+    backgroundColor: theme.colors.secondary + "15", borderWidth: 1.5, borderColor: theme.colors.secondary + "30",
   },
-  negotiateBtnText: { fontSize: 13, fontWeight: "700", color: Colors.secondary },
+  negotiateBtnText: { fontSize: 13, fontWeight: "700", color: theme.colors.secondary },
   bookBtn: { flex: 1, borderRadius: 14, overflow: "hidden" },
   bookBtnGrad: { paddingVertical: 14, alignItems: "center", justifyContent: "center" },
-  bookBtnText: { fontSize: 15, fontWeight: "800", color: "#fff" },
+  bookBtnText: { fontSize: 15, fontWeight: "800", color: theme.colors.onBrand },
 });
 

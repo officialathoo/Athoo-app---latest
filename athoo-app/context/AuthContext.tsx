@@ -17,6 +17,7 @@ export interface User {
   phone: string;
   role: AppUserRole;
   email?: string;
+  emailVerified?: boolean;
   profileImage?: string;
   profileColor?: string;
   location?: string;
@@ -58,16 +59,28 @@ export interface RegisterData {
   termsAccepted?: boolean;
   privacyAccepted?: boolean;
   legalVersion?: string;
+  registrationToken: string;
 }
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   requiresBiometric: boolean;
-  sendOtp: (phone: string) => Promise<{ success: boolean; code?: string; message?: string; error?: string }>;
-  verifyOtpAndLogin: (phone: string, code: string, remember?: boolean) => Promise<{ success: boolean; isNewUser: boolean; user?: User | null; error?: string }>;
-  loginWithPassword: (identifier: string, password: string, remember?: boolean) => Promise<{ success: boolean; user?: User | null; error?: string }>;
-  register: (data: RegisterData) => Promise<{ success: boolean; user?: User | null; error?: string }>;
+  sendOtp: (phone: string, purpose: "login" | "registration", role: AppUserRole, email?: string) => Promise<{ success: boolean; code?: string; message?: string; error?: string; expiresInSeconds?: number; resendAfterSeconds?: number }>;
+  verifyOtpAndLogin: (phone: string, code: string, remember: boolean, purpose: "login" | "registration", role: AppUserRole) => Promise<{ success: boolean; isNewUser: boolean; user?: User | null; registrationToken?: string; error?: string }>;
+  sendEmailOtp: (email: string, role: AppUserRole) => Promise<{ success: boolean; code?: string; message?: string; maskedEmail?: string; expiresInSeconds?: number; resendAfterSeconds?: number; error?: string }>;
+  verifyEmailOtpAndLogin: (email: string, code: string, remember: boolean, role: AppUserRole) => Promise<{ success: boolean; user?: User | null; error?: string }>;
+  loginWithPassword: (identifier: string, password: string, role: AppUserRole, remember?: boolean) => Promise<{ success: boolean; user?: User | null; error?: string }>;
+  register: (data: RegisterData) => Promise<{
+    success: boolean;
+    user?: User | null;
+    error?: string;
+    emailVerificationRequired?: boolean;
+    emailVerificationSent?: boolean;
+    emailVerificationExpiresInSeconds?: number;
+    emailVerificationResendAfterSeconds?: number;
+    emailVerificationCode?: string;
+  }>;
   logout: () => Promise<void>;
   updateUser: (data: Partial<User>) => Promise<void>;
   toggleSaved: (providerId: string) => Promise<void>;
@@ -228,21 +241,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [attachSavedProviders]);
 
-  const sendOtp = useCallback(async (phone: string) => {
+  const sendOtp = useCallback(async (
+    phone: string,
+    purpose: "login" | "registration",
+    role: AppUserRole,
+    email?: string,
+  ) => {
     try {
-      const res = await api.sendOtp(phone.trim());
+      const res = await api.sendOtp(phone.trim(), purpose, role, email?.trim() || undefined);
       if (!res.success) return { success: false, error: res.message || "Failed to send OTP" };
-      return { success: true, code: res.code, message: res.message };
+      return {
+        success: true,
+        code: res.code,
+        message: res.message,
+        expiresInSeconds: res.expiresInSeconds,
+        resendAfterSeconds: res.resendAfterSeconds,
+      };
     } catch (e: unknown) {
       return { success: false, error: apiErrorToMessage(e, "We could not send the verification code. Please try again.") };
     }
   }, []);
 
-  const verifyOtpAndLogin = useCallback(async (phone: string, code: string, remember = true) => {
+  const verifyOtpAndLogin = useCallback(async (
+    phone: string,
+    code: string,
+    remember: boolean,
+    purpose: "login" | "registration",
+    role: AppUserRole,
+  ) => {
     try {
-      const res = await api.verifyOtp(phone.trim(), code.trim());
+      const res = await api.verifyOtp(phone.trim(), code.trim(), purpose, role);
       if (!res.success) return { success: false, isNewUser: false, error: "Invalid OTP" };
-      if (res.isNewUser) return { success: true, isNewUser: true, user: null };
+      if (purpose === "registration") {
+        if (!res.registrationToken) {
+          return { success: false, isNewUser: true, error: "Phone verification could not be completed. Please request a new code." };
+        }
+        return { success: true, isNewUser: true, user: null, registrationToken: res.registrationToken };
+      }
       if (!res.token) return { success: false, isNewUser: false, error: "Login token not received from server" };
       await setToken(res.token, remember);
       await setRefreshToken(res.refreshToken || null, remember);
@@ -260,9 +295,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [attachSavedProviders]);
 
-  const loginWithPassword = useCallback(async (identifier: string, password: string, remember = true) => {
+  const sendEmailOtp = useCallback(async (email: string, role: AppUserRole) => {
     try {
-      const res = await api.loginWithPassword({ identifier: identifier.trim(), password });
+      const res = await api.sendEmailOtp(email.trim().toLowerCase(), role);
+      return {
+        success: res.success === true,
+        code: res.code,
+        message: res.message,
+        maskedEmail: res.maskedEmail,
+        expiresInSeconds: res.expiresInSeconds,
+        resendAfterSeconds: res.resendAfterSeconds,
+      };
+    } catch (error: unknown) {
+      return { success: false, error: apiErrorToMessage(error, "We could not send the email sign-in code. Please try another login method.") };
+    }
+  }, []);
+
+  const verifyEmailOtpAndLogin = useCallback(async (email: string, code: string, remember: boolean, role: AppUserRole) => {
+    try {
+      const res = await api.verifyEmailOtp(email.trim().toLowerCase(), code.trim(), role);
+      if (!res.token) return { success: false, error: "Login token not received from server" };
+      await setToken(res.token, remember);
+      await setRefreshToken(res.refreshToken || null, remember);
+      const savedToken = await getToken();
+      if (!savedToken) return { success: false, error: "Token was not saved on device" };
+      const me = await api.getMe();
+      const rawUser = (me?.user as any) || (res.user as any) || null;
+      if (!rawUser) return { success: false, error: "User profile could not be loaded" };
+      const hydrated = await attachSavedProviders(sanitizeUser(rawUser));
+      setUser(hydrated);
+      setRequiresBiometric(false);
+      return { success: true, user: hydrated };
+    } catch (error: unknown) {
+      return { success: false, error: apiErrorToMessage(error, "Email verification failed. Request a new code and try again.") };
+    }
+  }, [attachSavedProviders]);
+
+  const loginWithPassword = useCallback(async (identifier: string, password: string, role: AppUserRole, remember = true) => {
+    try {
+      const res = await api.loginWithPassword({ identifier: identifier.trim(), password, role });
       if (!res.token) return { success: false, error: "Login token not received from server" };
       await setToken(res.token, remember);
       await setRefreshToken(res.refreshToken || null, remember);
@@ -282,7 +353,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const register = useCallback(async (data: RegisterData) => {
     try {
-      const res = await api.register({ name: data.name, phone: data.phone.trim(), email: data.email, role: data.role, services: data.services || [], fatherName: data.fatherName, cnicNumber: data.cnicNumber, experience: data.experience, location: data.location, ratePerHour: data.ratePerHour, password: data.password, termsAccepted: data.termsAccepted, privacyAccepted: data.privacyAccepted, legalVersion: data.legalVersion });
+      const res = await api.register({ name: data.name, phone: data.phone.trim(), email: data.email, role: data.role, services: data.services || [], fatherName: data.fatherName, cnicNumber: data.cnicNumber, experience: data.experience, location: data.location, ratePerHour: data.ratePerHour, password: data.password, termsAccepted: data.termsAccepted, privacyAccepted: data.privacyAccepted, legalVersion: data.legalVersion, registrationToken: data.registrationToken });
       if (!res.token) return { success: false, error: "Registration token not received from server" };
       await setToken(res.token, true);
       await setRefreshToken(res.refreshToken || null, true);
@@ -294,7 +365,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const hydrated = await attachSavedProviders(sanitizeUser({ ...rawUser, savedProviders: [] }));
       setUser(hydrated);
       setRequiresBiometric(false);
-      return { success: true, user: hydrated };
+      return {
+        success: true,
+        user: hydrated,
+        emailVerificationRequired: res.emailVerificationRequired,
+        emailVerificationSent: res.emailVerificationSent,
+        emailVerificationExpiresInSeconds: res.emailVerificationExpiresInSeconds,
+        emailVerificationResendAfterSeconds: res.emailVerificationResendAfterSeconds,
+        emailVerificationCode: res.emailVerificationCode,
+      };
     } catch (e: unknown) {
       return { success: false, error: apiErrorToMessage(e, "Registration could not be completed. Please try again.") };
     }
@@ -464,7 +543,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [attachSavedProviders, user]);
 
-  return <AuthContext.Provider value={{ user, isLoading, requiresBiometric, sendOtp, verifyOtpAndLogin, loginWithPassword, register, logout, updateUser, toggleSaved, completeBiometricLogin, promptBiometricSetup, switchRole, refreshUser, acceptCurrentLegal }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, isLoading, requiresBiometric, sendOtp, verifyOtpAndLogin, sendEmailOtp, verifyEmailOtpAndLogin, loginWithPassword, register, logout, updateUser, toggleSaved, completeBiometricLogin, promptBiometricSetup, switchRole, refreshUser, acceptCurrentLegal }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

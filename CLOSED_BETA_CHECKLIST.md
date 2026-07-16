@@ -17,8 +17,12 @@ Test date: ___________________________
 
 ## Authentication and session
 
-- [ ] Customer registration and OTP work.
-- [ ] Provider registration and OTP work.
+- [ ] Customer registration and phone OTP work.
+- [ ] Provider registration and phone OTP work.
+- [ ] Registration email verification sends and verifies a 6-digit code.
+- [ ] Email OTP login works only for an existing, active account with a verified email and the selected role.
+- [ ] Missing, blocked, deactivated, deleted, and wrong-role accounts receive safe errors and no email OTP.
+- [ ] Forgot-password email delivery remains generic and does not reveal whether an account exists.
 - [ ] Password login works.
 - [ ] Biometric login works after setup.
 - [ ] Reopening the app restores the correct screen.
@@ -42,8 +46,12 @@ Test date: ___________________________
 - [ ] Reference numbers and uploaded screenshots appear in the admin panel.
 - [ ] Incoming jobs and calls work while foregrounded, backgrounded, and after reopening.
 
-## Notifications
+## Notifications and email
 
+- [ ] Welcome, password-change, new-device, account-status, booking, and transaction emails use the configured Athoo sender and template.
+- [ ] Email preferences save for booking, account, product, and promotional emails; security emails remain mandatory.
+- [ ] Promotional unsubscribe requires confirmation, works through POST/one-click, and does not disable security emails.
+- [ ] Admin Email Center can verify transport, send a test email, review delivery status, and safely queue/cancel a limited campaign.
 - [ ] Job, chat, general, and incoming-call notifications use distinct sounds.
 - [ ] Tapping each notification opens the correct destination.
 - [ ] Badge count and read state synchronize correctly.

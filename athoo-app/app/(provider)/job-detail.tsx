@@ -10,7 +10,6 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
-  Linking,
   Modal,
   Platform,
   Pressable,
@@ -21,8 +20,11 @@ import {
   View,
   ActivityIndicator,
 } from "react-native";
+import { brandConfig } from "@/config/brand";
+import { openExternalMap, openExternalMapSearch } from "@/services/externalMaps";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/context/AuthContext";
 import { useBookings, Booking } from "@/context/BookingContext";
@@ -143,51 +145,29 @@ function formatLastUpdated(updatedAt?: string) {
 }
 
 async function openCoordsInMaps(latitude: number, longitude: number, label?: string) {
-  const openStreetMapUrl = `https://www.openstreetmap.org/?mlat=${latitude}&mlon=${longitude}#map=17/${latitude}/${longitude}`;
-  const appleUrl = `http://maps.apple.com/?ll=${latitude},${longitude}&q=${encodeURIComponent(
-    label || `${latitude},${longitude}`
-  )}`;
-  const geoUrl = `geo:${latitude},${longitude}?q=${latitude},${longitude}`;
-
-  try {
-    if (Platform.OS === "android") {
-      const canOpenGeo = await Linking.canOpenURL(geoUrl);
-      if (canOpenGeo) {
-        await Linking.openURL(geoUrl);
-        return;
-      }
-    }
-
-    if (Platform.OS === "ios") {
-      const canOpenApple = await Linking.canOpenURL(appleUrl);
-      if (canOpenApple) {
-        await Linking.openURL(appleUrl);
-        return;
-      }
-    }
-
-    await Linking.openURL(openStreetMapUrl);
-  } catch {
-    Alert.alert("Unable to Open Maps", "Could not open the location in maps.");
+  const opened = await openExternalMap({ latitude, longitude, label });
+  if (!opened) {
+    Alert.alert("Unable to Open Maps", "No external map destination is configured for this device.");
   }
 }
 
 // ── Custom map markers ────────────────────────────────────────────────────────
 
 function AthooMarker() {
+  const { theme } = useTheme();
   return (
     <View style={{ alignItems: "center" }}>
       <View style={{
         width: 52, height: 52, borderRadius: 26,
-        backgroundColor: Colors.primary,
+        backgroundColor: theme.colors.primary,
         alignItems: "center", justifyContent: "center",
-        borderWidth: 3, borderColor: "#fff",
-        shadowColor: "#000", shadowOpacity: 0.35, shadowRadius: 8,
+        borderWidth: 3, borderColor: theme.colors.white,
+        shadowColor: theme.colors.shadow, shadowOpacity: 0.35, shadowRadius: 8,
         shadowOffset: { width: 0, height: 3 }, elevation: 10,
         overflow: "hidden",
       }}>
         <Image
-          source={require("@/assets/images/logo.png")}
+          source={brandConfig.assets.mark}
           style={{ width: 38, height: 38 }}
           resizeMode="contain"
         />
@@ -196,35 +176,38 @@ function AthooMarker() {
         width: 0, height: 0,
         borderLeftWidth: 10, borderRightWidth: 10, borderTopWidth: 16,
         borderLeftColor: "transparent", borderRightColor: "transparent",
-        borderTopColor: Colors.primary, marginTop: -3,
+        borderTopColor: theme.colors.primary, marginTop: -3,
       }} />
     </View>
   );
 }
 
 function JobSiteMarker() {
+  const { theme } = useTheme();
   return (
     <View style={{ alignItems: "center" }}>
       <View style={{
         width: 40, height: 40, borderRadius: 20,
-        backgroundColor: Colors.secondary,
+        backgroundColor: theme.colors.secondary,
         alignItems: "center", justifyContent: "center",
-        borderWidth: 3, borderColor: "#fff",
-        shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 6, elevation: 8,
+        borderWidth: 3, borderColor: theme.colors.white,
+        shadowColor: theme.colors.shadow, shadowOpacity: 0.3, shadowRadius: 6, elevation: 8,
       }}>
-        <Icon name="home" size={18} color="#fff" />
+        <Icon name="home" size={18} color={theme.colors.white} />
       </View>
       <View style={{
         width: 0, height: 0,
         borderLeftWidth: 7, borderRightWidth: 7, borderTopWidth: 11,
         borderLeftColor: "transparent", borderRightColor: "transparent",
-        borderTopColor: Colors.secondary, marginTop: -2,
+        borderTopColor: theme.colors.secondary, marginTop: -2,
       }} />
     </View>
   );
 }
 
 export default function JobDetailScreen() {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
   const { user } = useAuth();
   const { bookings, updateBookingStatus, loadBookings } = useBookings();
@@ -539,64 +522,19 @@ export default function JobDetailScreen() {
 
     const coords = getBookingLatLng(booking);
     const address = booking.address?.trim();
+    const opened = coords
+      ? await openExternalMap({ latitude: coords.lat, longitude: coords.lng, label: address || "Customer Job Location" })
+      : address
+        ? await openExternalMapSearch(address)
+        : false;
 
-    try {
-      if (coords) {
-        const { lat, lng } = coords;
-
-        const openStreetMapUrl = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=17/${lat}/${lng}`;
-        const appleUrl = `http://maps.apple.com/?ll=${lat},${lng}&q=${lat},${lng}`;
-        const geoUrl = `geo:${lat},${lng}?q=${lat},${lng}`;
-
-        if (Platform.OS === "android") {
-          const canOpenGeo = await Linking.canOpenURL(geoUrl);
-          if (canOpenGeo) {
-            await Linking.openURL(geoUrl);
-            return;
-          }
-        }
-
-        if (Platform.OS === "ios") {
-          const canOpenApple = await Linking.canOpenURL(appleUrl);
-          if (canOpenApple) {
-            await Linking.openURL(appleUrl);
-            return;
-          }
-        }
-
-        await Linking.openURL(openStreetMapUrl);
-        return;
-      }
-
-      if (address) {
-        const encoded = encodeURIComponent(address);
-        const openStreetMapUrl = `https://www.openstreetmap.org/search?query=${encoded}`;
-        const appleUrl = `http://maps.apple.com/?q=${encoded}`;
-        const geoUrl = `geo:0,0?q=${encoded}`;
-
-        if (Platform.OS === "android") {
-          const canOpenGeo = await Linking.canOpenURL(geoUrl);
-          if (canOpenGeo) {
-            await Linking.openURL(geoUrl);
-            return;
-          }
-        }
-
-        if (Platform.OS === "ios") {
-          const canOpenApple = await Linking.canOpenURL(appleUrl);
-          if (canOpenApple) {
-            await Linking.openURL(appleUrl);
-            return;
-          }
-        }
-
-        await Linking.openURL(openStreetMapUrl);
-        return;
-      }
-
-      Alert.alert("Location Missing", "Customer location is not available for this booking.");
-    } catch {
-      Alert.alert("Unable to Open Maps", "Could not open the location in maps.");
+    if (!opened) {
+      Alert.alert(
+        coords || address ? "Unable to Open Maps" : "Location Missing",
+        coords || address
+          ? "No external map destination is configured for this device."
+          : "Customer location is not available for this booking.",
+      );
     }
   };
 
@@ -868,7 +806,7 @@ export default function JobDetailScreen() {
       booking.customerId,
       booking.customerName,
       booking.service,
-      "#FF6B1A"
+      theme.colors.secondary
     );
   };
 
@@ -876,7 +814,7 @@ export default function JobDetailScreen() {
     return (
       <View style={[styles.container, { paddingTop: topPad }]}>
         <View style={styles.notFound}>
-          {isLoadingBooking ? <ActivityIndicator size="large" color={Colors.primary} /> : null}
+          {isLoadingBooking ? <ActivityIndicator size="large" color={theme.colors.primary} /> : null}
           <Text style={styles.loadingText}>Loading...</Text>
         </View>
       </View>
@@ -884,11 +822,11 @@ export default function JobDetailScreen() {
   }
 
   const STATUS_CONFIG = {
-    pending: { label: "Pending", color: "#F59E0B", bg: "#FFFBEB" },
-    accepted: { label: "Accepted", color: "#3B82F6", bg: "#EFF6FF" },
-    in_progress: { label: "In Progress", color: "#8B5CF6", bg: "#F5F3FF" },
-    completed: { label: "Completed", color: "#22C55E", bg: "#F0FDF4" },
-    cancelled: { label: "Cancelled", color: "#EF4444", bg: "#FEF2F2" },
+    pending: { label: "Pending", color: theme.colors.warning, bg: theme.colors.warningSoft },
+    accepted: { label: "Accepted", color: theme.colors.info, bg: theme.colors.infoSoft },
+    in_progress: { label: "In Progress", color: theme.colors.accent, bg: theme.colors.accentSoft },
+    completed: { label: "Completed", color: theme.colors.success, bg: theme.colors.successSoft },
+    cancelled: { label: "Cancelled", color: theme.colors.danger, bg: theme.colors.dangerSoft },
   } as const;
 
   const status =
@@ -915,7 +853,7 @@ export default function JobDetailScreen() {
       <View style={[styles.container, { paddingTop: topPad }]}>
         <View style={styles.header}>
           <Pressable style={styles.backBtn} onPress={() => router.back()}>
-            <Icon name="arrow-left" size={20} color={Colors.text} />
+            <Icon name="arrow-left" size={20} color={theme.colors.text} />
           </Pressable>
 
           <Text style={styles.title}>Job Details</Text>
@@ -927,7 +865,7 @@ export default function JobDetailScreen() {
             }
             disabled={sharingPdf}
           >
-            <Icon name={sharingPdf ? "loader" : "share-2"} size={18} color={Colors.primary} />
+            <Icon name={sharingPdf ? "loader" : "share-2"} size={18} color={theme.colors.primary} />
           </Pressable>
 
           <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
@@ -972,7 +910,7 @@ export default function JobDetailScreen() {
                 <Icon
                   name={booking.serviceIcon as any}
                   size={24}
-                  color={Colors.secondary}
+                  color={theme.colors.secondary}
                 />
               </View>
 
@@ -987,7 +925,7 @@ export default function JobDetailScreen() {
               booking.status !== "completed" &&
               booking.status !== "cancelled" ? (
                 <Pressable style={styles.chatBtn} onPress={handleChat}>
-                  <Icon name="message-circle" size={18} color={Colors.secondary} />
+                  <Icon name="message-circle" size={18} color={theme.colors.secondary} />
                 </Pressable>
               ) : null}
             </View>
@@ -1017,7 +955,7 @@ export default function JobDetailScreen() {
               booking.status !== "completed" &&
               booking.status !== "cancelled" ? (
                 <Pressable style={styles.callBtn} onPress={handleCall}>
-                  <Icon name="phone" size={16} color="#22C55E" />
+                  <Icon name="phone" size={16} color={theme.colors.success} />
                 </Pressable>
               ) : null}
             </View>
@@ -1029,7 +967,7 @@ export default function JobDetailScreen() {
                 <Text style={styles.cardTitle}>Live Tracking</Text>
                 <View style={styles.liveBadge}>
                   <View style={[styles.liveBadgeDot, {
-                    backgroundColor: locationPermission === "granted" ? "#22C55E" : "#F59E0B",
+                    backgroundColor: locationPermission === "granted" ? theme.colors.success : theme.colors.warning,
                   }]} />
                   <Text style={styles.liveBadgeText}>
                     {locationPermission === "granted" ? (liveSyncing ? "Syncing…" : "Sharing") :
@@ -1101,11 +1039,11 @@ export default function JobDetailScreen() {
 
               <View style={styles.liveActionRow}>
                 <Pressable style={styles.liveActionBtn} onPress={handleOpenMyLiveLocation}>
-                  <Icon name="navigation" size={15} color={Colors.primary} />
+                  <Icon name="navigation" size={15} color={theme.colors.primary} />
                   <Text style={styles.liveActionText}>My Location</Text>
                 </Pressable>
                 <Pressable style={styles.liveActionBtn} onPress={handleOpenLocation}>
-                  <Icon name="map-pin" size={15} color={Colors.primary} />
+                  <Icon name="map-pin" size={15} color={theme.colors.primary} />
                   <Text style={styles.liveActionText}>Job Site</Text>
                 </Pressable>
               </View>
@@ -1117,19 +1055,19 @@ export default function JobDetailScreen() {
 
             <View style={styles.infoList}>
               <View style={styles.infoRow}>
-                <Icon name="calendar" size={15} color={Colors.secondary} />
+                <Icon name="calendar" size={15} color={theme.colors.secondary} />
                 <Text style={styles.infoLabel}>Date</Text>
                 <Text style={styles.infoVal}>{booking.scheduledDate}</Text>
               </View>
 
               <View style={styles.infoRow}>
-                <Icon name="clock" size={15} color={Colors.secondary} />
+                <Icon name="clock" size={15} color={theme.colors.secondary} />
                 <Text style={styles.infoLabel}>Time</Text>
                 <Text style={styles.infoVal}>{booking.scheduledTime}</Text>
               </View>
 
               <View style={styles.infoRow}>
-                <Icon name="map-pin" size={15} color={Colors.secondary} />
+                <Icon name="map-pin" size={15} color={theme.colors.secondary} />
                 <Text style={styles.infoLabel}>Address</Text>
                 <Text style={styles.infoVal} numberOfLines={2}>
                   {booking.address}
@@ -1138,30 +1076,30 @@ export default function JobDetailScreen() {
 
               {booking.price ? (
                 <View style={styles.infoRow}>
-                  <Icon name="tag" size={15} color={Colors.secondary} />
+                  <Icon name="tag" size={15} color={theme.colors.secondary} />
                   <Text style={styles.infoLabel}>Price</Text>
                   <Text style={styles.infoVal}>Rs. {booking.price}</Text>
                 </View>
               ) : null}
 
               <View style={styles.infoRow}>
-                <Icon name="home" size={15} color={Colors.secondary} />
+                <Icon name="home" size={15} color={theme.colors.secondary} />
                 <Text style={styles.infoLabel}>Visit Charge</Text>
-                <Text style={[styles.infoVal, { color: Colors.primary, fontWeight: "700" }]}>Rs. {VISIT_CHARGE}</Text>
+                <Text style={[styles.infoVal, { color: theme.colors.primary, fontWeight: "700" }]}>Rs. {VISIT_CHARGE}</Text>
               </View>
 
               {providerDistanceKm != null ? (
                 <View style={styles.infoRow}>
-                  <Icon name="navigation" size={15} color="#F59E0B" />
+                  <Icon name="navigation" size={15} color={theme.colors.warning} />
                   <Text style={styles.infoLabel}>Distance</Text>
-                  <Text style={[styles.infoVal, { color: "#F59E0B", fontWeight: "700" }]}>{providerDistanceKm.toFixed(1)} km away</Text>
+                  <Text style={[styles.infoVal, { color: theme.colors.warning, fontWeight: "700" }]}>{providerDistanceKm.toFixed(1)} km away</Text>
                 </View>
               ) : null}
 
               <View style={styles.infoRow}>
-                <Icon name="file-text" size={15} color={Colors.secondary} />
+                <Icon name="file-text" size={15} color={theme.colors.secondary} />
                 <Text style={styles.infoLabel}>Details</Text>
-                <Text style={[styles.infoVal, !booking.description && { color: Colors.textMuted, fontStyle: "italic" }]}>
+                <Text style={[styles.infoVal, !booking.description && { color: theme.colors.textMuted, fontStyle: "italic" }]}>
                   {booking.description || "No additional details provided."}
                 </Text>
               </View>
@@ -1169,7 +1107,7 @@ export default function JobDetailScreen() {
 
             {hasLocation ? (
               <Pressable style={styles.locationBtn} onPress={handleOpenLocation}>
-                <Icon name="navigation" size={16} color={Colors.primary} />
+                <Icon name="navigation" size={16} color={theme.colors.primary} />
                 <Text style={styles.locationBtnText}>Open Customer Location</Text>
               </Pressable>
             ) : null}
@@ -1177,7 +1115,7 @@ export default function JobDetailScreen() {
             {booking.videoUrl ? (
               <View style={{ marginTop: 14 }}>
                 <View style={styles.photoLabelRow}>
-                  <Icon name="video" size={15} color={Colors.secondary} />
+                  <Icon name="video" size={15} color={theme.colors.secondary} />
                   <Text style={styles.photoLabel}>Customer&apos;s Video</Text>
                 </View>
                 <VideoPlayer uri={booking.videoUrl} />
@@ -1187,7 +1125,7 @@ export default function JobDetailScreen() {
             {booking.attachment ? (
               <View style={{ marginTop: 14 }}>
                 <View style={styles.photoLabelRow}>
-                  <Icon name="image" size={15} color={Colors.secondary} />
+                  <Icon name="image" size={15} color={theme.colors.secondary} />
                   <Text style={styles.photoLabel}>Customer&apos;s Photo</Text>
                 </View>
 
@@ -1213,7 +1151,7 @@ export default function JobDetailScreen() {
                 <View style={styles.billingItem}>
                   <Text style={styles.billingLabel}>Visit</Text>
                   <Text
-                    style={[styles.billingVal, { color: Colors.secondary }]}
+                    style={[styles.billingVal, { color: theme.colors.secondary }]}
                   >
                     Rs. {VISIT_CHARGE}
                   </Text>
@@ -1224,11 +1162,11 @@ export default function JobDetailScreen() {
                 <View style={styles.billingItem}>
                   <Text style={styles.billingLabel}>Time ({elapsedMinutes}m)</Text>
                   {hasHourlyRate ? (
-                    <Text style={[styles.billingVal, { color: Colors.primary }]}>
+                    <Text style={[styles.billingVal, { color: theme.colors.primary }]}>
                       Rs. {timeCharge}
                     </Text>
                   ) : (
-                    <Text style={[styles.billingVal, { color: Colors.error, fontSize: 13 }]}>
+                    <Text style={[styles.billingVal, { color: theme.colors.danger, fontSize: 13 }]}>
                       —
                     </Text>
                   )}
@@ -1238,7 +1176,7 @@ export default function JobDetailScreen() {
 
                 <View style={styles.billingItem}>
                   <Text
-                    style={[styles.billingVal, { color: "#22C55E", fontSize: 18 }]}
+                    style={[styles.billingVal, { color: theme.colors.success, fontSize: 18 }]}
                   >
                     Rs. {totalAmount}
                   </Text>
@@ -1272,7 +1210,7 @@ export default function JobDetailScreen() {
                     setShowCounterModal(true);
                   }}
                   disabled={isAccepting || isDeclining || isCountering}
-                  style={{ flex: 1, borderColor: "#F59E0B" }}
+                  style={{ flex: 1, borderColor: theme.colors.warning }}
                 />
                 <Button
                   title={isAccepting ? "..." : "Accept"}
@@ -1289,9 +1227,9 @@ export default function JobDetailScreen() {
               {/* For scheduled jobs, show a "Go to Customer" button first */}
               {isScheduledJob && !enRoute && (
                 <View style={{ marginBottom: 12 }}>
-                  <View style={[styles.otpInfo, { backgroundColor: "#FFF7ED", borderColor: "#FED7AA" }]}>
-                    <Icon name="clock" size={16} color="#F97316" />
-                    <Text style={[styles.otpInfoText, { color: "#C2410C" }]}>
+                  <View style={[styles.otpInfo, { backgroundColor: theme.colors.premiumSoft, borderColor: theme.colors.warningSoft }]}>
+                    <Icon name="clock" size={16} color={theme.colors.secondary} />
+                    <Text style={[styles.otpInfoText, { color: theme.colors.secondaryPressed }]}>
                       Scheduled job — tap below when you're heading to the customer.
                       Live tracking will start only then.
                     </Text>
@@ -1308,7 +1246,7 @@ export default function JobDetailScreen() {
               {(!isScheduledJob || enRoute) && (
                 <>
                   <View style={styles.otpInfo}>
-                    <Icon name="shield" size={16} color={Colors.primary} />
+                    <Icon name="shield" size={16} color={theme.colors.primary} />
                     <Text style={styles.otpInfoText}>
                       Ask the customer for their 4-digit start code, then enter it to
                       begin the job.
@@ -1328,8 +1266,8 @@ export default function JobDetailScreen() {
           {booking.status === "in_progress" ? (
             <View style={styles.arrivedSection}>
               <View style={styles.otpInfo}>
-                <Icon name="shield" size={16} color="#22C55E" />
-                <Text style={[styles.otpInfoText, { color: "#16A34A" }]}>
+                <Icon name="shield" size={16} color={theme.colors.success} />
+                <Text style={[styles.otpInfoText, { color: theme.colors.success }]}>
                   Job in progress. When done, get the completion code from the
                   customer.
                 </Text>
@@ -1350,7 +1288,7 @@ export default function JobDetailScreen() {
 
           {booking.status === "completed" ? (
             <View style={styles.completedBox}>
-              <Icon name="check-circle" size={32} color="#22C55E" style={{ alignSelf: "center" } as any} />
+              <Icon name="check-circle" size={32} color={theme.colors.success} style={{ alignSelf: "center" } as any} />
               <Text style={styles.completedTitle}>Job Completed!</Text>
               <Text style={styles.completedText}>Great work! This job has been marked as complete.</Text>
 
@@ -1371,7 +1309,7 @@ export default function JobDetailScreen() {
 
               {booking.paymentStatus === "received" ? (
                 <View style={styles.paymentConfirmedBadge}>
-                  <Icon name="check-circle" size={16} color="#16A34A" />
+                  <Icon name="check-circle" size={16} color={theme.colors.success} />
                   <Text style={styles.paymentConfirmedText}>Cash Received ✓</Text>
                 </View>
               ) : (
@@ -1400,15 +1338,15 @@ export default function JobDetailScreen() {
           <View style={styles.modalOverlay}>
             <View style={[styles.modalBox, { maxHeight: "85%" }]}>
               <View style={styles.modalHeader}>
-                <View style={[styles.modalIcon, { backgroundColor: "#DCFCE7" }]}>
-                  <Icon name="file-text" size={22} color="#16A34A" />
+                <View style={[styles.modalIcon, { backgroundColor: theme.colors.successSoft }]}>
+                  <Icon name="file-text" size={22} color={theme.colors.success} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.modalTitle}>Job Invoice</Text>
                   <Text style={styles.modalSubtitle}>{booking?.service} · {booking?.scheduledDate}</Text>
                 </View>
                 <Pressable onPress={() => setShowInvoiceModal(false)}>
-                  <Icon name="x" size={22} color={Colors.text} />
+                  <Icon name="x" size={22} color={theme.colors.text} />
                 </Pressable>
               </View>
 
@@ -1429,7 +1367,7 @@ export default function JobDetailScreen() {
                   <Text style={styles.invoiceModalLabel}>Scheduled</Text>
                   <Text style={styles.invoiceModalValue}>{booking?.scheduledDate} at {booking?.scheduledTime}</Text>
                 </View>
-                <View style={[styles.invoiceModalRow, { marginTop: 4, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 8 }]}>
+                <View style={[styles.invoiceModalRow, { marginTop: 4, borderTopWidth: 1, borderTopColor: theme.colors.border, paddingTop: 8 }]}>
                   <Text style={styles.invoiceModalLabel}>Service Charge</Text>
                   <Text style={styles.invoiceModalValue}>Rs. {(booking?.price || 0).toLocaleString()}</Text>
                 </View>
@@ -1437,19 +1375,19 @@ export default function JobDetailScreen() {
                   <Text style={styles.invoiceModalLabel}>Visit Charge</Text>
                   <Text style={styles.invoiceModalValue}>Rs. {VISIT_CHARGE}</Text>
                 </View>
-                <View style={[styles.invoiceModalRow, { borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 8, marginTop: 4 }]}>
+                <View style={[styles.invoiceModalRow, { borderTopWidth: 1, borderTopColor: theme.colors.border, paddingTop: 8, marginTop: 4 }]}>
                   <Text style={[styles.invoiceModalLabel, { fontWeight: "800", fontSize: 15 }]}>Total Amount</Text>
-                  <Text style={[styles.invoiceModalValue, { fontWeight: "900", fontSize: 17, color: Colors.primary }]}>
+                  <Text style={[styles.invoiceModalValue, { fontWeight: "900", fontSize: 17, color: theme.colors.primary }]}>
                     Rs. {((booking?.price || 0) + VISIT_CHARGE).toLocaleString()}
                   </Text>
                 </View>
                 <View style={styles.invoiceModalRow}>
                   <Text style={styles.invoiceModalLabel}>Platform Commission</Text>
-                  <Text style={[styles.invoiceModalValue, { color: "#EF4444" }]}>- Rs. {booking?.commissionAmount || 0}</Text>
+                  <Text style={[styles.invoiceModalValue, { color: theme.colors.danger }]}>- Rs. {booking?.commissionAmount || 0}</Text>
                 </View>
                 <View style={styles.invoiceModalRow}>
                   <Text style={[styles.invoiceModalLabel, { fontWeight: "700" }]}>Your Earnings</Text>
-                  <Text style={[styles.invoiceModalValue, { fontWeight: "800", color: "#16A34A" }]}>
+                  <Text style={[styles.invoiceModalValue, { fontWeight: "800", color: theme.colors.success }]}>
                     Rs. {((booking?.price || 0) + VISIT_CHARGE - (booking?.commissionAmount || 0)).toLocaleString()}
                   </Text>
                 </View>
@@ -1458,7 +1396,7 @@ export default function JobDetailScreen() {
               <View style={{ marginTop: 16, gap: 8 }}>
                 {booking?.paymentStatus === "received" ? (
                   <View style={[styles.paymentConfirmedBadge, { marginTop: 0 }]}>
-                    <Icon name="check-circle" size={16} color="#16A34A" />
+                    <Icon name="check-circle" size={16} color={theme.colors.success} />
                     <Text style={styles.paymentConfirmedText}>Cash Confirmed as Received</Text>
                   </View>
                 ) : (
@@ -1480,35 +1418,35 @@ export default function JobDetailScreen() {
           <View style={styles.modalOverlay}>
             <View style={[styles.modalBox, { maxHeight: "75%" }]}>
               <View style={styles.modalHeader}>
-                <View style={[styles.modalIcon, { backgroundColor: "#FEF9C3" }]}>
-                  <Icon name="dollar-sign" size={22} color="#CA8A04" />
+                <View style={[styles.modalIcon, { backgroundColor: theme.colors.warningSoft }]}>
+                  <Icon name="dollar-sign" size={22} color={theme.colors.warning} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.modalTitle}>Counter Offer</Text>
                   <Text style={styles.modalSubtitle}>Customer offered Rs. {booking?.price ?? "—"}</Text>
                 </View>
                 <Pressable onPress={() => setShowCounterModal(false)}>
-                  <Icon name="x" size={22} color={Colors.text} />
+                  <Icon name="x" size={22} color={theme.colors.text} />
                 </Pressable>
               </View>
 
-              <Text style={{ fontSize: 13, color: Colors.textMuted, marginBottom: 4 }}>Your price (Rs.)</Text>
+              <Text style={{ fontSize: 13, color: theme.colors.textMuted, marginBottom: 4 }}>Your price (Rs.)</Text>
               <TextInput
-                style={{ borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, color: Colors.text, backgroundColor: Colors.background }}
+                style={{ borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, color: theme.colors.text, backgroundColor: theme.colors.background }}
                 value={counterAmount}
                 onChangeText={setCounterAmount}
                 keyboardType="numeric"
                 placeholder="Enter your price"
-                placeholderTextColor={Colors.textMuted}
+                placeholderTextColor={theme.colors.textMuted}
               />
 
-              <Text style={{ fontSize: 13, color: Colors.textMuted, marginBottom: 4, marginTop: 12 }}>Message (optional)</Text>
+              <Text style={{ fontSize: 13, color: theme.colors.textMuted, marginBottom: 4, marginTop: 12 }}>Message (optional)</Text>
               <TextInput
-                style={{ borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: Colors.text, backgroundColor: Colors.background, minHeight: 72, textAlignVertical: "top" }}
+                style={{ borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: theme.colors.text, backgroundColor: theme.colors.background, minHeight: 72, textAlignVertical: "top" }}
                 value={counterMessage}
                 onChangeText={setCounterMessage}
                 placeholder="E.g. Parts cost extra, materials included…"
-                placeholderTextColor={Colors.textMuted}
+                placeholderTextColor={theme.colors.textMuted}
                 multiline
                 numberOfLines={3}
               />
@@ -1542,7 +1480,7 @@ export default function JobDetailScreen() {
                     <Icon
                       name="shield"
                       size={24}
-                      color={showArriveOtp ? Colors.primary : "#22C55E"}
+                      color={showArriveOtp ? theme.colors.primary : theme.colors.success}
                     />
                   </View>
 
@@ -1565,7 +1503,7 @@ export default function JobDetailScreen() {
                       setOtpError("");
                     }}
                   >
-                    <Icon name="x" size={22} color={Colors.text} />
+                    <Icon name="x" size={22} color={theme.colors.text} />
                   </Pressable>
                 </View>
 
@@ -1634,8 +1572,8 @@ export default function JobDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
 
   notFound: {
     flex: 1,
@@ -1645,7 +1583,7 @@ const styles = StyleSheet.create({
 
   loadingText: {
     fontSize: 15,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     fontWeight: "600",
   },
 
@@ -1656,16 +1594,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 16,
-    backgroundColor: Colors.white,
+    backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: theme.colors.border,
   },
 
   backBtn: {
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: Colors.background,
+    backgroundColor: theme.colors.background,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1673,7 +1611,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: "800",
-    color: Colors.text,
+    color: theme.colors.text,
     flex: 1,
   },
 
@@ -1697,10 +1635,10 @@ const styles = StyleSheet.create({
   },
 
   card: {
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderRadius: 18,
     padding: 16,
-    shadowColor: Colors.shadow,
+    shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 1,
     shadowRadius: 8,
@@ -1718,7 +1656,7 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 14,
-    backgroundColor: Colors.secondary + "20",
+    backgroundColor: theme.colors.secondary + "20",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1726,19 +1664,19 @@ const styles = StyleSheet.create({
   serviceName: {
     fontSize: 18,
     fontWeight: "800",
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   bookingId: {
     fontSize: 12,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   chatBtn: {
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: Colors.secondary + "15",
+    backgroundColor: theme.colors.secondary + "15",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1747,17 +1685,17 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: "#F0FDF4",
+    backgroundColor: theme.colors.successSoft,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "#22C55E30",
+    borderColor: theme.colors.successSoft,
   },
 
   cardTitle: {
     fontSize: 14,
     fontWeight: "700",
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   customerRow: {
@@ -1770,28 +1708,28 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
 
   custAvatarTxt: {
     fontSize: 14,
     fontWeight: "700",
-    color: Colors.primary,
+    color: theme.colors.primary,
   },
 
   custName: {
     fontSize: 14,
     fontWeight: "700",
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   custPhone: {
     fontSize: 11,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     fontStyle: "italic",
   },
 
@@ -1805,7 +1743,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 5,
@@ -1820,7 +1758,7 @@ const styles = StyleSheet.create({
   liveBadgeText: {
     fontSize: 11,
     fontWeight: "700",
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   liveInfoRow: {
@@ -1830,7 +1768,7 @@ const styles = StyleSheet.create({
 
   liveInfoBox: {
     flex: 1,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 12,
     padding: 12,
     gap: 4,
@@ -1839,13 +1777,13 @@ const styles = StyleSheet.create({
   liveInfoLabel: {
     fontSize: 11,
     fontWeight: "700",
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   liveInfoValue: {
     fontSize: 12,
     fontWeight: "700",
-    color: Colors.text,
+    color: theme.colors.text,
     lineHeight: 17,
   },
 
@@ -1861,17 +1799,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    backgroundColor: Colors.primary + "10",
+    backgroundColor: theme.colors.primary + "10",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.primary + "30",
+    borderColor: theme.colors.primary + "30",
     paddingVertical: 12,
   },
 
   liveActionText: {
     fontSize: 12,
     fontWeight: "700",
-    color: Colors.primary,
+    color: theme.colors.primary,
   },
 
   trackingMap: {
@@ -1885,7 +1823,7 @@ const styles = StyleSheet.create({
   liveHint: {
     fontSize: 11,
     lineHeight: 17,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   infoList: {
@@ -1900,14 +1838,14 @@ const styles = StyleSheet.create({
 
   infoLabel: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     width: 60,
   },
 
   infoVal: {
     fontSize: 13,
     fontWeight: "600",
-    color: Colors.text,
+    color: theme.colors.text,
     flex: 1,
   },
 
@@ -1917,17 +1855,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    backgroundColor: Colors.primary + "10",
+    backgroundColor: theme.colors.primary + "10",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.primary + "30",
+    borderColor: theme.colors.primary + "30",
     paddingVertical: 12,
   },
 
   locationBtnText: {
     fontSize: 13,
     fontWeight: "700",
-    color: Colors.primary,
+    color: theme.colors.primary,
   },
 
   photoLabelRow: {
@@ -1940,7 +1878,7 @@ const styles = StyleSheet.create({
   photoLabel: {
     fontSize: 13,
     fontWeight: "700",
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   attachmentImage: {
@@ -1950,11 +1888,11 @@ const styles = StyleSheet.create({
   },
 
   timerCard: {
-    backgroundColor: "#1e1b4b",
+    backgroundColor: theme.dark ? theme.colors.accentSoft : theme.colors.primaryPressed,
     borderRadius: 18,
     padding: 20,
     gap: 16,
-    shadowColor: "#8B5CF6",
+    shadowColor: theme.colors.accent,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 12,
@@ -1971,7 +1909,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#EF4444",
+    backgroundColor: theme.colors.danger,
   },
 
   timerLiveText: {
@@ -1984,7 +1922,7 @@ const styles = StyleSheet.create({
   timerDisplay: {
     fontSize: 48,
     fontWeight: "800",
-    color: "#fff",
+    color: theme.colors.onBrand,
     textAlign: "center",
     letterSpacing: 4,
   },
@@ -2006,7 +1944,7 @@ const styles = StyleSheet.create({
   rateMissingNote: {
     marginTop: 12,
     fontSize: 12,
-    color: Colors.error,
+    color: theme.colors.danger,
     textAlign: "center",
     lineHeight: 17,
     fontWeight: "600",
@@ -2041,34 +1979,34 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 10,
-    backgroundColor: Colors.primary + "10",
+    backgroundColor: theme.colors.primary + "10",
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
-    borderColor: Colors.primary + "30",
+    borderColor: theme.colors.primary + "30",
   },
 
   otpInfoText: {
     flex: 1,
     fontSize: 13,
-    color: Colors.primary,
+    color: theme.colors.primary,
     lineHeight: 18,
     fontWeight: "500",
   },
 
   pinHintBox: {
-    backgroundColor: Colors.primary + "10",
+    backgroundColor: theme.colors.primary + "10",
     borderRadius: 14,
     padding: 14,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: Colors.primary + "25",
+    borderColor: theme.colors.primary + "25",
   },
 
   pinHintLabel: {
     fontSize: 12,
     fontWeight: "700",
-    color: Colors.primary,
+    color: theme.colors.primary,
     marginBottom: 6,
     textTransform: "uppercase",
     letterSpacing: 0.6,
@@ -2077,19 +2015,19 @@ const styles = StyleSheet.create({
   pinHintValue: {
     fontSize: 26,
     fontWeight: "900",
-    color: Colors.text,
+    color: theme.colors.text,
     letterSpacing: 3,
     marginBottom: 6,
   },
 
   pinHintText: {
     fontSize: 12,
-    color: Colors.textMuted,
+    color: theme.colors.textMuted,
     lineHeight: 18,
   },
 
   completedBox: {
-    backgroundColor: "#F0FDF4",
+    backgroundColor: theme.colors.successSoft,
     borderRadius: 16,
     padding: 16,
     gap: 8,
@@ -2097,7 +2035,7 @@ const styles = StyleSheet.create({
 
   invoiceSummaryRow: {
     borderTopWidth: 1,
-    borderTopColor: "#BBF7D0",
+    borderTopColor: theme.colors.successSoft,
     paddingTop: 10,
     marginTop: 4,
     gap: 6,
@@ -2110,18 +2048,18 @@ const styles = StyleSheet.create({
 
   invoiceSummaryLabel: {
     fontSize: 13,
-    color: "#166534",
+    color: theme.colors.success,
   },
 
   invoiceSummaryValue: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#166534",
+    color: theme.colors.success,
   },
 
   invoiceTotalItem: {
     borderTopWidth: 1,
-    borderTopColor: "#BBF7D0",
+    borderTopColor: theme.colors.successSoft,
     paddingTop: 6,
     marginTop: 2,
   },
@@ -2129,20 +2067,20 @@ const styles = StyleSheet.create({
   invoiceTotalLabel: {
     fontSize: 14,
     fontWeight: "800",
-    color: "#15803D",
+    color: theme.colors.success,
   },
 
   invoiceTotalValue: {
     fontSize: 15,
     fontWeight: "900",
-    color: Colors.primary,
+    color: theme.colors.primary,
   },
 
   paymentConfirmedBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#DCFCE7",
+    backgroundColor: theme.colors.successSoft,
     borderRadius: 10,
     padding: 10,
     marginTop: 4,
@@ -2151,7 +2089,7 @@ const styles = StyleSheet.create({
   paymentConfirmedText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#16A34A",
+    color: theme.colors.success,
   },
 
   invoiceModalRow: {
@@ -2163,14 +2101,14 @@ const styles = StyleSheet.create({
 
   invoiceModalLabel: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     minWidth: 110,
   },
 
   invoiceModalValue: {
     fontSize: 13,
     fontWeight: "600",
-    color: Colors.text,
+    color: theme.colors.text,
     textAlign: "right",
     flexShrink: 1,
   },
@@ -2179,13 +2117,13 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 16,
     fontWeight: "800",
-    color: "#16A34A",
+    color: theme.colors.success,
   },
 
   completedText: {
     textAlign: "center",
     fontSize: 13,
-    color: "#166534",
+    color: theme.colors.success,
   },
 
   modalOverlay: {
@@ -2195,7 +2133,7 @@ const styles = StyleSheet.create({
   },
 
   modalBox: {
-    backgroundColor: Colors.white,
+    backgroundColor: theme.colors.surface,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     padding: 24,
@@ -2213,7 +2151,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 14,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -2221,12 +2159,12 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 17,
     fontWeight: "800",
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   modalSubtitle: {
     fontSize: 12,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   otpInputRow: {
@@ -2240,26 +2178,26 @@ const styles = StyleSheet.create({
     height: 64,
     borderRadius: 16,
     borderWidth: 2,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
   },
 
   otpBoxFilled: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.primary + "10",
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.primary + "10",
   },
 
   otpBoxActive: {
-    borderColor: Colors.primary,
+    borderColor: theme.colors.primary,
     borderWidth: 2.5,
   },
 
   otpBoxText: {
     fontSize: 28,
     fontWeight: "800",
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   hiddenInput: {
@@ -2272,7 +2210,7 @@ const styles = StyleSheet.create({
   otpError: {
     textAlign: "center",
     fontSize: 13,
-    color: Colors.error,
+    color: theme.colors.danger,
     fontWeight: "600",
   },
 });

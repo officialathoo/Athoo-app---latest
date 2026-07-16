@@ -9,6 +9,7 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 
 export const usersTable = pgTable("users", {
@@ -90,6 +91,9 @@ export const usersTable = pgTable("users", {
   index("users_is_blocked_idx").on(t.isBlocked),
   index("users_referral_code_idx").on(t.referralCode),
   index("users_email_idx").on(t.email),
+  uniqueIndex("users_verified_email_lower_uidx")
+    .on(sql`lower(trim(${t.email}))`)
+    .where(sql`${t.email} is not null and ${t.emailVerified} = true`),
   uniqueIndex("users_cnic_number_uidx").on(t.cnicNumber),
   index("users_account_status_idx").on(t.accountStatus),
   index("users_updated_at_idx").on(t.updatedAt),
@@ -255,12 +259,24 @@ export const otpsTable = pgTable("otps", {
   id: text("id").primaryKey(),
   phone: text("phone").notNull(),
   code: text("code").notNull(),
+  purpose: text("purpose").notNull().default("login"),
+  role: text("role"),
+  attempts: integer("attempts").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(5),
+  deliveryChannel: text("delivery_channel"),
+  deliveredAt: timestamp("delivered_at"),
+  invalidatedReason: text("invalidated_reason"),
   expiresAt: timestamp("expires_at").notNull(),
   used: boolean("used").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   index("otps_phone_idx").on(t.phone),
   index("otps_used_expires_idx").on(t.used, t.expiresAt),
+  index("otps_phone_purpose_created_idx").on(t.phone, t.purpose, t.createdAt),
+  index("otps_phone_purpose_used_expires_idx").on(t.phone, t.purpose, t.used, t.expiresAt),
+  uniqueIndex("otps_one_open_purpose_role_uidx")
+    .on(t.phone, t.purpose, sql`coalesce(${t.role}, '')`)
+    .where(sql`${t.used} = false`),
 ]);
 
 export const bookingsTable = pgTable("bookings", {
@@ -971,6 +987,93 @@ export const notificationTemplatesTable = pgTable("notification_templates", {
 });
 
 
+
+// ─── Portable Email Delivery & Verification ──────────────────────────────────
+// Provider credentials and vendor selection live in deployment configuration.
+// These tables only persist provider-neutral delivery state, consent, and audit data.
+export const emailVerificationChallengesTable = pgTable("email_verification_challenges", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  purpose: text("purpose").notNull(), // verify_email | login | email_change
+  role: text("role"),
+  codeHash: text("code_hash").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(5),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  invalidatedReason: text("invalidated_reason"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("email_challenges_user_purpose_created_idx").on(t.userId, t.purpose, t.createdAt),
+  index("email_challenges_email_purpose_created_idx").on(t.email, t.purpose, t.createdAt),
+  index("email_challenges_expires_at_idx").on(t.expiresAt),
+  uniqueIndex("email_challenges_one_open_uidx")
+    .on(t.userId, t.purpose)
+    .where(sql`${t.usedAt} is null`),
+]);
+
+export const emailPreferencesTable = pgTable("email_preferences", {
+  userId: text("user_id").primaryKey().references(() => usersTable.id, { onDelete: "cascade" }),
+  bookingUpdates: boolean("booking_updates").notNull().default(true),
+  accountUpdates: boolean("account_updates").notNull().default(true),
+  productUpdates: boolean("product_updates").notNull().default(false),
+  marketingEmails: boolean("marketing_emails").notNull().default(false),
+  marketingConsentAt: timestamp("marketing_consent_at"),
+  unsubscribedAt: timestamp("unsubscribed_at"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const emailCampaignsTable = pgTable("email_campaigns", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+  audience: text("audience").notNull().default("all"), // all | customer | provider | premium
+  category: text("category").notNull().default("marketing"), // marketing | product
+  status: text("status").notNull().default("draft"), // draft | queued | sending | completed | cancelled | failed
+  createdBy: text("created_by").references(() => usersTable.id, { onDelete: "set null" }),
+  scheduledAt: timestamp("scheduled_at"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  recipientCount: integer("recipient_count").notNull().default(0),
+  sentCount: integer("sent_count").notNull().default(0),
+  failedCount: integer("failed_count").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => [
+  index("email_campaigns_status_scheduled_idx").on(t.status, t.scheduledAt),
+  index("email_campaigns_created_at_idx").on(t.createdAt),
+]);
+
+export const emailDeliveriesTable = pgTable("email_deliveries", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  campaignId: text("campaign_id").references(() => emailCampaignsTable.id, { onDelete: "set null" }),
+  toEmail: text("to_email").notNull(),
+  templateKey: text("template_key").notNull(),
+  category: text("category").notNull().default("transactional"), // security | transactional | booking | product | marketing
+  subject: text("subject"),
+  provider: text("provider"),
+  providerMessageId: text("provider_message_id"),
+  status: text("status").notNull().default("queued"), // queued | sending | sent | retrying | failed | suppressed
+  attempts: integer("attempts").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(4),
+  lastError: text("last_error"),
+  dedupeKey: text("dedupe_key"),
+  variables: jsonb("variables").$type<Record<string, string | number | boolean | null>>().default({}),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+  queuedAt: timestamp("queued_at").defaultNow(),
+  sentAt: timestamp("sent_at"),
+  failedAt: timestamp("failed_at"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => [
+  index("email_deliveries_status_queued_idx").on(t.status, t.queuedAt),
+  index("email_deliveries_user_created_idx").on(t.userId, t.queuedAt),
+  index("email_deliveries_campaign_idx").on(t.campaignId),
+  uniqueIndex("email_deliveries_dedupe_uidx").on(t.dedupeKey).where(sql`${t.dedupeKey} is not null`),
+]);
+
 // Database-backed login sessions. Refresh tokens are stored only as hashes.
 export const authSessionsTable = pgTable("auth_sessions", {
   id: text("id").primaryKey(),
@@ -1046,6 +1149,10 @@ export type Invoice = typeof invoicesTable.$inferSelect;
 export type ReportIssue = typeof reportIssuesTable.$inferSelect;
 export type HourlyRateRequest = typeof hourlyRateRequestsTable.$inferSelect;
 export type NotificationTemplate = typeof notificationTemplatesTable.$inferSelect;
+export type EmailVerificationChallenge = typeof emailVerificationChallengesTable.$inferSelect;
+export type EmailPreference = typeof emailPreferencesTable.$inferSelect;
+export type EmailCampaign = typeof emailCampaignsTable.$inferSelect;
+export type EmailDelivery = typeof emailDeliveriesTable.$inferSelect;
 export type LoginHistory = typeof loginHistoryTable.$inferSelect;
 export type AuthSession = typeof authSessionsTable.$inferSelect;
 export type UserBlock = typeof userBlocksTable.$inferSelect;

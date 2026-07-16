@@ -9,8 +9,6 @@ import { useNegotiation } from "@/context/NegotiationContext";
 import { useNotifications } from "@/context/NotificationContext";
 import { useBroadcast } from "@/context/BroadcastContext";
 import { useBookings } from "@/context/BookingContext";
-import { notificationService } from "@/services/NotificationService";
-import { soundService } from "@/services/SoundService";
 
 function NegotiationAlertHandler() {
   const { pendingAlerts, consumeNegAlerts } = useNegotiation();
@@ -27,8 +25,6 @@ function NegotiationAlertHandler() {
         role: "provider",
         negotiationId: alert.negotiation.id,
       });
-      notificationService.scheduleStatusAlert(alert.title, alert.message).catch(() => {});
-      soundService.playNotification().catch(() => {});
     }
   }, [pendingAlerts]);
 
@@ -55,24 +51,8 @@ function BroadcastAlertHandler() {
     if (lastIdRef.current === latestBroadcast.id) return; // already processed
     lastIdRef.current = latestBroadcast.id;
 
-    // BroadcastContext already called push() and added the in-app notification.
-    // Here we only handle audio + OS push so there is no duplicate in-app bell entry.
-    soundService
-      .init()
-      .then(() => soundService.playRingtone())
-      .catch(() => soundService.playNotification().catch(() => {}));
-
-    const serviceLabel = latestBroadcast.serviceLabel ?? latestBroadcast.service ?? "Service";
-    const priceText = latestBroadcast.customerOffer
-      ? `Rs. ${latestBroadcast.customerOffer}`
-      : "open price";
-    const title = "🔔 New Job Broadcast!";
-    const message = `${serviceLabel} — ${priceText}`;
-
-    notificationService.scheduleBroadcastAlert(title, message, {
-      broadcastRequestId: latestBroadcast.id,
-    }).catch(() => {});
-
+    // NotificationContext and the backend push own audio and OS delivery.
+    // This navigator-level handler only releases the transient popup state.
     // Auto-dismiss after 30 s so future alerts are never blocked
     const timer = setTimeout(dismissLatestBroadcast, 30_000);
     return () => clearTimeout(timer);
@@ -82,19 +62,21 @@ function BroadcastAlertHandler() {
 }
 
 function BroadcastBadge({ count, backgroundColor }: { count: number; backgroundColor: string }) {
+  const { theme } = useTheme();
   if (count <= 0) return null;
   return (
     <View style={[styles.badge, { backgroundColor }]}>
-      <Text style={styles.badgeText}>{count > 9 ? "9+" : String(count)}</Text>
+      <Text style={[styles.badgeText, { color: theme.colors.onDanger }]}>{count > 9 ? "9+" : String(count)}</Text>
     </View>
   );
 }
 
 function UnreadBadge({ count, backgroundColor }: { count: number; backgroundColor: string }) {
+  const { theme } = useTheme();
   if (count <= 0) return null;
   return (
     <View style={[styles.badge, { backgroundColor }]}>
-      <Text style={styles.badgeText}>{count > 9 ? "9+" : String(count)}</Text>
+      <Text style={[styles.badgeText, { color: theme.colors.onDanger }]}>{count > 9 ? "9+" : String(count)}</Text>
     </View>
   );
 }
@@ -226,6 +208,5 @@ const styles = StyleSheet.create({
   badgeText: {
     fontSize: 9,
     fontWeight: "800",
-    color: "#fff",
   },
 });

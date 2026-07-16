@@ -213,7 +213,7 @@ export default function WalletScreen() {
           <WalletAction
             icon="trending-up"
             label={tr("Earnings History")}
-            colors={[theme.colors.success, "#10B981"]}
+            colors={[theme.colors.success, theme.colors.success]}
             onPress={() => router.push("/(provider)/earnings" as any)}
             styles={styles}
             white={theme.colors.white}
@@ -221,7 +221,7 @@ export default function WalletScreen() {
           <WalletAction
             icon="file-text"
             label={tr("View Invoices")}
-            colors={[theme.colors.accent, "#8B5CF6"]}
+            colors={[theme.colors.accent, theme.colors.accent]}
             onPress={() => router.push("/(provider)/invoices" as any)}
             styles={styles}
             white={theme.colors.white}
@@ -229,7 +229,7 @@ export default function WalletScreen() {
           <WalletAction
             icon="headphones"
             label={tr("Finance Support")}
-            colors={[theme.colors.warning, "#F59E0B"]}
+            colors={[theme.colors.warning, theme.colors.warning]}
             onPress={() => router.push("/(provider)/contact-support" as any)}
             styles={styles}
             white={theme.colors.white}
@@ -330,7 +330,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     heroStats: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center" },
     heroStat: { flex: 1, alignItems: "center" },
     heroStatVal: { fontSize: 14, fontWeight: "700", color: theme.colors.white, marginBottom: 2, textAlign: "center" },
-    heroStatWarning: { color: "#FDE68A" },
+    heroStatWarning: { color: theme.colors.warningSoft },
     heroStatLabel: { fontSize: 10, color: "rgba(255,255,255,0.72)", fontWeight: "500", textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
     heroStatDiv: { width: 1, height: 32, backgroundColor: "rgba(255,255,255,0.3)" },
     scroll: { flex: 1 },
@@ -343,7 +343,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     retryText: { color: theme.colors.primary, fontWeight: "700", fontSize: 12 },
     duesCard: { backgroundColor: theme.colors.warningSoft, borderRadius: 16, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: theme.colors.warning },
     duesTop: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 10, marginBottom: 10 },
-    duesIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: theme.dark ? "#5A3C13" : "#FEF3C7", justifyContent: "center", alignItems: "center" },
+    duesIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: theme.dark ? theme.colors.warningSoft : theme.colors.warningSoft, justifyContent: "center", alignItems: "center" },
     duesCopy: { flex: 1 },
     duesTitle: { fontSize: 14, fontWeight: "700", color: theme.colors.warning, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
     duesSub: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 1, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },

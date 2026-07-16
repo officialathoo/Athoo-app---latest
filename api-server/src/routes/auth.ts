@@ -1,8 +1,8 @@
 import { Router, type Response } from "express";
 import { logger } from "../lib/logger";
 import { db } from "@workspace/db";
-import { usersTable, otpsTable, loginHistoryTable, adminBlacklistTable } from "@workspace/db/schema";
-import { eq, and, gt, or, desc } from "drizzle-orm";
+import { usersTable, otpsTable, loginHistoryTable, adminBlacklistTable, emailPreferencesTable } from "@workspace/db/schema";
+import { eq, and, or, desc, sql } from "drizzle-orm";
 import { signAccessToken, signPurposeToken, verifyToken, requireAuth, type AuthRequest } from "../middlewares/auth";
 import { createSession, rotateSession, revokeSession, revokeAllUserSessions } from "../lib/session";
 import { getPlatformSettings } from "../lib/admin";
@@ -10,9 +10,11 @@ import { LEGAL_VERSION } from "../lib/legal";
 import { isOwnedUploadObjectPath, normalizeStoredObjectPath } from "../lib/storageSecurity";
 import { cleanupReplacedOwnedMedia } from "../lib/mediaLifecycle";
 // Rate limiting is handled globally by express-rate-limit in app.ts
-import { sendEmail, renderOtpEmail } from "../lib/email";
 import * as bcrypt from "bcryptjs";
 import crypto from "crypto";
+import { accountUnavailableResponse, cleanOtpPurpose, otpHashMatches, type OtpPurpose } from "../lib/authOtpPolicy";
+import { hasSeenDevice, normalizeEmailAddress, queueNewDeviceEmail, queuePasswordChangedEmail, queueWelcomeEmail, sendEmailChallenge, verifyEmailChallenge } from "../lib/emailAuth";
+import { deliverAuthenticationOtp } from "../lib/otpDelivery";
 
 const router = Router();
 
@@ -20,10 +22,10 @@ function generateOtp(): string {
   return crypto.randomInt(1000, 10000).toString();
 }
 
-function hashOtp(phone: string, code: string): string {
+function hashOtp(phone: string, code: string, purpose: OtpPurpose): string {
   const secret = process.env.OTP_HASH_SECRET?.trim() || process.env.JWT_SECRET?.trim();
   if (!secret) throw new Error("OTP hash secret is not configured");
-  return crypto.createHmac("sha256", secret).update(`${phone}:${code}`).digest("hex");
+  return crypto.createHmac("sha256", secret).update(`${purpose}:${phone}:${code}`).digest("hex");
 }
 
 function generateId(): string {
@@ -34,43 +36,25 @@ async function issueSession(user: any, req: any) {
   return createSession(user, { ipAddress: req.ip ?? null, userAgent: req.headers?.["user-agent"] ?? null });
 }
 
-async function sendWhatsAppOTP(phone: string, code: string): Promise<boolean> {
-  const token = process.env.WHATSAPP_ACCESS_TOKEN?.trim();
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID?.trim();
-  const configuredVersion = process.env.WHATSAPP_GRAPH_API_VERSION?.trim() || "v25.0";
-  const graphApiVersion = /^v\d+\.\d+$/.test(configuredVersion) ? configuredVersion : "v25.0";
-  if (!token || !phoneNumberId) return false;
-  const waPhone = phone.startsWith("0") ? `92${phone.slice(1)}` : phone.replace(/^\+/, "");
-  try {
-    const resp = await fetch(`https://graph.facebook.com/${graphApiVersion}/${phoneNumberId}/messages`, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to: waPhone,
-        type: "template",
-        template: {
-          name: "otp_verification",
-          language: { code: "en" },
-          components: [{ type: "body", parameters: [{ type: "text", text: code }] }],
-        },
-      }),
-    });
-    return resp.ok;
-  } catch {
-    return false;
-  }
+function normalizedEmailCondition(email: string) {
+  return sql`lower(trim(${usersTable.email})) = ${email}`;
+}
+
+async function findEmailLoginUser(email: string, expectedRole: "customer" | "provider") {
+  const matches = await db.query.usersTable.findMany({ where: normalizedEmailCondition(email) });
+  return matches.find((candidate) => candidate.role === expectedRole)
+    || matches.find((candidate) => candidate.emailVerified === true)
+    || matches[0]
+    || null;
 }
 
 function cleanPhone(phone: string): string {
   const digits = phone.replace(/\D/g, "");
-
-  if (!digits) return "";
-  if (digits.startsWith("92") && digits.length === 12) return `0${digits.slice(2)}`;
-  if (digits.startsWith("3") && digits.length === 10) return `0${digits}`;
-  if (digits.startsWith("0") && digits.length === 11) return digits;
-
-  return phone.trim();
+  let normalized = "";
+  if (digits.startsWith("92") && digits.length === 12) normalized = `0${digits.slice(2)}`;
+  else if (digits.startsWith("3") && digits.length === 10) normalized = `0${digits}`;
+  else if (digits.startsWith("0") && digits.length === 11) normalized = digits;
+  return /^03\d{9}$/.test(normalized) ? normalized : "";
 }
 
 function cleanRole(role?: string): "customer" | "provider" | null {
@@ -81,13 +65,51 @@ function cleanRole(role?: string): "customer" | "provider" | null {
 function cleanEmail(email?: string): string | null {
   if (!email) return null;
   const v = email.trim().toLowerCase();
-  return v ? v : null;
+  if (!v) return null;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? v : null;
+}
+
+function postgresErrorCode(error: unknown): string {
+  const candidate = error as { code?: unknown; cause?: { code?: unknown } } | null;
+  return String(candidate?.cause?.code || candidate?.code || "");
 }
 
 function toSafeUser<T extends Record<string, any>>(user: T | null | undefined) {
   if (!user) return null;
   const { password, adminFailedLoginCount, adminLockedUntil, ...safeUser } = user;
   return safeUser;
+}
+
+const OTP_TTL_SECONDS = Math.max(120, Math.min(900, Number(process.env.OTP_TTL_SECONDS || 600)));
+const OTP_RESEND_COOLDOWN_SECONDS = Math.max(30, Math.min(300, Number(process.env.OTP_RESEND_COOLDOWN_SECONDS || 45)));
+const OTP_MAX_ATTEMPTS = Math.max(3, Math.min(10, Number(process.env.OTP_MAX_ATTEMPTS || 5)));
+
+async function isAuthIdentityBlacklisted(phone: string, email?: string | null): Promise<boolean> {
+  const identityCondition = email
+    ? or(eq(adminBlacklistTable.value, phone), eq(adminBlacklistTable.value, email))
+    : eq(adminBlacklistTable.value, phone);
+  const row = await db.query.adminBlacklistTable.findFirst({
+    where: and(eq(adminBlacklistTable.isActive, true), identityCondition),
+  });
+  return Boolean(row);
+}
+
+async function latestOtp(phone: string, purpose: OtpPurpose, role?: "customer" | "provider" | null) {
+  return db.query.otpsTable.findFirst({
+    where: and(
+      eq(otpsTable.phone, phone),
+      eq(otpsTable.purpose, purpose),
+      role ? eq(otpsTable.role, role) : undefined,
+    ),
+    orderBy: desc(otpsTable.createdAt),
+  });
+}
+
+async function invalidateOpenOtps(phone: string, purpose: OtpPurpose, reason: string) {
+  await db
+    .update(otpsTable)
+    .set({ used: true, invalidatedReason: reason })
+    .where(and(eq(otpsTable.phone, phone), eq(otpsTable.purpose, purpose), eq(otpsTable.used, false)));
 }
 
 router.post("/purpose-token", requireAuth, async (req: AuthRequest, res: Response) => {
@@ -99,186 +121,403 @@ router.post("/purpose-token", requireAuth, async (req: AuthRequest, res: Respons
 
 router.post("/send-otp", async (req, res) => {
   try {
-    const { phone, email } = req.body as { phone?: string; email?: string };
+    const { phone, email, purpose: rawPurpose, role: rawRole } = req.body as {
+      phone?: string;
+      email?: string;
+      purpose?: string;
+      role?: string;
+    };
 
-    if (!phone || phone.trim().length < 10) {
-      res.status(400).json({ error: "Valid phone number required" });
-      return;
+    if (!phone) {
+      return res.status(400).json({ error: "Valid phone number required", code: "INVALID_PHONE" });
+    }
+
+    const purpose = cleanOtpPurpose(rawPurpose);
+    if (!purpose || purpose === "password_reset") {
+      return res.status(400).json({ error: "OTP purpose must be login or registration", code: "INVALID_OTP_PURPOSE" });
     }
 
     const normalizedPhone = cleanPhone(phone);
+    if (!normalizedPhone) {
+      return res.status(400).json({ error: "Enter a valid Pakistani mobile number, for example 03001234567.", code: "INVALID_PHONE" });
+    }
     const normalizedEmail = cleanEmail(email);
-    const code = generateOtp();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    if (email && !normalizedEmail) {
+      return res.status(400).json({ error: "Enter a valid email address or leave the email field empty.", code: "INVALID_EMAIL" });
+    }
+    const expectedRole = cleanRole(rawRole);
+    if (!expectedRole) {
+      return res.status(400).json({ error: "Select Customer or Provider before requesting an OTP.", code: "ROLE_REQUIRED" });
+    }
 
-    await db
-      .update(otpsTable)
-      .set({ used: true })
-      .where(and(eq(otpsTable.phone, normalizedPhone), eq(otpsTable.used, false)));
+    const existingUser = await db.query.usersTable.findFirst({
+      where: eq(usersTable.phone, normalizedPhone),
+    });
+
+    if (purpose === "login") {
+      const unavailable = accountUnavailableResponse(existingUser, expectedRole);
+      if (unavailable) return res.status(unavailable.status).json({ error: unavailable.error, code: unavailable.code });
+      if (await isAuthIdentityBlacklisted(normalizedPhone, existingUser?.email)) {
+        return res.status(403).json({ error: "This account is suspended. Please contact Athoo Support.", code: "ACCOUNT_SUSPENDED" });
+      }
+    } else {
+      if (existingUser) {
+        const actualRole = existingUser.role === "provider" ? "provider" : "customer";
+        return res.status(409).json({
+          error: `This phone number is already registered as a ${actualRole}. Please sign in instead.`,
+          code: "ACCOUNT_ALREADY_EXISTS",
+          existingRole: actualRole,
+        });
+      }
+      if (await isAuthIdentityBlacklisted(normalizedPhone, normalizedEmail)) {
+        return res.status(403).json({ error: "Registration is not permitted for this account. Please contact Athoo Support.", code: "REGISTRATION_BLOCKED" });
+      }
+    }
+
+    const previousOtp = await latestOtp(normalizedPhone, purpose, expectedRole);
+    const previousCreatedAt = previousOtp?.createdAt ? new Date(previousOtp.createdAt).getTime() : 0;
+    const cooldownMs = OTP_RESEND_COOLDOWN_SECONDS * 1000;
+    const remainingMs = previousCreatedAt + cooldownMs - Date.now();
+    if (previousOtp && !previousOtp.used && remainingMs > 0) {
+      return res.status(429).json({
+        error: `Please wait ${Math.ceil(remainingMs / 1000)} seconds before requesting another code.`,
+        code: "OTP_RESEND_COOLDOWN",
+        retryAfterSeconds: Math.ceil(remainingMs / 1000),
+      });
+    }
+
+    const code = generateOtp();
+    const expiresAt = new Date(Date.now() + OTP_TTL_SECONDS * 1000);
+    await invalidateOpenOtps(normalizedPhone, purpose, "replaced_by_new_code");
 
     const otpId = generateId();
-    const insertedOtp = await db
-      .insert(otpsTable)
-      .values({
-        id: otpId,
-        phone: normalizedPhone,
-        code: hashOtp(normalizedPhone, code),
-        expiresAt,
-        used: false,
-      })
-      .returning({
-        id: otpsTable.id,
-        phone: otpsTable.phone,
-        expiresAt: otpsTable.expiresAt,
-        createdAt: otpsTable.createdAt,
-      });
+    let insertedOtp;
+    try {
+      insertedOtp = await db
+        .insert(otpsTable)
+        .values({
+          id: otpId,
+          phone: normalizedPhone,
+          code: hashOtp(normalizedPhone, code, purpose),
+          purpose,
+          role: expectedRole,
+          attempts: 0,
+          maxAttempts: OTP_MAX_ATTEMPTS,
+          expiresAt,
+          used: false,
+        })
+        .returning({
+          id: otpsTable.id,
+          phone: otpsTable.phone,
+          purpose: otpsTable.purpose,
+          expiresAt: otpsTable.expiresAt,
+          createdAt: otpsTable.createdAt,
+        });
+    } catch (error) {
+      if (postgresErrorCode(error) === "23505") {
+        return res.status(429).json({
+          error: "A verification code was just requested. Please wait before requesting another code.",
+          code: "OTP_REQUEST_IN_PROGRESS",
+          retryAfterSeconds: OTP_RESEND_COOLDOWN_SECONDS,
+        });
+      }
+      throw error;
+    }
 
     const persistedOtp = insertedOtp[0];
-    if (!persistedOtp || persistedOtp.id !== otpId) {
+    if (!persistedOtp || persistedOtp.id !== otpId || persistedOtp.purpose !== purpose) {
       throw new Error("OTP persistence verification failed");
     }
 
-    logger.info(
-      {
-        otpId: persistedOtp.id,
-        phone: persistedOtp.phone,
-        createdAt: persistedOtp.createdAt,
-        expiresAt: persistedOtp.expiresAt,
-      },
-      "authentication OTP persisted",
-    );
+    logger.info({ otpId, phone: normalizedPhone, purpose, role: expectedRole }, "authentication OTP persisted");
 
     const isDev = process.env.NODE_ENV === "development" && process.env.ALLOW_DEV_OTP_RESPONSE === "true";
-    if (isDev) {
-      // Auth OTPs are intentionally surfaced via the console (and the response
-      // body) when no SMS provider is configured, so the system stays usable
-      // out-of-the-box for local + self-hosted deployments.
-      logger.info(`[auth-otp] phone=${normalizedPhone} code=${code} (expires in 10m)`);
-    }
+    if (isDev) logger.info(`[auth-otp/${purpose}] phone=${normalizedPhone} code=${code} (expires in ${OTP_TTL_SECONDS}s)`);
 
-    // Deliver through configured channels. Production must never report success
-    // when no channel actually delivered the verification code.
-    const waSent = await sendWhatsAppOTP(normalizedPhone, code).catch(() => false);
-    if (waSent) logger.info({ phone: normalizedPhone }, "WhatsApp OTP sent");
+    const targetEmail = purpose === "login"
+      ? existingUser?.emailVerified ? existingUser.email : null
+      : null;
+    const otpDelivery = await deliverAuthenticationOtp({
+      otpId,
+      phone: normalizedPhone,
+      code,
+      purpose,
+      role: expectedRole,
+      expiresMinutes: Math.ceil(OTP_TTL_SECONDS / 60),
+      email: targetEmail,
+      userId: existingUser?.id || null,
+      userName: existingUser?.name || null,
+    });
 
-    let emailChannel: "smtp" | "console" | null = null;
-    const targetEmail = normalizedEmail || (await db.query.usersTable.findFirst({
-      where: eq(usersTable.phone, normalizedPhone),
-    }))?.email || null;
-    if (targetEmail) {
-      const t = renderOtpEmail(code, "Verification");
-      const r = await sendEmail({ to: targetEmail, subject: t.subject, html: t.html, text: t.text });
-      emailChannel = r.channel;
-    }
+    const { whatsappSent, emailSent, smsSent } = otpDelivery;
+    const delivered = otpDelivery.delivered || isDev;
+    const deliveryChannel = isDev && !otpDelivery.delivered
+      ? "development"
+      : otpDelivery.deliveryChannel;
 
-    const emailSent = emailChannel === "smtp";
-    const delivered = waSent || emailSent;
-
-    if (!isDev && !delivered) {
-      // The row is kept for auditability but cannot be used after delivery fails.
-      await db.update(otpsTable).set({ used: true }).where(eq(otpsTable.id, otpId));
-      logger.warn(
-        { otpId, phone: normalizedPhone, hasEmail: Boolean(targetEmail) },
-        "OTP persisted but no production delivery channel succeeded",
-      );
+    if (!delivered) {
+      await db.update(otpsTable).set({
+        used: true,
+        invalidatedReason: "delivery_failed",
+      }).where(eq(otpsTable.id, otpId));
+      logger.warn({ otpId, phone: normalizedPhone, purpose, hasEmail: Boolean(targetEmail) }, "OTP delivery failed");
       return res.status(503).json({
         error: "Verification code delivery is temporarily unavailable. Please try again shortly.",
         code: "OTP_DELIVERY_UNAVAILABLE",
       });
     }
 
-    const productionMessage = waSent && emailSent
-      ? "OTP sent to your WhatsApp and email"
-      : waSent
-        ? "OTP sent to your WhatsApp"
-        : "OTP sent to your email";
+    await db.update(otpsTable).set({
+      deliveryChannel,
+      deliveredAt: new Date(),
+    }).where(eq(otpsTable.id, otpId));
+
+    logger.info({
+      otpId,
+      phone: normalizedPhone,
+      purpose,
+      role: expectedRole,
+      deliveryChannel,
+      expiresAt,
+    }, "authentication OTP delivered");
+
+    const message = otpDelivery.delivered
+      ? otpDelivery.message
+      : "Verification code generated for local development.";
 
     return res.json({
       success: true,
+      purpose,
+      expiresInSeconds: OTP_TTL_SECONDS,
+      resendAfterSeconds: OTP_RESEND_COOLDOWN_SECONDS,
       emailSent,
-      whatsappSent: waSent,
-      ...(isDev
-        ? { code, message: "OTP generated for local development" }
-        : { message: productionMessage }),
+      whatsappSent,
+      smsSent,
+      deliveryChannels: otpDelivery.deliveredChannels,
+      message,
+      ...(isDev ? { code } : {}),
     });
   } catch (e) {
     logger.error({ err: e }, "send-otp error");
-    return res.status(500).json({ error: "Failed to send OTP" });
+    return res.status(500).json({ error: "We could not send the verification code. Please try again.", code: "OTP_SEND_FAILED" });
   }
 });
 
 router.post("/verify-otp", async (req, res) => {
   try {
-    const { phone, code } = req.body as { phone: string; code: string };
+    const { phone, code, purpose: rawPurpose, role: rawRole } = req.body as {
+      phone?: string;
+      code?: string;
+      purpose?: string;
+      role?: string;
+    };
 
     if (!phone || !code) {
-      res.status(400).json({ error: "Phone and OTP required" });
-      return;
+      return res.status(400).json({ error: "Phone and OTP required", code: "OTP_REQUIRED" });
+    }
+
+    const purpose = cleanOtpPurpose(rawPurpose);
+    if (!purpose || purpose === "password_reset") {
+      return res.status(400).json({ error: "OTP purpose must be login or registration", code: "INVALID_OTP_PURPOSE" });
+    }
+    const expectedRole = cleanRole(rawRole);
+    if (!expectedRole) {
+      return res.status(400).json({ error: "Select Customer or Provider before verifying an OTP.", code: "ROLE_REQUIRED" });
     }
 
     const normalizedPhone = cleanPhone(phone);
-
-    const otp = await db.query.otpsTable.findFirst({
-      where: and(
-        eq(otpsTable.phone, normalizedPhone),
-        eq(otpsTable.code, hashOtp(normalizedPhone, code.trim())),
-        eq(otpsTable.used, false),
-        gt(otpsTable.expiresAt, new Date())
-      ),
-      orderBy: desc(otpsTable.createdAt),
-    });
-
-    if (!otp) {
-      res.status(400).json({ error: "Invalid or expired OTP" });
-      return;
+    if (!normalizedPhone) {
+      return res.status(400).json({ error: "Enter a valid Pakistani mobile number.", code: "INVALID_PHONE" });
+    }
+    const otp = await latestOtp(normalizedPhone, purpose, expectedRole);
+    if (!otp || otp.used) {
+      return res.status(400).json({ error: "The verification code is invalid or has already been used.", code: "OTP_INVALID" });
     }
 
-    await db
-      .update(otpsTable)
-      .set({ used: true })
-      .where(eq(otpsTable.id, otp.id));
+    if (new Date(otp.expiresAt).getTime() <= Date.now()) {
+      await db.update(otpsTable).set({ used: true, invalidatedReason: "expired" }).where(eq(otpsTable.id, otp.id));
+      return res.status(400).json({ error: "The verification code has expired. Please request a new code.", code: "OTP_EXPIRED" });
+    }
 
-    const user = await db.query.usersTable.findFirst({
-      where: eq(usersTable.phone, normalizedPhone),
-    });
+    if ((otp.attempts || 0) >= (otp.maxAttempts || OTP_MAX_ATTEMPTS)) {
+      await db.update(otpsTable).set({ used: true, invalidatedReason: "attempt_limit" }).where(eq(otpsTable.id, otp.id));
+      return res.status(429).json({ error: "Too many incorrect attempts. Please request a new code.", code: "OTP_ATTEMPT_LIMIT" });
+    }
 
-    if (user) {
-      if (user.isDeactivated) {
-        res
-          .status(403)
-          .json({ error: "This account has been deactivated. Please contact support." });
-        return;
-      }
-
-      const session = await issueSession(user, req);
-      const token = session.token;
-      db.insert(loginHistoryTable).values({ id: generateId(), userId: user.id, phone: user.phone, email: user.email, role: user.role, method: "otp", success: true, ipAddress: req.ip, userAgent: req.headers["user-agent"] || null }).catch(() => {});
-      res.json({
-        success: true,
-        token,
-        refreshToken: session.refreshToken,
-        expiresInSeconds: session.expiresInSeconds,
-        user: toSafeUser(user),
-        isNewUser: false,
+    const validCode = otpHashMatches(otp.code, hashOtp(normalizedPhone, code.trim(), purpose));
+    if (!validCode) {
+      const attempts = (otp.attempts || 0) + 1;
+      const exhausted = attempts >= (otp.maxAttempts || OTP_MAX_ATTEMPTS);
+      await db.update(otpsTable).set({
+        attempts,
+        ...(exhausted ? { used: true, invalidatedReason: "attempt_limit" } : {}),
+      }).where(eq(otpsTable.id, otp.id));
+      return res.status(exhausted ? 429 : 400).json({
+        error: exhausted ? "Too many incorrect attempts. Please request a new code." : "The verification code is incorrect.",
+        code: exhausted ? "OTP_ATTEMPT_LIMIT" : "OTP_INCORRECT",
+        attemptsRemaining: Math.max(0, (otp.maxAttempts || OTP_MAX_ATTEMPTS) - attempts),
       });
-      return;
     }
 
-    res.json({
+    await db.update(otpsTable).set({ used: true, invalidatedReason: "verified" }).where(eq(otpsTable.id, otp.id));
+
+    if (purpose === "registration") {
+      const existingUser = await db.query.usersTable.findFirst({ where: eq(usersTable.phone, normalizedPhone) });
+      if (existingUser) {
+        return res.status(409).json({
+          error: "This phone number is already registered. Please sign in instead.",
+          code: "ACCOUNT_ALREADY_EXISTS",
+          existingRole: existingUser.role,
+        });
+      }
+      const registrationToken = signPurposeToken({
+        userId: `registration:${normalizedPhone}`,
+        role: expectedRole,
+        purpose: "registration_verified",
+      }, "15m");
+      return res.json({ success: true, purpose, registrationToken, isNewUser: true, user: null });
+    }
+
+    const user = await db.query.usersTable.findFirst({ where: eq(usersTable.phone, normalizedPhone) });
+    const unavailable = accountUnavailableResponse(user, expectedRole);
+    if (unavailable) return res.status(unavailable.status).json({ error: unavailable.error, code: unavailable.code });
+    if (!user) return res.status(404).json({ error: "No active Athoo account was found with this phone number.", code: "ACCOUNT_NOT_FOUND" });
+    if (await isAuthIdentityBlacklisted(normalizedPhone, user.email)) {
+      return res.status(403).json({ error: "This account is suspended. Please contact Athoo Support.", code: "ACCOUNT_SUSPENDED" });
+    }
+
+    const userAgent = String(req.headers["user-agent"] || "");
+    const seenDevice = await hasSeenDevice(user.id, userAgent);
+    const session = await issueSession(user, req);
+    db.insert(loginHistoryTable).values({
+      id: generateId(),
+      userId: user.id,
+      phone: user.phone,
+      email: user.email,
+      role: user.role,
+      method: "otp",
       success: true,
-      token: null,
-      user: null,
-      isNewUser: true,
+      ipAddress: req.ip,
+      userAgent: userAgent || null,
+    }).catch(() => {});
+    if (!seenDevice) void queueNewDeviceEmail(user, { device: userAgent, ip: req.ip }).catch(() => undefined);
+
+    return res.json({
+      success: true,
+      purpose,
+      token: session.token,
+      refreshToken: session.refreshToken,
+      expiresInSeconds: session.expiresInSeconds,
+      user: toSafeUser(user),
+      isNewUser: false,
     });
   } catch (e) {
     logger.error({ err: e }, "verify-otp error");
-    res.status(500).json({ error: "Failed to verify OTP" });
+    return res.status(500).json({ error: "We could not verify the code. Please request a new code and try again.", code: "OTP_VERIFY_FAILED" });
+  }
+});
+
+
+router.post("/email/send-otp", async (req, res) => {
+  try {
+    const email = normalizeEmailAddress(req.body?.email);
+    const expectedRole = cleanRole(req.body?.role);
+    if (!email) return res.status(400).json({ error: "Enter a valid email address.", code: "INVALID_EMAIL" });
+    if (!expectedRole) return res.status(400).json({ error: "Select Customer or Provider before requesting an email code.", code: "ROLE_REQUIRED" });
+
+    const user = await findEmailLoginUser(email, expectedRole);
+    const unavailable = accountUnavailableResponse(user, expectedRole);
+    if (unavailable) return res.status(unavailable.status).json({ error: unavailable.error, code: unavailable.code });
+    if (!user) return res.status(404).json({ error: "No active Athoo account was found with this email address.", code: "ACCOUNT_NOT_FOUND" });
+    if (await isAuthIdentityBlacklisted(user.phone, email)) {
+      return res.status(403).json({ error: "This account is suspended. Please contact Athoo Support.", code: "ACCOUNT_SUSPENDED" });
+    }
+    if (!user.emailVerified) {
+      return res.status(403).json({ error: "Verify this email from your Athoo profile before using email OTP login.", code: "EMAIL_NOT_VERIFIED" });
+    }
+
+    const result = await sendEmailChallenge({ userId: user.id, email, name: user.name, role: expectedRole, purpose: "login" });
+    if (!result.success) {
+      const status = result.errorCode === "EMAIL_OTP_RESEND_COOLDOWN" ? 429 : 503;
+      return res.status(status).json({
+        error: result.errorCode === "EMAIL_OTP_RESEND_COOLDOWN"
+          ? `Please wait ${result.resendAfterSeconds} seconds before requesting another email code.`
+          : "The sign-in email could not be delivered. Please try another login method or contact support.",
+        code: result.errorCode,
+        retryAfterSeconds: result.resendAfterSeconds,
+      });
+    }
+    const maskedEmail = email.replace(/^(.{1,2}).*(@.*)$/, "$1***$2");
+    return res.json({
+      success: true,
+      maskedEmail,
+      expiresInSeconds: result.expiresInSeconds,
+      resendAfterSeconds: result.resendAfterSeconds,
+      message: `Sign-in code sent to ${maskedEmail}.`,
+      ...(result.code ? { code: result.code } : {}),
+    });
+  } catch (error) {
+    logger.error({ err: error }, "email login OTP send failed");
+    return res.status(500).json({ error: "We could not send the email sign-in code.", code: "EMAIL_OTP_SEND_FAILED" });
+  }
+});
+
+router.post("/email/verify-otp", async (req, res) => {
+  try {
+    const email = normalizeEmailAddress(req.body?.email);
+    const expectedRole = cleanRole(req.body?.role);
+    const code = String(req.body?.code || "").trim();
+    if (!email || !/^\d{6}$/.test(code)) return res.status(400).json({ error: "Email and a valid 6-digit code are required.", code: "EMAIL_OTP_REQUIRED" });
+    if (!expectedRole) return res.status(400).json({ error: "Select Customer or Provider before verifying the email code.", code: "ROLE_REQUIRED" });
+
+    const user = await findEmailLoginUser(email, expectedRole);
+    const unavailable = accountUnavailableResponse(user, expectedRole);
+    if (unavailable) return res.status(unavailable.status).json({ error: unavailable.error, code: unavailable.code });
+    if (!user) return res.status(404).json({ error: "No active Athoo account was found with this email address.", code: "ACCOUNT_NOT_FOUND" });
+    if (!user.emailVerified) return res.status(403).json({ error: "This email is not verified.", code: "EMAIL_NOT_VERIFIED" });
+    if (await isAuthIdentityBlacklisted(user.phone, email)) {
+      return res.status(403).json({ error: "This account is suspended. Please contact Athoo Support.", code: "ACCOUNT_SUSPENDED" });
+    }
+
+    const verified = await verifyEmailChallenge({ userId: user.id, email, purpose: "login", code, role: expectedRole });
+    if (!verified.success) {
+      const status = verified.code === "EMAIL_OTP_ATTEMPT_LIMIT" ? 429 : 400;
+      return res.status(status).json({
+        error: verified.code === "EMAIL_OTP_EXPIRED"
+          ? "The email sign-in code has expired. Request a new code."
+          : verified.code === "EMAIL_OTP_ATTEMPT_LIMIT"
+            ? "Too many incorrect attempts. Request a new code."
+            : "The email sign-in code is incorrect.",
+        code: verified.code,
+        attemptsRemaining: verified.attemptsRemaining,
+      });
+    }
+
+    const userAgent = String(req.headers["user-agent"] || "");
+    const seenDevice = await hasSeenDevice(user.id, userAgent);
+    const session = await issueSession(user, req);
+    await db.insert(loginHistoryTable).values({
+      id: generateId(), userId: user.id, phone: user.phone, email: user.email, role: user.role,
+      method: "email_otp", success: true, ipAddress: req.ip, userAgent: userAgent || null,
+    });
+    if (!seenDevice) void queueNewDeviceEmail(user, { device: userAgent, ip: req.ip }).catch(() => undefined);
+
+    return res.json({
+      success: true,
+      token: session.token,
+      refreshToken: session.refreshToken,
+      expiresInSeconds: session.expiresInSeconds,
+      user: toSafeUser(user),
+    });
+  } catch (error) {
+    logger.error({ err: error }, "email login OTP verification failed");
+    return res.status(500).json({ error: "We could not verify the email sign-in code.", code: "EMAIL_OTP_VERIFY_FAILED" });
   }
 });
 
 router.post("/register", async (req, res) => {
   try {
-    const { name, phone, email, role, services, fatherName, cnicNumber, experience, location, ratePerHour, password, termsAccepted, privacyAccepted } = req.body as {
+    const { name, phone, email, role, services, fatherName, cnicNumber, experience, location, ratePerHour, password, termsAccepted, privacyAccepted, registrationToken } = req.body as {
       name: string;
       phone: string;
       email?: string;
@@ -292,6 +531,7 @@ router.post("/register", async (req, res) => {
       password?: string;
       termsAccepted?: boolean;
       privacyAccepted?: boolean;
+      registrationToken?: string;
     };
 
     if (!name || !phone || !role) {
@@ -317,6 +557,20 @@ router.post("/register", async (req, res) => {
     if (!normalizedRole) {
       res.status(400).json({ error: "Role must be customer or provider" });
       return;
+    }
+
+    const verifiedRegistration = registrationToken ? verifyToken(registrationToken) : null;
+    if (
+      !verifiedRegistration ||
+      verifiedRegistration.tokenType !== "purpose" ||
+      verifiedRegistration.purpose !== "registration_verified" ||
+      verifiedRegistration.role !== normalizedRole ||
+      verifiedRegistration.userId !== `registration:${normalizedPhone}`
+    ) {
+      return res.status(403).json({
+        error: "Phone verification is required before creating an account. Please request a new code.",
+        code: "REGISTRATION_PHONE_NOT_VERIFIED",
+      });
     }
     let normalizedCnic: string | null = null;
     if (normalizedRole === "provider") {
@@ -347,7 +601,7 @@ router.post("/register", async (req, res) => {
 
     if (normalizedEmail) {
       const existingByEmail = await db.query.usersTable.findFirst({
-        where: eq(usersTable.email, normalizedEmail),
+        where: normalizedEmailCondition(normalizedEmail),
       });
 
       if (existingByEmail) {
@@ -435,23 +689,45 @@ router.post("/register", async (req, res) => {
       termsAcceptedAt: new Date(),
       privacyAcceptedAt: new Date(),
       legalVersion: LEGAL_VERSION,
+      emailVerified: false,
     };
 
     await db.insert(usersTable).values(newUser);
+    await db.insert(emailPreferencesTable).values({ userId: newUser.id }).onConflictDoNothing({ target: emailPreferencesTable.userId });
+
+    let emailVerification: Awaited<ReturnType<typeof sendEmailChallenge>> | null = null;
+    if (normalizedEmail) {
+      void queueWelcomeEmail(newUser).catch((error) => logger.warn({ err: error, userId: newUser.id }, "welcome email queue failed"));
+      emailVerification = await sendEmailChallenge({
+        userId: newUser.id,
+        email: normalizedEmail,
+        name: newUser.name,
+        role: normalizedRole,
+        purpose: "verify_email",
+      }).catch((error) => {
+        logger.warn({ err: error, userId: newUser.id }, "registration verification email failed");
+        return null;
+      });
+    }
 
     const session = await issueSession(newUser, req);
     const token = session.token;
 
-    res.json({
+    return res.json({
       success: true,
       token,
       refreshToken: session.refreshToken,
       expiresInSeconds: session.expiresInSeconds,
       user: toSafeUser(newUser),
+      emailVerificationRequired: Boolean(normalizedEmail),
+      emailVerificationSent: Boolean(emailVerification?.success),
+      emailVerificationExpiresInSeconds: emailVerification?.expiresInSeconds,
+      emailVerificationResendAfterSeconds: emailVerification?.resendAfterSeconds,
+      ...(emailVerification?.code ? { emailVerificationCode: emailVerification.code } : {}),
     });
   } catch (e) {
     logger.error({ err: e }, "register error");
-    res.status(500).json({ error: "Failed to register" });
+    return res.status(500).json({ error: "Failed to register" });
   }
 });
 
@@ -638,7 +914,7 @@ router.post("/admin-login", async (req, res) => {
     const normalizedPhone = cleanPhone(identifier);
     const normalizedEmail = identifier.toLowerCase();
     const user = await db.query.usersTable.findFirst({
-      where: or(eq(usersTable.phone, normalizedPhone), eq(usersTable.phone, identifier), eq(usersTable.email, normalizedEmail)),
+      where: or(eq(usersTable.phone, normalizedPhone), eq(usersTable.phone, identifier), normalizedEmailCondition(normalizedEmail)),
     });
     const genericError = { error: "Invalid admin credentials" };
     if (!user || user.role !== "admin" || !user.password) {
@@ -672,9 +948,10 @@ router.post("/admin-login", async (req, res) => {
 // POST /auth/login — sign in with email/phone + password
 router.post("/login", async (req, res) => {
   try {
-    const { identifier, password } = req.body as {
+    const { identifier, password, role } = req.body as {
       identifier: string;
       password: string;
+      role?: string;
     };
 
     if (!identifier || !password) {
@@ -685,26 +962,26 @@ router.post("/login", async (req, res) => {
     const normalizedIdentifier = identifier.trim();
     const normalizedPhone = cleanPhone(normalizedIdentifier);
     const normalizedEmail = normalizedIdentifier.toLowerCase();
+    const expectedRole = cleanRole(role);
+    if (!expectedRole) {
+      return res.status(400).json({ error: "Select Customer or Provider before signing in.", code: "ROLE_REQUIRED" });
+    }
 
     const user = await db.query.usersTable.findFirst({
-      where: or(
-        eq(usersTable.phone, normalizedPhone),
-        eq(usersTable.phone, normalizedIdentifier),
-        eq(usersTable.email, normalizedEmail)
+      where: and(
+        eq(usersTable.role, expectedRole),
+        or(
+          eq(usersTable.phone, normalizedPhone),
+          eq(usersTable.phone, normalizedIdentifier),
+          normalizedEmailCondition(normalizedEmail),
+        ),
       ),
     });
-
-    if (!user) {
-      res.status(401).json({ error: "No account found with this email or phone number" });
-      return;
+    const unavailable = accountUnavailableResponse(user, expectedRole);
+    if (unavailable) {
+      return res.status(unavailable.status).json({ error: unavailable.error, code: unavailable.code });
     }
-
-    if (user.isDeactivated) {
-      res
-        .status(403)
-        .json({ error: "This account has been deactivated. Please contact support." });
-      return;
-    }
+    if (!user) return res.status(404).json({ error: "No active Athoo account was found with this identifier.", code: "ACCOUNT_NOT_FOUND" });
 
     // Check admin blacklist (phone or email)
     const blacklisted = await db.query.adminBlacklistTable.findFirst({
@@ -737,12 +1014,15 @@ router.post("/login", async (req, res) => {
       return;
     }
 
+    const userAgent = String(req.headers["user-agent"] || "");
+    const seenDevice = await hasSeenDevice(user.id, userAgent);
     const session = await issueSession(user, req);
-      const token = session.token;
+    const token = session.token;
 
-    db.insert(loginHistoryTable).values({ id: generateId(), userId: user.id, phone: user.phone, email: user.email, role: user.role, method: "password", success: true, ipAddress: req.ip, userAgent: req.headers["user-agent"] || null }).catch(() => {});
+    db.insert(loginHistoryTable).values({ id: generateId(), userId: user.id, phone: user.phone, email: user.email, role: user.role, method: "password", success: true, ipAddress: req.ip, userAgent: userAgent || null }).catch(() => {});
+    if (!seenDevice) void queueNewDeviceEmail(user, { device: userAgent, ip: req.ip }).catch(() => undefined);
 
-    res.json({
+    return res.json({
       success: true,
       token,
       refreshToken: session.refreshToken,
@@ -751,7 +1031,7 @@ router.post("/login", async (req, res) => {
     });
   } catch (e) {
     logger.error({ err: e }, "login error");
-    res.status(500).json({ error: "Login failed" });
+    return res.status(500).json({ error: "Login failed" });
   }
 });
 
@@ -800,6 +1080,9 @@ router.post("/set-password", requireAuth, async (req: AuthRequest, res: Response
       .set({ password: hashed, updatedAt: new Date() })
       .where(eq(usersTable.id, req.user!.userId));
     await revokeAllUserSessions(req.user!.userId, "password_changed");
+    void queuePasswordChangedEmail(user, "changed").catch((error) =>
+      logger.warn({ err: error, userId: user.id }, "password changed email queue failed"),
+    );
 
     res.json({ success: true, message: "Password set successfully. Please sign in again." });
   } catch (e) {
@@ -826,10 +1109,16 @@ router.post("/forgot-password/send-otp", async (req, res) => {
     let normalizedPhone: string;
 
     if (isEmail) {
-      const cleanedEmail = rawInput.toLowerCase();
-      user = await db.query.usersTable.findFirst({
-        where: eq(usersTable.email, cleanedEmail),
+      const cleanedEmail = normalizeEmailAddress(rawInput);
+      if (!cleanedEmail) {
+        return res.status(400).json({ error: "Please enter a valid phone number or email address" });
+      }
+      const matchingUser = await db.query.usersTable.findFirst({
+        where: and(normalizedEmailCondition(cleanedEmail), eq(usersTable.emailVerified, true)),
       });
+      // Keep the response generic, but never deliver recovery codes to an
+      // unverified email address.
+      user = matchingUser;
       if (!user) {
         const digest = crypto.createHash("sha256").update(cleanedEmail).digest("hex");
         normalizedPhone = `000${(BigInt(`0x${digest.slice(0, 12)}`) % 10_000_000n).toString().padStart(7, "0")}`;
@@ -848,8 +1137,10 @@ router.post("/forgot-password/send-otp", async (req, res) => {
 
     const code = generateOtp();
     const isDev = process.env.NODE_ENV === "development" && process.env.ALLOW_DEV_OTP_RESPONSE === "true";
-    let emailChannel: "smtp" | "console" | null = null;
+    let emailSent = false;
     let whatsappSent = false;
+    let smsSent = false;
+    let deliveryChannel: string | null = null;
     let otpId: string | null = null;
 
     if (user) {
@@ -857,13 +1148,21 @@ router.post("/forgot-password/send-otp", async (req, res) => {
       await db
         .update(otpsTable)
         .set({ used: true })
-        .where(and(eq(otpsTable.phone, normalizedPhone), eq(otpsTable.used, false)));
+        .where(and(
+          eq(otpsTable.phone, normalizedPhone),
+          eq(otpsTable.purpose, "password_reset"),
+          eq(otpsTable.used, false),
+        ));
 
       otpId = generateId();
       await db.insert(otpsTable).values({
         id: otpId,
         phone: normalizedPhone,
-        code: hashOtp(normalizedPhone, code),
+        code: hashOtp(normalizedPhone, code, "password_reset"),
+        purpose: "password_reset",
+        role: user.role === "provider" ? "provider" : "customer",
+        attempts: 0,
+        maxAttempts: OTP_MAX_ATTEMPTS,
         expiresAt,
         used: false,
       });
@@ -872,20 +1171,34 @@ router.post("/forgot-password/send-otp", async (req, res) => {
         logger.info(`[auth-otp/reset] phone=${normalizedPhone} code=${code} (expires in 10m)`);
       }
 
-      whatsappSent = await sendWhatsAppOTP(normalizedPhone, code).catch(() => false);
+      const otpDelivery = await deliverAuthenticationOtp({
+        otpId,
+        phone: normalizedPhone,
+        code,
+        purpose: "password_reset",
+        role: user.role === "provider" ? "provider" : "customer",
+        expiresMinutes: 10,
+        email: user.emailVerified ? user.email : null,
+        userId: user.id,
+        userName: user.name,
+      });
+      whatsappSent = otpDelivery.whatsappSent;
+      emailSent = otpDelivery.emailSent;
+      smsSent = otpDelivery.smsSent;
+      deliveryChannel = otpDelivery.deliveryChannel;
 
-      if (user.email) {
-        const t = renderOtpEmail(code, "Password reset");
-        const r = await sendEmail({ to: user.email, subject: t.subject, html: t.html, text: t.text });
-        emailChannel = r.channel;
-      }
-
-      if (!isDev && !whatsappSent && emailChannel !== "smtp" && otpId) {
-        await db.update(otpsTable).set({ used: true }).where(eq(otpsTable.id, otpId));
+      if (!isDev && !otpDelivery.delivered && otpId) {
+        await db.update(otpsTable).set({ used: true, invalidatedReason: "delivery_failed" }).where(eq(otpsTable.id, otpId));
         logger.warn(
           { otpId, userId: user.id },
           "password reset OTP could not be delivered through a production channel",
         );
+      }
+      else if (otpId) {
+        await db.update(otpsTable).set({
+          deliveryChannel: isDev && !otpDelivery.delivered ? "development" : deliveryChannel,
+          deliveredAt: new Date(),
+        }).where(eq(otpsTable.id, otpId));
       }
     }
 
@@ -900,10 +1213,9 @@ router.post("/forgot-password/send-otp", async (req, res) => {
     return res.json({
       success: true,
       challengeToken,
-      maskedPhone,
-      emailSent: emailChannel === "smtp",
-      whatsappSent,
-      ...(isDev && user ? { code } : {}),
+      // Delivery details are intentionally hidden outside development so this
+      // endpoint cannot be used to discover whether an account exists.
+      ...(isDev && user ? { code, maskedPhone, emailSent, whatsappSent, smsSent, deliveryChannel } : {}),
       message: "If an account matches those details, a reset OTP has been sent.",
     });
   } catch (e) {
@@ -940,24 +1252,29 @@ router.post("/forgot-password/verify-otp", async (req, res) => {
       normalizedPhone = cleanPhone(String(phone || ""));
     }
 
-    const otp = await db.query.otpsTable.findFirst({
-      where: and(
-        eq(otpsTable.phone, normalizedPhone),
-        eq(otpsTable.code, hashOtp(normalizedPhone, code.trim())),
-        eq(otpsTable.used, false),
-        gt(otpsTable.expiresAt, new Date())
-      ),
-      orderBy: desc(otpsTable.createdAt),
-    });
-
-    if (!otp) {
-      return res.status(400).json({ error: "Invalid or expired OTP" });
+    const otp = await latestOtp(normalizedPhone, "password_reset");
+    if (!otp || otp.used) {
+      return res.status(400).json({ error: "Invalid or expired OTP", code: "OTP_INVALID" });
+    }
+    if (new Date(otp.expiresAt).getTime() <= Date.now()) {
+      await db.update(otpsTable).set({ used: true, invalidatedReason: "expired" }).where(eq(otpsTable.id, otp.id));
+      return res.status(400).json({ error: "The OTP has expired. Please request a new code.", code: "OTP_EXPIRED" });
+    }
+    const validCode = otpHashMatches(otp.code, hashOtp(normalizedPhone, code.trim(), "password_reset"));
+    if (!validCode) {
+      const attempts = (otp.attempts || 0) + 1;
+      const exhausted = attempts >= (otp.maxAttempts || OTP_MAX_ATTEMPTS);
+      await db.update(otpsTable).set({
+        attempts,
+        ...(exhausted ? { used: true, invalidatedReason: "attempt_limit" } : {}),
+      }).where(eq(otpsTable.id, otp.id));
+      return res.status(exhausted ? 429 : 400).json({
+        error: exhausted ? "Too many incorrect attempts. Please request a new code." : "The OTP is incorrect.",
+        code: exhausted ? "OTP_ATTEMPT_LIMIT" : "OTP_INCORRECT",
+      });
     }
 
-    await db
-      .update(otpsTable)
-      .set({ used: true })
-      .where(eq(otpsTable.id, otp.id));
+    await db.update(otpsTable).set({ used: true, invalidatedReason: "verified" }).where(eq(otpsTable.id, otp.id));
 
     // Issue a short-lived reset token — step 3 MUST present this to prove OTP was verified.
     // Without it, any caller who knows a phone number could skip to step 3.
@@ -1006,6 +1323,9 @@ router.post("/forgot-password/reset", async (req, res) => {
       .set({ password: hashed, updatedAt: new Date() })
       .where(eq(usersTable.id, user.id));
     await revokeAllUserSessions(user.id, "password_reset");
+    void queuePasswordChangedEmail(user, "reset").catch((error) =>
+      logger.warn({ err: error, userId: user.id }, "password reset confirmation email queue failed"),
+    );
 
     res.json({ success: true, message: "Password reset successful" });
     return;

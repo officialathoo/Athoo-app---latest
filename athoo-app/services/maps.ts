@@ -1,18 +1,30 @@
 /**
  * Open mapping and geocoding helpers for Athoo.
  *
- * Mobile clients never carry a commercial maps key. Address search, reverse
- * geocoding, and directions are proxied through the Athoo API, which uses
- * OpenStreetMap data providers (Photon, Nominatim, and OSRM) with bounded
- * timeouts and server-side caching.
+ * Mobile clients never carry map-provider credentials. Address search,
+ * reverse geocoding, tiles, and directions are proxied through the Athoo API.
+ * The backend can switch between Mapbox and open/custom providers through
+ * deployment configuration without changing mobile screens.
  */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api } from "./api";
 
+export type AddressPrecision = "building" | "street" | "area" | "city" | "region";
+
 export interface PlaceSuggestion {
   placeId: string;
   label: string;
+  primary: string;
+  secondary: string;
+  lat: number;
+  lng: number;
+  city?: string;
+  province?: string;
+  postcode?: string;
+  precision: AddressPrecision;
+  source: "photon" | "nominatim" | "mapbox";
+  distanceKm?: number;
 }
 
 export interface PlaceCoords {
@@ -21,7 +33,7 @@ export interface PlaceCoords {
   formattedAddress: string;
 }
 
-const REVERSE_CACHE_KEY = "athoo:reverse-geocode-cache:v1";
+const REVERSE_CACHE_KEY = "athoo:reverse-geocode-cache:v2";
 const REVERSE_CACHE_MAX = 40;
 const REVERSE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -59,18 +71,36 @@ async function writeReverseCache(id: string, address: string): Promise<void> {
 
 export async function searchAddress(
   query: string,
-): Promise<{ label: string; lat: number; lng: number; useAsTyped?: boolean }[]> {
-  const trimmed = query.trim();
-  if (trimmed.length < 2) return [];
-  try {
-    const data = await api.request<{ results?: Array<{ label: string; lat: number; lng: number; useAsTyped?: boolean }> }>(
-      "/api/geo/search",
-      { method: "GET", auth: true, params: { q: trimmed }, timeoutMs: 8_000 },
-    );
-    return Array.isArray(data.results) ? data.results : [];
-  } catch {
-    return [];
-  }
+  bias?: { latitude: number; longitude: number } | null,
+  limit = 10,
+): Promise<PlaceSuggestion[]> {
+  const trimmed = query.replace(/\s+/g, " ").trim();
+  if (trimmed.length < 3) return [];
+  const data = await api.request<{ results?: PlaceSuggestion[] }>(
+    "/api/geo/search",
+    {
+      method: "GET",
+      auth: true,
+      params: {
+        q: trimmed,
+        limit,
+        ...(bias && Number.isFinite(bias.latitude) && Number.isFinite(bias.longitude)
+          ? { lat: bias.latitude, lng: bias.longitude }
+          : {}),
+      },
+      timeoutMs: 9_000,
+    },
+  );
+  return Array.isArray(data.results)
+    ? data.results
+        .filter((result) =>
+          typeof result?.label === "string" &&
+          typeof result?.primary === "string" &&
+          Number.isFinite(Number(result?.lat)) &&
+          Number.isFinite(Number(result?.lng)),
+        )
+        .map((result) => ({ ...result, lat: Number(result.lat), lng: Number(result.lng) }))
+    : [];
 }
 
 export async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
@@ -79,7 +109,7 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string |
   const cached = await readReverseCache(cacheId);
 
   try {
-    const data = await api.request<{ address?: string }>("/api/geo/reverse", {
+    const data = await api.request<{ address?: string; cacheable?: boolean }>("/api/geo/reverse", {
       method: "GET",
       auth: true,
       params: { lat, lng },
@@ -87,7 +117,9 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string |
     });
     const address = typeof data.address === "string" ? data.address.trim() : "";
     if (address) {
-      void writeReverseCache(cacheId, address);
+      // Mapbox temporary geocoding results must not be persisted. The backend
+      // explicitly marks whether the selected provider permits local caching.
+      if (data.cacheable !== false) void writeReverseCache(cacheId, address);
       return address;
     }
   } catch {
@@ -102,11 +134,11 @@ export interface DirectionsResult {
   polyline: { latitude: number; longitude: number }[];
   distanceKm: number | null;
   durationMin: number | null;
-  source: "osrm" | "straight_line";
+  source: "mapbox" | "osrm" | "straight_line";
 }
 
 type DirectionsApiResponse = Omit<DirectionsResult, "source"> & {
-  source?: "osrm" | "osrm-cache" | "straight_line";
+  source?: "mapbox" | "mapbox-cache" | "osrm" | "osrm-cache" | "straight_line";
 };
 
 export async function getDirections(
@@ -126,7 +158,12 @@ export async function getDirections(
       polyline: Array.isArray(data.polyline) ? data.polyline : [],
       distanceKm: data.distanceKm ?? null,
       durationMin: data.durationMin ?? null,
-      source: data.source === "osrm" || data.source === "osrm-cache" ? "osrm" : "straight_line",
+      source:
+        data.source === "mapbox" || data.source === "mapbox-cache"
+          ? "mapbox"
+          : data.source === "osrm" || data.source === "osrm-cache"
+            ? "osrm"
+            : "straight_line",
     };
   } catch {
     return {

@@ -24,6 +24,8 @@ interface OtpModalProps {
   sentTo?: string;
   hint?: string;
   loading?: boolean;
+  expiresInSeconds?: number;
+  resendAfterSeconds?: number;
 }
 
 export function OtpModal({
@@ -36,13 +38,16 @@ export function OtpModal({
   sentTo,
   hint,
   loading = false,
+  expiresInSeconds = 600,
+  resendAfterSeconds = 45,
 }: OtpModalProps) {
   const { theme } = useTheme();
   const { isUrdu, translate: tr } = useLang();
   const styles = useMemo(() => createStyles(theme, isUrdu), [theme, isUrdu]);
   const [code, setCode] = useState(["", "", "", ""]);
   const [error, setError] = useState("");
-  const [resendTimer, setResendTimer] = useState(30);
+  const [resendTimer, setResendTimer] = useState(resendAfterSeconds);
+  const [expiryTimer, setExpiryTimer] = useState(expiresInSeconds);
   const [resending, setResending] = useState(false);
   const inputs = useRef<TextInput[]>([]);
   const scale = useRef(new Animated.Value(0.85)).current;
@@ -57,7 +62,8 @@ export function OtpModal({
 
     setCode(["", "", "", ""]);
     setError("");
-    setResendTimer(30);
+    setResendTimer(resendAfterSeconds);
+    setExpiryTimer(expiresInSeconds);
     setResending(false);
     Animated.parallel([
       Animated.spring(scale, { toValue: 1, tension: 70, friction: 9, useNativeDriver: true }),
@@ -66,9 +72,10 @@ export function OtpModal({
 
     const interval = setInterval(() => {
       setResendTimer((current) => (current > 0 ? current - 1 : 0));
+      setExpiryTimer((current) => (current > 0 ? current - 1 : 0));
     }, 1000);
     return () => clearInterval(interval);
-  }, [opacity, scale, visible]);
+  }, [expiresInSeconds, opacity, resendAfterSeconds, scale, visible]);
 
   const handleChange = (value: string, index: number) => {
     const digits = value.replace(/\D/g, "").split("");
@@ -111,7 +118,8 @@ export function OtpModal({
     setError("");
     try {
       await onResend?.();
-      setResendTimer(30);
+      setResendTimer(resendAfterSeconds);
+      setExpiryTimer(expiresInSeconds);
     } catch {
       setError(tr("Unable to resend OTP. Please try again."));
     } finally {
@@ -119,7 +127,7 @@ export function OtpModal({
     }
   };
 
-  const verifyDisabled = loading || code.some((digit) => !digit);
+  const verifyDisabled = loading || expiryTimer === 0 || code.some((digit) => !digit);
   const resendDisabled = resendTimer > 0 || resending || loading;
 
   return (
@@ -180,6 +188,11 @@ export function OtpModal({
             ))}
           </View>
 
+          <Text style={[styles.expiryText, expiryTimer === 0 && styles.expiryExpired]}>
+            {expiryTimer > 0
+              ? tr("Code expires in {{time}}", { time: `${Math.floor(expiryTimer / 60)}:${String(expiryTimer % 60).padStart(2, "0")}` })
+              : tr("Code expired. Request a new OTP.")}
+          </Text>
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
 
           <Pressable
@@ -267,6 +280,8 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     otpRow: { flexDirection: "row", gap: 10, marginVertical: 8, direction: "ltr" },
     otpInput: { width: 56, height: 60, borderRadius: 16, borderWidth: 2, borderColor: theme.colors.border, fontSize: 24, fontWeight: "800", color: theme.colors.text, backgroundColor: theme.colors.input },
     otpInputFilled: { borderColor: theme.colors.primary, backgroundColor: theme.colors.infoSoft },
+    expiryText: { marginTop: 10, fontSize: 12, color: theme.colors.textSecondary, textAlign: "center" },
+    expiryExpired: { color: theme.colors.danger, fontWeight: "700" },
     error: { fontSize: 12, color: theme.colors.danger, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
     verifyBtn: { backgroundColor: theme.colors.primary, width: "100%", minHeight: 48, borderRadius: 16, paddingHorizontal: 16, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
     verifyText: { color: theme.colors.white, fontWeight: "800", fontSize: 15, writingDirection: isUrdu ? "rtl" : "ltr" },

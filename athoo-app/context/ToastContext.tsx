@@ -2,6 +2,7 @@ import React, {
   createContext,
   useCallback,
   useContext,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -16,7 +17,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
-import { Colors } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 
 export type ToastType = "success" | "error" | "info" | "warning";
 
@@ -36,19 +38,30 @@ interface ToastContextType {
 
 const ToastContext = createContext<ToastContextType | null>(null);
 
-const TOAST_CONFIG: Record<ToastType, { bg: string; icon: string; color: string }> = {
-  success: { bg: "#15803D", icon: "check-circle", color: "#fff" },
-  error: { bg: "#DC2626", icon: "x-circle", color: "#fff" },
-  info: { bg: Colors.primary, icon: "info", color: "#fff" },
-  warning: { bg: "#D97706", icon: "alert-triangle", color: "#fff" },
-};
+function getToastConfig(type: ToastType, theme: AthooTheme) {
+  const backgrounds: Record<ToastType, string> = {
+    success: theme.colors.success,
+    error: theme.colors.danger,
+    info: theme.colors.primary,
+    warning: theme.colors.warning,
+  };
+  const icons: Record<ToastType, string> = {
+    success: "check-circle",
+    error: "x-circle",
+    info: "info",
+    warning: "alert-triangle",
+  };
+  return { backgroundColor: backgrounds[type], icon: icons[type] };
+}
 
 function ToastItem({ item, onDismiss }: { item: ToastItem; onDismiss: () => void }) {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createToastStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const anim = useRef(new Animated.Value(-120)).current;
   const opacity = useRef(new Animated.Value(0)).current;
-  const config = TOAST_CONFIG[item.type];
+  const config = getToastConfig(item.type, theme);
 
   React.useEffect(() => {
     Animated.parallel([
@@ -68,16 +81,16 @@ function ToastItem({ item, onDismiss }: { item: ToastItem; onDismiss: () => void
     <Animated.View
       style={[
         styles.toast,
-        { backgroundColor: config.bg, transform: [{ translateY: anim }], opacity },
+        { backgroundColor: config.backgroundColor, transform: [{ translateY: anim }], opacity },
       ]}
     >
-      <Feather name={config.icon as any} size={20} color={config.color} />
+      <Feather name={config.icon as any} size={20} color={theme.colors.white} />
       <View style={{ flex: 1 }}>
         <Text style={styles.toastTitle}>{item.title}</Text>
         {item.message && <Text style={styles.toastMessage}>{item.message}</Text>}
       </View>
       <Pressable onPress={onDismiss}>
-        <Feather name="x" size={16} color="rgba(255,255,255,0.7)" />
+        <Feather name="x" size={16} color={theme.colors.white} />
       </Pressable>
     </Animated.View>
   );
@@ -127,23 +140,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
     pointerEvents: "box-none",
   },
-  toast: {
-    position: "absolute",
-    left: 16,
-    right: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 20,
-  },
-  toastTitle: { fontSize: 14, fontWeight: "700", color: "#fff" },
-  toastMessage: { fontSize: 12, color: "rgba(255,255,255,0.85)", marginTop: 2 },
 });
+
+function createToastStyles(theme: AthooTheme) {
+  return StyleSheet.create({
+    toast: {
+      position: "absolute",
+      left: 16,
+      right: 16,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      borderRadius: 18,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      shadowColor: theme.colors.overlay,
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.25,
+      shadowRadius: 20,
+      elevation: 20,
+    },
+    toastTitle: { fontSize: 14, fontWeight: "700", color: theme.colors.white },
+    toastMessage: { fontSize: 12, color: theme.colors.white, opacity: 0.85, marginTop: 2 },
+  });
+}
 

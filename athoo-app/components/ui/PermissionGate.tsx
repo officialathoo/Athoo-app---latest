@@ -1,18 +1,9 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import { Colors } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 
-/**
- * Pre-prompt UI shown BEFORE the OS permission dialog. Apple/Google guidance:
- * explain why the permission is needed first so the OS prompt has context.
- *
- * The caller controls when to show it (e.g. before the first call to
- * `Location.requestForegroundPermissionsAsync()` or `Camera.requestCameraPermissionsAsync()`).
- *
- * When the OS permission is permanently denied, render this same component with
- * `denied` to surface "Open Settings".
- */
 export type PermissionKind =
   | "location"
   | "background-location"
@@ -23,89 +14,58 @@ export type PermissionKind =
   | "gps-disabled";
 
 const COPY: Record<PermissionKind, { icon: keyof typeof Feather.glyphMap; title: string; body: string; cta: string }> = {
-  location: {
-    icon: "map-pin",
-    title: "Location access",
-    body: "ATHOO needs your location to find nearby providers and route them to your address.",
-    cta: "Allow location",
-  },
-  "background-location": {
-    icon: "navigation",
-    title: "Always-on location",
-    body: "Live job tracking needs background location so customers can see the provider on the way, even when the app is in the background.",
-    cta: "Enable always-on",
-  },
-  notifications: {
-    icon: "bell",
-    title: "Stay in the loop",
-    body: "Notifications let you know when your booking is accepted, when a provider is on the way, and when chat messages arrive.",
-    cta: "Allow notifications",
-  },
-  camera: {
-    icon: "camera",
-    title: "Camera access",
-    body: "Used to take live selfies for verification, capture proof photos at job sites, and send photos in chat.",
-    cta: "Allow camera",
-  },
-  microphone: {
-    icon: "mic",
-    title: "Microphone access",
-    body: "Required for in-app voice and video calls between you and the provider.",
-    cta: "Allow microphone",
-  },
-  photos: {
-    icon: "image",
-    title: "Photo library access",
-    body: "Used to upload your CNIC, profile photo, and evidence images for refund or complaint requests.",
-    cta: "Allow photos",
-  },
-  "gps-disabled": {
-    icon: "alert-triangle",
-    title: "GPS is turned off",
-    body: "Please turn on Location/GPS in your device settings so we can find your address.",
-    cta: "Open Settings",
-  },
+  location: { icon: "map-pin", title: "Location access", body: "Athoo needs your location to find nearby providers and route them to your address.", cta: "Allow location" },
+  "background-location": { icon: "navigation", title: "Always-on location", body: "Live job tracking needs background location so customers can see the provider on the way while the app is in the background.", cta: "Enable always-on" },
+  notifications: { icon: "bell", title: "Stay in the loop", body: "Notifications tell you when bookings change, providers are on the way, and messages arrive.", cta: "Allow notifications" },
+  camera: { icon: "camera", title: "Camera access", body: "Used for verification, job evidence, profile photos, documents, and chat media.", cta: "Allow camera" },
+  microphone: { icon: "mic", title: "Microphone access", body: "Required for secure in-app voice and video calls.", cta: "Allow microphone" },
+  photos: { icon: "image", title: "Photo library access", body: "Used to upload profile photos, documents, booking media, and support evidence.", cta: "Allow photos" },
+  "gps-disabled": { icon: "alert-triangle", title: "GPS is turned off", body: "Turn on Location/GPS in device settings so Athoo can find your address.", cta: "Open Settings" },
 };
 
 interface Props {
   kind: PermissionKind;
-  /** True after the OS dialog returned "denied" (especially "never ask again"). */
   denied?: boolean;
   onAllow?: () => void;
   onDismiss?: () => void;
 }
 
-/** Opens the app-specific OS settings page so the user can flip the toggle. */
 export function openAppSettings(): Promise<void> {
-  if (Platform.OS === "ios") {
-    return Linking.openURL("app-settings:");
-  }
+  if (Platform.OS === "ios") return Linking.openURL("app-settings:");
   return Linking.openSettings();
 }
 
 export function PermissionGate({ kind, denied, onAllow, onDismiss }: Props) {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const copy = COPY[kind];
   const isDenied = denied || kind === "gps-disabled";
 
   return (
     <View style={styles.card}>
       <View style={styles.iconBox}>
-        <Feather name={copy.icon} size={24} color={Colors.primary} />
+        <Feather name={copy.icon} size={24} color={theme.colors.primary} />
       </View>
-      <View style={{ flex: 1, gap: 4 }}>
+      <View style={styles.copy}>
         <Text style={styles.title}>{copy.title}</Text>
-        <Text style={styles.body}>{isDenied ? `${copy.body}\n\nIt looks like access was denied. You can enable it in your device Settings.` : copy.body}</Text>
+        <Text style={styles.body}>
+          {isDenied ? `${copy.body}\n\nAccess is currently disabled. You can enable it in device Settings.` : copy.body}
+        </Text>
         <View style={styles.row}>
           <Pressable
-            onPress={isDenied ? () => openAppSettings().catch(() => {}) : onAllow}
-            style={styles.allowBtn}
+            onPress={isDenied ? () => void openAppSettings().catch(() => undefined) : onAllow}
+            style={({ pressed }) => [styles.allowButton, pressed && styles.pressed]}
             accessibilityRole="button"
           >
-            <Text style={styles.allowBtnText}>{isDenied ? "Open Settings" : copy.cta}</Text>
+            <Text style={styles.allowButtonText}>{isDenied ? "Open Settings" : copy.cta}</Text>
           </Pressable>
           {onDismiss ? (
-            <Pressable onPress={onDismiss} style={styles.dismissBtn} accessibilityRole="button">
-              <Text style={styles.dismissBtnText}>Not now</Text>
+            <Pressable
+              onPress={onDismiss}
+              style={({ pressed }) => [styles.dismissButton, pressed && styles.pressed]}
+              accessibilityRole="button"
+            >
+              <Text style={styles.dismissButtonText}>Not now</Text>
             </Pressable>
           ) : null}
         </View>
@@ -114,40 +74,26 @@ export function PermissionGate({ kind, denied, onAllow, onDismiss }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    flexDirection: "row",
-    gap: 14,
-    backgroundColor: Colors.white,
-    borderWidth: 1,
-    borderColor: Colors.primary + "25",
-    borderRadius: 16,
-    padding: 16,
-  },
-  iconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: Colors.primary + "12",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  title: { fontSize: 15, fontWeight: "800", color: Colors.text },
-  body: { fontSize: 13, color: Colors.textSecondary, lineHeight: 19 },
-  row: { flexDirection: "row", gap: 8, marginTop: 10 },
-  allowBtn: {
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 11,
-  },
-  allowBtnText: { color: "#fff", fontSize: 13, fontWeight: "700" },
-  dismissBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 11,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  dismissBtnText: { color: Colors.textSecondary, fontSize: 13, fontWeight: "600" },
-});
+function createStyles(theme: AthooTheme) {
+  return StyleSheet.create({
+    card: {
+      flexDirection: "row",
+      gap: 14,
+      backgroundColor: theme.colors.elevated,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 16,
+      padding: 16,
+    },
+    iconBox: { width: 48, height: 48, borderRadius: 14, backgroundColor: theme.colors.infoSoft, alignItems: "center", justifyContent: "center" },
+    copy: { flex: 1, gap: 4 },
+    title: { fontSize: 15, fontWeight: "800", color: theme.colors.text },
+    body: { fontSize: 13, color: theme.colors.textSecondary, lineHeight: 19 },
+    row: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 },
+    allowButton: { backgroundColor: theme.colors.primary, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 11 },
+    allowButtonText: { color: theme.colors.white, fontSize: 13, fontWeight: "700" },
+    dismissButton: { paddingHorizontal: 12, paddingVertical: 9, borderRadius: 11, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surfaceAlt },
+    dismissButtonText: { color: theme.colors.textSecondary, fontSize: 13, fontWeight: "600" },
+    pressed: { opacity: 0.76 },
+  });
+}

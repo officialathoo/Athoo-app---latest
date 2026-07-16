@@ -182,6 +182,8 @@ router.post("/cancel", async (req: AuthRequest, res) => {
       type: "premium",
       link: "/premium",
       data: { subscriptionId: scheduled.id, effectiveAt: scheduled.expiresAt },
+    
+      email: { category: "transactional" },
     }).catch(() => undefined);
     return res.json({ success: true, effectiveAt: scheduled.expiresAt });
   } catch (e) {
@@ -356,6 +358,8 @@ adminRouter.post("/:id/approve", requirePermission("finance.write"), async (req:
       type: "premium",
       link: "/premium",
       data: { subscriptionId: sub.id, planId: sub.planId },
+    
+      email: { category: "transactional" },
     }).catch(() => undefined);
     await auditSubscription(req, "subscription.approve", sub.id, { userId: sub.userId, planId: sub.planId, amount: sub.amount });
     return res.json({ success: true });
@@ -390,6 +394,8 @@ adminRouter.post("/:id/reject", requirePermission("finance.write"), async (req: 
     type: "premium",
     link: "/premium",
     data: { subscriptionId: sub.id },
+  
+    email: { category: "transactional" },
   }).catch(() => undefined);
   return res.json({ success: true });
 });

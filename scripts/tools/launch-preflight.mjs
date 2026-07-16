@@ -70,7 +70,7 @@ const lockfile = path.join(root, 'pnpm-lock.yaml');
 const migrationsDir = path.join(root, 'deploy/migrations');
 const migrations = fs.readdirSync(migrationsDir).filter((name) => name.endsWith('.sql')).sort();
 const record = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   status: 'preflight-passed',
   releaseVersion: String(mergedEnv.RELEASE_VERSION),
   environment,
@@ -78,7 +78,7 @@ const record = {
   artifactSha256,
   approvedBy: String(mergedEnv.RELEASE_APPROVED_BY),
   changeTicket: String(mergedEnv.RELEASE_CHANGE_TICKET),
-  sourceRevision: String(mergedEnv.RELEASE_SOURCE_REVISION || 'not-provided'),
+  sourceRevision: String(mergedEnv.RELEASE_SOURCE_REVISION || mergedEnv.RELEASE_COMMIT_SHA || 'not-provided'),
   dependencyLockSha256: hashFile(lockfile),
   migrationCount: migrations.length,
   latestMigration: migrations.at(-1) || null,
@@ -88,6 +88,8 @@ const record = {
     operations: 'passed',
     code: skipCode ? 'previously-verified' : 'passed',
     database: 'passed',
+    connectedRuntime: 'run-after-deployment',
+    deviceAcceptance: 'required-before-go-decision',
   },
 };
 const outDir = path.join(root, 'release-evidence');

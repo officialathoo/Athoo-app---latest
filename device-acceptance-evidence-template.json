@@ -1,0 +1,595 @@
+{
+  "schemaVersion": 2,
+  "releaseVersion": "rc2-candidate",
+  "releaseCommitSha": "0000000",
+  "artifactSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "builds": {
+    "android": {
+      "buildId": "",
+      "sourceCommitSha": "",
+      "artifactUrl": "",
+      "createdAt": ""
+    },
+    "ios": {
+      "buildId": "",
+      "sourceCommitSha": "",
+      "artifactUrl": "",
+      "createdAt": ""
+    }
+  },
+  "platforms": {
+    "android": {
+      "fresh-install-and-native-splash": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "customer-phone-otp-login": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "customer-email-otp-login": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "provider-phone-otp-login": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "account-status-login-rejection": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "logout-and-session-clear": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "single-device-session-revocation": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "dark-theme-all-primary-flows": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "light-theme-all-primary-flows": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "home-navigation-and-deep-links": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "location-permission-and-accuracy": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "map-tiles-search-reverse-geocoding": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "camera-image-upload": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "gallery-image-upload": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "video-upload": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "job-notification-sound": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "chat-notification-sound": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "general-notification-sound": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "incoming-call-sound-and-controls": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "push-notification-tap-from-background": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "push-notification-tap-from-killed-state": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "booking-and-negotiation": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "premium-payment-proof": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "weak-network-retry-and-offline-state": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      }
+    },
+    "ios": {
+      "fresh-install-and-native-splash": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "customer-phone-otp-login": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "customer-email-otp-login": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "provider-phone-otp-login": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "account-status-login-rejection": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "logout-and-session-clear": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "single-device-session-revocation": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "dark-theme-all-primary-flows": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "light-theme-all-primary-flows": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "home-navigation-and-deep-links": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "location-permission-and-accuracy": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "map-tiles-search-reverse-geocoding": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "camera-image-upload": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "gallery-image-upload": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "video-upload": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "job-notification-sound": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "chat-notification-sound": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "general-notification-sound": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "incoming-call-sound-and-controls": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "push-notification-tap-from-background": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "push-notification-tap-from-killed-state": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "booking-and-negotiation": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "premium-payment-proof": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "weak-network-retry-and-offline-state": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      }
+    }
+  },
+  "crossRole": {
+    "customer-provider-direct-booking": {
+      "status": "pending",
+      "testedAt": "",
+      "buildId": "",
+      "device": "",
+      "osVersion": "",
+      "evidence": "",
+      "notes": ""
+    },
+    "customer-provider-negotiation": {
+      "status": "pending",
+      "testedAt": "",
+      "buildId": "",
+      "device": "",
+      "osVersion": "",
+      "evidence": "",
+      "notes": ""
+    },
+    "broadcast-provider-response": {
+      "status": "pending",
+      "testedAt": "",
+      "buildId": "",
+      "device": "",
+      "osVersion": "",
+      "evidence": "",
+      "notes": ""
+    },
+    "chat-and-read-receipts": {
+      "status": "pending",
+      "testedAt": "",
+      "buildId": "",
+      "device": "",
+      "osVersion": "",
+      "evidence": "",
+      "notes": ""
+    },
+    "incoming-and-outgoing-call": {
+      "status": "pending",
+      "testedAt": "",
+      "buildId": "",
+      "device": "",
+      "osVersion": "",
+      "evidence": "",
+      "notes": ""
+    },
+    "provider-arrival-and-pin-start": {
+      "status": "pending",
+      "testedAt": "",
+      "buildId": "",
+      "device": "",
+      "osVersion": "",
+      "evidence": "",
+      "notes": ""
+    },
+    "job-completion-and-review": {
+      "status": "pending",
+      "testedAt": "",
+      "buildId": "",
+      "device": "",
+      "osVersion": "",
+      "evidence": "",
+      "notes": ""
+    },
+    "admin-approval-and-notification": {
+      "status": "pending",
+      "testedAt": "",
+      "buildId": "",
+      "device": "",
+      "osVersion": "",
+      "evidence": "",
+      "notes": ""
+    },
+    "premium-approval-and-cancellation": {
+      "status": "pending",
+      "testedAt": "",
+      "buildId": "",
+      "device": "",
+      "osVersion": "",
+      "evidence": "",
+      "notes": ""
+    },
+    "complaint-ticket-admin-response": {
+      "status": "pending",
+      "testedAt": "",
+      "buildId": "",
+      "device": "",
+      "osVersion": "",
+      "evidence": "",
+      "notes": ""
+    },
+    "email-verification-and-welcome": {
+      "status": "pending",
+      "testedAt": "",
+      "buildId": "",
+      "device": "",
+      "osVersion": "",
+      "evidence": "",
+      "notes": ""
+    },
+    "password-reset-and-security-alert": {
+      "status": "pending",
+      "testedAt": "",
+      "buildId": "",
+      "device": "",
+      "osVersion": "",
+      "evidence": "",
+      "notes": ""
+    },
+    "map-location-shared-consistency": {
+      "status": "pending",
+      "testedAt": "",
+      "buildId": "",
+      "device": "",
+      "osVersion": "",
+      "evidence": "",
+      "notes": ""
+    },
+    "notification-deep-link-destination": {
+      "status": "pending",
+      "testedAt": "",
+      "buildId": "",
+      "device": "",
+      "osVersion": "",
+      "evidence": "",
+      "notes": ""
+    },
+    "media-upload-and-admin-review": {
+      "status": "pending",
+      "testedAt": "",
+      "buildId": "",
+      "device": "",
+      "osVersion": "",
+      "evidence": "",
+      "notes": ""
+    }
+  }
+}

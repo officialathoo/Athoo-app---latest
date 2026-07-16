@@ -42,7 +42,7 @@ export function ErrorFallback({ resetError }: ErrorFallbackProps) {
         </Text>
 
         <Text style={[styles.message, localizedText, { color: colors.textMuted }]}>
-          {tr("Please try again. If the issue continues, contact Athoo Support.")}
+          {tr("Please try again. If the issue continues, contact support.")}
         </Text>
 
         <Pressable
@@ -53,6 +53,7 @@ export function ErrorFallback({ resetError }: ErrorFallbackProps) {
               backgroundColor: colors.primary,
               opacity: pressed ? 0.9 : 1,
               transform: [{ scale: pressed ? 0.98 : 1 }],
+              shadowColor: colors.shadow,
             },
           ]}
         >
@@ -104,7 +105,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 24,
     minWidth: 200,
-    shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: 2,

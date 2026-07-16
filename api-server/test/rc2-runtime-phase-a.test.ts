@@ -11,7 +11,8 @@ test("mobile map preview is OpenStreetMap-based and requires no commercial map k
   const openMap = read("athoo-app/components/maps/OpenStreetMapPreview.tsx");
   const mobilePackage = read("athoo-app/package.json");
   assert.match(fallback, /OpenStreetMapPreview/);
-  assert.match(openMap, /tile\.openstreetmap\.org/);
+  assert.match(openMap, /EXPO_PUBLIC_MAP_TILE_URL/);
+  assert.match(openMap, /TILE_TEMPLATE_CONFIGURED/);
   assert.match(openMap, /© OpenStreetMap contributors/);
   assert.doesNotMatch(mobilePackage, /react-native-maps/);
 });

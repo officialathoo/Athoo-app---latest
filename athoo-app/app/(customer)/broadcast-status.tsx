@@ -1,6 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import { router, useLocalSearchParams, useFocusEffect } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState , useMemo} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -15,27 +15,29 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Colors } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 import { api } from "@/services/api";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { realtime } from "@/services/api";
-import { notificationService } from "@/services/NotificationService";
-import { soundService } from "@/services/SoundService";
 import { apiErrorToMessage } from "@/lib/apiError";
 
 function RatingStars({ rating }: { rating: number }) {
+  const { theme } = useTheme();
   const stars = Math.round((rating || 0) / 10);
   return (
     <View style={{ flexDirection: "row", gap: 2 }}>
       {[1, 2, 3, 4, 5].map((s) => (
-        <Icon key={s} name="star" size={11} color={s <= stars ? Colors.warning : Colors.border} />
+        <Icon key={s} name="star" size={11} color={s <= stars ? theme.colors.warning : theme.colors.border} />
       ))}
     </View>
   );
 }
 
 function TimeLeft({ expiresAt, onExpire }: { expiresAt: string; onExpire?: () => void }) {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [secs, setSecs] = useState(() => {
     const diff = new Date(expiresAt).getTime() - Date.now();
     return Math.max(0, Math.floor(diff / 1000));
@@ -58,13 +60,15 @@ function TimeLeft({ expiresAt, onExpire }: { expiresAt: string; onExpire?: () =>
   const m = Math.floor(secs / 60);
   const s = secs % 60;
   return (
-    <Text style={[styles.timerText, secs < 30 && { color: Colors.error }]}>
+    <Text style={[styles.timerText, secs < 30 && { color: theme.colors.danger }]}>
       {m}:{String(s).padStart(2, "0")} left
     </Text>
   );
 }
 
 export default function BroadcastStatusScreen() {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { requestId } = useLocalSearchParams<{ requestId: string }>();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -107,12 +111,6 @@ export default function BroadcastStatusScreen() {
         const resp = msg.payload?.response;
         const providerName = resp?.providerName ?? "A provider";
         const priceText = resp?.providerOffer ? `Rs. ${resp.providerOffer}` : "open price";
-        notificationService
-          .scheduleResponseAlert("Provider responded!", `${providerName} offered ${priceText}`, {
-            broadcastRequestId: requestId,
-          })
-          .catch(() => {});
-        soundService.playNotification().catch(() => {});
       }
       if (msg.type === "broadcast:accepted" || msg.type === "broadcast:cancelled") {
         load(true);
@@ -173,8 +171,8 @@ export default function BroadcastStatusScreen() {
   if (loading) {
     return (
       <View style={[styles.container, { paddingTop: topPad, alignItems: "center", justifyContent: "center" }]}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={{ color: Colors.textSecondary, marginTop: 12 }}>Loading responses...</Text>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <Text style={{ color: theme.colors.textSecondary, marginTop: 12 }}>Loading responses...</Text>
       </View>
     );
   }
@@ -182,10 +180,10 @@ export default function BroadcastStatusScreen() {
   if (!request) {
     return (
       <View style={[styles.container, { paddingTop: topPad, alignItems: "center", justifyContent: "center" }]}>
-        <Icon name="alert-circle" size={40} color={Colors.error} />
-        <Text style={{ color: Colors.text, fontSize: 16, marginTop: 12 }}>Request not found</Text>
+        <Icon name="alert-circle" size={40} color={theme.colors.danger} />
+        <Text style={{ color: theme.colors.text, fontSize: 16, marginTop: 12 }}>Request not found</Text>
         <Pressable onPress={() => router.back()} style={{ marginTop: 16 }}>
-          <Text style={{ color: Colors.primary, fontWeight: "700" }}>Go Back</Text>
+          <Text style={{ color: theme.colors.primary, fontWeight: "700" }}>Go Back</Text>
         </Pressable>
       </View>
     );
@@ -204,7 +202,7 @@ export default function BroadcastStatusScreen() {
         <View style={styles.expireOverlay}>
           <View style={styles.expireCard}>
             <View style={styles.expireIconWrap}>
-              <Icon name="clock" size={28} color={Colors.warning} />
+              <Icon name="clock" size={28} color={theme.colors.warning} />
             </View>
             <Text style={styles.expireTitle}>Time's Up!</Text>
             <Text style={styles.expireSub}>
@@ -220,7 +218,7 @@ export default function BroadcastStatusScreen() {
                 } as any);
               }}
             >
-              <Icon name="radio" size={16} color="#fff" />
+              <Icon name="radio" size={16} color={theme.colors.onBrand} />
               <Text style={styles.expandBtnText}>Continue Searching (Expand Radius)</Text>
             </Pressable>
             <Pressable
@@ -239,9 +237,9 @@ export default function BroadcastStatusScreen() {
         </View>
       </Modal>
 
-      <LinearGradient colors={[Colors.primary, "#0D4BA0"]} style={styles.header}>
+      <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.header}>
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <Icon name="arrow-left" size={20} color="#fff" />
+          <Icon name="arrow-left" size={20} color={theme.colors.onBrand} />
         </Pressable>
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>{request.serviceLabel}</Text>
@@ -270,17 +268,17 @@ export default function BroadcastStatusScreen() {
       >
         {/* Status banner */}
         {isAccepted && (
-          <View style={[styles.statusBanner, { backgroundColor: Colors.success + "20", borderColor: Colors.success + "40" }]}>
-            <Icon name="check-circle" size={20} color={Colors.success} />
-            <Text style={[styles.statusBannerText, { color: Colors.success }]}>
+          <View style={[styles.statusBanner, { backgroundColor: theme.colors.success + "20", borderColor: theme.colors.success + "40" }]}>
+            <Icon name="check-circle" size={20} color={theme.colors.success} />
+            <Text style={[styles.statusBannerText, { color: theme.colors.success }]}>
               Provider selected! Booking confirmed.
             </Text>
           </View>
         )}
         {isCancelled && (
-          <View style={[styles.statusBanner, { backgroundColor: Colors.error + "15", borderColor: Colors.error + "30" }]}>
-            <Icon name="x-circle" size={20} color={Colors.error} />
-            <Text style={[styles.statusBannerText, { color: Colors.error }]}>
+          <View style={[styles.statusBanner, { backgroundColor: theme.colors.danger + "15", borderColor: theme.colors.danger + "30" }]}>
+            <Icon name="x-circle" size={20} color={theme.colors.danger} />
+            <Text style={[styles.statusBannerText, { color: theme.colors.danger }]}>
               This broadcast request was {request.status}.
             </Text>
           </View>
@@ -289,29 +287,29 @@ export default function BroadcastStatusScreen() {
         {/* Job summary card */}
         <View style={styles.jobCard}>
           <View style={styles.jobRow}>
-            <Icon name="map-pin" size={14} color={Colors.primary} />
+            <Icon name="map-pin" size={14} color={theme.colors.primary} />
             <Text style={styles.jobText} numberOfLines={2}>{request.address}</Text>
           </View>
           <View style={styles.jobRow}>
-            <Icon name="calendar" size={14} color={Colors.primary} />
+            <Icon name="calendar" size={14} color={theme.colors.primary} />
             <Text style={styles.jobText}>{request.scheduledDate} at {request.scheduledTime}</Text>
           </View>
           {request.description && (
             <View style={styles.jobRow}>
-              <Icon name="file-text" size={14} color={Colors.primary} />
+              <Icon name="file-text" size={14} color={theme.colors.primary} />
               <Text style={styles.jobText} numberOfLines={3}>{request.description}</Text>
             </View>
           )}
           {request.travellingCharge != null && (
             <View style={styles.jobRow}>
-              <Icon name="navigation" size={14} color={Colors.primary} />
+              <Icon name="navigation" size={14} color={theme.colors.primary} />
               <Text style={styles.jobText}>Travel charges separate: Rs. {(request.travellingCharge ?? 500).toLocaleString()}</Text>
             </View>
           )}
           {request.customerOffer && (
             <View style={styles.jobRow}>
-              <Icon name="dollar-sign" size={14} color={Colors.secondary} />
-              <Text style={[styles.jobText, { color: Colors.secondary, fontWeight: "700" }]}>
+              <Icon name="dollar-sign" size={14} color={theme.colors.secondary} />
+              <Text style={[styles.jobText, { color: theme.colors.secondary, fontWeight: "700" }]}>
                 Your hourly offer: Rs. {request.customerOffer.toLocaleString()} / hour
               </Text>
             </View>
@@ -329,7 +327,7 @@ export default function BroadcastStatusScreen() {
 
         {isOpen && pendingResponses.length === 0 && (
           <View style={styles.waitingCard}>
-            <ActivityIndicator size="small" color={Colors.primary} />
+            <ActivityIndicator size="small" color={theme.colors.primary} />
             <Text style={styles.waitingText}>
               Broadcasting to nearby providers. Pull to refresh or wait — responses appear here automatically.
             </Text>
@@ -344,9 +342,9 @@ export default function BroadcastStatusScreen() {
           return (
             <View key={`${resp.id || "response"}-${index}`} style={styles.responseCard}>
               <View style={styles.respHeader}>
-                <View style={[styles.respAvatar, { backgroundColor: Colors.primary + "20" }]}>
+                <View style={[styles.respAvatar, { backgroundColor: theme.colors.primary + "20" }]}>
                   {resp.providerProfileImage ? (
-                    <Icon name="user" size={20} color={Colors.primary} />
+                    <Icon name="user" size={20} color={theme.colors.primary} />
                   ) : (
                     <Text style={styles.respAvatarText}>
                       {resp.providerName?.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
@@ -357,7 +355,7 @@ export default function BroadcastStatusScreen() {
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                     <Text style={styles.respName}>{resp.providerName}</Text>
                     {resp.providerIsVerified && (
-                      <Icon name="check-circle" size={13} color={Colors.primary} />
+                      <Icon name="check-circle" size={13} color={theme.colors.primary} />
                     )}
                   </View>
                   <RatingStars rating={resp.providerRating} />
@@ -373,7 +371,7 @@ export default function BroadcastStatusScreen() {
               <View style={styles.priceRow}>
                 <View style={styles.priceBox}>
                   <Text style={styles.priceLabel}>Provider Hourly Rate</Text>
-                  <Text style={[styles.priceVal, { color: isCountered ? Colors.secondary : Colors.success }]}>
+                  <Text style={[styles.priceVal, { color: isCountered ? theme.colors.secondary : theme.colors.success }]}>
                     Rs. {(price || 0).toLocaleString()} / hour
                   </Text>
                   <Text style={styles.originalPrice}>
@@ -387,7 +385,7 @@ export default function BroadcastStatusScreen() {
                 </View>
                 {!isCountered && (
                   <View style={styles.matchBadge}>
-                    <Icon name="check" size={12} color={Colors.success} />
+                    <Icon name="check" size={12} color={theme.colors.success} />
                     <Text style={styles.matchText}>Matches your price</Text>
                   </View>
                 )}
@@ -404,10 +402,10 @@ export default function BroadcastStatusScreen() {
                   disabled={isSelecting || !!selecting}
                 >
                   {isSelecting ? (
-                    <ActivityIndicator size="small" color="#fff" />
+                    <ActivityIndicator size="small" color={theme.colors.onBrand} />
                   ) : (
                     <>
-                      <Icon name="check-circle" size={16} color="#fff" />
+                      <Icon name="check-circle" size={16} color={theme.colors.onBrand} />
                       <Text style={styles.selectBtnText}>Select This Provider</Text>
                     </>
                   )}
@@ -425,7 +423,7 @@ export default function BroadcastStatusScreen() {
             disabled={cancelling}
           >
             {cancelling ? (
-              <ActivityIndicator size="small" color={Colors.error} />
+              <ActivityIndicator size="small" color={theme.colors.danger} />
             ) : (
               <Text style={styles.cancelBtnText}>Cancel Broadcast</Text>
             )}
@@ -436,8 +434,8 @@ export default function BroadcastStatusScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
 
   header: {
     paddingHorizontal: 16,
@@ -459,7 +457,7 @@ const styles = StyleSheet.create({
 
   headerContent: { flex: 1 },
 
-  headerTitle: { fontSize: 18, fontWeight: "800", color: "#fff" },
+  headerTitle: { fontSize: 18, fontWeight: "800", color: theme.colors.onBrand },
   headerSub: { fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 2 },
 
   timerWrap: {
@@ -472,7 +470,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
 
-  timerText: { fontSize: 13, color: "#fff", fontWeight: "700" },
+  timerText: { fontSize: 13, color: theme.colors.onBrand, fontWeight: "700" },
   expiredText: { fontSize: 13, color: "rgba(255,255,255,0.6)" },
 
   scroll: { flex: 1 },
@@ -489,43 +487,43 @@ const styles = StyleSheet.create({
   statusBannerText: { fontSize: 14, fontWeight: "700", flex: 1 },
 
   jobCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: theme.colors.surface,
     borderRadius: 16,
     padding: 16,
     gap: 10,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
   jobRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
-  jobText: { flex: 1, fontSize: 13, color: Colors.textSecondary, lineHeight: 18 },
+  jobText: { flex: 1, fontSize: 13, color: theme.colors.textSecondary, lineHeight: 18 },
 
-  sectionTitle: { fontSize: 16, fontWeight: "800", color: Colors.text, marginTop: 4 },
+  sectionTitle: { fontSize: 16, fontWeight: "800", color: theme.colors.text, marginTop: 4 },
 
   waitingCard: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    backgroundColor: Colors.white,
+    backgroundColor: theme.colors.surface,
     borderRadius: 14,
     padding: 16,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
   waitingText: {
     flex: 1,
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     lineHeight: 18,
   },
 
   responseCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: theme.colors.surface,
     borderRadius: 16,
     padding: 16,
     gap: 12,
     borderWidth: 1,
-    borderColor: Colors.border,
-    shadowColor: "#000",
+    borderColor: theme.colors.border,
+    shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 8,
@@ -542,45 +540,45 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  respAvatarText: { fontSize: 16, fontWeight: "800", color: Colors.primary },
-  respName: { fontSize: 15, fontWeight: "800", color: Colors.text },
-  respJobs: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
+  respAvatarText: { fontSize: 16, fontWeight: "800", color: theme.colors.primary },
+  respName: { fontSize: 15, fontWeight: "800", color: theme.colors.text },
+  respJobs: { fontSize: 11, color: theme.colors.textMuted, marginTop: 2 },
 
   counterBadge: {
-    backgroundColor: Colors.secondary + "20",
+    backgroundColor: theme.colors.secondary + "20",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: Colors.secondary + "40",
+    borderColor: theme.colors.secondary + "40",
   },
-  counterBadgeText: { fontSize: 10, fontWeight: "700", color: Colors.secondary },
+  counterBadgeText: { fontSize: 10, fontWeight: "700", color: theme.colors.secondary },
 
   priceRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   priceBox: { gap: 2 },
-  priceLabel: { fontSize: 11, color: Colors.textMuted, fontWeight: "600" },
+  priceLabel: { fontSize: 11, color: theme.colors.textMuted, fontWeight: "600" },
   priceVal: { fontSize: 22, fontWeight: "800" },
-  originalPrice: { fontSize: 11, color: Colors.textMuted },
+  originalPrice: { fontSize: 11, color: theme.colors.textMuted },
 
   matchBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: Colors.success + "15",
+    backgroundColor: theme.colors.success + "15",
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: Colors.success + "30",
+    borderColor: theme.colors.success + "30",
   },
-  matchText: { fontSize: 11, fontWeight: "700", color: Colors.success },
+  matchText: { fontSize: 11, fontWeight: "700", color: theme.colors.success },
 
   respMessage: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     fontStyle: "italic",
     lineHeight: 18,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     padding: 10,
     borderRadius: 10,
   },
@@ -590,50 +588,50 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    backgroundColor: Colors.primary,
+    backgroundColor: theme.colors.primary,
     borderRadius: 12,
     paddingVertical: 14,
   },
   selectBtnDisabled: { opacity: 0.6 },
-  selectBtnText: { fontSize: 15, fontWeight: "800", color: "#fff" },
+  selectBtnText: { fontSize: 15, fontWeight: "800", color: theme.colors.onBrand },
 
   expireOverlay: {
     flex: 1, backgroundColor: "rgba(0,0,0,0.6)",
     alignItems: "center", justifyContent: "center", paddingHorizontal: 24,
   },
   expireCard: {
-    backgroundColor: Colors.white, borderRadius: 22, padding: 24,
+    backgroundColor: theme.colors.surface, borderRadius: 22, padding: 24,
     width: "100%", alignItems: "center", gap: 14,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 12 },
+    shadowColor: theme.colors.text, shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.3, shadowRadius: 24, elevation: 24,
   },
   expireIconWrap: {
     width: 64, height: 64, borderRadius: 32,
-    backgroundColor: Colors.warning + "18", alignItems: "center", justifyContent: "center",
+    backgroundColor: theme.colors.warning + "18", alignItems: "center", justifyContent: "center",
   },
-  expireTitle: { fontSize: 20, fontWeight: "800", color: Colors.text },
-  expireSub: { fontSize: 14, color: Colors.textSecondary, textAlign: "center", lineHeight: 20 },
+  expireTitle: { fontSize: 20, fontWeight: "800", color: theme.colors.text },
+  expireSub: { fontSize: 14, color: theme.colors.textSecondary, textAlign: "center", lineHeight: 20 },
   expandBtn: {
     flexDirection: "row", alignItems: "center", gap: 8,
-    backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14,
+    backgroundColor: theme.colors.primary, borderRadius: 14, paddingVertical: 14,
     paddingHorizontal: 20, width: "100%", justifyContent: "center",
   },
-  expandBtnText: { fontSize: 14, fontWeight: "800", color: "#fff" },
+  expandBtnText: { fontSize: 14, fontWeight: "800", color: theme.colors.onBrand },
   expireCancelBtn: {
     paddingVertical: 12, width: "100%", alignItems: "center",
-    borderRadius: 14, borderWidth: 1.5, borderColor: Colors.border,
+    borderRadius: 14, borderWidth: 1.5, borderColor: theme.colors.border,
   },
-  expireCancelText: { fontSize: 14, fontWeight: "700", color: Colors.textSecondary },
+  expireCancelText: { fontSize: 14, fontWeight: "700", color: theme.colors.textSecondary },
 
   cancelBtn: {
     alignItems: "center",
     paddingVertical: 14,
     borderRadius: 12,
-    backgroundColor: Colors.error + "10",
+    backgroundColor: theme.colors.danger + "10",
     borderWidth: 1,
-    borderColor: Colors.error + "25",
+    borderColor: theme.colors.danger + "25",
     marginTop: 8,
   },
   cancelBtnDisabled: { opacity: 0.6 },
-  cancelBtnText: { fontSize: 14, fontWeight: "700", color: Colors.error },
+  cancelBtnText: { fontSize: 14, fontWeight: "700", color: theme.colors.danger },
 });

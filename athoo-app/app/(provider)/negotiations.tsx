@@ -12,13 +12,16 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 import { useAuth } from "@/context/AuthContext";
 import { useNegotiation, Negotiation } from "@/context/NegotiationContext";
 import { useNotifications } from "@/context/NotificationContext";
 import { apiErrorToMessage } from "@/lib/apiError";
 
 export default function ProviderNegotiationsScreen() {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { user } = useAuth();
   const { negId, action } = useLocalSearchParams<{ negId?: string; action?: string }>();
   const { getMyNegotiations, acceptOffer, rejectOffer, counterOffer } = useNegotiation();
@@ -37,15 +40,15 @@ export default function ProviderNegotiationsScreen() {
 
   const getStatusColor = (status: string) => {
     if (status === "customer_offer") {
-      return { bg: "#FEF9C3", text: "#CA8A04", label: "New Offer" };
+      return { bg: theme.colors.warningSoft, text: theme.colors.warning, label: "New Offer" };
     }
     if (status === "provider_counter") {
-      return { bg: "#EFF6FF", text: Colors.primary, label: "Countered" };
+      return { bg: theme.colors.infoSoft, text: theme.colors.primary, label: "Countered" };
     }
     if (status === "accepted") {
-      return { bg: "#F0FDF4", text: "#16A34A", label: "Accepted" };
+      return { bg: theme.colors.successSoft, text: theme.colors.success, label: "Accepted" };
     }
-    return { bg: "#FEF2F2", text: "#DC2626", label: "Rejected" };
+    return { bg: theme.colors.dangerSoft, text: theme.colors.danger, label: "Rejected" };
   };
 
   const handleAccept = (neg: Negotiation) => {
@@ -163,7 +166,7 @@ export default function ProviderNegotiationsScreen() {
     <View style={[styles.container, { paddingTop: topPad }]}>
       <View style={styles.header}>
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <Icon name="arrow-left" size={20} color={Colors.text} />
+          <Icon name="arrow-left" size={20} color={theme.colors.text} />
         </Pressable>
         <Text style={styles.title}>My Negotiations</Text>
         <View style={styles.countBadge}>
@@ -178,7 +181,7 @@ export default function ProviderNegotiationsScreen() {
           <View style={[styles.negCard, styles.selectedCard]}>
             <View style={styles.negHeader}>
               <View style={styles.negServiceIcon}>
-                <Icon name="dollar-sign" size={20} color={Colors.secondary} />
+                <Icon name="dollar-sign" size={20} color={theme.colors.secondary} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.negService}>{selectedNegotiation.service}</Text>
@@ -210,13 +213,13 @@ export default function ProviderNegotiationsScreen() {
               <View style={styles.detailsBox}>
                 {selectedNegotiation.address ? (
                   <View style={styles.detailRow}>
-                    <Icon name="map-pin" size={13} color={Colors.textSecondary} />
+                    <Icon name="map-pin" size={13} color={theme.colors.textSecondary} />
                     <Text style={styles.detailText} numberOfLines={2}>{selectedNegotiation.address}</Text>
                   </View>
                 ) : null}
                 {selectedNegotiation.scheduledDate ? (
                   <View style={styles.detailRow}>
-                    <Icon name="calendar" size={13} color={Colors.textSecondary} />
+                    <Icon name="calendar" size={13} color={theme.colors.textSecondary} />
                     <Text style={styles.detailText}>
                       {selectedNegotiation.scheduledDate}
                       {selectedNegotiation.scheduledTime ? ` at ${selectedNegotiation.scheduledTime}` : ""}
@@ -224,8 +227,8 @@ export default function ProviderNegotiationsScreen() {
                   </View>
                 ) : null}
                 <View style={styles.detailRow}>
-                  <Icon name="file-text" size={13} color={Colors.textSecondary} />
-                  <Text style={[styles.detailText, !(selectedNegotiation as any).description && { color: Colors.textMuted, fontStyle: "italic" }]}>
+                  <Icon name="file-text" size={13} color={theme.colors.textSecondary} />
+                  <Text style={[styles.detailText, !(selectedNegotiation as any).description && { color: theme.colors.textMuted, fontStyle: "italic" }]}>
                     {(selectedNegotiation as any).description || "No additional details provided."}
                   </Text>
                 </View>
@@ -244,7 +247,7 @@ export default function ProviderNegotiationsScreen() {
             <View style={styles.offerRow}>
               <View style={styles.offerCard}>
                 <Text style={styles.offerLabel}>Customer Offer / hour</Text>
-                <Text style={[styles.offerAmt, { color: Colors.primary }]}>
+                <Text style={[styles.offerAmt, { color: theme.colors.primary }]}>
                   Rs. {selectedNegotiation.customerOffer}
                 </Text>
               </View>
@@ -252,7 +255,7 @@ export default function ProviderNegotiationsScreen() {
               {selectedNegotiation.providerCounter != null && (
                 <View style={styles.offerCard}>
                   <Text style={styles.offerLabel}>Your Counter / hour</Text>
-                  <Text style={[styles.offerAmt, { color: Colors.secondary }]}>
+                  <Text style={[styles.offerAmt, { color: theme.colors.secondary }]}>
                     Rs. {selectedNegotiation.providerCounter}
                   </Text>
                 </View>
@@ -261,7 +264,7 @@ export default function ProviderNegotiationsScreen() {
               {selectedNegotiation.finalPrice != null && (
                 <View style={styles.offerCard}>
                   <Text style={styles.offerLabel}>Final Hourly Rate</Text>
-                  <Text style={[styles.offerAmt, { color: "#22C55E" }]}>
+                  <Text style={[styles.offerAmt, { color: theme.colors.success }]}>
                     Rs. {selectedNegotiation.finalPrice}
                   </Text>
                 </View>
@@ -282,7 +285,7 @@ export default function ProviderNegotiationsScreen() {
                       }))
                     }
                     keyboardType="numeric"
-                    placeholderTextColor={Colors.textMuted}
+                    placeholderTextColor={theme.colors.textMuted}
                     autoFocus={action === "counter"}
                   />
                   <Pressable
@@ -290,7 +293,7 @@ export default function ProviderNegotiationsScreen() {
                     disabled={processingId === selectedNegotiation.id}
                     onPress={() => handleCounter(selectedNegotiation)}
                   >
-                    <Icon name="refresh-cw" size={14} color="#fff" />
+                    <Icon name="refresh-cw" size={14} color={theme.colors.onBrand} />
                     <Text style={styles.counterBtnText}>Counter</Text>
                   </Pressable>
                 </View>
@@ -301,7 +304,7 @@ export default function ProviderNegotiationsScreen() {
                     disabled={processingId === selectedNegotiation.id}
                     onPress={() => handleAccept(selectedNegotiation)}
                   >
-                    <Icon name="check" size={15} color="#fff" />
+                    <Icon name="check" size={15} color={theme.colors.onBrand} />
                     <Text style={styles.acceptBtnText}>
                       Accept Rs. {selectedNegotiation.customerOffer}
                     </Text>
@@ -312,7 +315,7 @@ export default function ProviderNegotiationsScreen() {
                     disabled={processingId === selectedNegotiation.id}
                     onPress={() => handleReject(selectedNegotiation)}
                   >
-                    <Icon name="x" size={15} color={Colors.error} />
+                    <Icon name="x" size={15} color={theme.colors.danger} />
                     <Text style={styles.rejectBtnText}>Reject</Text>
                   </Pressable>
                 </View>
@@ -322,7 +325,7 @@ export default function ProviderNegotiationsScreen() {
             {selectedNegotiation.status === "provider_counter" && (
               <View style={styles.waitingRow}>
                 <View style={styles.waitingBadge}>
-                  <Icon name="clock" size={13} color={Colors.textMuted} />
+                  <Icon name="clock" size={13} color={theme.colors.textMuted} />
                   <Text style={styles.waitingText}>
                     Waiting for customer to respond...
                   </Text>
@@ -354,7 +357,7 @@ export default function ProviderNegotiationsScreen() {
                     )
                   }
                 >
-                  <Icon name="x" size={13} color={Colors.textSecondary} />
+                  <Icon name="x" size={13} color={theme.colors.textSecondary} />
                   <Text style={styles.cancelBtnText}>Cancel</Text>
                 </Pressable>
               </View>
@@ -379,8 +382,8 @@ export default function ProviderNegotiationsScreen() {
                   size={14}
                   color={
                     selectedNegotiation.status === "accepted"
-                      ? "#16A34A"
-                      : Colors.error
+                      ? theme.colors.success
+                      : theme.colors.danger
                   }
                 />
                 <Text
@@ -389,8 +392,8 @@ export default function ProviderNegotiationsScreen() {
                     {
                       color:
                         selectedNegotiation.status === "accepted"
-                          ? "#16A34A"
-                          : Colors.error,
+                          ? theme.colors.success
+                          : theme.colors.danger,
                     },
                   ]}
                 >
@@ -405,7 +408,7 @@ export default function ProviderNegotiationsScreen() {
 
         {myNegs.length === 0 ? (
           <View style={styles.empty}>
-            <Icon name="dollar-sign" size={40} color={Colors.textMuted} />
+            <Icon name="dollar-sign" size={40} color={theme.colors.textMuted} />
             <Text style={styles.emptyTitle}>No Negotiations</Text>
             <Text style={styles.emptySub}>Customer price offers will show up here</Text>
           </View>
@@ -429,7 +432,7 @@ export default function ProviderNegotiationsScreen() {
               >
                 <View style={styles.negHeader}>
                   <View style={styles.negServiceIcon}>
-                    <Icon name="dollar-sign" size={20} color={Colors.secondary} />
+                    <Icon name="dollar-sign" size={20} color={theme.colors.secondary} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.negService}>{neg.service}</Text>
@@ -454,7 +457,7 @@ export default function ProviderNegotiationsScreen() {
             <View style={styles.offerRow}>
                   <View style={styles.offerCard}>
                     <Text style={styles.offerLabel}>Customer Offer / hour</Text>
-                    <Text style={[styles.offerAmt, { color: Colors.primary }]}>
+                    <Text style={[styles.offerAmt, { color: theme.colors.primary }]}>
                       Rs. {neg.customerOffer}
                     </Text>
                   </View>
@@ -462,7 +465,7 @@ export default function ProviderNegotiationsScreen() {
                   {neg.providerCounter != null && (
                     <View style={styles.offerCard}>
                       <Text style={styles.offerLabel}>Your Counter / hour</Text>
-                      <Text style={[styles.offerAmt, { color: Colors.secondary }]}>
+                      <Text style={[styles.offerAmt, { color: theme.colors.secondary }]}>
                         Rs. {neg.providerCounter}
                       </Text>
                     </View>
@@ -471,7 +474,7 @@ export default function ProviderNegotiationsScreen() {
                   {neg.finalPrice != null && (
                     <View style={styles.offerCard}>
                       <Text style={styles.offerLabel}>Final Hourly Rate</Text>
-                      <Text style={[styles.offerAmt, { color: "#22C55E" }]}>
+                      <Text style={[styles.offerAmt, { color: theme.colors.success }]}>
                         Rs. {neg.finalPrice}
                       </Text>
                     </View>
@@ -486,8 +489,8 @@ export default function ProviderNegotiationsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -495,112 +498,112 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 16,
-    backgroundColor: Colors.white,
+    backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: theme.colors.border,
   },
   backBtn: {
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: Colors.background,
+    backgroundColor: theme.colors.background,
     alignItems: "center",
     justifyContent: "center",
   },
-  title: { fontSize: 18, fontWeight: "800", color: Colors.text, flex: 1 },
+  title: { fontSize: 18, fontWeight: "800", color: theme.colors.text, flex: 1 },
   countBadge: {
-    backgroundColor: Colors.secondary + "20",
+    backgroundColor: theme.colors.secondary + "20",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 20,
   },
-  countText: { fontSize: 12, fontWeight: "700", color: Colors.secondary },
+  countText: { fontSize: 12, fontWeight: "700", color: theme.colors.secondary },
   scroll: { flex: 1 },
   content: { padding: 16, gap: 14, paddingBottom: 60 },
   empty: { alignItems: "center", paddingVertical: 80, gap: 10 },
-  emptyTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
-  emptySub: { fontSize: 13, color: Colors.textSecondary, textAlign: "center" },
+  emptyTitle: { fontSize: 18, fontWeight: "700", color: theme.colors.text },
+  emptySub: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center" },
   negCard: {
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderRadius: 18,
     padding: 16,
     gap: 14,
     borderWidth: 1,
-    borderColor: Colors.secondary + "30",
-    shadowColor: Colors.shadow,
+    borderColor: theme.colors.secondary + "30",
+    shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 1,
     shadowRadius: 8,
     elevation: 3,
   },
   selectedCard: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.primary + "05",
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.primary + "05",
   },
   listSelectedCard: {
-    borderColor: Colors.primary,
+    borderColor: theme.colors.primary,
   },
   negHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   negServiceIcon: {
     width: 42,
     height: 42,
     borderRadius: 13,
-    backgroundColor: Colors.secondary + "20",
+    backgroundColor: theme.colors.secondary + "20",
     alignItems: "center",
     justifyContent: "center",
   },
-  negService: { fontSize: 15, fontWeight: "800", color: Colors.text },
-  negCustomer: { fontSize: 12, color: Colors.textSecondary },
+  negService: { fontSize: 15, fontWeight: "800", color: theme.colors.text },
+  negCustomer: { fontSize: 12, color: theme.colors.textSecondary },
   negStatusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   negStatusText: { fontSize: 11, fontWeight: "700" },
-  mediaBox: { backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: Colors.border, borderRadius: 12, padding: 12, marginTop: 12 },
-  mediaTitle: { fontSize: 12, fontWeight: "800", color: Colors.text, marginBottom: 6 },
-  mediaLink: { fontSize: 12, color: Colors.primary, marginTop: 3 },
+  mediaBox: { backgroundColor: theme.colors.background, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12, padding: 12, marginTop: 12 },
+  mediaTitle: { fontSize: 12, fontWeight: "800", color: theme.colors.text, marginBottom: 6 },
+  mediaLink: { fontSize: 12, color: theme.colors.primary, marginTop: 3 },
   offerRow: { flexDirection: "row", gap: 8 },
   offerCard: {
     flex: 1,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 12,
     padding: 12,
     alignItems: "center",
     gap: 4,
   },
-  offerLabel: { fontSize: 10, color: Colors.textSecondary, fontWeight: "600" },
+  offerLabel: { fontSize: 10, color: theme.colors.textSecondary, fontWeight: "600" },
   offerAmt: { fontSize: 18, fontWeight: "800" },
   counterRow: { flexDirection: "row", gap: 8 },
   counterInput: {
     flex: 1,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 14,
-    color: Colors.text,
+    color: theme.colors.text,
     borderWidth: 1.5,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
   counterBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: Colors.secondary,
+    backgroundColor: theme.colors.secondary,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  counterBtnText: { fontSize: 13, fontWeight: "700", color: "#fff" },
+  counterBtnText: { fontSize: 13, fontWeight: "700", color: theme.colors.onBrand },
   waitingRow: { flexDirection: "row", gap: 8, alignItems: "center" },
   waitingBadge: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
-  waitingText: { fontSize: 12, color: Colors.textSecondary, fontStyle: "italic" },
+  waitingText: { fontSize: 12, color: theme.colors.textSecondary, fontStyle: "italic" },
   cancelBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -608,11 +611,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: Colors.error + "10",
+    backgroundColor: theme.colors.danger + "10",
     borderWidth: 1,
-    borderColor: Colors.error + "25",
+    borderColor: theme.colors.danger + "25",
   },
-  cancelBtnText: { fontSize: 12, fontWeight: "600", color: Colors.error },
+  cancelBtnText: { fontSize: 12, fontWeight: "600", color: theme.colors.danger },
   closedBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -621,8 +624,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  closedAccepted: { backgroundColor: "#F0FDF4" },
-  closedRejected: { backgroundColor: "#FEF2F2" },
+  closedAccepted: { backgroundColor: theme.colors.successSoft },
+  closedRejected: { backgroundColor: theme.colors.dangerSoft },
   closedText: { fontSize: 13, fontWeight: "700" },
   actionRow: { flexDirection: "row", gap: 10 },
   acceptBtn: {
@@ -631,31 +634,31 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    backgroundColor: "#22C55E",
+    backgroundColor: theme.colors.success,
     borderRadius: 12,
     paddingVertical: 12,
   },
-  acceptBtnText: { fontSize: 13, fontWeight: "700", color: "#fff" },
+  acceptBtnText: { fontSize: 13, fontWeight: "700", color: theme.colors.onBrand },
   rejectBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 5,
-    backgroundColor: Colors.error + "10",
+    backgroundColor: theme.colors.danger + "10",
     borderRadius: 12,
     paddingHorizontal: 18,
     paddingVertical: 12,
     borderWidth: 1,
-    borderColor: Colors.error + "30",
+    borderColor: theme.colors.danger + "30",
   },
-  rejectBtnText: { fontSize: 13, fontWeight: "700", color: Colors.error },
+  rejectBtnText: { fontSize: 13, fontWeight: "700", color: theme.colors.danger },
   detailsBox: {
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 10,
     padding: 10,
     gap: 6,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
   detailRow: {
     flexDirection: "row",
@@ -664,7 +667,7 @@ const styles = StyleSheet.create({
   },
   detailText: {
     fontSize: 13,
-    color: Colors.text,
+    color: theme.colors.text,
     flex: 1,
     lineHeight: 18,
   },

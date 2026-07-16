@@ -1,5 +1,5 @@
 minimumReleaseAge: 1440
-minimumReleaseAgeExclude: []
+nodeLinker: isolated
 packages:
 - api-server
 - admin-panel
@@ -34,5 +34,4 @@ onlyBuiltDependencies:
 - msw
 - unrs-resolver
 overrides:
-  '@esbuild-kit/esm-loader': npm:tsx@^4.21.0
   esbuild: 0.27.3

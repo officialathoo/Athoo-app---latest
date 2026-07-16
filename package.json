@@ -24,7 +24,7 @@
     "release:check": "node ./scripts/tools/release-check.mjs",
     "release:verify": "pnpm run check:project && pnpm run release:check && pnpm run test && pnpm run typecheck && pnpm run build && pnpm run db:verify",
     "mobile:doctor": "pnpm --filter @workspace/athoo-app run doctor",
-    "release:verify:code": "pnpm run check:project && pnpm run release:check && pnpm run ops:validate && pnpm run security:scan && pnpm run test && pnpm run typecheck && pnpm run build",
+    "release:verify:code": "pnpm run check:project && pnpm run release:check && pnpm run ops:validate && pnpm run security:scan && pnpm run mobile:workspace:validate && pnpm run mobile:styles:validate && pnpm run test && pnpm run typecheck && pnpm run mobile:metro:validate && pnpm run build",
     "admin:bootstrap": "pnpm --filter @workspace/scripts bootstrap:admin",
     "env:validate": "node ./scripts/tools/validate-environment.mjs",
     "smoke:test": "node ./scripts/tools/smoke-test.mjs",
@@ -47,7 +47,18 @@
     "performance:smoke": "node ./scripts/tools/performance-smoke.mjs",
     "device:validate": "node ./scripts/tools/validate-device-acceptance.mjs",
     "device:prepare": "pnpm run mobile:validate && pnpm run beta:validate && pnpm run device:validate && pnpm run typecheck:mobile",
-    "rc1:decision": "node ./scripts/tools/rc1-decision.mjs"
+    "rc1:decision": "node ./scripts/tools/rc1-decision.mjs",
+    "runtime:verify:connected": "node ./scripts/tools/connected-runtime-verify.mjs",
+    "release:verify:connected": "pnpm run release:verify:code && pnpm run db:verify && pnpm run runtime:verify:connected",
+    "device:evidence:validate": "node ./scripts/tools/validate-device-evidence.mjs",
+    "rc2:source-verify": "pnpm run release:verify:code && pnpm run mobile:validate && pnpm run beta:validate && pnpm run device:validate",
+    "rc2:connected-verify": "pnpm run release:verify:connected",
+    "rc2:decision": "node ./scripts/tools/rc2-decision.mjs",
+    "mobile:align-sdk": "node ./scripts/tools/align-expo-sdk.mjs",
+    "mobile:styles:validate": "node ./scripts/tools/validate-react-native-styles.mjs",
+    "mobile:repair-toolchain": "node ./scripts/tools/repair-expo-toolchain.mjs",
+    "mobile:workspace:validate": "node ./scripts/tools/validate-expo-workspace.mjs",
+    "mobile:metro:validate": "node ./scripts/tools/validate-metro-config.mjs"
   },
   "private": true,
   "devDependencies": {

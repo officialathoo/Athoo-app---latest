@@ -24,12 +24,16 @@ test("mobile bundles distinct production notification sounds", () => {
   assert.equal(hashes.size, sounds.length, "job, chat, general, and call sounds must be genuinely distinct");
 });
 
-test("android uses versioned channels so custom sounds replace legacy defaults", () => {
+test("android uses configurable versioned channels so custom sounds replace immutable legacy defaults", () => {
+  const appConfig = read("athoo-app/app.config.js");
+  const runtimeConfig = read("athoo-app/config/notifications.ts");
   const service = read("athoo-app/services/NotificationService.ts");
-  assert.match(service, /jobs-v2/);
-  assert.match(service, /messages-v2/);
-  assert.match(service, /general-v2/);
-  assert.match(service, /calls-v2/);
+  assert.match(appConfig, /NOTIFICATION_CHANNEL_VERSION/);
+  assert.match(runtimeConfig, /jobs-v3/);
+  assert.match(runtimeConfig, /messages-v3/);
+  assert.match(runtimeConfig, /general-v3/);
+  assert.match(runtimeConfig, /calls-v3/);
+  assert.match(service, /deleteNotificationChannelAsync/);
   assert.match(service, /sound: policy\.sound/);
 });
 

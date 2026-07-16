@@ -61,13 +61,15 @@ test("welcome experience is localized, theme-driven and keeps acceptance markers
   assert.doesNotMatch(welcome, /@\/constants\/colors/);
 });
 
-test("native splash and adaptive icon use one approved background color", () => {
+test("native splash and adaptive icon use configurable light and dark backgrounds", () => {
   const config = read("athoo-app/app.config.js");
-  const splashBackground = config.match(/splash:\s*\{[\s\S]*?backgroundColor:\s*"(#[0-9A-Fa-f]{6})"/);
-  const adaptiveBackground = config.match(/adaptiveIcon:\s*\{[\s\S]*?backgroundColor:\s*"(#[0-9A-Fa-f]{6})"/);
-
-  assert.ok(splashBackground, "Splash background color is missing");
-  assert.ok(adaptiveBackground, "Adaptive icon background color is missing");
-  assert.equal(splashBackground[1].toUpperCase(), adaptiveBackground[1].toUpperCase());
-  assert.equal(splashBackground[1].toUpperCase(), "#FFFFFF");
+  assert.match(config, /SPLASH_BACKGROUND_LIGHT/);
+  assert.match(config, /SPLASH_BACKGROUND_DARK/);
+  assert.match(config, /ADAPTIVE_ICON_BACKGROUND/);
+  assert.match(config, /"expo-splash-screen"/);
+  assert.match(config, /backgroundColor: splashBackgroundLight/);
+  assert.match(config, /backgroundColor: splashBackgroundDark/);
+  assert.match(config, /backgroundColor: adaptiveIconBackground/);
+  assert.match(config, /const splashBackgroundLight = process\.env\.SPLASH_BACKGROUND_LIGHT \|\| "#FFFFFF"/);
+  assert.match(config, /const adaptiveIconBackground = process\.env\.ADAPTIVE_ICON_BACKGROUND \|\| "#FFFFFF"/);
 });

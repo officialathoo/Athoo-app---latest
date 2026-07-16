@@ -206,10 +206,10 @@ export default function CustomerSubscriptionScreen() {
   };
 
   const PERKS = [
-    { icon: "star", label: tr("Priority booking support"), color: "#F59E0B" },
+    { icon: "star", label: tr("Priority booking support"), color: theme.colors.warning },
     { icon: "shield", label: tr("Verified customer badge"), color: theme.colors.primary },
     { icon: "percent", label: tr("Exclusive promo codes"), color: theme.colors.success },
-    { icon: "zap", label: tr("Faster response from providers"), color: "#8B5CF6" },
+    { icon: "zap", label: tr("Faster response from providers"), color: theme.colors.accent },
   ];
 
   return (
@@ -242,14 +242,14 @@ export default function CustomerSubscriptionScreen() {
 
           {/* Hero */}
           <AnimatedCard delay={40}>
-            <LinearGradient colors={["#1A6EE0", "#8B5CF6"]} style={styles.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-              <Icon name="crown" size={36} color="#FFD700" />
+            <LinearGradient colors={[theme.colors.primary, theme.colors.accent]} style={styles.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+              <Icon name="crown" size={36} color={theme.colors.premium} />
               <Text style={styles.heroTitle}>{tr("Athoo Premium")}</Text>
               <Text style={styles.heroSub}>{tr("Unlock exclusive benefits and priority services for every booking in Pakistan.")}</Text>
               <View style={styles.heroPerks}>
                 {PERKS.map((p, i) => (
                   <View key={i} style={styles.heroPerk}>
-                    <Icon name={p.icon as any} size={14} color="#FFD700" />
+                    <Icon name={p.icon as any} size={14} color={theme.colors.premium} />
                     <Text style={styles.heroPerkText}>{p.label}</Text>
                   </View>
                 ))}
@@ -339,7 +339,7 @@ export default function CustomerSubscriptionScreen() {
                     )}
                     <View style={styles.planHeader}>
                       <View style={styles.planIconWrap}>
-                        <Icon name="crown" size={20} color="#F59E0B" />
+                        <Icon name="crown" size={20} color={theme.colors.warning} />
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.planName}>{plan.name}</Text>
@@ -367,7 +367,7 @@ export default function CustomerSubscriptionScreen() {
                         style={styles.subscribeBtn}
                         onPress={() => { setSelectedPlan(plan); setShowModal(true); }}
                       >
-                        <Icon name="crown" size={16} color="#fff" />
+                        <Icon name="crown" size={16} color={theme.colors.onBrand} />
                         <Text style={styles.subscribeBtnText}>{tr("Subscribe for {{amount}}/{{period}}", { amount: formatCurrency(price), period: billing === "monthly" ? tr("month") : tr("year") })}</Text>
                       </Pressable>
                     )}
@@ -501,10 +501,10 @@ export default function CustomerSubscriptionScreen() {
                   disabled={(paymentRequired && (!payRef.trim() || !screenshot || !paymentAccountReady)) || subscribing || uploadingScreenshot}
                 >
                   {subscribing ? (
-                    <ActivityIndicator size="small" color="#fff" />
+                    <ActivityIndicator size="small" color={theme.colors.onBrand} />
                   ) : (
                     <>
-                      <Icon name="crown" size={18} color="#fff" />
+                      <Icon name="crown" size={18} color={theme.colors.onBrand} />
                       <Text style={styles.submitBtnText}>{tr("Submit for Approval")}</Text>
                     </>
                   )}
@@ -538,7 +538,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
   hero: {
     borderRadius: 20, padding: 24, gap: 12, alignItems: "center",
   },
-  heroTitle: { fontSize: 24, fontWeight: "900", color: "#fff", textAlign: "center" },
+  heroTitle: { fontSize: 24, fontWeight: "900", color: theme.colors.onBrand, textAlign: "center" },
   heroSub: { fontSize: 13, color: "rgba(255,255,255,0.85)", textAlign: "center", lineHeight: 20 },
   heroPerks: { gap: 8, width: "100%", marginTop: 4 },
   heroPerk: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 10 },
@@ -586,10 +586,10 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     alignSelf: "flex-start", backgroundColor: theme.colors.primary, borderRadius: 8,
     paddingHorizontal: 10, paddingVertical: 4,
   },
-  activePillText: { fontSize: 10, fontWeight: "800", color: "#fff", letterSpacing: 1 },
+  activePillText: { fontSize: 10, fontWeight: "800", color: theme.colors.onBrand, letterSpacing: 1 },
   planHeader: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 12 },
   planIconWrap: {
-    width: 42, height: 42, borderRadius: 12, backgroundColor: "#F59E0B12",
+    width: 42, height: 42, borderRadius: 12, backgroundColor: theme.colors.warningSoft,
     alignItems: "center", justifyContent: "center",
   },
   planName: { fontSize: 16, fontWeight: "800", color: theme.colors.text },
@@ -604,7 +604,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "center", gap: 8,
     backgroundColor: theme.colors.primary, borderRadius: 14, paddingVertical: 14,
   },
-  subscribeBtnText: { fontSize: 14, fontWeight: "800", color: "#fff" },
+  subscribeBtnText: { fontSize: 14, fontWeight: "800", color: theme.colors.onBrand },
 
   historySection: { backgroundColor: theme.colors.surface, borderRadius: 16, padding: 16, gap: 12, borderWidth: 1, borderColor: theme.colors.border },
   historySectionTitle: { fontSize: 14, fontWeight: "800", color: theme.colors.text },
@@ -664,7 +664,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "center", gap: 10,
     backgroundColor: theme.colors.primary, borderRadius: 16, paddingVertical: 16,
   },
-  submitBtnText: { fontSize: 15, fontWeight: "800", color: "#fff" },
+  submitBtnText: { fontSize: 15, fontWeight: "800", color: theme.colors.onBrand },
   btnDisabled: { opacity: 0.5 },
 
   cancelScheduledBanner: {

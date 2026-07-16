@@ -6,7 +6,7 @@ const auth = fs.readFileSync(new URL("../src/routes/auth.ts", import.meta.url), 
 const geo = fs.readFileSync(new URL("../src/routes/geo.ts", import.meta.url), "utf8");
 
 test("send OTP handler returns its failure response", () => {
-  assert.match(auth, /return res\.status\(500\)\.json\(\{ error: "Failed to send OTP" \}\)/);
+  assert.match(auth, /return res\.status\(500\)\.json\(\{ error: "We could not send the verification code\. Please try again\.", code: "OTP_SEND_FAILED" \}\)/);
 });
 
 test("open-map upstream JSON payloads have explicit response types", () => {

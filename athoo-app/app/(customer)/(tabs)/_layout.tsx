@@ -8,10 +8,11 @@ import { useLang } from "@/context/LanguageContext";
 import { useNotifications } from "@/context/NotificationContext";
 
 function UnreadBadge({ count, backgroundColor }: { count: number; backgroundColor: string }) {
+  const { theme } = useTheme();
   if (count <= 0) return null;
   return (
     <View style={[styles.badge, { backgroundColor }]}>
-      <Text style={styles.badgeText}>{count > 9 ? "9+" : String(count)}</Text>
+      <Text style={[styles.badgeText, { color: theme.colors.onDanger }]}>{count > 9 ? "9+" : String(count)}</Text>
     </View>
   );
 }
@@ -92,5 +93,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 3,
   },
-  badgeText: { fontSize: 9, fontWeight: "800", color: "#fff" },
+  badgeText: { fontSize: 9, fontWeight: "800" },
 });

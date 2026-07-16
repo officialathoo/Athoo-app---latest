@@ -1,20 +1,43 @@
-# Athoo Clean RC1 Source Package
+# Athoo RC2 Release-Candidate Source Package
 
-This package contains the Athoo application source required for development, testing, deployment, and release validation.
+This cumulative package contains the Athoo mobile application, API, admin panel, shared libraries, database migrations and release-engineering controls.
 
-## Main workspaces
-- `api-server/` — backend API
-- `admin-panel/` — web administration panel
-- `athoo-app/` — Expo/React Native customer and provider mobile application
+## Workspaces
+
+- `api-server/` — backend API and provider abstraction layers
+- `admin-panel/` — administration panel
+- `athoo-app/` — Expo/React Native customer and provider application
 - `lib/` — shared packages and database schema
-- `scripts/` — release, database, security, and validation tooling
+- `scripts/` — validation, database, security, connected-runtime and release-decision tooling
 - `sql/` and `deploy/` — database and deployment resources
-- `.maestro/` — Android/iOS device smoke tests
+- `.maestro/` — mobile smoke-test flows
 
-## Setup
-1. Copy the appropriate `.env*.example` files and provide real environment values locally.
-2. Install the Node.js version declared by `.nvmrc` or `.node-version`.
-3. Run `pnpm install --frozen-lockfile`.
-4. Run `pnpm verify` for the standard code validation pipeline.
+## Configuration-first rule
 
-Generated build folders, dependency folders, temporary files, historical certification reports, phase changelogs, and audit evidence were intentionally excluded.
+External providers, endpoints, credentials, branding, limits and deployment-specific behavior must remain configurable. Secrets belong in deployment secret managers, never in the mobile app, admin bundle, Git history or public ZIPs.
+
+## Local setup
+
+```powershell
+corepack enable
+corepack prepare pnpm@10.33.2 --activate
+pnpm install --frozen-lockfile
+pnpm rc2:source-verify
+pnpm db:verify
+pnpm db:integrity
+pnpm mobile:doctor
+pnpm mobile:export
+```
+
+## Final certification
+
+Follow:
+
+- `RC2_PHASE_5_FINAL_RELEASE_CANDIDATE_INTEGRATION_CERTIFICATION.md`
+- `FINAL_CONNECTED_DEPLOYMENT.md`
+- `MOBILE_BETA_RELEASE_RUNBOOK.md`
+- `device-acceptance-checklist.json`
+- `device-acceptance-evidence-template.json`
+- `rc2-evidence-template.json`
+
+A production launch is allowed only after the connected and device evidence is complete and `pnpm rc2:decision` returns `GO`.

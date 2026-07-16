@@ -10,6 +10,12 @@ import { logger } from "./lib/logger";
 import { getPlatformSettings } from "./lib/admin";
 import { queueStats } from "./lib/queue";
 import { beginRequest, recordRequest } from "./lib/runtimeMetrics";
+import { getEmailConfigurationStatus } from "./lib/email";
+import { getMapConfigurationStatus } from "./lib/mapConfiguration";
+import { getPushConfigurationStatus } from "./lib/push";
+import { getOtpDeliveryConfigurationStatus } from "./lib/otpDelivery";
+import { getStorageConfigurationStatus } from "./lib/storageProvider";
+import { getReleaseIdentity } from "./lib/releaseIdentity";
 
 const app: Express = express();
 // Disable weak ETag 304s on dynamic mobile/admin API data; Athoo uses realtime events and explicit client caching instead.
@@ -145,6 +151,29 @@ app.use(
 );
 
 
+function boundedRuntimeInt(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, Math.trunc(parsed))) : fallback;
+}
+
+const GEO_RATE_LIMIT_WINDOW_MS = boundedRuntimeInt(process.env.GEO_RATE_LIMIT_WINDOW_MS, 60_000, 1_000, 3_600_000);
+for (const [path, configuredMax] of [
+  ["/api/geo/search", process.env.GEO_SEARCH_RATE_LIMIT_MAX],
+  ["/api/geo/reverse", process.env.GEO_REVERSE_RATE_LIMIT_MAX],
+  ["/api/geo/directions", process.env.GEO_DIRECTIONS_RATE_LIMIT_MAX],
+] as const) {
+  app.use(
+    path,
+    rateLimit({
+      windowMs: GEO_RATE_LIMIT_WINDOW_MS,
+      max: boundedRuntimeInt(configuredMax, 60, 1, 10_000),
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { error: "Too many map requests. Please wait a moment and try again." },
+    }),
+  );
+}
+
 app.use(
   "/api/storage/uploads/request-url",
   rateLimit({
@@ -218,6 +247,73 @@ app.use(
       authKey("verify-otp", normalizePhone(req.body?.phone), req),
     ),
     message: { error: "Too many OTP verification attempts. Please try again in 15 minutes." },
+  }),
+);
+
+app.use(
+  "/api/auth/email/send-otp",
+  rateLimit({
+    ...rateLimitConfig((req) => authKey("email-send-otp", normalizeEmail(req.body?.email), req)),
+    message: { error: "Too many email OTP requests. Please try again in 15 minutes." },
+  }),
+);
+
+app.use(
+  "/api/auth/email/verify-otp",
+  rateLimit({
+    ...rateLimitConfig((req) => authKey("email-verify-otp", normalizeEmail(req.body?.email), req)),
+    message: { error: "Too many email OTP verification attempts. Please try again in 15 minutes." },
+  }),
+);
+
+app.use(
+  "/api/me/email/verification/send",
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: Number(process.env.EMAIL_VERIFICATION_RATE_LIMIT_MAX || 10),
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many email verification requests. Please try again later." },
+  }),
+);
+
+app.use(
+  "/api/me/email/verification/verify",
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: Number(process.env.EMAIL_VERIFICATION_ATTEMPT_RATE_LIMIT_MAX || 20),
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many email verification attempts. Please try again later." },
+  }),
+);
+
+app.use(
+  "/api/me/account/email/request",
+  rateLimit({
+    ...rateLimitConfig((req) => authKey("email-change-request", normalizeEmail(req.body?.newEmail), req)),
+    max: Number(process.env.EMAIL_CHANGE_RATE_LIMIT_MAX || 10),
+    message: { error: "Too many email change requests. Please try again in 15 minutes." },
+  }),
+);
+
+app.use(
+  "/api/me/account/email/verify",
+  rateLimit({
+    ...rateLimitConfig((req) => authKey("email-change-verify", normalizeEmail(req.body?.newEmail), req)),
+    max: Number(process.env.EMAIL_CHANGE_VERIFY_RATE_LIMIT_MAX || 20),
+    message: { error: "Too many email change verification attempts. Please try again in 15 minutes." },
+  }),
+);
+
+app.use(
+  "/api/admin/email/test",
+  rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: Number(process.env.EMAIL_ADMIN_TEST_RATE_LIMIT_MAX || 10),
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many test emails. Please try again later." },
   }),
 );
 
@@ -353,12 +449,20 @@ app.get("/api/health", (_req, res) => {
     service: "athoo-api",
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
+    release: getReleaseIdentity(),
     queue: queueStats(),
     nativeReadiness: {
-      turnConfigured: Boolean(process.env.TURN_URLS),
+      turnConfigured: Boolean(process.env.TURN_URLS || process.env.TURN_URL),
       redisConfigured: Boolean(process.env.REDIS_URL),
       storageProvider: process.env.STORAGE_PROVIDER || "local/object-storage-adapter",
-      pushProvider: process.env.PUSH_PROVIDER || "expo-fcm-compatible",
+      push: getPushConfigurationStatus(),
+      email: getEmailConfigurationStatus(),
+      maps: getMapConfigurationStatus(),
+      storage: getStorageConfigurationStatus(),
+      otpDelivery: {
+        ...getOtpDeliveryConfigurationStatus(),
+        developmentResponseEnabled: process.env.NODE_ENV === "development" && process.env.ALLOW_DEV_OTP_RESPONSE === "true",
+      },
     },
   });
 });

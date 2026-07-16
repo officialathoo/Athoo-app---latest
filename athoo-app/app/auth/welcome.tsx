@@ -1,4 +1,5 @@
 import { Icon } from "@/components/ui/Icon";
+import { brandConfig } from "@/config/brand";
 import { AppText } from "@/components/design";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -88,7 +89,7 @@ export default function WelcomeScreen() {
       >
         <View style={styles.logoSection}>
           <View style={styles.logoContainer}>
-            <Image source={require("../../assets/images/logo_transparent.png")} style={styles.logoImage} resizeMode="contain" />
+            <Image source={brandConfig.assets.mark} style={styles.logoImage} resizeMode="contain" />
           </View>
           <AppText variant="h1" tone="inverse" align="center" style={styles.tagline}>{t.welcomeTagline}</AppText>
           <AppText variant="label" tone="inverse" align="center" style={styles.subTagline}>{t.pakistan}</AppText>

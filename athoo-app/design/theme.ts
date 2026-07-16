@@ -1,18 +1,24 @@
+import { brandConfig } from "@/config/brand";
 import { iconSize, motion, radius, shadows, spacing, typography } from "./tokens";
 
 export type ThemeMode = "light" | "dark";
 
 const brand = {
-  primary: "#1A6EE0",
-  primaryPressed: "#1558B4",
-  secondary: "#F97316",
-  secondaryPressed: "#C4510B",
+  primary: brandConfig.colors.primary,
+  primaryPressed: brandConfig.colors.primaryPressed,
+  secondary: brandConfig.colors.secondary,
+  secondaryPressed: brandConfig.colors.secondaryPressed,
   success: "#16A34A",
   warning: "#D97706",
   danger: "#DC2626",
   info: "#2563EB",
   accent: "#7C3AED",
+  premium: "#D97706",
   white: "#FFFFFF",
+  onBrand: "#FFFFFF",
+  onDanger: "#FFFFFF",
+  onSuccess: "#FFFFFF",
+  onLight: "#0F172A",
 } as const;
 
 const lightColors = {
@@ -29,6 +35,10 @@ const lightColors = {
   overlay: "rgba(15, 23, 42, 0.52)",
   input: "#FFFFFF",
   focusRing: "rgba(26, 110, 224, 0.18)",
+  shadow: "rgba(15, 23, 42, 0.18)",
+  neutralSoft: "#F1F5F9",
+  accentSoft: "#F3E8FF",
+  premiumSoft: "#FFF7ED",
   successSoft: "#DCFCE7",
   warningSoft: "#FEF3C7",
   dangerSoft: "#FEE2E2",
@@ -37,9 +47,10 @@ const lightColors = {
 
 const darkColors = {
   ...brand,
-  primary: "#60A5FA",
-  primaryPressed: "#3B82F6",
-  secondaryPressed: "#EA580C",
+  primary: brandConfig.colors.primaryDark,
+  primaryPressed: brandConfig.colors.primaryPressedDark,
+  secondary: brandConfig.colors.secondaryDark,
+  secondaryPressed: brandConfig.colors.secondaryPressedDark,
   background: "#08111F",
   surface: "#0F1B2D",
   surfaceAlt: "#16243A",
@@ -52,6 +63,10 @@ const darkColors = {
   overlay: "rgba(2, 6, 23, 0.72)",
   input: "#101D30",
   focusRing: "rgba(96, 165, 250, 0.24)",
+  shadow: "rgba(0, 0, 0, 0.55)",
+  neutralSoft: "#1E293B",
+  accentSoft: "#2F1B4E",
+  premiumSoft: "#4A2D14",
   successSoft: "#123D2A",
   warningSoft: "#493211",
   dangerSoft: "#4A1F24",

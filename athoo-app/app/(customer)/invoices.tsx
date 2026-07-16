@@ -17,6 +17,8 @@ import {
   Text,
   View,
 } from "react-native";
+import { brandConfig } from "@/config/brand";
+import { invoiceConfig } from "@/config/invoice";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -130,11 +132,14 @@ export default function InvoicesScreen() {
     const serviceName = escapeHtml(b.service);
     const direction = isUrdu ? "rtl" : "ltr";
 
+    const printColors = invoiceConfig.colors;
+    const invoiceFooter = [invoiceConfig.brandName, invoiceConfig.contactLine].filter(Boolean).join(" · ");
+
     const html = `<!DOCTYPE html><html dir="${direction}"><head><meta charset="utf-8">
 <style>
-  body{font-family:Arial,sans-serif;margin:0;padding:0;color:#0f172a;background:#ffffff;direction:${direction}}
-  .page{max-width:700px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #0f172a;box-shadow:none}
-  .header{background:#0D4BA0;color:#fff;padding:28px 30px;display:flex;justify-content:space-between;align-items:flex-start;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{font-family:Arial,sans-serif;margin:0;padding:0;color:${printColors.text};background:${printColors.page};direction:${direction}}
+  .page{max-width:700px;margin:0 auto;background:${printColors.page};border-radius:12px;overflow:hidden;border:1px solid ${printColors.text};box-shadow:none}
+  .header{background:${printColors.primaryPressed};color:${printColors.page};padding:28px 30px;display:flex;justify-content:space-between;align-items:flex-start;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .logo{font-size:24px;font-weight:900;letter-spacing:-1px}
   .logo-sub{font-size:11px;opacity:.75;margin-top:2px}
   .inv-meta{text-align:right}
@@ -143,23 +148,23 @@ export default function InvoicesScreen() {
   .paid-badge{background:rgba(255,255,255,0.25);border-radius:20px;padding:3px 12px;font-size:11px;font-weight:700;margin-top:8px;display:inline-block}
   .body{padding:28px 30px}
   .parties{display:flex;gap:30px;margin-bottom:24px}
-  .party{flex:1;background:#ffffff;border:1px solid #0f172a;border-radius:10px;padding:14px 16px}
-  .party-label{font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
-  .party-name{font-size:15px;font-weight:700;color:#1e293b;margin-bottom:3px}
-  .party-detail{font-size:12px;color:#64748b}
+  .party{flex:1;background:${printColors.page};border:1px solid ${printColors.text};border-radius:10px;padding:14px 16px}
+  .party-label{font-size:10px;color:${printColors.textMuted};font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+  .party-name{font-size:15px;font-weight:700;color:${printColors.text};margin-bottom:3px}
+  .party-detail{font-size:12px;color:${printColors.textSecondary}}
   table{width:100%;border-collapse:collapse;margin-bottom:16px}
-  th{background:#e2e8f0;font-size:11px;color:#0f172a;text-transform:uppercase;letter-spacing:.5px;padding:10px 12px;text-align:left;font-weight:700}
-  td{padding:11px 12px;font-size:13px;border-bottom:1px solid #cbd5e1}
+  th{background:${printColors.surface};font-size:11px;color:${printColors.text};text-transform:uppercase;letter-spacing:.5px;padding:10px 12px;text-align:left;font-weight:700}
+  td{padding:11px 12px;font-size:13px;border-bottom:1px solid ${printColors.border}}
   .amount{text-align:right}
-  .total-row{background:linear-gradient(135deg,#1A6EE0,#0D4BA0);color:#fff}
+  .total-row{background:linear-gradient(135deg,${printColors.primary},${printColors.primaryPressed});color:${printColors.page}}
   .total-row td{font-weight:700;font-size:15px;padding:14px 12px}
-  .formula{background:#eff6ff;border:1px solid #1A6EE0;border-radius:8px;padding:12px 14px;font-size:12px;color:#0f172a;font-weight:700;margin-bottom:16px}
-  .note{background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:12px 14px;font-size:12px;color:#0369a1;margin-bottom:20px}
-  .footer{text-align:center;font-size:11px;color:#94a3b8;padding:0 0 8px}
+  .formula{background:${printColors.infoSoft};border:1px solid ${printColors.primary};border-radius:8px;padding:12px 14px;font-size:12px;color:${printColors.text};font-weight:700;margin-bottom:16px}
+  .note{background:${printColors.infoSoft};border:1px solid ${printColors.infoBorder};border-radius:8px;padding:12px 14px;font-size:12px;color:${printColors.info};margin-bottom:20px}
+  .footer{text-align:center;font-size:11px;color:${printColors.textMuted};padding:0 0 8px}
 </style></head><body>
 <div class="page">
   <div class="header">
-    <div><div class="logo">ATHOO</div><div class="logo-sub">${escapeHtml(tr("Home Services · Across Pakistan"))}</div></div>
+    <div><div class="logo">${escapeHtml(invoiceConfig.brandName)}</div><div class="logo-sub">${escapeHtml(tr("Home Services · Across Pakistan"))}</div></div>
     <div class="inv-meta"><div class="inv-no">${escapeHtml(invoiceNo)}</div><div class="inv-date">${escapeHtml(formatLocalizedDate(b.createdAt))}</div><div class="paid-badge">✓ ${escapeHtml(tr("PAID"))}</div></div>
   </div>
   <div class="body">
@@ -170,15 +175,15 @@ export default function InvoicesScreen() {
     <div class="formula">${escapeHtml(tr("Final Invoice = Hourly Rate × Actual Job Time + Travel Charges"))}</div>
     <table>
       <tr><th>${escapeHtml(tr("Description"))}</th><th style="text-align:right">${escapeHtml(tr("Amount"))}</th></tr>
-      <tr><td>${escapeHtml(tr("Hourly Rate"))}<br><small style="color:#64748b">${escapeHtml(formatCurrency(hourlyRate))} / ${escapeHtml(tr("hour"))} × ${durationHours} ${escapeHtml(tr("hour(s)"))}</small></td><td class="amount">${escapeHtml(formatCurrency(serviceAmount))}</td></tr>
-      ${visitCharge > 0 ? `<tr><td>${escapeHtml(tr("Travel Charges"))}<br><small style="color:#64748b">${escapeHtml(tr("Separate from hourly rate"))}</small></td><td class="amount">${escapeHtml(formatCurrency(visitCharge))}</td></tr>` : ""}
-      <tr><td style="color:#64748b">${escapeHtml(tr("Subtotal"))}</td><td class="amount" style="color:#64748b">${escapeHtml(formatCurrency(subtotal))}</td></tr>
-      ${discount > 0 ? `<tr><td style="color:#059669">${escapeHtml(tr("Discount Applied"))}</td><td class="amount" style="color:#059669">−${escapeHtml(formatCurrency(discount))}</td></tr>` : ""}
-      <tr><td style="color:#94a3b8">${escapeHtml(tr("Tax (0%)"))}</td><td class="amount" style="color:#94a3b8">${escapeHtml(formatCurrency(0))}</td></tr>
+      <tr><td>${escapeHtml(tr("Hourly Rate"))}<br><small style="color:${printColors.textSecondary}">${escapeHtml(formatCurrency(hourlyRate))} / ${escapeHtml(tr("hour"))} × ${durationHours} ${escapeHtml(tr("hour(s)"))}</small></td><td class="amount">${escapeHtml(formatCurrency(serviceAmount))}</td></tr>
+      ${visitCharge > 0 ? `<tr><td>${escapeHtml(tr("Travel Charges"))}<br><small style="color:${printColors.textSecondary}">${escapeHtml(tr("Separate from hourly rate"))}</small></td><td class="amount">${escapeHtml(formatCurrency(visitCharge))}</td></tr>` : ""}
+      <tr><td style="color:${printColors.textSecondary}">${escapeHtml(tr("Subtotal"))}</td><td class="amount" style="color:${printColors.textSecondary}">${escapeHtml(formatCurrency(subtotal))}</td></tr>
+      ${discount > 0 ? `<tr><td style="color:${printColors.success}">${escapeHtml(tr("Discount Applied"))}</td><td class="amount" style="color:${printColors.success}">−${escapeHtml(formatCurrency(discount))}</td></tr>` : ""}
+      <tr><td style="color:${printColors.textMuted}">${escapeHtml(tr("Tax (0%)"))}</td><td class="amount" style="color:${printColors.textMuted}">${escapeHtml(formatCurrency(0))}</td></tr>
       <tr class="total-row"><td>${escapeHtml(tr("TOTAL PAID"))}</td><td class="amount">${escapeHtml(formatCurrency(total))}</td></tr>
     </table>
     <div class="note">${escapeHtml(tr("Payment was made directly to the service provider. Athoo does not handle funds. This is an electronic receipt only."))}</div>
-    <div class="footer">Athoo · +92 339 0051068 · @athoo_services · ${escapeHtml(tr("Thank you for using Athoo!"))}</div>
+    <div class="footer">${escapeHtml(invoiceFooter)}${invoiceFooter ? " · " : ""}${escapeHtml(tr("Thank you for using {{name}}!", { name: invoiceConfig.brandName }))}</div>
   </div>
 </div>
 </body></html>`;
@@ -231,16 +236,16 @@ export default function InvoicesScreen() {
         </View>
 
         <ScrollView contentContainerStyle={styles.invoiceContent}>
-          <LinearGradient colors={[theme.colors.primary, "#0D4BA0"]} style={styles.invoiceHeader}>
+          <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.invoiceHeader}>
             <View style={styles.invoiceLogo}>
-              <Image source={require("../../assets/images/logo.png")} style={{ width: 80, height: 32 }} resizeMode="contain" />
+              <Image source={brandConfig.assets.mark} style={{ width: 80, height: 32 }} resizeMode="contain" />
               <Text style={styles.invoiceSubhead}>{tr("Home Services · Pakistan")}</Text>
             </View>
             <View style={styles.invoiceHeaderRight}>
               <Text style={styles.invoiceNo}>{getInvoiceNo(selected.id)}</Text>
               <Text style={styles.invoiceDate}>{formatLocalizedDate(selected.createdAt)}</Text>
               <View style={styles.invoicePaidBadge}>
-                <Icon name="check-circle" size={11} color="#fff" />
+                <Icon name="check-circle" size={11} color={theme.colors.onBrand} />
                 <Text style={styles.invoicePaidText}>{tr("PAID")}</Text>
               </View>
             </View>
@@ -303,7 +308,7 @@ export default function InvoicesScreen() {
                 <Text style={[styles.tableRowAmount, { color: theme.colors.textSecondary }]}>Rs. 0</Text>
               </View>
 
-              <LinearGradient colors={[theme.colors.primary, "#0D4BA0"]} style={styles.totalRow}>
+              <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.totalRow}>
                 <Text style={styles.totalLabel}>{tr("TOTAL PAID")}</Text>
                 <Text style={styles.totalAmount}>{formatCurrency(match ? match.totalAmount : subtotal)}</Text>
               </LinearGradient>
@@ -317,7 +322,7 @@ export default function InvoicesScreen() {
             </View>
 
             <View style={styles.invoiceFooter}>
-              <Text style={styles.invoiceFooterText}>Athoo · +92 339 0051068 · @athoo_services</Text>
+              <Text style={styles.invoiceFooterText}>{[invoiceConfig.brandName, invoiceConfig.contactLine].filter(Boolean).join(" · ")}</Text>
               <Text style={styles.invoiceFooterText}>{tr("Thank you for using Athoo!")}</Text>
             </View>
           </View>
@@ -456,13 +461,13 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
   invoiceLogo: {},
   invoiceSubhead: { fontSize: 10, color: "rgba(255,255,255,0.7)", marginTop: 2 },
   invoiceHeaderRight: { alignItems: "flex-end", gap: 4 },
-  invoiceNo: { fontSize: 14, fontWeight: "800", color: "#fff" },
+  invoiceNo: { fontSize: 14, fontWeight: "800", color: theme.colors.onBrand },
   invoiceDate: { fontSize: 11, color: "rgba(255,255,255,0.75)" },
   invoicePaidBadge: {
     flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 4,
     backgroundColor: theme.colors.success, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
   },
-  invoicePaidText: { fontSize: 10, fontWeight: "800", color: "#fff" },
+  invoicePaidText: { fontSize: 10, fontWeight: "800", color: theme.colors.onBrand },
   invoiceBody: { padding: 20, gap: 20 },
   invoiceParty: { flexDirection: isUrdu ? "row-reverse" : "row", gap: 16 },
   invoicePartyItem: { flex: 1, gap: 4 },
@@ -502,7 +507,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     paddingVertical: 14,
   },
   totalLabel: { fontSize: 13, fontWeight: "800", color: "rgba(255,255,255,0.85)" },
-  totalAmount: { fontSize: 18, fontWeight: "900", color: "#fff" },
+  totalAmount: { fontSize: 18, fontWeight: "900", color: theme.colors.onBrand },
   invoiceNote: {
     flexDirection: isUrdu ? "row-reverse" : "row",
     gap: 8,

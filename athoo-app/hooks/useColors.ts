@@ -26,6 +26,6 @@ export function useColors() {
     warning: theme.colors.warning,
     accent: theme.colors.accent,
     border: theme.colors.border,
-    shadow: "#000000",
+    shadow: theme.colors.overlay,
   } as const;
 }

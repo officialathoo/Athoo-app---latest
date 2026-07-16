@@ -48,6 +48,7 @@ const ServiceAreasPage = lazy(() => import("@/pages/ServiceAreasPage").then((m) 
 const UserActivityPage = lazy(() => import("@/pages/UserActivityPage").then((m) => ({ default: m.UserActivityPage })));
 const InvoicesPage = lazy(() => import("@/pages/InvoicesPage").then((m) => ({ default: m.InvoicesPage })));
 const LeadsPage = lazy(() => import("@/pages/LeadsPage").then((m) => ({ default: m.LeadsPage })));
+const EmailCenterPage = lazy(() => import("@/pages/EmailCenterPage").then((m) => ({ default: m.EmailCenterPage })));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30000 } },
@@ -189,6 +190,7 @@ function AppShell() {
               </Route>
               <Route path="/emergency-contacts" component={EmergencyContactsPage} />
               <Route path="/notification-templates"><Guard perm="settings.read"><NotificationTemplatesPage /></Guard></Route>
+              <Route path="/email-center"><Guard perm="notifications.read"><EmailCenterPage /></Guard></Route>
               <Route path="/login-history">
                 <Guard perm="audit.read"><LoginHistoryPage /></Guard>
               </Route>

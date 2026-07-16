@@ -31,12 +31,15 @@ import { rateRequestsProviderRouter, rateRequestsAdminRouter } from "./rate-requ
 import { serviceAreasPublicRouter, serviceAreasAdminRouter, seedServiceAreasIfEmpty } from "./service-areas";
 import geoRouter from "./geo";
 import { leadsPublicRouter, leadsAdminRouter } from "./leads";
+import { emailPublicRouter, emailUserRouter, emailAdminRouter } from "./email";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(storageRouter);
 router.use("/auth", authRouter);
+router.use("/email", emailPublicRouter);
+router.use("/me/email", emailUserRouter);
 router.use("/providers", providersRouter);
 router.use("/ratings", ratingsRouter);
 router.use("/bookings", bookingsRouter);
@@ -85,6 +88,7 @@ router.use("/service-areas", serviceAreasPublicRouter);
 router.use("/geo", geoRouter);
 router.use("/leads", leadsPublicRouter);
 router.use("/admin/leads", leadsAdminRouter);
+router.use("/admin/email", emailAdminRouter);
 
 // ─── Public settings (no auth) ───────────────────────────────────────────────
 // Cached in-process for 60s. This endpoint is hit by every cold mobile/admin

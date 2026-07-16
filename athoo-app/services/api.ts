@@ -3,8 +3,9 @@ import { getSecureItem, removeSecureItem, setSecureItem } from "@/services/secur
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
-// API base is provider-agnostic. Set EXPO_PUBLIC_API_BASE_URL to your own API domain, for example https://api.athoo.pk.
-const DEFAULT_API_BASE_URL = "https://athoo-api.onrender.com";
+// Native builds require an explicit API URL from deployment configuration.
+// Web builds may use their own origin. No hosting vendor is embedded in code.
+const DEFAULT_API_BASE_URL = "";
 function sanitizeBaseUrl(value: string | undefined | null): string {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -319,28 +320,73 @@ export const api = {
   async createPurposeToken(purpose: "realtime" | "object-read") { return request<{ token: string; expiresInSeconds: number }>("/api/auth/purpose-token", { method: "POST", auth: true, body: { purpose } }); },
   baseUrl: API_BASE_URL,
   isConfigured: Boolean(API_BASE_URL),
-  configurationError: API_BASE_URL ? null : "Athoo cannot connect right now. Please install the latest app version or contact Athoo Support.",
+  configurationError: API_BASE_URL ? null : "The app cannot connect because its API address is not configured. Install the latest build or contact support.",
 
   request<T = any>(path: string, options: RequestOptions = {}) {
     return request<T>(path, options);
   },
 
   // Auth
-  sendOtp(phone: string) {
-    return request<{ success: boolean; code?: string; message?: string; emailSent?: boolean; whatsappSent?: boolean }>("/api/auth/send-otp", {
+  sendOtp(phone: string, purpose: "login" | "registration", role: "customer" | "provider", email?: string) {
+    return request<{
+      success: boolean;
+      code?: string;
+      message?: string;
+      purpose?: "login" | "registration";
+      expiresInSeconds?: number;
+      resendAfterSeconds?: number;
+      emailSent?: boolean;
+      whatsappSent?: boolean;
+    }>("/api/auth/send-otp", {
       method: "POST",
-      body: { phone },
+      body: { phone, purpose, role, ...(email ? { email } : {}) },
     });
   },
 
-  verifyOtp(phone: string, code: string) {
-    return request<{ success: boolean; token?: string | null; refreshToken?: string; expiresInSeconds?: number; user?: any; isNewUser?: boolean }>(
+  verifyOtp(phone: string, code: string, purpose: "login" | "registration", role: "customer" | "provider") {
+    return request<{
+      success: boolean;
+      purpose?: "login" | "registration";
+      token?: string | null;
+      refreshToken?: string;
+      registrationToken?: string;
+      expiresInSeconds?: number;
+      user?: any;
+      isNewUser?: boolean;
+    }>(
       "/api/auth/verify-otp",
       {
         method: "POST",
-        body: { phone, code },
+        body: { phone, code, purpose, role },
       }
     );
+  },
+
+  sendEmailOtp(email: string, role: "customer" | "provider") {
+    return request<{
+      success: boolean;
+      code?: string;
+      message?: string;
+      maskedEmail?: string;
+      expiresInSeconds?: number;
+      resendAfterSeconds?: number;
+    }>("/api/auth/email/send-otp", {
+      method: "POST",
+      body: { email, role },
+    });
+  },
+
+  verifyEmailOtp(email: string, code: string, role: "customer" | "provider") {
+    return request<{
+      success: boolean;
+      token?: string;
+      refreshToken?: string;
+      expiresInSeconds?: number;
+      user?: any;
+    }>("/api/auth/email/verify-otp", {
+      method: "POST",
+      body: { email, code, role },
+    });
   },
 
   register(payload: {
@@ -358,8 +404,20 @@ export const api = {
     termsAccepted?: boolean;
     privacyAccepted?: boolean;
     legalVersion?: string;
+    registrationToken: string;
   }) {
-    return request<{ success: boolean; token?: string; refreshToken?: string; expiresInSeconds?: number; user?: any }>("/api/auth/register", {
+    return request<{
+      success: boolean;
+      token?: string;
+      refreshToken?: string;
+      expiresInSeconds?: number;
+      user?: any;
+      emailVerificationRequired?: boolean;
+      emailVerificationSent?: boolean;
+      emailVerificationExpiresInSeconds?: number;
+      emailVerificationResendAfterSeconds?: number;
+      emailVerificationCode?: string;
+    }>("/api/auth/register", {
       method: "POST",
       body: payload,
     });
@@ -373,7 +431,7 @@ export const api = {
     );
   },
 
-  loginWithPassword(payload: { identifier: string; password: string }) {
+  loginWithPassword(payload: { identifier: string; password: string; role: "customer" | "provider" }) {
     return request<{ success: boolean; token?: string; refreshToken?: string; expiresInSeconds?: number; user?: any }>("/api/auth/login", {
       method: "POST",
       body: payload,
@@ -400,6 +458,43 @@ export const api = {
     return request<{ user: any | null }>("/api/auth/me", {
       method: "GET",
       auth: true,
+    });
+  },
+
+  getEmailVerificationStatus() {
+    return request<{ email?: string | null; verified: boolean; canVerify: boolean }>("/api/me/email/verification/status", {
+      method: "GET",
+      auth: true,
+    });
+  },
+
+  sendEmailVerification() {
+    return request<{ success: boolean; code?: string; alreadyVerified?: boolean; expiresInSeconds?: number; resendAfterSeconds?: number }>("/api/me/email/verification/send", {
+      method: "POST",
+      auth: true,
+    });
+  },
+
+  verifyEmailVerification(code: string) {
+    return request<{ success: boolean; alreadyVerified?: boolean; user?: any }>("/api/me/email/verification/verify", {
+      method: "POST",
+      auth: true,
+      body: { code },
+    });
+  },
+
+  getEmailPreferences() {
+    return request<{ preferences: { bookingUpdates: boolean; accountUpdates: boolean; productUpdates: boolean; marketingEmails: boolean; marketingConsentAt?: string | null; unsubscribedAt?: string | null } }>("/api/me/email/preferences", {
+      method: "GET",
+      auth: true,
+    });
+  },
+
+  updateEmailPreferences(patch: Partial<{ bookingUpdates: boolean; accountUpdates: boolean; productUpdates: boolean; marketingEmails: boolean }>) {
+    return request<{ preferences: any }>("/api/me/email/preferences", {
+      method: "PATCH",
+      auth: true,
+      body: patch,
     });
   },
 
@@ -800,6 +895,14 @@ export const api = {
     });
   },
 
+  getCallConfig() {
+    return request<{
+      provider: string;
+      iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }>;
+      audio: { preferredCodec: string; fallbackChunkMs: number };
+    }>("/api/calls/config", { method: "GET", auth: true });
+  },
+
   startCall(payload: {
     receiverId: string;
     callerName: string;
@@ -1068,11 +1171,11 @@ export const api = {
       body: { newEmail },
     });
   },
-  verifyEmailChange(code: string) {
-    return request<{ success: boolean }>("/api/me/account/email/verify", {
+  verifyEmailChange(newEmail: string, code: string) {
+    return request<{ success: boolean; email?: string; emailVerified?: boolean; signedOut?: boolean }>("/api/me/account/email/verify", {
       method: "POST",
       auth: true,
-      body: { code },
+      body: { newEmail, code },
     });
   },
   requestPhoneChange(newPhone: string) {

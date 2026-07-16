@@ -13,14 +13,14 @@
     "export:web": "expo export --platform web --output-dir dist-web --clear"
   },
   "dependencies": {
-    "@config-plugins/react-native-webrtc": "^15.0.1",
+    "@config-plugins/react-native-webrtc": "^13.0.0",
     "@expo-google-fonts/inter": "^0.4.2",
     "@expo/metro-runtime": "~6.1.2",
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "11.4.1",
     "@tanstack/react-query": "^5.59.0",
-    "expo": "~54.0.35",
+    "expo": "~54.0.36",
     "expo-av": "~16.0.8",
     "expo-blur": "~15.0.8",
     "expo-constants": "~18.0.13",
@@ -40,7 +40,7 @@
     "expo-splash-screen": "~31.0.13",
     "expo-status-bar": "~3.0.9",
     "expo-symbols": "~1.0.8",
-    "expo-updates": "~29.0.18",
+    "expo-updates": "~29.0.19",
     "expo-web-browser": "~15.0.11",
     "lucide-react-native": "^1.11.0",
     "react": "19.1.0",
@@ -58,11 +58,10 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
-    "@expo/cli": "54.0.24",
     "@types/react": "~19.1.10",
     "@types/react-dom": "~19.1.7",
     "babel-plugin-module-resolver": "^5.0.3",
-    "expo-doctor": "1.20.0",
+    "expo-doctor": "^1.20.0",
     "typescript": "~5.9.2"
   },
   "expo": {

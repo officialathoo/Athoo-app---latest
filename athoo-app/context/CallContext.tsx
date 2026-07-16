@@ -1,15 +1,18 @@
 import { appLogger } from "@/lib/logger";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, AppStateStatus, Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
 import { Icon } from "@/components/ui/Icon";
+import { brandConfig } from "@/config/brand";
 import { soundService } from "@/services/SoundService";
 import { api, realtime } from "@/services/api";
 import { useAuth } from "./AuthContext";
+import { useTheme } from "./ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 
 // ─── WebRTC dynamic import (native dev build only) ───────────────────────────
 let WebRTCAvailable = false;
@@ -27,12 +30,6 @@ try {
   appLogger.debug("calls", "[CallContext] react-native-webrtc unavailable – using WS audio");
 }
 
-const STUN = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-  ],
-};
 
 // ─── Voice chunk recording options ──────────────────────────────────────────
 // Android → AAC_ADTS (.aac) — no MOOV atom, ~1.8KB per 600ms, ExoPlayer native
@@ -61,11 +58,21 @@ const CHUNK_OPTIONS = {
   web: {},
 };
 
-// Chunk duration: how long each mic recording is
-const CHUNK_DURATION_MS = 600;
-// Poll interval: how often we ask the server for new chunks from the other side.
-// Must be LESS than CHUNK_DURATION_MS so the queue stays filled and there are no gaps.
-const POLL_INTERVAL_MS = 200;
+// The backend owns fallback-audio tuning so deployments can adjust it without
+// rebuilding the mobile app. These limits are only safe client-side guards.
+const DEFAULT_FALLBACK_CHUNK_MS = 800;
+const MIN_FALLBACK_CHUNK_MS = 300;
+const MAX_FALLBACK_CHUNK_MS = 2_000;
+
+function normalizeFallbackChunkMs(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_FALLBACK_CHUNK_MS;
+  return Math.min(MAX_FALLBACK_CHUNK_MS, Math.max(MIN_FALLBACK_CHUNK_MS, Math.round(parsed)));
+}
+
+function fallbackPollIntervalMs(chunkMs: number): number {
+  return Math.min(500, Math.max(100, Math.floor(chunkMs / 3)));
+}
 
 // Outgoing call timeout — auto-cancel if receiver doesn't answer within 35s.
 // Matches the server-side 35s incoming call expiry so both sides agree.
@@ -120,6 +127,8 @@ function IncomingCallOverlay({ call, onAccept, onReject }: {
   onReject: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+  const styles = useMemo(() => createCallStyles(theme), [theme]);
   const slideAnim = useRef(new Animated.Value(-220)).current;
 
   useEffect(() => {
@@ -128,7 +137,7 @@ function IncomingCallOverlay({ call, onAccept, onReject }: {
 
   return (
     <Animated.View style={[styles.incomingOverlay, { transform: [{ translateY: slideAnim }] }]}>
-      <LinearGradient colors={["#1A1A2E", "#16213E", "#0F3460"]} style={styles.incomingGrad}>
+      <LinearGradient colors={[theme.colors.background, theme.colors.surfaceAlt, theme.colors.primaryPressed]} style={styles.incomingGrad}>
         <View style={styles.incomingTop}>
           <Text style={styles.incomingLabel}>INCOMING CALL</Text>
           <View style={styles.incomingRingRow}>
@@ -137,18 +146,18 @@ function IncomingCallOverlay({ call, onAccept, onReject }: {
           </View>
         </View>
         <View style={styles.callerSection}>
-          <View style={[styles.callerAvatar, { backgroundColor: call.callerColor || "#1A6EE0" }]}>
+          <View style={[styles.callerAvatar, { backgroundColor: call.callerColor || theme.colors.primary }]}>
             <Text style={styles.callerAvatarText}>{call.callerInitials}</Text>
           </View>
           <Text style={styles.callerName}>{call.callerName}</Text>
           {call.service && <Text style={styles.callerService}>{call.service}</Text>}
-          <Text style={styles.callerSubtitle}>Athoo Home Services</Text>
+          <Text style={styles.callerSubtitle}>{`${brandConfig.displayName} ${brandConfig.descriptor}`}</Text>
         </View>
         <View style={styles.callActions}>
           <View style={{ width: 80, alignItems: "center" }}>
             <Pressable style={styles.rejectCircle} onPress={onReject}>
               <View style={styles.rejectCircleInner}>
-                <Icon name="phone-off" size={26} color="#fff" />
+                <Icon name="phone-off" size={26} color={theme.colors.white} />
               </View>
             </Pressable>
             <Text style={styles.callActionLabel}>Decline</Text>
@@ -156,7 +165,7 @@ function IncomingCallOverlay({ call, onAccept, onReject }: {
           <View style={styles.callRipple}>
             <View style={styles.callRipple2} />
             <Pressable style={styles.acceptCircle} onPress={onAccept}>
-              <Icon name="phone" size={26} color="#fff" />
+              <Icon name="phone" size={26} color={theme.colors.white} />
             </Pressable>
           </View>
           <View style={{ width: 80, alignItems: "center" }}>
@@ -174,6 +183,9 @@ function ActiveCallBanner({ call, duration, onEnd }: {
   duration: number;
   onEnd: () => void;
 }) {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createCallStyles(theme), [theme]);
+
   function fmt(s: number) {
     return `${Math.floor(s / 60).toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
   }
@@ -182,7 +194,7 @@ function ActiveCallBanner({ call, duration, onEnd }: {
     <Pressable style={styles.activeBanner} onPress={() => router.push("/call" as any)}>
       <View style={styles.activeLiveDot} />
       <View style={styles.activeCaller}>
-        <View style={[styles.activeAvatar, { backgroundColor: call.callerColor || "#1A6EE0" }]}>
+        <View style={[styles.activeAvatar, { backgroundColor: call.callerColor || theme.colors.primary }]}>
           <Text style={styles.activeAvatarText}>{call.callerInitials}</Text>
         </View>
         <View>
@@ -191,7 +203,7 @@ function ActiveCallBanner({ call, duration, onEnd }: {
         </View>
       </View>
       <Pressable style={styles.endBannerBtn} onPress={onEnd}>
-        <Icon name="phone-off" size={16} color="#fff" />
+        <Icon name="phone-off" size={16} color={theme.colors.white} />
       </Pressable>
     </Pressable>
   );
@@ -200,6 +212,8 @@ function ActiveCallBanner({ call, duration, onEnd }: {
 // ─── Provider ─────────────────────────────────────────────────────────────────
 export function CallProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
+  const iceConfigurationRef = useRef<{ iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }> }>({ iceServers: [] });
+  const fallbackChunkMsRef = useRef(DEFAULT_FALLBACK_CHUNK_MS);
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setMutedState] = useState(false);
@@ -284,10 +298,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const state = activeCall?.state;
     appLogger.debug("calls", "[CallContext] state changed →", state, "callId:", activeCall?.callId);
-    if (state === "incoming" || state === "outgoing") {
-      soundService.startRingtone();
+    if ((state === "incoming" || state === "outgoing") && appStateRef.current === "active") {
+      soundService.startRingtone().catch(() => {});
     } else {
-      soundService.stopRingtone();
+      soundService.stopRingtone().catch(() => {});
     }
     if (state === "active") {
       setCallDuration(0);
@@ -324,6 +338,33 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
   }, [activeCall?.state]);
 
+  useEffect(() => {
+    if (!user) {
+      iceConfigurationRef.current = { iceServers: [] };
+      fallbackChunkMsRef.current = DEFAULT_FALLBACK_CHUNK_MS;
+      return;
+    }
+
+    let active = true;
+    api.getCallConfig()
+      .then((configuration) => {
+        if (!active || !Array.isArray(configuration.iceServers)) return;
+        const iceServers = configuration.iceServers.filter((server) => {
+          const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+          return urls.some((url) => typeof url === "string" && /^(stun|turn|turns):/i.test(url));
+        });
+        iceConfigurationRef.current = { iceServers };
+        fallbackChunkMsRef.current = normalizeFallbackChunkMs(configuration.audio?.fallbackChunkMs);
+      })
+      .catch((error) => {
+        appLogger.warn("calls", "[CallContext] Unable to load ICE configuration; using authenticated audio fallback", error);
+        iceConfigurationRef.current = { iceServers: [] };
+        fallbackChunkMsRef.current = DEFAULT_FALLBACK_CHUNK_MS;
+      });
+
+    return () => { active = false; };
+  }, [user?.id]);
+
   // ── WebRTC helpers ──────────────────────────────────────────────────────────
   function closePeerConnection() {
     try { localStreamRef.current?.getTracks().forEach((t: any) => t.stop()); } catch {}
@@ -336,7 +377,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   async function createPeerConnection(callId: string, role: "caller" | "callee") {
     if (!WebRTCAvailable) return null;
-    const pc = new _RTCPeerConnection(STUN);
+    const pc = new _RTCPeerConnection(iceConfigurationRef.current);
     pcRef.current = pc;
     pc.onicecandidate = async (event: any) => {
       if (event.candidate) {
@@ -392,8 +433,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           Alert.alert(
             "Microphone Required",
             canAskAgain
-              ? "Athoo needs microphone access to make voice calls. Please allow when prompted."
-              : "Microphone access is blocked. Go to Settings → Athoo → allow Microphone to enable calls.",
+              ? `${brandConfig.displayName} needs microphone access to make voice calls. Please allow when prompted.`
+              : `Microphone access is blocked. Go to Settings → ${brandConfig.displayName} → allow Microphone to enable calls.`,
             canAskAgain
               ? [{ text: "OK" }]
               : [
@@ -451,7 +492,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       const { recording: rec } = await Audio.Recording.createAsync(CHUNK_OPTIONS as any);
       recordingRef.current = rec;
 
-      await new Promise<void>((r) => setTimeout(r, CHUNK_DURATION_MS));
+      const chunkDurationMs = fallbackChunkMsRef.current;
+      await new Promise<void>((r) => setTimeout(r, chunkDurationMs));
 
       if (!isStreamingRef.current || activeCallIdRef.current !== callId) {
         try { await rec.stopAndUnloadAsync(); } catch {}
@@ -488,7 +530,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // ── Poll + play loop ─────────────────────────────────────────────────────────
   function schedulePoll(callId: string) {
     if (!isStreamingRef.current || activeCallIdRef.current !== callId) return;
-    pollTimerRef.current = setTimeout(() => pollChunks(callId), POLL_INTERVAL_MS);
+    pollTimerRef.current = setTimeout(
+      () => pollChunks(callId),
+      fallbackPollIntervalMs(fallbackChunkMsRef.current),
+    );
   }
 
   async function pollChunks(callId: string) {
@@ -543,7 +588,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       };
 
       // Safety: move on after chunk duration + small buffer if didJustFinish never fires (Android quirk)
-      const safetyTimer = setTimeout(advance, CHUNK_DURATION_MS + 80);
+      const safetyTimer = setTimeout(advance, fallbackChunkMsRef.current + 80);
 
       sound.setOnPlaybackStatusUpdate(async (s) => {
         if (s.isLoaded && s.didJustFinish) {
@@ -572,7 +617,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       callerId: rawCall.callerId,
       callerName: rawCall.callerName || "Unknown",
       callerInitials: initials,
-      callerColor: rawCall.callerColor || "#FF6B1A",
+      callerColor: rawCall.callerColor || brandConfig.colors.secondary,
       service: rawCall.service,
       direction: "incoming",
       state: "incoming",
@@ -616,7 +661,17 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     const sub = AppState.addEventListener("change", (next: AppStateStatus) => {
       appStateRef.current = next;
-      if (next === "active") void checkIncoming();
+      const state = activeCallRef.current?.state;
+      if (next === "active") {
+        if (state === "incoming" || state === "outgoing") {
+          soundService.startRingtone().catch(() => {});
+        }
+        void checkIncoming();
+      } else {
+        // Background/killed-app recovery is owned by the native call notification
+        // channel. Stop app-managed audio to prevent a double ringtone.
+        soundService.stopRingtone().catch(() => {});
+      }
     });
 
     return () => {
@@ -634,7 +689,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       callerId: "sim_" + Date.now(),
       callerName,
       callerInitials: initials,
-      callerColor: "#FF6B1A",
+      callerColor: brandConfig.colors.secondary,
       service,
       direction: "incoming",
       state: "incoming",
@@ -668,7 +723,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         receiverId,
         callerName: user.name,
         callerInitials: myInitials,
-        callerColor: (user as any).profileColor || "#1A6EE0",
+        callerColor: (user as any).profileColor || brandConfig.colors.primary,
         service,
         offer: offerSdp,
       });
@@ -679,7 +734,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         callerId: user.id,
         callerName: receiverName,
         callerInitials: receiverInitials,
-        callerColor: receiverColor || "#1A6EE0",
+        callerColor: receiverColor || brandConfig.colors.primary,
         service,
         direction: "outgoing",
         state: "outgoing",
@@ -810,45 +865,45 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createCallStyles = (theme: AthooTheme) => StyleSheet.create({
   incomingOverlay: {
     position: "absolute", top: 0, left: 0, right: 0, zIndex: 9999,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 30,
+    shadowColor: theme.colors.overlay, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 30,
   },
   incomingGrad: {
     marginHorizontal: 12, borderRadius: 24, overflow: "hidden",
     paddingHorizontal: 20, paddingBottom: 28, paddingTop: 16,
   },
   incomingTop: { alignItems: "center", gap: 6, marginBottom: 20 },
-  incomingLabel: { fontSize: 13, color: "rgba(255,255,255,0.6)", fontWeight: "600", letterSpacing: 1 },
+  incomingLabel: { fontSize: 13, color: theme.colors.white + "99", fontWeight: "600", letterSpacing: 1 },
   incomingRingRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  incomingRingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#22C55E" },
-  incomingRingText: { fontSize: 12, color: "#22C55E", fontWeight: "700" },
+  incomingRingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.success },
+  incomingRingText: { fontSize: 12, color: theme.colors.success, fontWeight: "700" },
   callerSection: { alignItems: "center", gap: 8, marginBottom: 24 },
-  callerAvatar: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: "rgba(255,255,255,0.3)" },
-  callerAvatarText: { fontSize: 30, fontWeight: "800", color: "#fff" },
-  callerName: { fontSize: 24, fontWeight: "800", color: "#fff" },
-  callerService: { fontSize: 14, color: "rgba(255,255,255,0.7)", fontWeight: "500" },
-  callerSubtitle: { fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 2 },
+  callerAvatar: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: theme.colors.white + "4D" },
+  callerAvatarText: { fontSize: 30, fontWeight: "800", color: theme.colors.white },
+  callerName: { fontSize: 24, fontWeight: "800", color: theme.colors.white },
+  callerService: { fontSize: 14, color: theme.colors.white + "B3", fontWeight: "500" },
+  callerSubtitle: { fontSize: 11, color: theme.colors.white + "73", marginTop: 2 },
   callActions: { flexDirection: "row", justifyContent: "space-around", alignItems: "flex-start" },
   rejectCircle: { alignItems: "center", gap: 8 },
-  acceptCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: "#22C55E", alignItems: "center", justifyContent: "center" },
-  callRipple: { width: 80, height: 80, borderRadius: 40, backgroundColor: "rgba(34,197,94,0.2)", alignItems: "center", justifyContent: "center" },
-  callRipple2: { ...StyleSheet.absoluteFillObject, borderRadius: 44, backgroundColor: "rgba(34,197,94,0.1)", margin: -6 },
-  callActionLabel: { fontSize: 12, color: "rgba(255,255,255,0.7)", fontWeight: "600" },
-  rejectCircleInner: { width: 72, height: 72, borderRadius: 36, backgroundColor: "#EF4444", alignItems: "center", justifyContent: "center" },
+  acceptCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: theme.colors.success, alignItems: "center", justifyContent: "center" },
+  callRipple: { width: 80, height: 80, borderRadius: 40, backgroundColor: theme.colors.success + "33", alignItems: "center", justifyContent: "center" },
+  callRipple2: { ...StyleSheet.absoluteFillObject, borderRadius: 44, backgroundColor: theme.colors.success + "1A", margin: -6 },
+  callActionLabel: { fontSize: 12, color: theme.colors.white + "B3", fontWeight: "600" },
+  rejectCircleInner: { width: 72, height: 72, borderRadius: 36, backgroundColor: theme.colors.danger, alignItems: "center", justifyContent: "center" },
   activeBanner: {
     position: "absolute", top: Platform.OS === "web" ? 67 : 54, left: 12, right: 12, zIndex: 8888,
-    backgroundColor: "#22C55E", borderRadius: 16, flexDirection: "row", alignItems: "center",
+    backgroundColor: theme.colors.success, borderRadius: 16, flexDirection: "row", alignItems: "center",
     paddingHorizontal: 14, paddingVertical: 10, gap: 10,
-    shadowColor: "#22C55E", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 20,
+    shadowColor: theme.colors.success, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 20,
   },
-  activeLiveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#fff" },
+  activeLiveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.white },
   activeCaller: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
   activeAvatar: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
-  activeAvatarText: { fontSize: 12, fontWeight: "700", color: "#fff" },
-  activeName: { fontSize: 13, fontWeight: "700", color: "#fff" },
-  activeTimer: { fontSize: 12, color: "rgba(255,255,255,0.85)" },
-  endBannerBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: "#EF4444", alignItems: "center", justifyContent: "center" },
+  activeAvatarText: { fontSize: 12, fontWeight: "700", color: theme.colors.white },
+  activeName: { fontSize: 13, fontWeight: "700", color: theme.colors.white },
+  activeTimer: { fontSize: 12, color: theme.colors.white + "D9" },
+  endBannerBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: theme.colors.danger, alignItems: "center", justifyContent: "center" },
 });
 

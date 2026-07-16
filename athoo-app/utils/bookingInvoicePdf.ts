@@ -2,6 +2,7 @@ import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { Alert, Platform } from "react-native";
 import { apiErrorToMessage } from "@/lib/apiError";
+import { invoiceConfig } from "@/config/invoice";
 
 export type InvoiceBookingLike = {
   id: string;
@@ -58,18 +59,21 @@ function buildHtml(
   const isPaid = b.status === "completed" || b.status === "paid";
   const badge = isPaid ? "✓ PAID" : (b.status || "PENDING").toUpperCase();
 
+  const printColors = invoiceConfig.colors;
+  const invoiceFooter = [invoiceConfig.brandName, invoiceConfig.contactLine].filter(Boolean).join(" · ");
+
   const providerRows =
     role === "provider"
       ? `
-      <tr><td style="color:#dc2626">Athoo Commission</td><td class="amount" style="color:#dc2626">−Rs. ${commission.toLocaleString()}</td></tr>
+      <tr><td style="color:${printColors.danger}">Athoo Commission</td><td class="amount" style="color:${printColors.danger}">−Rs. ${commission.toLocaleString()}</td></tr>
       <tr class="total-row"><td>NET TO PROVIDER</td><td class="amount">Rs. ${netToProvider.toLocaleString()}</td></tr>`
       : `<tr class="total-row"><td>TOTAL</td><td class="amount">Rs. ${total.toLocaleString()}</td></tr>`;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <style>
-  body{font-family:Arial,sans-serif;margin:0;padding:0;color:#1e293b;background:#f8fafc}
-  .page{max-width:700px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08)}
-  .header{background:linear-gradient(135deg,#1A6EE0,#0D4BA0);color:#fff;padding:28px 30px;display:flex;justify-content:space-between;align-items:flex-start}
+  body{font-family:Arial,sans-serif;margin:0;padding:0;color:${printColors.text};background:${printColors.background}}
+  .page{max-width:700px;margin:0 auto;background:${printColors.page};border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08)}
+  .header{background:linear-gradient(135deg,${printColors.primary},${printColors.primaryPressed});color:${printColors.page};padding:28px 30px;display:flex;justify-content:space-between;align-items:flex-start}
   .logo{font-size:24px;font-weight:900;letter-spacing:-1px}
   .logo-sub{font-size:11px;opacity:.75;margin-top:2px}
   .inv-meta{text-align:right}
@@ -78,22 +82,22 @@ function buildHtml(
   .paid-badge{background:rgba(255,255,255,0.25);border-radius:20px;padding:3px 12px;font-size:11px;font-weight:700;margin-top:8px;display:inline-block}
   .body{padding:28px 30px}
   .parties{display:flex;gap:30px;margin-bottom:24px}
-  .party{flex:1;background:#f8fafc;border-radius:10px;padding:14px 16px}
-  .party-label{font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
-  .party-name{font-size:15px;font-weight:700;color:#1e293b;margin-bottom:3px}
-  .party-detail{font-size:12px;color:#64748b}
+  .party{flex:1;background:${printColors.background};border-radius:10px;padding:14px 16px}
+  .party-label{font-size:10px;color:${printColors.textMuted};font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+  .party-name{font-size:15px;font-weight:700;color:${printColors.text};margin-bottom:3px}
+  .party-detail{font-size:12px;color:${printColors.textSecondary}}
   table{width:100%;border-collapse:collapse;margin-bottom:16px}
-  th{background:#f1f5f9;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;padding:10px 12px;text-align:left;font-weight:700}
-  td{padding:11px 12px;font-size:13px;border-bottom:1px solid #f1f5f9}
+  th{background:${printColors.surface};font-size:11px;color:${printColors.textSecondary};text-transform:uppercase;letter-spacing:.5px;padding:10px 12px;text-align:left;font-weight:700}
+  td{padding:11px 12px;font-size:13px;border-bottom:1px solid ${printColors.surface}}
   .amount{text-align:right}
-  .total-row{background:linear-gradient(135deg,#1A6EE0,#0D4BA0);color:#fff}
+  .total-row{background:linear-gradient(135deg,${printColors.primary},${printColors.primaryPressed});color:${printColors.page}}
   .total-row td{font-weight:700;font-size:15px;padding:14px 12px}
-  .note{background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:12px 14px;font-size:12px;color:#0369a1;margin-bottom:20px}
-  .footer{text-align:center;font-size:11px;color:#94a3b8;padding:0 0 8px}
+  .note{background:${printColors.infoSoft};border:1px solid ${printColors.infoBorder};border-radius:8px;padding:12px 14px;font-size:12px;color:${printColors.info};margin-bottom:20px}
+  .footer{text-align:center;font-size:11px;color:${printColors.textMuted};padding:0 0 8px}
 </style></head><body>
 <div class="page">
   <div class="header">
-    <div><div class="logo">ATHOO</div><div class="logo-sub">Home Services · Across Pakistan</div></div>
+    <div><div class="logo">${esc(invoiceConfig.brandName)}</div><div class="logo-sub">Home Services · Across Pakistan</div></div>
     <div class="inv-meta"><div class="inv-no">${esc(no)}</div><div class="inv-date">${esc(fmtDate(b.createdAt))}</div><div class="paid-badge">${esc(badge)}</div></div>
   </div>
   <div class="body">
@@ -103,13 +107,13 @@ function buildHtml(
     </div>
     <table>
       <tr><th>Description</th><th style="text-align:right">Amount</th></tr>
-      <tr><td>${esc(service)}<br><small style="color:#64748b">${esc(b.scheduledDate ?? "")} · ${esc(b.scheduledTime ?? "")}</small></td><td class="amount">Rs. ${serviceAmount.toLocaleString()}</td></tr>
-      ${visitCharge > 0 ? `<tr><td>Visit / Call-out Charge<br><small style="color:#64748b">Fixed visit fee</small></td><td class="amount">Rs. ${visitCharge.toLocaleString()}</td></tr>` : ""}
-      <tr><td style="color:#64748b">Subtotal</td><td class="amount" style="color:#64748b">Rs. ${total.toLocaleString()}</td></tr>
+      <tr><td>${esc(service)}<br><small style="color:${printColors.textSecondary}">${esc(b.scheduledDate ?? "")} · ${esc(b.scheduledTime ?? "")}</small></td><td class="amount">Rs. ${serviceAmount.toLocaleString()}</td></tr>
+      ${visitCharge > 0 ? `<tr><td>Visit / Call-out Charge<br><small style="color:${printColors.textSecondary}">Fixed visit fee</small></td><td class="amount">Rs. ${visitCharge.toLocaleString()}</td></tr>` : ""}
+      <tr><td style="color:${printColors.textSecondary}">Subtotal</td><td class="amount" style="color:${printColors.textSecondary}">Rs. ${total.toLocaleString()}</td></tr>
       ${providerRows}
     </table>
     <div class="note">Payment is made directly in cash to the service provider. Athoo does not handle funds. This is an electronic ${isPaid ? "receipt" : "summary"} only.</div>
-    <div class="footer">Athoo · +92 339 0051068 · @athoo_services · Thank you for using Athoo!</div>
+    <div class="footer">${esc(invoiceFooter)}${invoiceFooter ? " · " : ""}Thank you for using ${esc(invoiceConfig.brandName)}!</div>
   </div>
 </div>
 </body></html>`;

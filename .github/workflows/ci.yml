@@ -8,19 +8,23 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.2
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
-      - name: Enable pnpm
-        run: corepack enable && corepack prepare pnpm@10.33.2 --activate
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Validate repository
-        run: pnpm check:project
-      - name: Type-check
-        run: pnpm typecheck
-      - name: Build API and admin
-        run: pnpm build
+      - name: Verify code, tests, security, operations, and builds
+        run: pnpm release:verify:code
+      - name: Validate mobile release configuration
+        run: pnpm mobile:validate
+      - name: Validate beta and device acceptance preparation
+        run: pnpm beta:validate && pnpm device:validate

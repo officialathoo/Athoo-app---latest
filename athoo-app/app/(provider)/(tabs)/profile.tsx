@@ -3,7 +3,7 @@ import * as ImagePicker from "expo-image-picker";
 import { pickFromCamera, pickFromGallery } from "@/utils/mediaPicker";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState , useMemo} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -27,7 +27,6 @@ import {
   getBiometricLabel,
 } from "@/services/biometric";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { useBookings } from "@/context/BookingContext";
 import { useLang } from "@/context/LanguageContext";
@@ -35,21 +34,30 @@ import { useCategories } from "@/context/CategoriesContext";
 import { api } from "@/services/api";
 import { uploadPickedImage, PrivateImage } from "@/services/storage";
 import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
+import { getCategoryAppearance } from "@/utils/categoryAppearance";
 import { apiErrorToMessage } from "@/lib/apiError";
+import { runtimeConfig } from "@/config/runtime";
 
-const AVATAR_COLORS = [
-  "#FF6B1A", "#1A6EE0", "#8B5CF6", "#22C55E", "#F59E0B", "#EC4899", "#06B6D4",
-];
 
 export default function ProviderProfileScreen() {
   const { user, logout, updateUser, refreshUser } = useAuth();
   const { getMyBookings } = useBookings();
   const { t, lang, translate: tr, textAlign, writingDirection } = useLang();
   const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const avatarColors = useMemo(() => [theme.colors.secondary, theme.colors.primary, theme.colors.accent, theme.colors.success, theme.colors.warning, theme.colors.danger, theme.colors.info], [theme]);
   const localizedText = { textAlign, writingDirection } as const;
   const { getCategoryBySlug } = useCategories();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const socialLinks = useMemo(() => [
+    { icon: "message-circle", label: "WhatsApp", url: runtimeConfig.support.whatsappUrl, color: theme.colors.success },
+    { icon: "instagram", label: "Instagram", url: runtimeConfig.support.instagramUrl, color: theme.colors.accent },
+    { icon: "facebook", label: "Facebook", url: runtimeConfig.support.facebookUrl, color: theme.colors.info },
+  ]
+    .filter((entry) => Boolean(entry.url))
+    .map((entry) => ({ ...entry, url: entry.url as string })), [theme]);
 
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
@@ -147,7 +155,7 @@ export default function ProviderProfileScreen() {
   const active = bookings.filter((b) => b.status === "in_progress" || b.status === "accepted").length;
 
   const initials = user?.name?.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) || "P";
-  const avatarColor = user?.profileColor || Colors.secondary;
+  const avatarColor = user?.profileColor || theme.colors.secondary;
 
   const handleDeactivate = () => {
     Alert.alert(
@@ -220,46 +228,47 @@ export default function ProviderProfileScreen() {
     {
       title: t.workEarnings,
       items: [
-        { icon: "crown", label: t.premiumPlan, color: "#F59E0B", onPress: () => router.push("/(provider)/subscription") },
-        { icon: "dollar-sign", label: t.earningsHistory, color: "#22C55E", onPress: () => router.push("/(provider)/earnings") },
-        { icon: "file-text", label: t.invoices, color: Colors.primary, onPress: () => router.push("/(provider)/invoices") },
-        { icon: "briefcase", label: t.myNegotiations, color: Colors.secondary, onPress: () => router.push("/(provider)/negotiations") },
-        { icon: "calendar", label: t.availabilitySchedule, color: "#06B6D4", onPress: () => router.push("/(provider)/availability" as any) },
-        { icon: "trending-up", label: t.myWallet, color: "#059669", onPress: () => router.push("/(provider)/wallet" as any) },
-        { icon: "map-pin", label: t.serviceRadius, color: "#0891B2", onPress: () => router.push("/(provider)/service-radius" as any) },
+        { icon: "crown", label: t.premiumPlan, color: theme.colors.warning, onPress: () => router.push("/(provider)/subscription") },
+        { icon: "dollar-sign", label: t.earningsHistory, color: theme.colors.success, onPress: () => router.push("/(provider)/earnings") },
+        { icon: "file-text", label: t.invoices, color: theme.colors.primary, onPress: () => router.push("/(provider)/invoices") },
+        { icon: "briefcase", label: t.myNegotiations, color: theme.colors.secondary, onPress: () => router.push("/(provider)/negotiations") },
+        { icon: "calendar", label: t.availabilitySchedule, color: theme.colors.info, onPress: () => router.push("/(provider)/availability" as any) },
+        { icon: "trending-up", label: t.myWallet, color: theme.colors.success, onPress: () => router.push("/(provider)/wallet" as any) },
+        { icon: "map-pin", label: t.serviceRadius, color: theme.colors.info, onPress: () => router.push("/(provider)/service-radius" as any) },
       ],
     },
     {
       title: t.account,
       items: [
-        { icon: "bell", label: t.notifications, color: "#8B5CF6", onPress: () => router.push("/(provider)/notifications") },
-        { icon: "sun", label: t.appearance, color: "#6366F1", onPress: () => router.push("/appearance" as any) },
-        { icon: "lock", label: t.changePassword, color: "#F59E0B", onPress: () => router.push("/(provider)/change-password") },
-        { icon: "globe", label: t.language, color: "#06B6D4", onPress: () => router.push("/language" as any), rightEl: (
+        { icon: "bell", label: t.notifications, color: theme.colors.accent, onPress: () => router.push("/(provider)/notifications") },
+        { icon: "mail", label: "Email & communication", color: theme.colors.primary, onPress: () => router.push("/email-preferences" as any) },
+        { icon: "sun", label: t.appearance, color: theme.colors.accent, onPress: () => router.push("/appearance" as any) },
+        { icon: "lock", label: t.changePassword, color: theme.colors.warning, onPress: () => router.push("/(provider)/change-password") },
+        { icon: "globe", label: t.language, color: theme.colors.info, onPress: () => router.push("/language" as any), rightEl: (
           <View style={styles.langBadge}>
             <Text style={styles.langBadgeText}>{lang === "en" ? "EN" : "اردو"}</Text>
           </View>
         )},
-        { icon: "shield", label: t.privacy, color: Colors.primary, onPress: () => router.push("/(provider)/privacy") },
+        { icon: "shield", label: t.privacy, color: theme.colors.primary, onPress: () => router.push("/(provider)/privacy") },
       ],
     },
     {
       title: t.support,
       items: [
-        { icon: "help-circle", label: t.help, color: Colors.primary, onPress: () => router.push("/(provider)/help") },
-        { icon: "headphones", label: t.contactSupport, color: "#EF4444", onPress: () => router.push("/(provider)/contact-support") },
-        { icon: "info", label: t.about, color: Colors.secondary, onPress: () => router.push("/(provider)/about") },
+        { icon: "help-circle", label: t.help, color: theme.colors.primary, onPress: () => router.push("/(provider)/help") },
+        { icon: "headphones", label: t.contactSupport, color: theme.colors.danger, onPress: () => router.push("/(provider)/contact-support") },
+        { icon: "info", label: t.about, color: theme.colors.secondary, onPress: () => router.push("/(provider)/about") },
       ],
     },
   ];
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 80 }]} showsVerticalScrollIndicator={false}>
-      <LinearGradient colors={[Colors.gradientStart, Colors.gradientEnd]} style={[styles.headerGrad, { paddingTop: topPad + 16 }]}>
+      <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={[styles.headerGrad, { paddingTop: topPad + 16 }]}>
         <View style={styles.headerRow}>
           <Text style={styles.headerTitle}>{t.myProfile}</Text>
           <Pressable style={styles.editBtn} onPress={() => router.push("/(provider)/edit-profile" as any)}>
-            <Icon name="edit-2" size={16} color="#fff" />
+            <Icon name="edit-2" size={16} color={theme.colors.onBrand} />
           </Pressable>
         </View>
 
@@ -274,11 +283,11 @@ export default function ProviderProfileScreen() {
             )}
             {uploadingPhoto ? (
               <View style={[styles.cameraBadge, { width: "100%", height: "100%", borderRadius: 40, backgroundColor: "rgba(0,0,0,0.45)", position: "absolute", top: 0, left: 0, justifyContent: "center", alignItems: "center" }]}>
-                <ActivityIndicator color="#fff" size="small" />
+                <ActivityIndicator color={theme.colors.onBrand} size="small" />
               </View>
             ) : (
               <View style={styles.cameraBadge}>
-                <Icon name="camera" size={12} color="#fff" />
+                <Icon name="camera" size={12} color={theme.colors.onBrand} />
               </View>
             )}
           </Pressable>
@@ -289,7 +298,7 @@ export default function ProviderProfileScreen() {
               <Text style={styles.userRole}>{t.providerRole}</Text>
               {user?.isVerified && (
                 <View style={styles.verifiedBadge}>
-                  <Icon name="check-circle" size={10} color={Colors.secondary} />
+                  <Icon name="check-circle" size={10} color={theme.colors.secondary} />
                   <Text style={styles.verifiedText}>{t.verified}</Text>
                 </View>
               )}
@@ -305,24 +314,24 @@ export default function ProviderProfileScreen() {
           </View>
           <View style={styles.statDiv} />
           <View style={styles.stat}>
-            <Text style={[styles.statVal, { color: "#86efac" }]}>{completed}</Text>
+            <Text style={[styles.statVal, { color: theme.colors.success }]}>{completed}</Text>
             <Text style={styles.statLbl}>{t.doneLabel}</Text>
           </View>
           <View style={styles.statDiv} />
           <View style={styles.stat}>
-            <Text style={[styles.statVal, { color: Colors.secondary }]}>{active}</Text>
+            <Text style={[styles.statVal, { color: theme.colors.secondary }]}>{active}</Text>
             <Text style={styles.statLbl}>{t.active}</Text>
           </View>
           <View style={styles.statDiv} />
           <View style={styles.stat}>
-            <Text style={[styles.statVal, { color: "#fbbf24" }]}>
+            <Text style={[styles.statVal, { color: theme.colors.warning }]}>
               {earnings > 0 ? `${Math.round(earnings / 1000)}k` : "0"}
             </Text>
             <Text style={styles.statLbl}>{t.earnedRs}</Text>
           </View>
           <View style={styles.statDiv} />
           <View style={styles.stat}>
-            <Text style={[styles.statVal, { color: Colors.secondary, fontSize: 13 }]}>
+            <Text style={[styles.statVal, { color: theme.colors.secondary, fontSize: 13 }]}>
               {(user as any)?.ratePerHour ? String((user as any).ratePerHour) : "–"}
             </Text>
             <Text style={styles.statLbl}>{t.ratePerHourLabel}</Text>
@@ -337,10 +346,11 @@ export default function ProviderProfileScreen() {
             {user.services.map((sid) => {
               const svc = getCategoryBySlug(sid);
               if (!svc) return <View key={sid} style={styles.serviceChip}><Text style={styles.serviceChipText}>{sid}</Text></View>;
+              const appearance = getCategoryAppearance(svc, theme);
               return (
-                <View key={sid} style={[styles.serviceChip, { backgroundColor: svc.bgColor }]}>
-                  <Icon name={svc.icon as any} size={14} color={svc.color} />
-                  <Text style={[styles.serviceChipText, { color: svc.color }]}>{svc.name}</Text>
+                <View key={sid} style={[styles.serviceChip, { backgroundColor: appearance.background, borderColor: appearance.accent }]}>
+                  <Icon name={svc.icon as any} size={14} color={appearance.accent} />
+                  <Text style={[styles.serviceChipText, { color: appearance.accent }]}>{svc.name}</Text>
                 </View>
               );
             })}
@@ -350,8 +360,8 @@ export default function ProviderProfileScreen() {
 
       <View style={styles.availCard}>
         <View style={styles.availLeft}>
-          <View style={[styles.availDotIcon, { backgroundColor: isAvailable ? "#22C55E20" : "#EF444420" }]}>
-            <View style={[styles.availDotInner, { backgroundColor: isAvailable ? "#22C55E" : "#EF4444" }]} />
+          <View style={[styles.availDotIcon, { backgroundColor: isAvailable ? theme.colors.successSoft : theme.colors.dangerSoft }]}>
+            <View style={[styles.availDotInner, { backgroundColor: isAvailable ? theme.colors.success : theme.colors.danger }]} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.availTitle, localizedText]}>{t.availableForJobs}</Text>
@@ -364,31 +374,28 @@ export default function ProviderProfileScreen() {
           value={isAvailable}
           onValueChange={toggleAvailability}
           disabled={togglingAvail}
-          trackColor={{ false: Colors.border, true: "#22C55E50" }}
-          thumbColor={isAvailable ? "#22C55E" : Colors.textMuted}
+          trackColor={{ false: theme.colors.border, true: theme.colors.successSoft }}
+          thumbColor={isAvailable ? theme.colors.success : theme.colors.textMuted}
         />
       </View>
 
-      <View style={styles.socialCard}>
-        <Text style={[styles.cardTitle, localizedText]}>{t.connectWithUs}</Text>
-        <View style={styles.socialRow}>
-          <Pressable style={[styles.socialBtn, { backgroundColor: "#25D36620" }]}
-            onPress={() => Linking.openURL("https://wa.me/923390051068")}>
-            <Icon name="message-circle" size={20} color="#25D366" />
-            <Text style={[styles.socialLabel, { color: "#25D366" }]}>WhatsApp</Text>
-          </Pressable>
-          <Pressable style={[styles.socialBtn, { backgroundColor: "#E1306C20" }]}
-            onPress={() => Linking.openURL("https://instagram.com/athoo_services")}>
-            <Icon name="instagram" size={20} color="#E1306C" />
-            <Text style={[styles.socialLabel, { color: "#E1306C" }]}>Instagram</Text>
-          </Pressable>
-          <Pressable style={[styles.socialBtn, { backgroundColor: "#1877F220" }]}
-            onPress={() => Linking.openURL("https://facebook.com/athoo.services")}>
-            <Icon name="facebook" size={20} color="#1877F2" />
-            <Text style={[styles.socialLabel, { color: "#1877F2" }]}>Facebook</Text>
-          </Pressable>
+      {socialLinks.length > 0 ? (
+        <View style={styles.socialCard}>
+          <Text style={[styles.cardTitle, localizedText]}>{t.connectWithUs}</Text>
+          <View style={styles.socialRow}>
+            {socialLinks.map((social) => (
+              <Pressable
+                key={social.label}
+                style={[styles.socialBtn, { backgroundColor: `${social.color}20` }]}
+                onPress={() => void Linking.openURL(social.url)}
+              >
+                <Icon name={social.icon as any} size={20} color={social.color} />
+                <Text style={[styles.socialLabel, { color: social.color }]}>{social.label}</Text>
+              </Pressable>
+            ))}
+          </View>
         </View>
-      </View>
+      ) : null}
 
       {MENU_SECTIONS.map((section) => (
         <View key={section.title} style={styles.menuSection}>
@@ -408,7 +415,7 @@ export default function ProviderProfileScreen() {
                   <Icon name={item.icon as any} size={18} color={item.color} />
                 </View>
                 <Text style={styles.menuLabel}>{item.label}</Text>
-                {item.rightEl ? item.rightEl : <Icon name="chevron-right" size={16} color={Colors.textMuted} />}
+                {item.rightEl ? item.rightEl : <Icon name="chevron-right" size={16} color={theme.colors.textMuted} />}
               </Pressable>
             ))}
           </View>
@@ -420,18 +427,18 @@ export default function ProviderProfileScreen() {
           <Text style={styles.sectionTitle}>Security</Text>
           <View style={styles.menuCard}>
             <View style={[styles.menuItem, { paddingRight: 16 }]}>
-              <View style={[styles.menuIcon, { backgroundColor: "#8B5CF618" }]}>
-                <Icon name="fingerprint" size={18} color="#8B5CF6" />
+              <View style={[styles.menuIcon, { backgroundColor: theme.colors.accentSoft }]}>
+                <Icon name="fingerprint" size={18} color={theme.colors.accent} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontWeight: "600", color: Colors.text }}>{biometricLabel}</Text>
-                <Text style={{ fontSize: 12, color: Colors.textSecondary }}>Use your device security to log in</Text>
+                <Text style={{ fontSize: 14, fontWeight: "600", color: theme.colors.text }}>{biometricLabel}</Text>
+                <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>Use your device security to log in</Text>
               </View>
               <Switch
                 value={biometricOn}
                 onValueChange={toggleBiometric}
-                trackColor={{ false: Colors.border, true: "#8B5CF650" }}
-                thumbColor={biometricOn ? "#8B5CF6" : Colors.textMuted}
+                trackColor={{ false: theme.colors.border, true: theme.colors.accentSoft }}
+                thumbColor={biometricOn ? theme.colors.accent : theme.colors.textMuted}
               />
             </View>
           </View>
@@ -439,18 +446,18 @@ export default function ProviderProfileScreen() {
       )}
 
       <Pressable style={styles.logoutBtn} onPress={handleLogout}>
-        <Icon name="log-out" size={16} color={Colors.error} />
+        <Icon name="log-out" size={16} color={theme.colors.danger} />
         <Text style={styles.logoutText}>{t.logout}</Text>
       </Pressable>
 
       <View style={styles.dangerZone}>
         <Text style={styles.dangerTitle}>{t.dangerZone}</Text>
         <Pressable style={styles.dangerBtn} onPress={handleDeactivate}>
-          <Icon name="eye-off" size={15} color={Colors.error} />
+          <Icon name="eye-off" size={15} color={theme.colors.danger} />
           <Text style={styles.dangerBtnText}>{t.deactivateAccount}</Text>
         </Pressable>
-        <Pressable style={[styles.dangerBtn, { borderColor: Colors.error, backgroundColor: Colors.error + "10" }]} onPress={handleDeleteAccount}>
-          <Icon name="trash-2" size={15} color={Colors.error} />
+        <Pressable style={[styles.dangerBtn, { borderColor: theme.colors.danger, backgroundColor: theme.colors.danger + "10" }]} onPress={handleDeleteAccount}>
+          <Icon name="trash-2" size={15} color={theme.colors.danger} />
           <Text style={[styles.dangerBtnText, { fontWeight: "800" }]}>Schedule Account Deletion</Text>
         </Pressable>
       </View>
@@ -466,45 +473,45 @@ export default function ProviderProfileScreen() {
                 <PrivateImage objectPath={user.profileImage} style={styles.avatarPreview} />
               ) : (
                 <View style={[styles.avatarPreview, { backgroundColor: avatarColor, alignItems: "center", justifyContent: "center" }]}>
-                  <Text style={{ fontSize: 28, fontWeight: "800", color: "#fff" }}>{initials}</Text>
+                  <Text style={{ fontSize: 28, fontWeight: "800", color: theme.colors.onBrand }}>{initials}</Text>
                 </View>
               )}
               {user?.profileImage && (
                 <Pressable style={styles.removePhotoBtn} onPress={() => { updateUser({ profileImage: null as any }); setShowAvatarModal(false); }}>
-                  <Icon name="trash-2" size={14} color={Colors.error} />
+                  <Icon name="trash-2" size={14} color={theme.colors.danger} />
                   <Text style={styles.removePhotoText}>Remove Photo</Text>
                 </Pressable>
               )}
             </View>
             <Pressable style={styles.avatarOption} onPress={() => pickImage(false)}>
-              <View style={[styles.avatarOptIcon, { backgroundColor: Colors.primary + "15" }]}>
-                <Icon name="image" size={20} color={Colors.primary} />
+              <View style={[styles.avatarOptIcon, { backgroundColor: theme.colors.primary + "15" }]}>
+                <Icon name="image" size={20} color={theme.colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.avatarOptLabel}>Upload from Gallery</Text>
                 <Text style={styles.avatarOptSub}>Choose a photo from your device</Text>
               </View>
-              <Icon name="chevron-right" size={16} color={Colors.textMuted} />
+              <Icon name="chevron-right" size={16} color={theme.colors.textMuted} />
             </Pressable>
             <Pressable style={styles.avatarOption} onPress={() => pickImage(true)}>
-              <View style={[styles.avatarOptIcon, { backgroundColor: "#8B5CF620" }]}>
-                <Icon name="camera" size={20} color="#8B5CF6" />
+              <View style={[styles.avatarOptIcon, { backgroundColor: theme.colors.accentSoft }]}>
+                <Icon name="camera" size={20} color={theme.colors.accent} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.avatarOptLabel}>Take a Selfie</Text>
                 <Text style={styles.avatarOptSub}>Use your camera</Text>
               </View>
-              <Icon name="chevron-right" size={16} color={Colors.textMuted} />
+              <Icon name="chevron-right" size={16} color={theme.colors.textMuted} />
             </Pressable>
             <Pressable style={styles.avatarOption} onPress={() => { setShowAvatarModal(false); setTimeout(() => setShowColorPicker(true), 300); }}>
-              <View style={[styles.avatarOptIcon, { backgroundColor: Colors.secondary + "15" }]}>
-                <Icon name="droplet" size={20} color={Colors.secondary} />
+              <View style={[styles.avatarOptIcon, { backgroundColor: theme.colors.secondary + "15" }]}>
+                <Icon name="droplet" size={20} color={theme.colors.secondary} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.avatarOptLabel}>Choose Color</Text>
                 <Text style={styles.avatarOptSub}>Pick an avatar color</Text>
               </View>
-              <Icon name="chevron-right" size={16} color={Colors.textMuted} />
+              <Icon name="chevron-right" size={16} color={theme.colors.textMuted} />
             </Pressable>
           </View>
         </Pressable>
@@ -515,7 +522,7 @@ export default function ProviderProfileScreen() {
           <View style={styles.colorPickerBox} onStartShouldSetResponder={() => true}>
             <Text style={styles.colorPickerTitle}>Choose Avatar Color</Text>
             <View style={styles.colorGrid}>
-              {AVATAR_COLORS.map((c) => (
+              {avatarColors.map((c) => (
                 <Pressable
                   key={c}
                   style={[styles.colorCircle, { backgroundColor: c }, user?.profileColor === c && styles.colorSelected]}
@@ -532,12 +539,12 @@ export default function ProviderProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
   content: { paddingBottom: 120 },
   headerGrad: { paddingHorizontal: 20, paddingBottom: 24 },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
-  headerTitle: { fontSize: 20, fontWeight: "800", color: "#fff" },
+  headerTitle: { fontSize: 20, fontWeight: "800", color: theme.colors.onBrand },
   editBtn: {
     width: 36, height: 36, borderRadius: 10,
     backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center",
@@ -549,37 +556,37 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
     borderWidth: 3, borderColor: "rgba(255,255,255,0.5)",
   },
-  avatarText: { fontSize: 26, fontWeight: "800", color: "#fff" },
+  avatarText: { fontSize: 26, fontWeight: "800", color: theme.colors.onBrand },
   cameraBadge: {
     position: "absolute", bottom: 0, right: 0,
     width: 24, height: 24, borderRadius: 12,
-    backgroundColor: Colors.secondary, alignItems: "center", justifyContent: "center",
-    borderWidth: 2, borderColor: "#fff",
+    backgroundColor: theme.colors.secondary, alignItems: "center", justifyContent: "center",
+    borderWidth: 2, borderColor: theme.colors.onBrand,
   },
   userInfo: { flex: 1, gap: 4 },
-  userName: { fontSize: 20, fontWeight: "800", color: "#fff" },
+  userName: { fontSize: 20, fontWeight: "800", color: theme.colors.onBrand },
   verifiedRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   userRole: { fontSize: 13, color: "rgba(255,255,255,0.8)" },
   verifiedBadge: {
     flexDirection: "row", alignItems: "center", gap: 3,
-    backgroundColor: Colors.secondary + "30", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20,
+    backgroundColor: theme.colors.secondary + "30", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20,
   },
-  verifiedText: { fontSize: 10, fontWeight: "700", color: Colors.secondary },
+  verifiedText: { fontSize: 10, fontWeight: "700", color: theme.colors.secondary },
   userPhone: { fontSize: 12, color: "rgba(255,255,255,0.65)" },
   statsRow: {
     flexDirection: "row", backgroundColor: "rgba(255,255,255,0.15)",
     borderRadius: 18, padding: 14, alignItems: "center",
   },
   stat: { flex: 1, alignItems: "center" },
-  statVal: { fontSize: 18, fontWeight: "800", color: "#fff" },
+  statVal: { fontSize: 18, fontWeight: "800", color: theme.colors.onBrand },
   statLbl: { fontSize: 10, color: "rgba(255,255,255,0.7)", fontWeight: "500", marginTop: 2 },
   statDiv: { width: 1, height: 30, backgroundColor: "rgba(255,255,255,0.2)" },
   servicesCard: {
     margin: 16, marginBottom: 0,
-    backgroundColor: Colors.card, borderRadius: 18, padding: 16, gap: 12,
-    borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: theme.colors.surface, borderRadius: 18, padding: 16, gap: 12,
+    borderWidth: 1, borderColor: theme.colors.border,
   },
-  cardTitle: { fontSize: 13, fontWeight: "700", color: Colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
+  cardTitle: { fontSize: 13, fontWeight: "700", color: theme.colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
   servicesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   serviceChip: {
     flexDirection: "row", alignItems: "center", gap: 6,
@@ -589,18 +596,18 @@ const styles = StyleSheet.create({
   availCard: {
     flexDirection: "row", alignItems: "center",
     margin: 16, marginBottom: 0,
-    backgroundColor: Colors.card, borderRadius: 18, padding: 16,
-    borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: theme.colors.surface, borderRadius: 18, padding: 16,
+    borderWidth: 1, borderColor: theme.colors.border,
   },
   availLeft: { flex: 1, flexDirection: "row", alignItems: "center", gap: 12 },
   availDotIcon: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   availDotInner: { width: 12, height: 12, borderRadius: 6 },
-  availTitle: { fontSize: 14, fontWeight: "700", color: Colors.text },
-  availSub: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  availTitle: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
+  availSub: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 },
   socialCard: {
     margin: 16, marginBottom: 0,
-    backgroundColor: Colors.card, borderRadius: 18, padding: 16, gap: 12,
-    borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: theme.colors.surface, borderRadius: 18, padding: 16, gap: 12,
+    borderWidth: 1, borderColor: theme.colors.border,
   },
   socialRow: { flexDirection: "row", gap: 10 },
   socialBtn: {
@@ -609,40 +616,40 @@ const styles = StyleSheet.create({
   },
   socialLabel: { fontSize: 11, fontWeight: "700" },
   menuSection: { marginTop: 16, paddingHorizontal: 16 },
-  sectionTitle: { fontSize: 12, fontWeight: "700", color: Colors.textMuted, textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 8, marginLeft: 4 },
+  sectionTitle: { fontSize: 12, fontWeight: "700", color: theme.colors.textMuted, textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 8, marginLeft: 4 },
   menuCard: {
-    backgroundColor: Colors.card, borderRadius: 18,
-    borderWidth: 1, borderColor: Colors.border, overflow: "hidden",
+    backgroundColor: theme.colors.surface, borderRadius: 18,
+    borderWidth: 1, borderColor: theme.colors.border, overflow: "hidden",
   },
   menuItem: {
     flexDirection: "row", alignItems: "center", gap: 14,
     paddingHorizontal: 16, paddingVertical: 14,
   },
-  menuItemBorder: { borderBottomWidth: 1, borderBottomColor: Colors.border },
-  menuPressed: { backgroundColor: Colors.surface },
+  menuItemBorder: { borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  menuPressed: { backgroundColor: theme.colors.surfaceAlt },
   menuIcon: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  menuLabel: { flex: 1, fontSize: 14, fontWeight: "600", color: Colors.text },
+  menuLabel: { flex: 1, fontSize: 14, fontWeight: "600", color: theme.colors.text },
   langBadge: {
-    backgroundColor: Colors.primary + "20", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
+    backgroundColor: theme.colors.primary + "20", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
   },
-  langBadgeText: { fontSize: 11, fontWeight: "700", color: Colors.primary },
+  langBadgeText: { fontSize: 11, fontWeight: "700", color: theme.colors.primary },
   logoutBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 8, paddingVertical: 14, backgroundColor: Colors.error + "10",
+    gap: 8, paddingVertical: 14, backgroundColor: theme.colors.danger + "10",
     borderRadius: 14, marginHorizontal: 16, marginTop: 16,
   },
-  logoutText: { fontSize: 14, fontWeight: "600", color: Colors.error },
+  logoutText: { fontSize: 14, fontWeight: "600", color: theme.colors.danger },
   dangerZone: {
     marginHorizontal: 20,
     marginBottom: 16,
     borderRadius: 18,
     borderWidth: 1.5,
-    borderColor: Colors.error + "30",
-    backgroundColor: Colors.card,
+    borderColor: theme.colors.danger + "30",
+    backgroundColor: theme.colors.surface,
     padding: 16,
     gap: 10,
   },
-  dangerTitle: { fontSize: 12, fontWeight: "800", color: Colors.error, textTransform: "uppercase", letterSpacing: 0.5 },
+  dangerTitle: { fontSize: 12, fontWeight: "800", color: theme.colors.danger, textTransform: "uppercase", letterSpacing: 0.5 },
   dangerBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -651,22 +658,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.error + "30",
+    borderColor: theme.colors.danger + "30",
     backgroundColor: "transparent",
   },
-  dangerBtnText: { fontSize: 13, fontWeight: "600", color: Colors.error, flex: 1 },
-  version: { textAlign: "center", fontSize: 12, color: Colors.textMuted, marginTop: 12, marginBottom: 4 },
+  dangerBtnText: { fontSize: 13, fontWeight: "600", color: theme.colors.danger, flex: 1 },
+  version: { textAlign: "center", fontSize: 12, color: theme.colors.textMuted, marginTop: 12, marginBottom: 4 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   colorPickerBox: {
-    backgroundColor: Colors.card, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    backgroundColor: theme.colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28,
     padding: 28, gap: 20,
   },
-  colorPickerTitle: { fontSize: 17, fontWeight: "800", color: Colors.text },
+  colorPickerTitle: { fontSize: 17, fontWeight: "800", color: theme.colors.text },
   colorGrid: { flexDirection: "row", flexWrap: "wrap", gap: 16, justifyContent: "center" },
   colorCircle: { width: 52, height: 52, borderRadius: 26 },
-  colorSelected: { borderWidth: 4, borderColor: Colors.text },
+  colorSelected: { borderWidth: 4, borderColor: theme.colors.text },
   avatarModalBox: {
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     padding: 28,
@@ -678,46 +685,46 @@ const styles = StyleSheet.create({
     height: 72,
     borderRadius: 36,
     borderWidth: 3,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
   removePhotoBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: Colors.error + "12",
+    backgroundColor: theme.colors.danger + "12",
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 10,
   },
-  removePhotoText: { fontSize: 12, color: Colors.error, fontWeight: "600" },
+  removePhotoText: { fontSize: 12, color: theme.colors.danger, fontWeight: "600" },
   avatarOption: {
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
     padding: 14,
     borderRadius: 14,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
   },
   avatarOptIcon: { width: 44, height: 44, borderRadius: 13, alignItems: "center", justifyContent: "center" },
-  avatarOptLabel: { fontSize: 14, fontWeight: "700", color: Colors.text },
-  avatarOptSub: { fontSize: 12, color: Colors.textSecondary, marginTop: 1 },
+  avatarOptLabel: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
+  avatarOptSub: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 1 },
   langBox: {
-    backgroundColor: Colors.card, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    backgroundColor: theme.colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28,
     padding: 28, gap: 8,
   },
-  langHint: { fontSize: 12, color: Colors.textSecondary, marginBottom: 4 },
+  langHint: { fontSize: 12, color: theme.colors.textSecondary, marginBottom: 4 },
   langOption: {
     flexDirection: "row", alignItems: "center", gap: 12,
-    padding: 16, borderRadius: 14, backgroundColor: Colors.surface,
+    padding: 16, borderRadius: 14, backgroundColor: theme.colors.surfaceAlt,
     borderWidth: 1.5, borderColor: "transparent",
   },
-  langOptionActive: { backgroundColor: Colors.primary + "10", borderColor: Colors.primary + "40" },
-  langOptionText: { fontSize: 15, fontWeight: "700", color: Colors.text },
-  langOptionSub: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  langOptionActive: { backgroundColor: theme.colors.primary + "10", borderColor: theme.colors.primary + "40" },
+  langOptionText: { fontSize: 15, fontWeight: "700", color: theme.colors.text },
+  langOptionSub: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 },
   langCancelBtn: {
-    backgroundColor: Colors.surface, borderRadius: 14, paddingVertical: 13,
+    backgroundColor: theme.colors.surfaceAlt, borderRadius: 14, paddingVertical: 13,
     alignItems: "center", marginTop: 4,
   },
-  langCancelText: { fontSize: 15, fontWeight: "600", color: Colors.textSecondary },
+  langCancelText: { fontSize: 15, fontWeight: "600", color: theme.colors.textSecondary },
 });
 

@@ -7,7 +7,6 @@ import {
   Animated,
   AppState,
   Image,
-  Linking,
   Modal,
   Platform,
   Pressable,
@@ -17,8 +16,10 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { brandConfig } from "@/config/brand";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/context/AuthContext";
 import { useBookings, Booking } from "@/context/BookingContext";
@@ -30,31 +31,21 @@ import { shareBookingInvoice } from "@/utils/bookingInvoicePdf";
 import { buildRepeatBookingParams } from "@/utils/repeatBooking";
 import { apiErrorToMessage } from "@/lib/apiError";
 import { getFastForegroundLocation } from "@/services/location";
+import { getDirections } from "@/services/maps";
+import { openExternalMap } from "@/services/externalMaps";
 
-// ── OSRM road-route helper ─────────────────────────────────────────────────
-async function fetchOsrmRoute(
+// Road routing is resolved through the Athoo API map provider layer.
+async function fetchRoadRoute(
   from: { latitude: number; longitude: number },
-  to: { latitude: number; longitude: number }
+  to: { latitude: number; longitude: number },
 ): Promise<{ coords: Array<{ latitude: number; longitude: number }>; distanceKm: number; etaMin: number } | null> {
-  try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${from.longitude},${from.latitude};${to.longitude},${to.latitude}?geometries=geojson&overview=full`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const route = data?.routes?.[0];
-    if (!route) return null;
-    const coords = (route.geometry?.coordinates as [number, number][]).map(([lng, lat]) => ({
-      latitude: lat,
-      longitude: lng,
-    }));
-    return {
-      coords,
-      distanceKm: route.distance / 1000,
-      etaMin: Math.ceil(route.duration / 60),
-    };
-  } catch {
-    return null;
-  }
+  const result = await getDirections(from.latitude, from.longitude, to.latitude, to.longitude);
+  if (!result.polyline.length) return null;
+  return {
+    coords: result.polyline,
+    distanceKm: result.distanceKm ?? 0,
+    etaMin: result.durationMin ?? 0,
+  };
 }
 
 function formatElapsed(startedAt?: string) {
@@ -68,13 +59,15 @@ function formatElapsed(startedAt?: string) {
   return h > 0 ? `${h}:${mm}:${ss}` : `00:${mm}:${ss}`;
 }
 
-const STATUS_CONFIG = {
-  pending: { label: "Pending", color: "#F59E0B", bg: "#FFFBEB", icon: "clock" },
-  accepted: { label: "Accepted", color: "#3B82F6", bg: "#EFF6FF", icon: "check-circle" },
-  in_progress: { label: "In Progress", color: "#8B5CF6", bg: "#F5F3FF", icon: "tool" },
-  completed: { label: "Completed", color: "#22C55E", bg: "#F0FDF4", icon: "check-square" },
-  cancelled: { label: "Cancelled", color: "#EF4444", bg: "#FEF2F2", icon: "x-circle" },
-} as const;
+function getStatusConfig(theme: AthooTheme) {
+  return {
+    pending: { label: "Pending", color: theme.colors.warning, bg: theme.colors.warningSoft, icon: "clock" },
+    accepted: { label: "Accepted", color: theme.colors.info, bg: theme.colors.infoSoft, icon: "check-circle" },
+    in_progress: { label: "In Progress", color: theme.colors.accent, bg: theme.colors.accentSoft, icon: "tool" },
+    completed: { label: "Completed", color: theme.colors.success, bg: theme.colors.successSoft, icon: "check-square" },
+    cancelled: { label: "Cancelled", color: theme.colors.danger, bg: theme.colors.dangerSoft, icon: "x-circle" },
+  } as const;
+}
 
 function toCoord(value: any) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -148,45 +141,27 @@ function getProviderCoords(booking: any) {
   return null;
 }
 
-function openMapsAt(latitude: number, longitude: number, label?: string) {
-  const encodedLabel = encodeURIComponent(label || `${latitude},${longitude}`);
-  const openStreetMapUrl = `https://www.openstreetmap.org/?mlat=${latitude}&mlon=${longitude}#map=17/${latitude}/${longitude}`;
-  const appleUrl = `http://maps.apple.com/?ll=${latitude},${longitude}&q=${encodedLabel}`;
-  const geoUrl = `geo:${latitude},${longitude}?q=${latitude},${longitude}(${encodedLabel})`;
-
-  if (Platform.OS === "android") {
-    Linking.canOpenURL(geoUrl)
-      .then((ok) => (ok ? Linking.openURL(geoUrl) : Linking.openURL(openStreetMapUrl)))
-      .catch(() => Linking.openURL(openStreetMapUrl));
-    return;
-  }
-
-  if (Platform.OS === "ios") {
-    Linking.canOpenURL(appleUrl)
-      .then((ok) => (ok ? Linking.openURL(appleUrl) : Linking.openURL(openStreetMapUrl)))
-      .catch(() => Linking.openURL(openStreetMapUrl));
-    return;
-  }
-
-  Linking.openURL(openStreetMapUrl).catch(() => {});
+async function openMapsAt(latitude: number, longitude: number, label?: string) {
+  return openExternalMap({ latitude, longitude, label });
 }
 
 // ── Custom map markers ────────────────────────────────────────────────────────
 
 function AthooMarker() {
+  const { theme } = useTheme();
   return (
     <View style={{ alignItems: "center" }}>
       <View style={{
         width: 52, height: 52, borderRadius: 26,
-        backgroundColor: Colors.primary,
+        backgroundColor: theme.colors.primary,
         alignItems: "center", justifyContent: "center",
-        borderWidth: 3, borderColor: "#fff",
-        shadowColor: "#000", shadowOpacity: 0.35, shadowRadius: 8,
+        borderWidth: 3, borderColor: theme.colors.white,
+        shadowColor: theme.colors.shadow, shadowOpacity: 0.35, shadowRadius: 8,
         shadowOffset: { width: 0, height: 3 }, elevation: 10,
         overflow: "hidden",
       }}>
         <Image
-          source={require("@/assets/images/logo.png")}
+          source={brandConfig.assets.mark}
           style={{ width: 38, height: 38 }}
           resizeMode="contain"
         />
@@ -195,35 +170,38 @@ function AthooMarker() {
         width: 0, height: 0,
         borderLeftWidth: 10, borderRightWidth: 10, borderTopWidth: 16,
         borderLeftColor: "transparent", borderRightColor: "transparent",
-        borderTopColor: Colors.primary, marginTop: -3,
+        borderTopColor: theme.colors.primary, marginTop: -3,
       }} />
     </View>
   );
 }
 
 function JobSiteMarker() {
+  const { theme } = useTheme();
   return (
     <View style={{ alignItems: "center" }}>
       <View style={{
         width: 40, height: 40, borderRadius: 20,
-        backgroundColor: Colors.secondary,
+        backgroundColor: theme.colors.secondary,
         alignItems: "center", justifyContent: "center",
-        borderWidth: 3, borderColor: "#fff",
-        shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 6, elevation: 8,
+        borderWidth: 3, borderColor: theme.colors.white,
+        shadowColor: theme.colors.shadow, shadowOpacity: 0.3, shadowRadius: 6, elevation: 8,
       }}>
-        <Icon name="home" size={18} color="#fff" />
+        <Icon name="home" size={18} color={theme.colors.white} />
       </View>
       <View style={{
         width: 0, height: 0,
         borderLeftWidth: 7, borderRightWidth: 7, borderTopWidth: 11,
         borderLeftColor: "transparent", borderRightColor: "transparent",
-        borderTopColor: Colors.secondary, marginTop: -2,
+        borderTopColor: theme.colors.secondary, marginTop: -2,
       }} />
     </View>
   );
 }
 
 export default function BookingDetailScreen() {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
   const { user } = useAuth();
   const { bookings, updateBookingStatus, rateBooking, loadBookings } = useBookings();
@@ -429,7 +407,7 @@ export default function BookingDetailScreen() {
       return;
     }
     let cancelled = false;
-    fetchOsrmRoute(providerCoords, customerCoords).then((result) => {
+    fetchRoadRoute(providerCoords, customerCoords).then((result) => {
       if (cancelled) return;
       if (result) {
         setRouteCoords(result.coords);
@@ -477,7 +455,7 @@ export default function BookingDetailScreen() {
     );
   }
 
-  const status = STATUS_CONFIG[booking.status];
+  const status = getStatusConfig(theme)[booking.status];
   const providerName = booking.providerName || "Provider";
   // For scheduled jobs, only show the map once the provider has started sharing
   // their location (i.e. dbProviderCoords is set). For instant/in-progress
@@ -538,7 +516,7 @@ export default function BookingDetailScreen() {
 
   const handleCall = async () => {
     if (!user) return;
-    startOutgoingCall(booking.providerId, providerName, booking.service, "#1A6EE0").catch(() => {});
+    startOutgoingCall(booking.providerId, providerName, booking.service, theme.colors.primary).catch(() => {});
   };
 
   const showToast = (msg: string) => {
@@ -575,7 +553,7 @@ export default function BookingDetailScreen() {
     <View style={[styles.container, { paddingTop: topPad }]}>
       <View style={styles.header}>
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <Icon name="arrow-left" size={20} color={Colors.text} />
+          <Icon name="arrow-left" size={20} color={theme.colors.text} />
         </Pressable>
         <Text style={styles.title}>Booking Details</Text>
         <Pressable
@@ -585,7 +563,7 @@ export default function BookingDetailScreen() {
           }
           disabled={sharingPdf}
         >
-          <Icon name={sharingPdf ? "loader" : "share-2"} size={18} color={Colors.primary} />
+          <Icon name={sharingPdf ? "loader" : "share-2"} size={18} color={theme.colors.primary} />
         </Pressable>
         <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
           <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
@@ -600,7 +578,7 @@ export default function BookingDetailScreen() {
         <View style={styles.card}>
           <View style={styles.serviceHeader}>
             <View style={styles.serviceIcon}>
-              <Icon name={booking.serviceIcon as any} size={24} color={Colors.primary} />
+              <Icon name={booking.serviceIcon as any} size={24} color={theme.colors.primary} />
             </View>
             <View>
               <Text style={styles.serviceName}>{booking.service}</Text>
@@ -637,17 +615,17 @@ export default function BookingDetailScreen() {
             </View>
             <View style={{ flexDirection: "row", gap: 8 }}>
               <Pressable style={styles.chatBtn} onPress={handleChat}>
-                <Icon name="message-circle" size={18} color={Colors.primary} />
+                <Icon name="message-circle" size={18} color={theme.colors.primary} />
               </Pressable>
               {(booking.status === "accepted" || booking.status === "in_progress") && (
                 <Pressable
                   style={[
                     styles.chatBtn,
-                    { backgroundColor: "#F0FDF4", borderColor: "#22C55E30" },
+                    { backgroundColor: theme.colors.successSoft, borderColor: theme.colors.successSoft },
                   ]}
                   onPress={handleCall}
                 >
-                  <Icon name="phone" size={16} color="#22C55E" />
+                  <Icon name="phone" size={16} color={theme.colors.success} />
                 </Pressable>
               )}
             </View>
@@ -662,7 +640,7 @@ export default function BookingDetailScreen() {
                 <View
                   style={[
                     styles.trackDot,
-                    { backgroundColor: providerCoords ? "#22C55E" : "#F59E0B" },
+                    { backgroundColor: providerCoords ? theme.colors.success : theme.colors.warning },
                   ]}
                 />
                 <Text style={styles.trackBadgeText}>
@@ -676,12 +654,12 @@ export default function BookingDetailScreen() {
             {/* Map legend */}
             <View style={styles.mapLegend}>
               <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: Colors.secondary }]} />
+                <View style={[styles.legendDot, { backgroundColor: theme.colors.secondary }]} />
                 <Text style={styles.legendText}>Job site</Text>
               </View>
               <View style={styles.legendSep} />
               <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: Colors.primary }]} />
+                <View style={[styles.legendDot, { backgroundColor: theme.colors.primary }]} />
                 <Text style={styles.legendText}>Provider</Text>
               </View>
               {realtimeProviderCoords && (
@@ -703,7 +681,7 @@ export default function BookingDetailScreen() {
 
               <View style={styles.trackInfoBox}>
                 <Text style={styles.trackInfoLabel}>Provider</Text>
-                <Text style={[styles.trackInfoValue, isProviderStale && { color: "#F59E0B" }]}>
+                <Text style={[styles.trackInfoValue, isProviderStale && { color: theme.colors.warning }]}>
                   {realtimeProviderCoords
                     ? "● Live"
                     : isProviderStale
@@ -741,7 +719,7 @@ export default function BookingDetailScreen() {
                   )
                 }
               >
-                <Icon name="map-pin" size={15} color={Colors.primary} />
+                <Icon name="map-pin" size={15} color={theme.colors.primary} />
                 <Text style={styles.trackActionText}>Open Address</Text>
               </Pressable>
 
@@ -756,7 +734,7 @@ export default function BookingDetailScreen() {
                     )
                   }
                 >
-                  <Icon name="navigation" size={15} color={Colors.primary} />
+                  <Icon name="navigation" size={15} color={theme.colors.primary} />
                   <Text style={styles.trackActionText}>Open Provider</Text>
                 </Pressable>
               ) : null}
@@ -767,7 +745,7 @@ export default function BookingDetailScreen() {
                   onPress={handleUpdateJobLocation}
                   disabled={isUpdatingJobLocation}
                 >
-                  <Icon name="crosshair" size={15} color={Colors.primary} />
+                  <Icon name="crosshair" size={15} color={theme.colors.primary} />
                   <Text style={styles.trackActionText}>
                     {isUpdatingJobLocation ? "Updating…" : "My Location"}
                   </Text>
@@ -786,7 +764,7 @@ export default function BookingDetailScreen() {
             <View style={styles.trackHeader}>
               <Text style={styles.cardTitle}>Live Tracking</Text>
               <View style={styles.trackBadge}>
-                <View style={[styles.trackDot, { backgroundColor: "#EF4444" }]} />
+                <View style={[styles.trackDot, { backgroundColor: theme.colors.danger }]} />
                 <Text style={styles.trackBadgeText}>Location missing</Text>
               </View>
             </View>
@@ -803,17 +781,17 @@ export default function BookingDetailScreen() {
           <Text style={styles.cardTitle}>Booking Info</Text>
           <View style={styles.infoList}>
             <View style={styles.infoRow}>
-              <Icon name="calendar" size={15} color={Colors.primary} />
+              <Icon name="calendar" size={15} color={theme.colors.primary} />
               <Text style={styles.infoLabel}>Date</Text>
               <Text style={styles.infoVal}>{booking.scheduledDate}</Text>
             </View>
             <View style={styles.infoRow}>
-              <Icon name="clock" size={15} color={Colors.primary} />
+              <Icon name="clock" size={15} color={theme.colors.primary} />
               <Text style={styles.infoLabel}>Time</Text>
               <Text style={styles.infoVal}>{booking.scheduledTime}</Text>
             </View>
             <View style={styles.infoRow}>
-              <Icon name="map-pin" size={15} color={Colors.primary} />
+              <Icon name="map-pin" size={15} color={theme.colors.primary} />
               <Text style={styles.infoLabel}>Address</Text>
               <Text style={styles.infoVal} numberOfLines={2}>
                 {booking.address}
@@ -821,12 +799,12 @@ export default function BookingDetailScreen() {
             </View>
             {booking.price && (
               <View style={styles.infoRow}>
-                <Icon name="dollar-sign" size={15} color={Colors.primary} />
+                <Icon name="dollar-sign" size={15} color={theme.colors.primary} />
                 <Text style={styles.infoLabel}>Price</Text>
                 <Text
                   style={[
                     styles.infoVal,
-                    { color: Colors.primary, fontWeight: "700" },
+                    { color: theme.colors.primary, fontWeight: "700" },
                   ]}
                 >
                   Rs. {booking.price}
@@ -843,7 +821,7 @@ export default function BookingDetailScreen() {
               <View key={i} style={styles.timelineItem}>
                 <View style={styles.timelineLeft}>
                   <View style={[styles.timelineDot, t.done && styles.timelineDotDone]}>
-                    {t.done && <Icon name="check" size={10} color={Colors.white} />}
+                    {t.done && <Icon name="check" size={10} color={theme.colors.white} />}
                   </View>
                   {i < TIMELINE.length - 1 && (
                     <View style={[styles.timelineLine, t.done && styles.timelineLineDone]} />
@@ -860,7 +838,7 @@ export default function BookingDetailScreen() {
         {booking.status === "accepted" && booking.startPin && (
           <View style={styles.pinDisplayCard}>
             <View style={styles.pinDisplayHeader}>
-              <Icon name="shield" size={20} color={Colors.primary} />
+              <Icon name="shield" size={20} color={theme.colors.primary} />
               <Text style={styles.pinDisplayTitle}>Provider Start Code</Text>
             </View>
             <Text style={styles.pinDisplayDesc}>
@@ -886,7 +864,7 @@ export default function BookingDetailScreen() {
               const elapsedHrs = Math.max(0, (Date.now() - new Date(booking.jobStartedAt).getTime()) / 3600000);
               const liveAmt = Math.round(booking.ratePerHour * elapsedHrs);
               return (
-                <Text style={{ color: "#8B5CF6", fontWeight: "700", fontSize: 13, textAlign: "center", marginTop: 4 }}>
+                <Text style={{ color: theme.colors.accent, fontWeight: "700", fontSize: 13, textAlign: "center", marginTop: 4 }}>
                   Live est. amount: Rs. {liveAmt.toLocaleString()} (Rs. {booking.ratePerHour}/hr)
                 </Text>
               );
@@ -898,39 +876,39 @@ export default function BookingDetailScreen() {
           <View
             style={[
               styles.pinDisplayCard,
-              { borderColor: "#22C55E40", backgroundColor: "#F0FDF4" },
+              { borderColor: theme.colors.successSoft, backgroundColor: theme.colors.successSoft },
             ]}
           >
             <View style={styles.pinDisplayHeader}>
-              <Icon name="check-circle" size={20} color="#22C55E" />
-              <Text style={[styles.pinDisplayTitle, { color: "#16A34A" }]}>
+              <Icon name="check-circle" size={20} color={theme.colors.success} />
+              <Text style={[styles.pinDisplayTitle, { color: theme.colors.success }]}>
                 Job Completion Code
               </Text>
             </View>
-            <Text style={[styles.pinDisplayDesc, { color: "#166534" }]}>
+            <Text style={[styles.pinDisplayDesc, { color: theme.colors.success }]}>
               Share this code with your provider to confirm the job is complete:
             </Text>
             <View
               style={[
                 styles.pinValueBox,
-                { backgroundColor: "#DCFCE7", borderColor: "#22C55E40" },
+                { backgroundColor: theme.colors.successSoft, borderColor: theme.colors.successSoft },
               ]}
             >
-              <Text style={[styles.pinValue, { color: "#16A34A" }]}>
+              <Text style={[styles.pinValue, { color: theme.colors.success }]}>
                 {booking.completePin.split("").join("  ")}
               </Text>
             </View>
-            <Text style={[styles.pinHint, { color: "#166534" }]}>
+            <Text style={[styles.pinHint, { color: theme.colors.success }]}>
               Only share after the provider has finished all the work.
             </Text>
           </View>
         )}
 
         {booking.status === "completed" && (
-          <View style={[styles.card, { borderColor: "#22C55E40", borderWidth: 1, backgroundColor: "#F0FDF4" }]}>
+          <View style={[styles.card, { borderColor: theme.colors.successSoft, borderWidth: 1, backgroundColor: theme.colors.successSoft }]}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 4 }}>
-              <Icon name="check-circle" size={22} color="#22C55E" />
-              <Text style={{ fontSize: 16, fontWeight: "800", color: "#16A34A" }}>Job Completed</Text>
+              <Icon name="check-circle" size={22} color={theme.colors.success} />
+              <Text style={{ fontSize: 16, fontWeight: "800", color: theme.colors.success }}>Job Completed</Text>
             </View>
             <View style={styles.invoiceRow}>
               <Text style={styles.invoiceLabel}>Service</Text>
@@ -956,15 +934,15 @@ export default function BookingDetailScreen() {
               </View>
             )}
             <View style={[styles.invoiceRow, { marginTop: 4 }]}>
-              <Text style={[styles.invoiceLabel, { fontWeight: "800", color: Colors.text, fontSize: 15 }]}>Total</Text>
-              <Text style={[styles.invoiceValue, { fontWeight: "900", color: Colors.primary, fontSize: 16 }]}>
+              <Text style={[styles.invoiceLabel, { fontWeight: "800", color: theme.colors.text, fontSize: 15 }]}>Total</Text>
+              <Text style={[styles.invoiceValue, { fontWeight: "900", color: theme.colors.primary, fontSize: 16 }]}>
                 Rs. {((booking.price || 0) + ((booking as any).visitCharge || 0)).toLocaleString()}
               </Text>
             </View>
             {booking.paymentStatus === "paid" || booking.paymentStatus === "received" ? (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8, backgroundColor: "#DCFCE7", borderRadius: 10, padding: 10 }}>
-                <Icon name="check-circle" size={16} color="#16A34A" />
-                <Text style={{ fontSize: 13, fontWeight: "700", color: "#16A34A" }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8, backgroundColor: theme.colors.successSoft, borderRadius: 10, padding: 10 }}>
+                <Icon name="check-circle" size={16} color={theme.colors.success} />
+                <Text style={{ fontSize: 13, fontWeight: "700", color: theme.colors.success }}>
                   {booking.paymentStatus === "received" ? "Cash Paid & Confirmed by Provider" : "Cash Payment Confirmed"}
                 </Text>
               </View>
@@ -989,7 +967,7 @@ export default function BookingDetailScreen() {
                   <Icon
                     name="star"
                     size={32}
-                    color={i <= rating ? Colors.accent : Colors.border}
+                    color={i <= rating ? theme.colors.accent : theme.colors.border}
                   />
                 </Pressable>
               ))}
@@ -1001,7 +979,7 @@ export default function BookingDetailScreen() {
               onChangeText={setReview}
               multiline
               numberOfLines={3}
-              placeholderTextColor={Colors.textMuted}
+              placeholderTextColor={theme.colors.textMuted}
             />
             <Button
               title="Submit Review"
@@ -1031,7 +1009,7 @@ export default function BookingDetailScreen() {
                   key={i}
                   name="star"
                   size={20}
-                  color={i <= booking.rating! ? Colors.accent : Colors.border}
+                  color={i <= booking.rating! ? theme.colors.accent : theme.colors.border}
                 />
               ))}
             </View>
@@ -1050,7 +1028,7 @@ export default function BookingDetailScreen() {
 
         {booking.status !== "pending" && (
           <Pressable style={styles.reportBtn} onPress={() => setShowReportModal(true)}>
-            <Icon name="flag" size={15} color={Colors.error} />
+            <Icon name="flag" size={15} color={theme.colors.danger} />
             <Text style={styles.reportBtnText}>Report an Issue</Text>
           </Pressable>
         )}
@@ -1063,24 +1041,24 @@ export default function BookingDetailScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Cancel Booking</Text>
               <Pressable onPress={() => setShowCancelModal(false)}>
-                <Icon name="x" size={20} color={Colors.textSecondary} />
+                <Icon name="x" size={20} color={theme.colors.textSecondary} />
               </Pressable>
             </View>
-            <Text style={{ fontSize: 14, color: Colors.textSecondary, lineHeight: 20 }}>
+            <Text style={{ fontSize: 14, color: theme.colors.textSecondary, lineHeight: 20 }}>
               Are you sure you want to cancel this booking? This action cannot be undone.
             </Text>
             <View style={{ flexDirection: "row", gap: 10 }}>
               <Pressable
-                style={{ flex: 1, padding: 13, borderRadius: 12, backgroundColor: Colors.surface, alignItems: "center" }}
+                style={{ flex: 1, padding: 13, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt, alignItems: "center" }}
                 onPress={() => setShowCancelModal(false)}
               >
-                <Text style={{ fontWeight: "700", color: Colors.text, fontSize: 14 }}>Keep Booking</Text>
+                <Text style={{ fontWeight: "700", color: theme.colors.text, fontSize: 14 }}>Keep Booking</Text>
               </Pressable>
               <Pressable
-                style={{ flex: 1, padding: 13, borderRadius: 12, backgroundColor: Colors.error, alignItems: "center" }}
+                style={{ flex: 1, padding: 13, borderRadius: 12, backgroundColor: theme.colors.danger, alignItems: "center" }}
                 onPress={confirmCancel}
               >
-                <Text style={{ fontWeight: "700", color: "#fff", fontSize: 14 }}>Yes, Cancel</Text>
+                <Text style={{ fontWeight: "700", color: theme.colors.onBrand, fontSize: 14 }}>Yes, Cancel</Text>
               </Pressable>
             </View>
           </View>
@@ -1094,7 +1072,7 @@ export default function BookingDetailScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Report an Issue</Text>
               <Pressable onPress={() => setShowReportModal(false)}>
-                <Icon name="x" size={20} color={Colors.textSecondary} />
+                <Icon name="x" size={20} color={theme.colors.textSecondary} />
               </Pressable>
             </View>
             <Text style={styles.modalLabel}>Category</Text>
@@ -1111,7 +1089,7 @@ export default function BookingDetailScreen() {
             <TextInput
               style={styles.reportInput}
               placeholder="Describe the issue in detail..."
-              placeholderTextColor={Colors.textMuted}
+              placeholderTextColor={theme.colors.textMuted}
               value={reportDescription}
               onChangeText={setReportDescription}
               multiline
@@ -1130,7 +1108,7 @@ export default function BookingDetailScreen() {
       {/* Rating thanks banner */}
       {showRateThanks && (
         <View style={styles.toastBanner}>
-          <Icon name="check-circle" size={16} color="#22C55E" />
+          <Icon name="check-circle" size={16} color={theme.colors.success} />
           <Text style={styles.toastBannerText}>Thank you! Your review has been submitted.</Text>
         </View>
       )}
@@ -1138,7 +1116,7 @@ export default function BookingDetailScreen() {
       {/* General toast */}
       {toastMsg && (
         <View style={styles.toastBanner}>
-          <Icon name="info" size={16} color={Colors.primary} />
+          <Icon name="info" size={16} color={theme.colors.primary} />
           <Text style={styles.toastBannerText}>{toastMsg}</Text>
         </View>
       )}
@@ -1146,8 +1124,8 @@ export default function BookingDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
   notFound: { flex: 1, alignItems: "center", justifyContent: "center" },
   header: {
     flexDirection: "row",
@@ -1156,28 +1134,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 16,
-    backgroundColor: Colors.white,
+    backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: theme.colors.border,
   },
   backBtn: {
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: Colors.background,
+    backgroundColor: theme.colors.background,
     alignItems: "center",
     justifyContent: "center",
   },
-  title: { fontSize: 18, fontWeight: "800", color: Colors.text, flex: 1 },
+  title: { fontSize: 18, fontWeight: "800", color: theme.colors.text, flex: 1 },
   statusBadge: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20 },
   statusText: { fontSize: 11, fontWeight: "700" },
   scroll: { flex: 1 },
   content: { padding: 20, gap: 16, paddingBottom: 60 },
   card: {
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderRadius: 18,
     padding: 16,
-    shadowColor: Colors.shadow,
+    shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 1,
     shadowRadius: 8,
@@ -1189,36 +1167,36 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 14,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
   },
-  serviceName: { fontSize: 18, fontWeight: "800", color: Colors.text },
-  bookingId: { fontSize: 12, color: Colors.textSecondary },
-  cardTitle: { fontSize: 14, fontWeight: "700", color: Colors.text },
+  serviceName: { fontSize: 18, fontWeight: "800", color: theme.colors.text },
+  bookingId: { fontSize: 12, color: theme.colors.textSecondary },
+  cardTitle: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
   providerRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   provAvatar: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
-  provAvatarTxt: { fontSize: 14, fontWeight: "700", color: Colors.primary },
-  provName: { fontSize: 14, fontWeight: "700", color: Colors.text },
-  provPhone: { fontSize: 12, color: Colors.textSecondary },
+  provAvatarTxt: { fontSize: 14, fontWeight: "700", color: theme.colors.primary },
+  provName: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
+  provPhone: { fontSize: 12, color: theme.colors.textSecondary },
   chatBtn: {
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: Colors.primary + "30",
+    borderColor: theme.colors.primary + "30",
   },
   trackHeader: {
     flexDirection: "row",
@@ -1229,7 +1207,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 16,
     paddingHorizontal: 10,
     paddingVertical: 5,
@@ -1238,12 +1216,12 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#22C55E",
+    backgroundColor: theme.colors.success,
   },
   trackBadgeText: {
     fontSize: 11,
     fontWeight: "700",
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
   trackingMap: {
     width: "100%",
@@ -1260,16 +1238,16 @@ const styles = StyleSheet.create({
   },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
   legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendLiveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#22C55E" },
-  legendSep: { width: 1, height: 10, backgroundColor: Colors.border, marginHorizontal: 4 },
-  legendText: { fontSize: 11, color: Colors.textSecondary, fontWeight: "600" },
+  legendLiveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.success },
+  legendSep: { width: 1, height: 10, backgroundColor: theme.colors.border, marginHorizontal: 4 },
+  legendText: { fontSize: 11, color: theme.colors.textSecondary, fontWeight: "600" },
   trackInfoRow: {
     flexDirection: "row",
     gap: 8,
   },
   trackInfoBox: {
     flex: 1,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 12,
     padding: 10,
     alignItems: "center",
@@ -1278,12 +1256,12 @@ const styles = StyleSheet.create({
   trackInfoLabel: {
     fontSize: 10,
     fontWeight: "700",
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
   trackInfoValue: {
     fontSize: 12,
     fontWeight: "700",
-    color: Colors.text,
+    color: theme.colors.text,
     textAlign: "center",
   },
   trackActions: {
@@ -1292,10 +1270,10 @@ const styles = StyleSheet.create({
   },
   trackActionBtn: {
     flex: 1,
-    backgroundColor: Colors.primary + "10",
+    backgroundColor: theme.colors.primary + "10",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.primary + "30",
+    borderColor: theme.colors.primary + "30",
     paddingVertical: 12,
     alignItems: "center",
     justifyContent: "center",
@@ -1305,17 +1283,17 @@ const styles = StyleSheet.create({
   trackActionText: {
     fontSize: 12,
     fontWeight: "700",
-    color: Colors.primary,
+    color: theme.colors.primary,
   },
   trackHint: {
     fontSize: 11,
     lineHeight: 17,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
   infoList: { gap: 10 },
   infoRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
-  infoLabel: { fontSize: 13, color: Colors.textSecondary, width: 60 },
-  infoVal: { fontSize: 13, fontWeight: "600", color: Colors.text, flex: 1 },
+  infoLabel: { fontSize: 13, color: theme.colors.textSecondary, width: 60 },
+  infoVal: { fontSize: 13, fontWeight: "600", color: theme.colors.text, flex: 1 },
   timeline: { gap: 0 },
   timelineItem: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
   timelineLeft: { alignItems: "center", width: 20 },
@@ -1324,72 +1302,72 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: Colors.border,
-    backgroundColor: Colors.white,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
     alignItems: "center",
     justifyContent: "center",
   },
-  timelineDotDone: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  timelineLine: { width: 2, height: 28, backgroundColor: Colors.border },
-  timelineLineDone: { backgroundColor: Colors.primary },
+  timelineDotDone: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+  timelineLine: { width: 2, height: 28, backgroundColor: theme.colors.border },
+  timelineLineDone: { backgroundColor: theme.colors.primary },
   timelineLabel: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     paddingVertical: 2,
     fontWeight: "500",
   },
-  timelineLabelDone: { color: Colors.text, fontWeight: "700" },
+  timelineLabelDone: { color: theme.colors.text, fontWeight: "700" },
   starsRow: { flexDirection: "row", gap: 8 },
   reviewInput: {
-    backgroundColor: Colors.background,
+    backgroundColor: theme.colors.background,
     borderRadius: 12,
     padding: 12,
     fontSize: 14,
-    color: Colors.text,
+    color: theme.colors.text,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
     textAlignVertical: "top",
     minHeight: 80,
   },
-  existingReview: { fontSize: 14, color: Colors.textSecondary, lineHeight: 20 },
+  existingReview: { fontSize: 14, color: theme.colors.textSecondary, lineHeight: 20 },
   pinDisplayCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: theme.colors.surface,
     borderRadius: 18,
     padding: 18,
     gap: 12,
     borderWidth: 2,
-    borderColor: Colors.primary + "40",
-    shadowColor: Colors.primary,
+    borderColor: theme.colors.primary + "40",
+    shadowColor: theme.colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
     shadowRadius: 12,
     elevation: 4,
   },
   pinDisplayHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
-  pinDisplayTitle: { fontSize: 16, fontWeight: "800", color: Colors.primary },
-  pinDisplayDesc: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20 },
+  pinDisplayTitle: { fontSize: 16, fontWeight: "800", color: theme.colors.primary },
+  pinDisplayDesc: { fontSize: 13, color: theme.colors.textSecondary, lineHeight: 20 },
   pinValueBox: {
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 16,
     paddingVertical: 20,
     paddingHorizontal: 16,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: Colors.primary + "30",
+    borderColor: theme.colors.primary + "30",
   },
-  pinValue: { fontSize: 38, fontWeight: "900", color: Colors.text, letterSpacing: 8 },
+  pinValue: { fontSize: 38, fontWeight: "900", color: theme.colors.text, letterSpacing: 8 },
   pinHint: {
     fontSize: 11,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     textAlign: "center",
     lineHeight: 16,
   },
   timerCard: {
-    backgroundColor: "#1e1b4b",
+    backgroundColor: theme.dark ? theme.colors.accentSoft : theme.colors.primaryPressed,
     borderRadius: 18,
     padding: 20,
     gap: 10,
-    shadowColor: "#8B5CF6",
+    shadowColor: theme.colors.accent,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 12,
@@ -1400,7 +1378,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#EF4444",
+    backgroundColor: theme.colors.danger,
   },
   timerLiveText: {
     fontSize: 11,
@@ -1411,7 +1389,7 @@ const styles = StyleSheet.create({
   timerDisplay: {
     fontSize: 48,
     fontWeight: "800",
-    color: "#fff",
+    color: theme.colors.onBrand,
     textAlign: "center",
     letterSpacing: 4,
   },
@@ -1423,39 +1401,39 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.error + "40",
-    backgroundColor: Colors.error + "08",
+    borderColor: theme.colors.danger + "40",
+    backgroundColor: theme.colors.danger + "08",
   },
-  reportBtnText: { fontSize: 13, fontWeight: "600", color: Colors.error },
+  reportBtnText: { fontSize: 13, fontWeight: "600", color: theme.colors.danger },
 
   toastBanner: {
     position: "absolute",
     bottom: 28,
     left: 20,
     right: 20,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 14,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    shadowColor: "#000",
+    shadowColor: theme.colors.text,
     shadowOpacity: 0.18,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
     elevation: 10,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
-  toastBannerText: { fontSize: 13, color: Colors.text, fontWeight: "600", flex: 1 },
+  toastBannerText: { fontSize: 13, color: theme.colors.text, fontWeight: "600", flex: 1 },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.55)",
     justifyContent: "flex-end",
   },
   modalCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: theme.colors.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
@@ -1463,28 +1441,28 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
-  modalTitle: { fontSize: 17, fontWeight: "800", color: Colors.text },
-  modalLabel: { fontSize: 13, fontWeight: "700", color: Colors.textSecondary, marginBottom: 4 },
+  modalTitle: { fontSize: 17, fontWeight: "800", color: theme.colors.text },
+  modalLabel: { fontSize: 13, fontWeight: "700", color: theme.colors.textSecondary, marginBottom: 4 },
   catOption: {
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surface,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceAlt,
     marginBottom: 4,
   },
-  catOptionSelected: { borderColor: Colors.primary, backgroundColor: Colors.primary + "10" },
-  catOptionText: { fontSize: 13, color: Colors.text },
-  catOptionTextSelected: { color: Colors.primary, fontWeight: "700" },
+  catOptionSelected: { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary + "10" },
+  catOptionText: { fontSize: 13, color: theme.colors.text },
+  catOptionTextSelected: { color: theme.colors.primary, fontWeight: "700" },
   reportInput: {
-    backgroundColor: Colors.background,
+    backgroundColor: theme.colors.background,
     borderRadius: 12,
     padding: 12,
     fontSize: 14,
-    color: Colors.text,
+    color: theme.colors.text,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
     textAlignVertical: "top",
     minHeight: 90,
     marginBottom: 8,
@@ -1497,19 +1475,19 @@ const styles = StyleSheet.create({
   },
   invoiceLabel: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     flex: 1,
   },
   invoiceValue: {
     fontSize: 13,
     fontWeight: "600",
-    color: Colors.text,
+    color: theme.colors.text,
     textAlign: "right",
     flexShrink: 1,
   },
   invoiceDivider: {
     height: 1,
-    backgroundColor: Colors.border,
+    backgroundColor: theme.colors.border,
     marginVertical: 4,
   },
 });

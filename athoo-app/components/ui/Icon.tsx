@@ -1,3 +1,4 @@
+import { useTheme } from "@/context/ThemeContext";
 import {
   AlertCircle,
   AlertTriangle,
@@ -292,16 +293,18 @@ interface IconProps {
 export function Icon({
   name,
   size = 24,
-  color = "#000000",
+  color,
   strokeWidth = 2,
   style,
 }: IconProps) {
+  const { theme } = useTheme();
   const Comp = ICON_MAP[name] || inferAthooIcon(name) || Settings;
+  const resolvedColor = color || theme.colors.text;
 
   return (
     <Comp
       size={size}
-      color={color}
+      color={resolvedColor}
       strokeWidth={strokeWidth}
       style={style}
     />

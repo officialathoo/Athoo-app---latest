@@ -126,6 +126,8 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       body: `Customer requested Rs. ${row.amountRequested} refund on ${booking.service}: ${reason.slice(0, 80)}${reason.length > 80 ? "…" : ""}`,
       type: "system",
       data: { refundId: row.id, bookingId },
+    
+      email: { category: "transactional" },
     }).catch(() => undefined);
 
     res.json({ refund: row, duplicate: false });
@@ -242,6 +244,8 @@ refundsAdminRouter.patch("/:id", requireAuth, requireAdmin, requirePermission("f
           : `Your refund was declined: ${note}`,
       type: "system",
       data: { refundId: id, status },
+    
+      email: { category: "transactional" },
     }).catch(() => undefined);
     emitToUser(row.customerId, "notification:new", { refundId: id, status });
     emitToUser(row.providerId, "notification:new", { refundId: id, status });

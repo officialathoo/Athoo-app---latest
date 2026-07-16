@@ -572,6 +572,8 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       type: "booking",
       link: `/jobs/${createdBooking.id}`,
       data: { bookingId: createdBooking.id, customerId: userId },
+    
+      email: { category: "booking" },
     }).catch(() => undefined);
 
     res.json({ booking: sanitizeBookingForViewer(createdBooking as any, role, userId), duplicate: false });
@@ -709,6 +711,8 @@ router.patch("/:id/status", requireAuth, async (req: AuthRequest, res: Response)
           type: "booking",
           link: `/bookings/${updated.id}`,
           data: { bookingId: updated.id },
+        
+          email: { category: "booking" },
         }).catch(() => undefined);
       } else if (status === "cancelled") {
         const recipientId =
@@ -721,6 +725,8 @@ router.patch("/:id/status", requireAuth, async (req: AuthRequest, res: Response)
           type: "booking",
           link: `/bookings/${updated.id}`,
           data: { bookingId: updated.id },
+        
+          email: { category: "booking" },
         }).catch(() => undefined);
       }
     }
@@ -894,6 +900,8 @@ router.post("/:id/arrived", requireAuth, async (req: AuthRequest, res: Response)
       type: "booking",
       link: `/bookings/${updated.id}`,
       data: { bookingId: updated.id },
+    
+      email: { category: "booking" },
     }).catch(() => undefined);
 
     res.json({
@@ -1014,6 +1022,8 @@ router.post("/:id/verify-start-pin", requireAuth, async (req: AuthRequest, res: 
         type: "booking",
         link: `/bookings/${updated.id}`,
         data: { bookingId: updated.id },
+      
+        email: { category: "booking" },
       }).catch(() => undefined);
     }
 
@@ -1129,6 +1139,8 @@ router.post("/:id/verify-complete-pin", requireAuth, async (req: AuthRequest, re
         type: "booking",
         link: `/bookings/${updated.id}`,
         data: { bookingId: updated.id },
+      
+        email: { category: "booking" },
       }).catch(() => undefined);
     }
 
@@ -1178,6 +1190,8 @@ router.post("/:id/mark-paid", requireAuth, async (req: AuthRequest, res: Respons
         type: "booking",
         link: `/bookings/${updated.id}`,
         data: { bookingId: updated.id },
+      
+        email: { category: "booking" },
       }).catch(() => undefined);
       broadcastBookingUpdate(updated, "booking:updated");
     }
@@ -1227,6 +1241,8 @@ router.post("/:id/mark-received", requireAuth, async (req: AuthRequest, res: Res
         type: "booking",
         link: `/bookings/${updated.id}`,
         data: { bookingId: updated.id },
+      
+        email: { category: "booking" },
       }).catch(() => undefined);
       broadcastBookingUpdate(updated, "booking:updated");
     }
@@ -1340,6 +1356,8 @@ router.post("/:id/counter", requireAuth, async (req: AuthRequest, res: Response)
           type: "booking",
           link: `/bookings/${updated.id}`,
           data: { bookingId: updated.id },
+        
+          email: { category: "booking" },
         }).catch(() => undefined);
       }
       res.json({
@@ -1383,6 +1401,8 @@ router.post("/:id/counter", requireAuth, async (req: AuthRequest, res: Response)
       body: `${provider.name} proposed Rs. ${amount.toLocaleString()} for ${booking.service}.`,
       type: "booking",
       data: { bookingId: booking.id },
+    
+      email: { category: "booking" },
     });
     res.status(201).json({ negotiation });
   } catch (e) {

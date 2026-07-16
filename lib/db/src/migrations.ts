@@ -5,4 +5,4 @@
  * operational integrity tooling cannot drift independently.
  */
 export const LATEST_DATABASE_MIGRATION =
-  "20260714_service_areas_pakistan_location_system.sql" as const;
+  "20260715_portable_email_delivery_verification.sql" as const;

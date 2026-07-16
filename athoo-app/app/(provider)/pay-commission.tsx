@@ -50,8 +50,8 @@ interface SubmittedPayment {
 function statusColor(s: string, theme: AthooTheme) {
   if (s === "approved") return theme.colors.success;
   if (s === "rejected") return theme.colors.danger;
-  if (s === "in_process") return "#3B82F6";
-  if (s === "submitted_for_approval") return "#6366F1";
+  if (s === "in_process") return theme.colors.info;
+  if (s === "submitted_for_approval") return theme.colors.accent;
   return theme.colors.warning;
 }
 
@@ -201,7 +201,7 @@ export default function PayCommissionScreen() {
         {/* Header */}
         <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.header}>
           <Pressable style={styles.backBtn} onPress={() => router.back()} accessibilityRole="button" accessibilityLabel={tr("Back")}>
-            <Icon name={isUrdu ? "arrow-right" : "arrow-left"} size={20} color="#fff" />
+            <Icon name={isUrdu ? "arrow-right" : "arrow-left"} size={20} color={theme.colors.onBrand} />
           </Pressable>
           <Text style={styles.headerTitle}>{tr("Pay Commission Dues")}</Text>
 
@@ -219,7 +219,7 @@ export default function PayCommissionScreen() {
               </View>
               <View style={styles.duesDivider} />
               <View style={styles.duesStat}>
-                <Text style={[styles.duesVal, { color: pendingDues > commissionLimit * 0.8 ? "#FDE68A" : "#86efac" }]}>
+                <Text style={[styles.duesVal, { color: pendingDues > commissionLimit * 0.8 ? theme.colors.warning : theme.colors.success }]}>
                   {Math.round(duesProgress * 100)}%
                 </Text>
                 <Text style={styles.duesLbl}>{tr("Used")}</Text>
@@ -228,7 +228,7 @@ export default function PayCommissionScreen() {
             <View style={styles.progressBg}>
               <View style={[styles.progressFill, {
                 width: `${Math.round(duesProgress * 100)}%`,
-                backgroundColor: duesProgress > 0.8 ? "#EF4444" : "#86efac",
+                backgroundColor: duesProgress > 0.8 ? theme.colors.danger : theme.colors.success,
               }]} />
             </View>
           </View>
@@ -387,9 +387,9 @@ export default function PayCommissionScreen() {
                 disabled={submitting || !amount || !reference || !selectedAccount}
               >
                 {submitting ? (
-                  <Icon name="loader" size={18} color="#fff" />
+                  <Icon name="loader" size={18} color={theme.colors.onBrand} />
                 ) : (
-                  <Icon name="send" size={18} color="#fff" />
+                  <Icon name="send" size={18} color={theme.colors.onBrand} />
                 )}
                 <Text style={styles.submitBtnText}>
                   {submitting ? tr("Submitting…") : tr("Submit Payment for Review")}
@@ -446,7 +446,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     backgroundColor: "rgba(255,255,255,0.2)",
     alignItems: "center", justifyContent: "center", marginBottom: 10,
   },
-  headerTitle: { fontSize: 20, fontWeight: "800", color: "#fff", marginBottom: 16 },
+  headerTitle: { fontSize: 20, fontWeight: "800", color: theme.colors.onBrand, marginBottom: 16 },
   duesSummary: {
     backgroundColor: "rgba(255,255,255,0.15)",
     borderRadius: 16, padding: 14,
@@ -455,7 +455,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
   },
   duesRow: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center" },
   duesStat: { flex: 1, alignItems: "center", gap: 2 },
-  duesVal: { fontSize: 15, fontWeight: "800", color: "#fff" },
+  duesVal: { fontSize: 15, fontWeight: "800", color: theme.colors.onBrand },
   duesLbl: { fontSize: 10, color: "rgba(255,255,255,0.7)", fontWeight: "600" },
   duesDivider: { width: 1, height: 32, backgroundColor: "rgba(255,255,255,0.25)" },
   progressBg: { height: 6, backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 3, overflow: "hidden" },
@@ -486,7 +486,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     backgroundColor: theme.colors.warning + "15", borderRadius: 12, padding: 12,
     borderWidth: 1, borderColor: theme.colors.warning + "40",
   },
-  noAccountsText: { flex: 1, fontSize: 13, color: "#92400E", lineHeight: 18 },
+  noAccountsText: { flex: 1, fontSize: 13, color: theme.colors.warning, lineHeight: 18 },
 
   accountCard: {
     backgroundColor: theme.colors.surface, borderRadius: 16, padding: 14,
@@ -550,7 +550,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     paddingVertical: 15, paddingHorizontal: 20, marginTop: 4,
   },
   submitBtnDisabled: { opacity: 0.5 },
-  submitBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
+  submitBtnText: { fontSize: 15, fontWeight: "700", color: theme.colors.onBrand },
 
   historyCard: {
     backgroundColor: theme.colors.surface, borderRadius: 14, padding: 14,

@@ -1,4 +1,5 @@
 import { Icon } from "@/components/ui/Icon";
+import { brandConfig } from "@/config/brand";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -27,7 +28,7 @@ type LoginTab = "otp" | "password";
 
 export default function LoginScreen() {
   const { role } = useLocalSearchParams<{ role: UserRole }>();
-  const { sendOtp, verifyOtpAndLogin, loginWithPassword, promptBiometricSetup, completeBiometricLogin } = useAuth();
+  const { sendOtp, verifyOtpAndLogin, sendEmailOtp, verifyEmailOtpAndLogin, loginWithPassword, promptBiometricSetup, completeBiometricLogin } = useAuth();
   const { theme } = useTheme();
   const { translate: tr, textAlign, writingDirection, direction } = useLang();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -41,10 +42,15 @@ export default function LoginScreen() {
   const [tab, setTab] = useState<LoginTab>("otp");
   const [rememberMe, setRememberMe] = useState(true);
 
+  const [otpChannel, setOtpChannel] = useState<"phone" | "email">("phone");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [otpStep, setOtpStep] = useState<"phone" | "otp">("phone");
   const [otpHint, setOtpHint] = useState("");
+  const [otpDeliveryMessage, setOtpDeliveryMessage] = useState("");
+  const [otpExpiresIn, setOtpExpiresIn] = useState(0);
+  const [otpResendIn, setOtpResendIn] = useState(0);
 
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -53,6 +59,15 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricBtnLabel, setBiometricBtnLabel] = useState(() => tr("Sign in with Biometrics"));
+
+  useEffect(() => {
+    if (otpStep !== "otp") return;
+    const timer = setInterval(() => {
+      setOtpExpiresIn((value) => (value > 0 ? value - 1 : 0));
+      setOtpResendIn((value) => (value > 0 ? value - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [otpStep]);
 
   useEffect(() => {
     const checkBiometric = async () => {
@@ -68,15 +83,22 @@ export default function LoginScreen() {
   }, [tr]);
 
   const handleSendOtp = async () => {
-    const cleaned = phone.trim().replace(/\D/g, "");
-    if (cleaned.length < 10) {
-      Alert.alert(tr("Invalid Phone"), tr("Please enter a valid phone number (min 10 digits)."));
+    if (otpChannel === "phone") {
+      const cleaned = phone.trim().replace(/\D/g, "");
+      if (cleaned.length < 10) {
+        Alert.alert(tr("Invalid Phone"), tr("Please enter a valid phone number (min 10 digits)."));
+        return;
+      }
+    } else if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      Alert.alert(tr("Invalid Email"), tr("Please enter a valid verified email address."));
       return;
     }
 
     setLoading(true);
-    phoneRef.current = phone.trim();
-    const res = await sendOtp(phone.trim());
+    const roleValue = isProvider ? "provider" : "customer";
+    const res = otpChannel === "phone"
+      ? await sendOtp(phone.trim(), "login", roleValue)
+      : await sendEmailOtp(email.trim().toLowerCase(), roleValue);
     setLoading(false);
 
     if (!res.success || res.error) {
@@ -84,19 +106,31 @@ export default function LoginScreen() {
       return;
     }
 
+    if (otpChannel === "phone") phoneRef.current = phone.trim();
     setOtpHint(__DEV__ ? (res.code || "") : "");
+    setOtpDeliveryMessage(res.message || tr("Verification code sent."));
+    setOtpExpiresIn(res.expiresInSeconds || 600);
+    setOtpResendIn(res.resendAfterSeconds || 45);
     setOtpStep("otp");
     if (__DEV__ && res.code) Alert.alert(tr("OTP Code"), tr("Your OTP: {{code}}\n\nEnter this code below to sign in.", { code: res.code }));
   };
 
   const handleVerifyOtp = async () => {
-    if (!otp || otp.length < 4) {
-      Alert.alert(tr("Invalid OTP"), tr("Please enter the 4-digit OTP."));
+    if (otpExpiresIn === 0) {
+      Alert.alert(tr("Code Expired"), tr("Code expired. Request a new OTP."));
+      return;
+    }
+    const expectedLength = otpChannel === "email" ? 6 : 4;
+    if (!otp || otp.length !== expectedLength) {
+      Alert.alert(tr("Invalid OTP"), tr(`Please enter the ${expectedLength}-digit OTP.`));
       return;
     }
 
     setLoading(true);
-    const res = await verifyOtpAndLogin(phone.trim(), otp.trim(), rememberMe);
+    const roleValue = isProvider ? "provider" : "customer";
+    const res = otpChannel === "phone"
+      ? await verifyOtpAndLogin(phone.trim(), otp.trim(), rememberMe, "login", roleValue)
+      : await verifyEmailOtpAndLogin(email.trim().toLowerCase(), otp.trim(), rememberMe, roleValue);
     setLoading(false);
 
     if (!res.success) {
@@ -104,25 +138,11 @@ export default function LoginScreen() {
       return;
     }
 
-    if (res.isNewUser) {
-      if (isProvider) {
-        router.replace({
-          pathname: "/auth/provider-register",
-          params: { phone: phone.trim(), preVerified: "true" },
-        });
-      } else {
-        router.replace({
-          pathname: "/auth/register",
-          params: { role: "customer", phone: phone.trim() },
-        });
-      }
-    } else {
-      const loggedInRole = res.user?.role === "provider" ? "provider" : "customer";
-      await promptBiometricSetup(phoneRef.current, loggedInRole);
-      router.replace(
-        loggedInRole === "provider" ? "/(provider)/(tabs)/dashboard" : "/(customer)/(tabs)/home"
-      );
-    }
+    const loggedInRole = res.user?.role === "provider" ? "provider" : "customer";
+    if (otpChannel === "phone") await promptBiometricSetup(phoneRef.current, loggedInRole);
+    router.replace(
+      loggedInRole === "provider" ? "/(provider)/(tabs)/dashboard" : "/(customer)/(tabs)/home"
+    );
   };
 
   const handlePasswordLogin = async () => {
@@ -137,7 +157,7 @@ export default function LoginScreen() {
     }
 
     setLoading(true);
-    const res = await loginWithPassword(identifier, password, rememberMe);
+    const res = await loginWithPassword(identifier, password, isProvider ? "provider" : "customer", rememberMe);
     setLoading(false);
 
     if (!res.success) {
@@ -197,7 +217,7 @@ export default function LoginScreen() {
 
           <View style={[styles.logoRow, localizedRow]}>
             <Image
-              source={require("../../assets/images/logo_transparent.png")}
+              source={brandConfig.assets.mark}
               style={{ width: 70, height: 50 }}
               resizeMode="contain"
             />
@@ -269,24 +289,49 @@ export default function LoginScreen() {
 
           {tab === "otp" && (
             <View style={styles.form}>
+              <View style={[styles.otpChannelTabs, localizedRow]}>
+                <Pressable
+                  style={[styles.otpChannelTab, otpChannel === "phone" && styles.otpChannelTabActive]}
+                  onPress={() => { setOtpChannel("phone"); setOtpStep("phone"); setOtp(""); }}
+                >
+                  <Icon name="phone" size={14} color={otpChannel === "phone" ? theme.colors.primary : theme.colors.textSecondary} />
+                  <Text style={[styles.otpChannelText, otpChannel === "phone" && styles.otpChannelTextActive]}>{tr("Mobile OTP")}</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.otpChannelTab, otpChannel === "email" && styles.otpChannelTabActive]}
+                  onPress={() => { setOtpChannel("email"); setOtpStep("phone"); setOtp(""); }}
+                >
+                  <Icon name="mail" size={14} color={otpChannel === "email" ? theme.colors.primary : theme.colors.textSecondary} />
+                  <Text style={[styles.otpChannelText, otpChannel === "email" && styles.otpChannelTextActive]}>{tr("Email OTP")}</Text>
+                </Pressable>
+              </View>
               {otpStep === "phone" ? (
                 <>
                   <View style={styles.inputGroup}>
-                    <Text style={[styles.label, localizedText]}>{tr("Phone Number")}</Text>
+                    <Text style={[styles.label, localizedText]}>{tr(otpChannel === "phone" ? "Phone Number" : "Verified Email Address")}</Text>
                     <View style={[styles.inputWrapper, localizedRow]}>
-                      <View style={styles.countryCode}>
-                        <Text style={styles.countryCodeText}>🇵🇰 +92</Text>
-                      </View>
+                      {otpChannel === "phone" ? (
+                        <View style={styles.countryCode}>
+                          <Text style={styles.countryCodeText}>🇵🇰 +92</Text>
+                        </View>
+                      ) : (
+                        <Icon name="mail" size={18} color={theme.colors.textMuted} />
+                      )}
                       <TextInput
                         style={[styles.input, localizedText, { paddingHorizontal: 8 }]}
-                        value={phone}
-                        onChangeText={setPhone}
-                        placeholder="3XX-XXXXXXX"
+                        value={otpChannel === "phone" ? phone : email}
+                        onChangeText={otpChannel === "phone" ? setPhone : setEmail}
+                        placeholder={otpChannel === "phone" ? "3XX-XXXXXXX" : "email@example.com"}
                         placeholderTextColor={theme.colors.textMuted}
-                        keyboardType="phone-pad"
+                        keyboardType={otpChannel === "phone" ? "phone-pad" : "email-address"}
+                        autoCapitalize="none"
+                        autoCorrect={false}
                         autoFocus
                       />
                     </View>
+                    {otpChannel === "email" ? (
+                      <Text style={[styles.emailOtpHelp, localizedText]}>{tr("Email OTP works only after the email has been verified on your Athoo account.")}</Text>
+                    ) : null}
                   </View>
 
                   <View style={[styles.rememberRow, localizedRow]}>
@@ -322,7 +367,7 @@ export default function LoginScreen() {
                     >
                       <Icon name="send" size={16} color={theme.colors.white} />
                       <Text style={styles.primaryBtnText}>
-                        {loading ? tr("Sending...") : tr("Get OTP Code")}
+                        {loading ? tr("Sending...") : tr(otpChannel === "email" ? "Send Email Code" : "Get OTP Code")}
                       </Text>
                     </LinearGradient>
                   </Pressable>
@@ -332,7 +377,7 @@ export default function LoginScreen() {
                   <View style={[styles.otpSentBox, localizedRow]}>
                     <Icon name="check-circle" size={18} color={theme.colors.success} />
                     <Text style={styles.otpSentText}>
-                      {tr("OTP sent to {{phone}}", { phone })}
+                      {tr(otpDeliveryMessage || "Verification code sent.")}
                     </Text>
                   </View>
 
@@ -347,16 +392,16 @@ export default function LoginScreen() {
                   ) : null}
 
                   <View style={styles.inputGroup}>
-                    <Text style={[styles.label, localizedText]}>{tr("Enter 4-digit OTP")}</Text>
+                    <Text style={[styles.label, localizedText]}>{tr(otpChannel === "email" ? "Enter 6-digit email code" : "Enter 4-digit OTP")}</Text>
                     <View style={[styles.inputWrapper, styles.otpWrapper]}>
                       <TextInput
                         style={[styles.input, styles.otpInput]}
                         value={otp}
-                        onChangeText={(v) => setOtp(v.replace(/[^0-9]/g, "").slice(0, 4))}
-                        placeholder="• • • •"
+                        onChangeText={(v) => setOtp(v.replace(/[^0-9]/g, "").slice(0, otpChannel === "email" ? 6 : 4))}
+                        placeholder={otpChannel === "email" ? "• • • • • •" : "• • • •"}
                         placeholderTextColor={theme.colors.textMuted}
                         keyboardType="number-pad"
-                        maxLength={4}
+                        maxLength={otpChannel === "email" ? 6 : 4}
                         autoFocus
                       />
                     </View>
@@ -384,15 +429,33 @@ export default function LoginScreen() {
                     </LinearGradient>
                   </Pressable>
 
+                  <Text style={[styles.otpTimerText, otpExpiresIn === 0 && styles.otpTimerExpired]}>
+                    {otpExpiresIn > 0
+                      ? tr("Code expires in {{time}}", { time: `${Math.floor(otpExpiresIn / 60)}:${String(otpExpiresIn % 60).padStart(2, "0")}` })
+                      : tr("Code expired. Request a new OTP.")}
+                  </Text>
+
+                  <Pressable
+                    style={[styles.resendOtpBtn, (loading || otpResendIn > 0) && styles.btnDisabled]}
+                    disabled={loading || otpResendIn > 0}
+                    onPress={handleSendOtp}
+                  >
+                    <Text style={styles.resendOtpText}>
+                      {otpResendIn > 0 ? tr("Resend in {{seconds}}s", { seconds: otpResendIn }) : tr("Resend OTP")}
+                    </Text>
+                  </Pressable>
+
                   <Pressable
                     style={styles.changePhoneBtn}
                     onPress={() => {
                       setOtpStep("phone");
                       setOtp("");
+                      setOtpExpiresIn(0);
+                      setOtpResendIn(0);
                     }}
                   >
                     <Icon name="arrow-left" size={14} color={theme.colors.primary} />
-                    <Text style={styles.changePhoneText}>{tr("Change phone number")}</Text>
+                    <Text style={styles.changePhoneText}>{tr(otpChannel === "email" ? "Change email address" : "Change phone number")}</Text>
                   </Pressable>
                 </>
               )}
@@ -636,6 +699,28 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   tabLabel: { fontSize: 13, fontWeight: "600", color: theme.colors.textSecondary },
   tabLabelActive: { color: theme.colors.primary },
 
+  otpChannelTabs: {
+    flexDirection: "row",
+    padding: 3,
+    borderRadius: 12,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  otpChannelTab: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: 9,
+  },
+  otpChannelTabActive: { backgroundColor: theme.colors.surface },
+  otpChannelText: { color: theme.colors.textSecondary, fontSize: 12, fontWeight: "600" },
+  otpChannelTextActive: { color: theme.colors.primary },
+  emailOtpHelp: { fontSize: 12, lineHeight: 18, color: theme.colors.textSecondary },
+
   form: { gap: 16 },
   inputGroup: { gap: 6 },
   label: { fontSize: 13, fontWeight: "600", color: theme.colors.text },
@@ -713,6 +798,10 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   primaryBtnText: { fontSize: 16, fontWeight: "700", color: theme.colors.white },
   btnDisabled: { opacity: 0.6 },
 
+  otpTimerText: { textAlign: "center", fontSize: 12, color: theme.colors.textSecondary },
+  otpTimerExpired: { color: theme.colors.danger, fontWeight: "700" },
+  resendOtpBtn: { alignSelf: "center", paddingVertical: 8, paddingHorizontal: 12 },
+  resendOtpText: { fontSize: 14, color: theme.colors.primary, fontWeight: "700" },
   changePhoneBtn: {
     flexDirection: "row",
     alignItems: "center",

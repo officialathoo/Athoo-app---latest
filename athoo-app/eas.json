@@ -11,7 +11,9 @@
       "env": {
         "APP_ENV": "development",
         "EXPO_PUBLIC_API_BASE_URL": "https://athoo-api.onrender.com",
-        "EAS_PROJECT_ID": "42a7f8fe-68ea-4422-8f46-0def1f55abb9"
+        "EAS_PROJECT_ID": "42a7f8fe-68ea-4422-8f46-0def1f55abb9",
+        "EXPO_PUBLIC_MAP_TILE_SIZE": "512",
+        "EXPO_PUBLIC_MAP_ATTRIBUTION": "© Mapbox © OpenStreetMap contributors"
       },
       "android": {
         "buildType": "apk"
@@ -26,7 +28,9 @@
       "env": {
         "APP_ENV": "staging",
         "EXPO_PUBLIC_API_BASE_URL": "https://athoo-api.onrender.com",
-        "EAS_PROJECT_ID": "42a7f8fe-68ea-4422-8f46-0def1f55abb9"
+        "EAS_PROJECT_ID": "42a7f8fe-68ea-4422-8f46-0def1f55abb9",
+        "EXPO_PUBLIC_MAP_TILE_SIZE": "512",
+        "EXPO_PUBLIC_MAP_ATTRIBUTION": "© Mapbox © OpenStreetMap contributors"
       },
       "android": {
         "buildType": "apk"
@@ -39,7 +43,9 @@
       "env": {
         "APP_ENV": "production",
         "EXPO_PUBLIC_API_BASE_URL": "https://athoo-api.onrender.com",
-        "EAS_PROJECT_ID": "42a7f8fe-68ea-4422-8f46-0def1f55abb9"
+        "EAS_PROJECT_ID": "42a7f8fe-68ea-4422-8f46-0def1f55abb9",
+        "EXPO_PUBLIC_MAP_TILE_SIZE": "512",
+        "EXPO_PUBLIC_MAP_ATTRIBUTION": "© Mapbox © OpenStreetMap contributors"
       },
       "android": {
         "buildType": "app-bundle"

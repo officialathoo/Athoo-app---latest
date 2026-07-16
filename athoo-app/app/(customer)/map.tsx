@@ -1,14 +1,20 @@
+import { LocationSearchPicker, type LocationSelection, type SavedLocationOption } from "@/components/maps/LocationSearchPicker";
 import { OpenStreetMapPreview } from "@/components/maps/OpenStreetMapPreview";
-import { Icon } from "@/components/ui/Icon";
 import { AnimatedCard } from "@/components/ui/AnimatedCard";
+import { Icon } from "@/components/ui/Icon";
 import { ProviderCard } from "@/components/ui/ProviderCard";
-import { Colors } from "@/constants/colors";
-import { Provider } from "@/data/services";
 import { useCategories } from "@/context/CategoriesContext";
+import { useLang } from "@/context/LanguageContext";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
+import { Provider } from "@/data/services";
+import { apiErrorToMessage } from "@/lib/apiError";
 import { api } from "@/services/api";
+import { getFastForegroundLocation } from "@/services/location";
+import { reverseGeocode } from "@/services/maps";
 import { getDistanceKm } from "@/utils/distance";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -18,21 +24,15 @@ import {
   Text,
   View,
 } from "react-native";
-import { reverseGeocode } from "@/services/maps";
-import { getFastForegroundLocation } from "@/services/location";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { apiErrorToMessage } from "@/lib/apiError";
 
-type ExtendedProvider = Provider & {
-  latitude: number;
-  longitude: number;
-  distanceKm?: number;
-};
+type Coordinate = { latitude: number; longitude: number };
 
-function isValidMapCoord(latitude: number, longitude: number) {
+type ExtendedProvider = Provider & Coordinate & { distanceKm?: number };
+
+function isValidMapCoord(latitude: number, longitude: number): boolean {
   return Number.isFinite(latitude) && Number.isFinite(longitude) && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180;
 }
-
 
 export default function CustomerMapScreen() {
   const { serviceId, providerId, returnTo } = useLocalSearchParams<{
@@ -42,89 +42,118 @@ export default function CustomerMapScreen() {
   }>();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const { translate: tr, textAlign, writingDirection } = useLang();
+  const { getCategoryBySlug } = useCategories();
 
   const [loading, setLoading] = useState(true);
   const [providers, setProviders] = useState<ExtendedProvider[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<ExtendedProvider | null>(null);
-  const [pickedLocation, setPickedLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [pickedLocation, setPickedLocation] = useState<Coordinate | null>(null);
   const [pickedAddress, setPickedAddress] = useState("");
   const [resolving, setResolving] = useState(false);
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [locationGranted, setLocationGranted] = useState(false);
+  const [userLocation, setUserLocation] = useState<Coordinate | null>(null);
+  const [savedLocations, setSavedLocations] = useState<SavedLocationOption[]>([]);
+  const [locationPickerVisible, setLocationPickerVisible] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const canPickLocation = Boolean(providerId || returnTo);
+  const distanceOrigin = pickedLocation || userLocation;
 
   useEffect(() => {
     let alive = true;
 
     async function load() {
+      setLoading(true);
+      setLoadError("");
       try {
-        setLoadError("");
-        const locationResult = await getFastForegroundLocation({
-          timeoutMs: 8_000,
-          maxCacheAgeMs: 10 * 60 * 1000,
-          rationaleTitle: "Location permission",
-          rationaleBody: "Athoo uses your location to show nearby providers and let you choose a service address.",
-        });
-        if (alive) setLocationGranted(locationResult.permission === "granted");
+        const [locationResult, providerResponse, addressResponse] = await Promise.all([
+          getFastForegroundLocation({
+            timeoutMs: 12_000,
+            maxCacheAgeMs: 5 * 60 * 1000,
+            requiredAccuracy: 150,
+            freshAccuracy: "high",
+            rationaleTitle: tr("Location permission"),
+            rationaleBody: tr("Athoo uses your location to show nearby providers and let you choose an accurate service address."),
+          }),
+          api.getProviders(serviceId && serviceId !== "all" ? serviceId : undefined),
+          api.getAddresses().catch(() => ({ addresses: [] })),
+        ]);
+        if (!alive) return;
+
         const currentCoords = locationResult.location
           ? { latitude: locationResult.location.latitude, longitude: locationResult.location.longitude }
           : null;
-        if (alive && currentCoords) setUserLocation(currentCoords);
+        if (currentCoords) setUserLocation(currentCoords);
 
-        const res = await api.getProviders(serviceId && serviceId !== "all" ? serviceId : undefined);
-        const raw = (res.providers as Provider[]) || [];
-
-        const mapped: ExtendedProvider[] = raw.flatMap((p) => {
-          const rawLat = (p as any).latitude ?? (p as any).lat;
-          const rawLng = (p as any).longitude ?? (p as any).lng;
-          const parsedLat = typeof rawLat === "number" ? rawLat : typeof rawLat === "string" ? Number(rawLat) : NaN;
-          const parsedLng = typeof rawLng === "number" ? rawLng : typeof rawLng === "string" ? Number(rawLng) : NaN;
-          if (!isValidMapCoord(parsedLat, parsedLng)) return [];
-          return [{
-            ...(p as Provider),
-            latitude: parsedLat,
-            longitude: parsedLng,
-            distanceKm: currentCoords
-              ? getDistanceKm(currentCoords.latitude, currentCoords.longitude, parsedLat, parsedLng)
-              : undefined,
-          } as ExtendedProvider];
+        const raw = (providerResponse.providers as Provider[]) || [];
+        const mapped: ExtendedProvider[] = raw.flatMap((provider) => {
+          const rawLat = (provider as any).latitude ?? (provider as any).lat;
+          const rawLng = (provider as any).longitude ?? (provider as any).lng;
+          const latitude = typeof rawLat === "number" ? rawLat : Number(rawLat);
+          const longitude = typeof rawLng === "number" ? rawLng : Number(rawLng);
+          if (!isValidMapCoord(latitude, longitude)) return [];
+          return [{ ...(provider as Provider), latitude, longitude } as ExtendedProvider];
         });
 
-        if (!alive) return;
-
         setProviders(mapped);
-        if (providerId) {
-          const found = mapped.find((p) => p.id === providerId) || null;
-          setSelectedProvider(found);
-        } else {
-          setSelectedProvider(mapped[0] || null);
-        }
-
+        const requestedProvider = providerId ? mapped.find((provider) => provider.id === providerId) || null : null;
+        setSelectedProvider(requestedProvider || mapped[0] || null);
+        setSavedLocations(
+          Array.isArray((addressResponse as any)?.addresses)
+            ? (addressResponse as any).addresses.map((address: any) => ({
+                id: String(address.id),
+                label: String(address.label || tr("Saved address")),
+                address: String(address.address || ""),
+                latitude: address.latitude == null ? null : Number(address.latitude),
+                longitude: address.longitude == null ? null : Number(address.longitude),
+              }))
+            : [],
+        );
       } catch (error) {
-        if (alive) setLoadError(apiErrorToMessage(error, "The map could not be loaded. Please try again."));
+        if (alive) setLoadError(apiErrorToMessage(error, tr("The map could not be loaded. Please try again.")));
       } finally {
         if (alive) setLoading(false);
       }
     }
 
-    load();
+    void load();
     return () => {
       alive = false;
     };
-  }, [serviceId, providerId]);
+  }, [providerId, reloadKey, serviceId, tr]);
 
-  const sortedProviders = useMemo(() => {
-    return [...providers].sort((a, b) => (a.distanceKm || 9999) - (b.distanceKm || 9999));
-  }, [providers]);
+  const providersWithDistance = useMemo(
+    () => providers.map((provider) => ({
+      ...provider,
+      distanceKm: distanceOrigin
+        ? getDistanceKm(distanceOrigin.latitude, distanceOrigin.longitude, provider.latitude, provider.longitude)
+        : undefined,
+    })),
+    [distanceOrigin, providers],
+  );
 
-  const visibleProviders = useMemo(() => {
-    return sortedProviders.filter((p) => isValidMapCoord(p.latitude, p.longitude)).slice(0, 80);
-  }, [sortedProviders]);
+  const sortedProviders = useMemo(
+    () => [...providersWithDistance].sort((a, b) => (a.distanceKm ?? 9999) - (b.distanceKm ?? 9999)),
+    [providersWithDistance],
+  );
 
-  const { getCategoryBySlug } = useCategories();
+  const visibleProviders = useMemo(
+    () => sortedProviders.filter((provider) => isValidMapCoord(provider.latitude, provider.longitude)).slice(0, 80),
+    [sortedProviders],
+  );
+
+  useEffect(() => {
+    if (!selectedProvider) return;
+    const refreshed = providersWithDistance.find((provider) => provider.id === selectedProvider.id);
+    if (refreshed) setSelectedProvider(refreshed);
+  }, [providersWithDistance, selectedProvider?.id]);
+
   const selectedCategory = getCategoryBySlug(serviceId || "");
 
-  async function resolveAddress(latitude: number, longitude: number) {
+  const resolveAddress = useCallback(async (latitude: number, longitude: number) => {
     setResolving(true);
     try {
       const resolved = await reverseGeocode(latitude, longitude);
@@ -134,23 +163,22 @@ export default function CustomerMapScreen() {
     } finally {
       setResolving(false);
     }
-  }
+  }, []);
 
-  const handleMapPress = async (event: any) => {
-    const coords = event?.nativeEvent?.coordinate;
-    if (!coords) return;
-    setPickedLocation(coords);
-    await resolveAddress(coords.latitude, coords.longitude);
-  };
+  const applySelection = useCallback((selection: LocationSelection) => {
+    const coordinates = { latitude: selection.latitude, longitude: selection.longitude };
+    setPickedLocation(coordinates);
+    setPickedAddress(selection.address);
+  }, []);
 
   const handleUsePickedLocation = () => {
-    if (!providerId || !pickedLocation) return;
-
+    if (!pickedLocation) return;
     router.replace({
-      pathname: returnTo === "book-service" ? "/(customer)/book-service" : "/(customer)/book-service",
+      pathname: "/(customer)/book-service",
       params: {
-        providerId,
-        pickedAddress: pickedAddress || "Pinned location",
+        ...(providerId ? { providerId } : {}),
+        ...(serviceId ? { serviceId } : {}),
+        pickedAddress: pickedAddress || tr("Pinned location"),
         pickedLat: String(pickedLocation.latitude),
         pickedLng: String(pickedLocation.longitude),
       },
@@ -158,42 +186,84 @@ export default function CustomerMapScreen() {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: topPad }]}> 
+    <View style={[styles.container, { paddingTop: topPad, backgroundColor: theme.colors.background }]}> 
+      <LocationSearchPicker
+        visible={locationPickerVisible}
+        onClose={() => setLocationPickerVisible(false)}
+        onSelect={applySelection}
+        bias={distanceOrigin}
+        savedLocations={savedLocations}
+        title="Choose service location"
+        onChooseOnMap={() => {
+          if (!pickedLocation && userLocation) {
+            setPickedLocation(userLocation);
+            void resolveAddress(userLocation.latitude, userLocation.longitude);
+          }
+        }}
+      />
+
       <View style={styles.header}>
-        <Pressable style={styles.iconBtn} onPress={() => router.back()}>
-          <Icon name="arrow-left" size={20} color={Colors.text} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={tr("Back")}
+          style={[styles.iconBtn, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+          onPress={() => router.back()}
+        >
+          <Icon name="arrow-left" size={20} color={theme.colors.text} />
         </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>{selectedCategory?.name || "Service Map"}</Text>
-          <Text style={styles.subtitle}>
-            {providerId ? "Choose an address and return to booking" : `${sortedProviders.length} providers on map`}
+        <View style={styles.headerText}>
+          <Text style={[styles.title, { color: theme.colors.text, textAlign, writingDirection }]}>{selectedCategory?.name || tr("Service Map")}</Text>
+          <Text style={[styles.subtitle, { color: theme.colors.textSecondary, textAlign, writingDirection }]}>
+            {canPickLocation ? tr("Search, use GPS, or place the pin") : `${sortedProviders.length} ${tr("providers on map")}`}
           </Text>
         </View>
-        {userLocation ? (
-          <Pressable
-            style={styles.iconBtn}
-            onPress={() => {
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={tr("Use current location")}
+          style={[styles.iconBtn, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+          onPress={() => {
+            if (userLocation) {
               setPickedLocation(userLocation);
               void resolveAddress(userLocation.latitude, userLocation.longitude);
-            }}
-          >
-            <Icon name="crosshair" size={18} color={Colors.primary} />
-          </Pressable>
-        ) : null}
+            } else {
+              setLocationPickerVisible(true);
+            }
+          }}
+        >
+          <Icon name="crosshair" size={18} color={theme.colors.primary} />
+        </Pressable>
       </View>
 
-      <View style={styles.mapWrap}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={tr("Search for a service location")}
+        onPress={() => setLocationPickerVisible(true)}
+        style={[styles.searchBar, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+      >
+        <Icon name="search" size={19} color={theme.colors.primary} />
+        <View style={styles.searchTextWrap}>
+          <Text numberOfLines={1} style={[styles.searchPrimary, { color: pickedAddress ? theme.colors.text : theme.colors.textMuted, textAlign, writingDirection }]}>
+            {pickedAddress || tr("Search street, area, landmark or city")}
+          </Text>
+          {pickedAddress ? (
+            <Text style={[styles.searchSecondary, { color: theme.colors.textSecondary, textAlign, writingDirection }]}>{tr("Tap to change location")}</Text>
+          ) : null}
+        </View>
+        <Icon name="chevron-right" size={18} color={theme.colors.textMuted} />
+      </Pressable>
+
+      <View style={[styles.mapWrap, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}> 
         {loading ? (
           <View style={styles.loadingBox}>
-            <ActivityIndicator color={Colors.primary} />
-            <Text style={styles.loadingText}>Loading map...</Text>
+            <ActivityIndicator color={theme.colors.primary} />
+            <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>{tr("Loading map...")}</Text>
           </View>
         ) : (
           <OpenStreetMapPreview
             latitude={pickedLocation?.latitude ?? selectedProvider?.latitude ?? userLocation?.latitude}
             longitude={pickedLocation?.longitude ?? selectedProvider?.longitude ?? userLocation?.longitude}
             markers={[
-              ...sortedProviders.map((provider) => ({
+              ...visibleProviders.map((provider) => ({
                 id: `provider-${provider.id}`,
                 latitude: provider.latitude,
                 longitude: provider.longitude,
@@ -203,7 +273,7 @@ export default function CustomerMapScreen() {
               ...(userLocation ? [{ id: "customer-location", ...userLocation, kind: "customer" as const }] : []),
               ...(pickedLocation ? [{ id: "picked-location", ...pickedLocation, kind: "selected" as const }] : []),
             ]}
-            interactive={Boolean(returnTo)}
+            interactive={canPickLocation}
             onCoordinateChange={(latitude, longitude) => {
               setPickedLocation({ latitude, longitude });
               void resolveAddress(latitude, longitude);
@@ -212,21 +282,31 @@ export default function CustomerMapScreen() {
         )}
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        {loadError ? <View style={styles.errorBanner}><Text style={styles.errorText}>{loadError}</Text></View> : null}
-        {providerId ? (
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]} keyboardShouldPersistTaps="handled">
+        {loadError ? (
+          <View style={[styles.errorBanner, { backgroundColor: theme.colors.dangerSoft, borderColor: theme.colors.danger }]}> 
+            <Text style={[styles.errorText, { color: theme.colors.danger, textAlign, writingDirection }]}>{loadError}</Text>
+            <Pressable accessibilityRole="button" onPress={() => setReloadKey((value) => value + 1)} style={styles.retryButton}>
+              <Text style={[styles.retryText, { color: theme.colors.danger }]}>{tr("Retry")}</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {canPickLocation ? (
           <AnimatedCard>
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Picked Address</Text>
-              <Text style={styles.cardText}>
-                {resolving ? "Getting address..." : pickedAddress || "Tap anywhere on the map to select address."}
+            <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}> 
+              <Text style={[styles.cardTitle, { color: theme.colors.text, textAlign, writingDirection }]}>{tr("Selected service address")}</Text>
+              <Text style={[styles.cardText, { color: theme.colors.textSecondary, textAlign, writingDirection }]}>
+                {resolving ? tr("Getting address...") : pickedAddress || tr("Search for an address or tap the map to place the pin.")}
               </Text>
               <Pressable
-                style={[styles.primaryBtn, !pickedLocation && styles.disabledBtn]}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: !pickedLocation }}
+                style={[styles.primaryBtn, { backgroundColor: theme.colors.primary }, !pickedLocation && styles.disabledBtn]}
                 onPress={handleUsePickedLocation}
                 disabled={!pickedLocation}
               >
-                <Text style={styles.primaryBtnText}>Use This Location</Text>
+                <Text style={styles.primaryBtnText}>{tr("Use This Location")}</Text>
               </Pressable>
             </View>
           </AnimatedCard>
@@ -234,22 +314,18 @@ export default function CustomerMapScreen() {
 
         {selectedProvider ? (
           <AnimatedCard delay={80}>
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Selected Provider</Text>
+            <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}> 
+              <Text style={[styles.cardTitle, { color: theme.colors.text, textAlign, writingDirection }]}>{tr("Selected Provider")}</Text>
               <ProviderCard
                 provider={selectedProvider as any}
-                distanceText={selectedProvider.distanceKm ? `${selectedProvider.distanceKm.toFixed(1)} km away` : undefined}
+                distanceText={selectedProvider.distanceKm != null ? `${selectedProvider.distanceKm.toFixed(1)} km ${tr("away")}` : undefined}
                 rightAction={
                   <Pressable
-                    style={styles.viewBtn}
-                    onPress={() =>
-                      router.push({
-                        pathname: "/(customer)/provider-detail",
-                        params: { providerId: selectedProvider.id },
-                      } as any)
-                    }
+                    accessibilityRole="button"
+                    style={[styles.viewBtn, { backgroundColor: theme.colors.primary }]}
+                    onPress={() => router.push({ pathname: "/(customer)/provider-detail", params: { providerId: selectedProvider.id } } as any)}
                   >
-                    <Text style={styles.viewBtnText}>View</Text>
+                    <Text style={styles.viewBtnText}>{tr("View")}</Text>
                   </Pressable>
                 }
               />
@@ -259,16 +335,19 @@ export default function CustomerMapScreen() {
 
         {!providerId ? (
           <AnimatedCard delay={120}>
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Nearby Providers</Text>
+            <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}> 
+              <Text style={[styles.cardTitle, { color: theme.colors.text, textAlign, writingDirection }]}>{tr("Nearby Providers")}</Text>
               {sortedProviders.slice(0, 6).map((provider) => (
-                <Pressable key={provider.id} onPress={() => setSelectedProvider(provider)}>
+                <Pressable key={provider.id} accessibilityRole="button" onPress={() => setSelectedProvider(provider)}>
                   <ProviderCard
                     provider={provider as any}
-                    distanceText={provider.distanceKm ? `${provider.distanceKm.toFixed(1)} km away` : undefined}
+                    distanceText={provider.distanceKm != null ? `${provider.distanceKm.toFixed(1)} km ${tr("away")}` : undefined}
                   />
                 </Pressable>
               ))}
+              {!loading && sortedProviders.length === 0 ? (
+                <Text style={[styles.cardText, { color: theme.colors.textSecondary, textAlign, writingDirection }]}>{tr("No providers with valid map coordinates were found for this area.")}</Text>
+              ) : null}
             </View>
           </AnimatedCard>
         ) : null}
@@ -277,70 +356,31 @@ export default function CustomerMapScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
-  iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: Colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  title: { fontSize: 18, fontWeight: "800", color: Colors.text },
-  subtitle: { marginTop: 2, fontSize: 13, color: Colors.textSecondary },
-  mapWrap: {
-    marginHorizontal: 16,
-    borderRadius: 18,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surface,
-    height: 300,
-  },
-  map: { flex: 1 },
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1 },
+  header: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingBottom: 10 },
+  headerText: { flex: 1 },
+  iconBtn: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  title: { fontSize: 18, fontWeight: "800" },
+  subtitle: { marginTop: 2, fontSize: 13 },
+  searchBar: { marginHorizontal: 16, minHeight: 58, borderRadius: 16, borderWidth: 1, flexDirection: "row", alignItems: "center", gap: 11, paddingHorizontal: 14, marginBottom: 12 },
+  searchTextWrap: { flex: 1 },
+  searchPrimary: { fontSize: 14, fontWeight: "700" },
+  searchSecondary: { marginTop: 2, fontSize: 11 },
+  mapWrap: { marginHorizontal: 16, borderRadius: 18, overflow: "hidden", borderWidth: 1, height: 300 },
   loadingBox: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10 },
-  loadingText: { color: Colors.textSecondary, fontSize: 13 },
-  errorBanner: { backgroundColor: "#FEF2F2", borderColor: "#FECACA", borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 12 },
-  errorText: { color: "#B91C1C", fontSize: 13, fontWeight: "600" },
-  content: { padding: 16, paddingBottom: 40, gap: 12 },
-  card: {
-    backgroundColor: Colors.surface,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: 14,
-    gap: 12,
-  },
-  cardTitle: { fontSize: 16, fontWeight: "800", color: Colors.text },
-  cardText: { fontSize: 14, lineHeight: 20, color: Colors.textSecondary },
-  primaryBtn: {
-    backgroundColor: Colors.primary,
-    minHeight: 48,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  loadingText: { fontSize: 13 },
+  errorBanner: { borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 12, flexDirection: "row", alignItems: "center", gap: 10 },
+  errorText: { flex: 1, fontSize: 13, fontWeight: "600" },
+  retryButton: { minHeight: 40, minWidth: 64, alignItems: "center", justifyContent: "center" },
+  retryText: { fontSize: 13, fontWeight: "800" },
+  content: { padding: 16, gap: 12 },
+  card: { borderRadius: 18, borderWidth: 1, padding: 14, gap: 12 },
+  cardTitle: { fontSize: 16, fontWeight: "800" },
+  cardText: { fontSize: 14, lineHeight: 20 },
+  primaryBtn: { minHeight: 48, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   disabledBtn: { opacity: 0.5 },
-  primaryBtnText: { color: "#fff", fontSize: 15, fontWeight: "800" },
-  viewBtn: {
-    minWidth: 62,
-    paddingHorizontal: 14,
-    minHeight: 38,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: Colors.primary,
-  },
-  viewBtnText: { color: "#fff", fontWeight: "800", fontSize: 13 },
+  primaryBtnText: { color: theme.colors.white, fontSize: 15, fontWeight: "800" },
+  viewBtn: { minWidth: 62, paddingHorizontal: 14, minHeight: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  viewBtnText: { color: theme.colors.white, fontWeight: "800", fontSize: 13 },
 });
-

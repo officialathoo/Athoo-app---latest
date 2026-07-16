@@ -7,10 +7,16 @@ import { Icon } from "@/components/ui/Icon";
 import { useLang } from "@/context/LanguageContext";
 import { useSettings } from "@/context/SettingsContext";
 import { useTheme } from "@/context/ThemeContext";
+import { runtimeConfig } from "@/config/runtime";
+import { brandConfig } from "@/config/brand";
 
 type Role = "customer" | "provider";
 
 type Feature = { icon: string; title: string; description: string };
+
+function externalDisplayValue(url: string): string {
+  return url.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+}
 
 export function AboutScreen({ role }: { role: Role }) {
   const { theme } = useTheme();
@@ -42,22 +48,21 @@ export function AboutScreen({ role }: { role: Role }) {
     }
   };
 
-  const supportPhone = settings.supportPhone || "+92 339 0051068";
-  const phoneDigits = supportPhone.replace(/\D/g, "");
-  const supportEmail = settings.supportEmail || "support@athoo.pk";
+  const supportPhone = settings.supportPhone || runtimeConfig.support.phoneDisplay || "";
+  const supportEmail = settings.supportEmail || runtimeConfig.support.email || "";
 
   return (
     <View style={[styles.screen, { backgroundColor: theme.colors.background }]}>
-      <ScreenHeader title={tr("About Athoo")} />
+      <ScreenHeader title={tr("About {{name}}", { name: brandConfig.displayName })} />
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.content, responsiveContent, { paddingBottom: insets.bottom + 44 }]}
       >
         <View style={[styles.hero, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
           <View style={[styles.logoWrap, { backgroundColor: theme.colors.white }]}>
-            <Image source={require("../../assets/images/logo.png")} style={styles.logo} resizeMode="contain" accessibilityLabel="Athoo logo" />
+            <Image source={brandConfig.assets.mark} style={styles.logo} resizeMode="contain" accessibilityLabel="Athoo logo" />
           </View>
-          <AppText variant="h1" align="center">{settings.platformName || "Athoo"}</AppText>
+          <AppText variant="h1" align="center">{settings.platformName || brandConfig.displayName}</AppText>
           <AppText tone="secondary" align="center" style={styles.tagline}>
             {role === "provider"
               ? tr("A professional marketplace for service providers across Pakistan.")
@@ -96,13 +101,15 @@ export function AboutScreen({ role }: { role: Role }) {
         <AppCard elevated={false}>
           <AppText variant="h3">{tr("Contact Athoo")}</AppText>
           <View style={styles.contactList}>
-            <ContactRow
-              icon="message-circle"
-              iconColor={theme.colors.success}
-              label={tr("WhatsApp support")}
-              value={supportPhone}
-              onPress={() => void openExternal(`https://wa.me/${phoneDigits}`, tr("WhatsApp"))}
-            />
+            {runtimeConfig.support.whatsappUrl ? (
+              <ContactRow
+                icon="message-circle"
+                iconColor={theme.colors.success}
+                label={tr("WhatsApp support")}
+                value={supportPhone}
+                onPress={() => void openExternal(runtimeConfig.support.whatsappUrl!, tr("WhatsApp"))}
+              />
+            ) : null}
             <ContactRow
               icon="mail"
               iconColor={theme.colors.primary}
@@ -110,20 +117,24 @@ export function AboutScreen({ role }: { role: Role }) {
               value={supportEmail}
               onPress={() => void openExternal(`mailto:${supportEmail}`, tr("email"))}
             />
-            <ContactRow
-              icon="instagram"
-              iconColor={theme.colors.accent}
-              label="Instagram"
-              value="@athoo_services"
-              onPress={() => void openExternal("https://instagram.com/athoo_services", "Instagram")}
-            />
-            <ContactRow
-              icon="facebook"
-              iconColor={theme.colors.info}
-              label="Facebook"
-              value="athoo.services"
-              onPress={() => void openExternal("https://facebook.com/athoo.services", "Facebook")}
-            />
+            {runtimeConfig.support.instagramUrl ? (
+              <ContactRow
+                icon="instagram"
+                iconColor={theme.colors.accent}
+                label="Instagram"
+                value={externalDisplayValue(runtimeConfig.support.instagramUrl)}
+                onPress={() => void openExternal(runtimeConfig.support.instagramUrl!, "Instagram")}
+              />
+            ) : null}
+            {runtimeConfig.support.facebookUrl ? (
+              <ContactRow
+                icon="facebook"
+                iconColor={theme.colors.info}
+                label="Facebook"
+                value={externalDisplayValue(runtimeConfig.support.facebookUrl)}
+                onPress={() => void openExternal(runtimeConfig.support.facebookUrl!, "Facebook")}
+              />
+            ) : null}
           </View>
         </AppCard>
 

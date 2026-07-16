@@ -1,6 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState , useMemo} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -17,7 +17,8 @@ import {
 import { PrivateImage } from "@/services/storage";
 import { api } from "@/services/api";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
 import { useChat, Message } from "@/context/ChatContext";
@@ -29,6 +30,8 @@ function formatTime(iso: string) {
 }
 
 export default function ChatRoomScreen() {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { chatId, otherUserId, otherUserName, otherUserImage, otherUserColor } = useLocalSearchParams<{
     chatId: string;
     otherUserId: string;
@@ -124,7 +127,7 @@ export default function ChatRoomScreen() {
           otherProfile?.profileImage ? (
             <PrivateImage objectPath={otherProfile.profileImage} style={[styles.msgAvatar, { borderRadius: 16 }]} />
           ) : (
-            <View style={[styles.msgAvatar, { backgroundColor: otherProfile?.profileColor || Colors.primary }]}>
+            <View style={[styles.msgAvatar, { backgroundColor: otherProfile?.profileColor || theme.colors.primary }]}>
               <Text style={styles.msgAvatarText}>{initials}</Text>
             </View>
           )
@@ -143,12 +146,12 @@ export default function ChatRoomScreen() {
     <View style={[styles.container, { paddingTop: topPad }]}>
       <View style={styles.header}>
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <Icon name="arrow-left" size={20} color={Colors.text} />
+          <Icon name="arrow-left" size={20} color={theme.colors.text} />
         </Pressable>
         {otherProfile?.profileImage ? (
           <PrivateImage objectPath={otherProfile.profileImage} style={[styles.avatar, { borderRadius: 22 }]} />
         ) : (
-          <View style={[styles.avatar, { backgroundColor: otherProfile?.profileColor || Colors.primary }]}>
+          <View style={[styles.avatar, { backgroundColor: otherProfile?.profileColor || theme.colors.primary }]}>
             <Text style={styles.avatarTxt}>{initials}</Text>
           </View>
         )}
@@ -161,9 +164,9 @@ export default function ChatRoomScreen() {
         </View>
         <Pressable
           style={styles.callBtn}
-          onPress={() => startOutgoingCall(resolvedOtherUserId || "", resolvedOtherUserName || "Provider", "Voice Call", "#1A6EE0")}
+          onPress={() => startOutgoingCall(resolvedOtherUserId || "", resolvedOtherUserName || "Provider", "Voice Call", theme.colors.primary)}
         >
-          <Icon name="phone" size={18} color={Colors.primary} />
+          <Icon name="phone" size={18} color={theme.colors.primary} />
         </Pressable>
       </View>
 
@@ -173,13 +176,13 @@ export default function ChatRoomScreen() {
       >
         {loadingMessages ? (
           <View style={styles.emptyChat}>
-            <ActivityIndicator size="large" color={Colors.primary} />
-            <Text style={{ color: Colors.textSecondary, marginTop: 12, fontSize: 13 }}>Loading messages…</Text>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
+            <Text style={{ color: theme.colors.textSecondary, marginTop: 12, fontSize: 13 }}>Loading messages…</Text>
           </View>
         ) : chatMessages.length === 0 ? (
           <View style={styles.emptyChat}>
             <View style={styles.emptyChatIcon}>
-              <Icon name="message-circle" size={32} color={Colors.textMuted} />
+              <Icon name="message-circle" size={32} color={theme.colors.textMuted} />
             </View>
             <Text style={styles.emptyChatTitle}>Start a conversation</Text>
             <Text style={styles.emptyChatText}>
@@ -215,7 +218,7 @@ export default function ChatRoomScreen() {
               value={text}
               onChangeText={setText}
               multiline
-              placeholderTextColor={Colors.textMuted}
+              placeholderTextColor={theme.colors.textMuted}
             />
           </View>
           <Pressable
@@ -223,7 +226,7 @@ export default function ChatRoomScreen() {
             onPress={handleSend}
             disabled={!text.trim() || sending}
           >
-            <Icon name="send" size={18} color={Colors.white} />
+            <Icon name="send" size={18} color={theme.colors.white} />
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -231,23 +234,23 @@ export default function ChatRoomScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
   header: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: Colors.white,
+    backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: theme.colors.border,
   },
   backBtn: {
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: Colors.background,
+    backgroundColor: theme.colors.background,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -255,27 +258,27 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1.5,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
-  avatarTxt: { fontSize: 13, fontWeight: "700", color: "#fff" },
-  providerName: { fontSize: 15, fontWeight: "700", color: Colors.text },
+  avatarTxt: { fontSize: 13, fontWeight: "700", color: theme.colors.onBrand },
+  providerName: { fontSize: 15, fontWeight: "700", color: theme.colors.text },
   onlineRow: { flexDirection: "row", alignItems: "center", gap: 4 },
   onlineDot: {
     width: 7,
     height: 7,
     borderRadius: 3.5,
-    backgroundColor: Colors.success,
+    backgroundColor: theme.colors.success,
   },
-  onlineText: { fontSize: 11, color: Colors.success, fontWeight: "600" },
+  onlineText: { fontSize: 11, color: theme.colors.success, fontWeight: "600" },
   callBtn: {
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -284,15 +287,15 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 22,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 8,
   },
-  emptyChatTitle: { fontSize: 17, fontWeight: "700", color: Colors.text },
+  emptyChatTitle: { fontSize: 17, fontWeight: "700", color: theme.colors.text },
   emptyChatText: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     textAlign: "center",
     paddingHorizontal: 40,
   },
@@ -308,11 +311,11 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
   },
-  msgAvatarText: { fontSize: 10, fontWeight: "700", color: "#fff" },
+  msgAvatarText: { fontSize: 10, fontWeight: "700", color: theme.colors.onBrand },
   bubble: {
     maxWidth: "72%",
     borderRadius: 18,
@@ -320,18 +323,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   bubbleMe: {
-    backgroundColor: Colors.primary,
+    backgroundColor: theme.colors.primary,
     borderBottomRightRadius: 4,
   },
   bubbleThem: {
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderBottomLeftRadius: 4,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
-  bubbleText: { fontSize: 14, color: Colors.text, lineHeight: 20 },
-  bubbleTextMe: { color: Colors.white },
-  bubbleTime: { fontSize: 10, color: Colors.textMuted, marginTop: 4, textAlign: "right" },
+  bubbleText: { fontSize: 14, color: theme.colors.text, lineHeight: 20 },
+  bubbleTextMe: { color: theme.colors.surface },
+  bubbleTime: { fontSize: 10, color: theme.colors.textMuted, marginTop: 4, textAlign: "right" },
   bubbleTimeMe: { color: "rgba(255,255,255,0.7)" },
   inputBar: {
     flexDirection: "row",
@@ -339,29 +342,29 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 16,
     paddingTop: 10,
-    backgroundColor: Colors.white,
+    backgroundColor: theme.colors.surface,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: theme.colors.border,
   },
   inputWrapper: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: theme.colors.background,
     borderRadius: 22,
     paddingHorizontal: 16,
     paddingVertical: 10,
     maxHeight: 100,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
-  input: { fontSize: 14, color: Colors.text },
+  input: { fontSize: 14, color: theme.colors.text },
   sendBtn: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.primary,
+    backgroundColor: theme.colors.primary,
     alignItems: "center",
     justifyContent: "center",
   },
-  sendBtnDisabled: { backgroundColor: Colors.textMuted },
+  sendBtnDisabled: { backgroundColor: theme.colors.textMuted },
 });
 

@@ -1,7 +1,7 @@
 import { Icon } from "@/components/ui/Icon";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState , useMemo} from "react";
 import {
   Alert,
   Modal,
@@ -14,7 +14,6 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/colors";
 import { AnimatedCard } from "@/components/ui/AnimatedCard";
 import { BookingCard } from "@/components/ui/BookingCard";
 import { useAuth } from "@/context/AuthContext";
@@ -26,6 +25,7 @@ import { useNotifications } from "@/context/NotificationContext";
 import { buildRepeatBookingParams } from "@/utils/repeatBooking";
 import { ServiceHistoryInsights } from "@/components/design/ServiceHistoryInsights";
 import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 
 export default function BookingsScreen() {
   const { user } = useAuth();
@@ -102,6 +102,7 @@ export default function BookingsScreen() {
   const { getMyNegotiations, acceptOffer, rejectOffer } = useNegotiation();
   const { t, isUrdu, translate: tr, textAlign, writingDirection, formatCurrency } = useLang();
   const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const localizedText = { textAlign, writingDirection } as const;
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -109,12 +110,12 @@ export default function BookingsScreen() {
   const [mainTab, setMainTab] = useState<"bookings" | "offers">("bookings");
 
   const FILTERS: { label: string; value: BookingStatus | "all"; icon: string; color: string }[] = [
-    { label: isUrdu ? "سب" : "All", value: "all", icon: "list", color: Colors.primary },
-    { label: t.pending, value: "pending", icon: "clock", color: "#F59E0B" },
-    { label: t.active, value: "accepted", icon: "check-circle", color: "#3B82F6" },
-    { label: t.inProgress, value: "in_progress", icon: "play-circle", color: "#8B5CF6" },
-    { label: t.completed, value: "completed", icon: "check-circle", color: "#22C55E" },
-    { label: t.cancelled, value: "cancelled", icon: "x-circle", color: "#EF4444" },
+    { label: isUrdu ? "سب" : "All", value: "all", icon: "list", color: theme.colors.primary },
+    { label: t.pending, value: "pending", icon: "clock", color: theme.colors.warning },
+    { label: t.active, value: "accepted", icon: "check-circle", color: theme.colors.info },
+    { label: t.inProgress, value: "in_progress", icon: "play-circle", color: theme.colors.accent },
+    { label: t.completed, value: "completed", icon: "check-circle", color: theme.colors.success },
+    { label: t.cancelled, value: "cancelled", icon: "x-circle", color: theme.colors.danger },
   ];
 
   const myNegotiations = user ? getMyNegotiations(user.id) : [];
@@ -155,7 +156,7 @@ export default function BookingsScreen() {
           style={styles.newBtn}
           onPress={() => router.push("/(customer)/(tabs)/search")}
         >
-          <Icon name="plus" size={18} color="#fff" />
+          <Icon name="plus" size={18} color={theme.colors.onBrand} />
         </Pressable>
       </View>
 
@@ -164,20 +165,20 @@ export default function BookingsScreen() {
           style={[styles.mainTab, mainTab === "bookings" && styles.mainTabActive]}
           onPress={() => setMainTab("bookings")}
         >
-          <Icon name="calendar" size={14} color={mainTab === "bookings" ? Colors.primary : Colors.textMuted} />
+          <Icon name="calendar" size={14} color={mainTab === "bookings" ? theme.colors.primary : theme.colors.textMuted} />
           <Text style={[styles.mainTabText, mainTab === "bookings" && styles.mainTabTextActive, isUrdu && styles.urduText]}>{t.bookings}</Text>
-          {allBookings.length > 0 && <View style={[styles.tabBadge, mainTab === "bookings" && { backgroundColor: Colors.primary }]}>
-            <Text style={[styles.tabBadgeText, mainTab === "bookings" && { color: "#fff" }]}>{allBookings.length}</Text>
+          {allBookings.length > 0 && <View style={[styles.tabBadge, mainTab === "bookings" && { backgroundColor: theme.colors.primary }]}>
+            <Text style={[styles.tabBadgeText, mainTab === "bookings" && { color: theme.colors.onBrand }]}>{allBookings.length}</Text>
           </View>}
         </Pressable>
         <Pressable
           style={[styles.mainTab, mainTab === "offers" && styles.mainTabActiveOrange]}
           onPress={() => setMainTab("offers")}
         >
-          <Icon name="dollar-sign" size={14} color={mainTab === "offers" ? Colors.secondary : Colors.textMuted} />
-          <Text style={[styles.mainTabText, mainTab === "offers" && { color: Colors.secondary }, isUrdu && styles.urduText]}>{t.myOffers}</Text>
-          {myNegotiations.length > 0 && <View style={[styles.tabBadge, mainTab === "offers" && { backgroundColor: Colors.secondary }]}>
-            <Text style={[styles.tabBadgeText, mainTab === "offers" && { color: "#fff" }]}>{myNegotiations.length}</Text>
+          <Icon name="dollar-sign" size={14} color={mainTab === "offers" ? theme.colors.secondary : theme.colors.textMuted} />
+          <Text style={[styles.mainTabText, mainTab === "offers" && { color: theme.colors.secondary }, isUrdu && styles.urduText]}>{t.myOffers}</Text>
+          {myNegotiations.length > 0 && <View style={[styles.tabBadge, mainTab === "offers" && { backgroundColor: theme.colors.secondary }]}>
+            <Text style={[styles.tabBadgeText, mainTab === "offers" && { color: theme.colors.onBrand }]}>{myNegotiations.length}</Text>
           </View>}
         </Pressable>
       </View>
@@ -186,7 +187,7 @@ export default function BookingsScreen() {
         <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 80 }]} showsVerticalScrollIndicator={false}>
           {myNegotiations.length === 0 ? (
             <View style={styles.empty}>
-              <View style={styles.emptyIcon}><Icon name="dollar-sign" size={30} color={Colors.textMuted} /></View>
+              <View style={styles.emptyIcon}><Icon name="dollar-sign" size={30} color={theme.colors.textMuted} /></View>
               <Text style={[styles.emptyTitle, localizedText]}>{tr("No price offers yet")}</Text>
               <Text style={[styles.emptySubtitle, localizedText]}>{tr("Negotiate prices with providers on their profile pages")}</Text>
               <Pressable style={styles.findBtn} onPress={() => router.push("/(customer)/(tabs)/search")}>
@@ -200,7 +201,7 @@ export default function BookingsScreen() {
                 <View style={styles.negCard}>
                   <View style={styles.negCardHeader}>
                     <View style={styles.negServiceIcon}>
-                      <Icon name="briefcase" size={18} color={Colors.secondary} />
+                      <Icon name="briefcase" size={18} color={theme.colors.secondary} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.negService}>{neg.service}</Text>
@@ -214,18 +215,18 @@ export default function BookingsScreen() {
                   <View style={styles.negAmtRow}>
                     <View style={styles.negAmtBox}>
                       <Text style={styles.negAmtLabel}>{tr("Your Offer")}</Text>
-                      <Text style={[styles.negAmt, { color: Colors.primary }]}>{formatCurrency(neg.customerOffer)}</Text>
+                      <Text style={[styles.negAmt, { color: theme.colors.primary }]}>{formatCurrency(neg.customerOffer)}</Text>
                     </View>
                     {neg.providerCounter !== undefined && (
                       <View style={styles.negAmtBox}>
                         <Text style={styles.negAmtLabel}>{tr("Counter")}</Text>
-                        <Text style={[styles.negAmt, { color: Colors.secondary }]}>{formatCurrency(neg.providerCounter)}</Text>
+                        <Text style={[styles.negAmt, { color: theme.colors.secondary }]}>{formatCurrency(neg.providerCounter)}</Text>
                       </View>
                     )}
                     {neg.finalPrice !== undefined && (
                       <View style={styles.negAmtBox}>
                         <Text style={styles.negAmtLabel}>{tr("Agreed")}</Text>
-                        <Text style={[styles.negAmt, { color: Colors.success }]}>{formatCurrency(neg.finalPrice)}</Text>
+                        <Text style={[styles.negAmt, { color: theme.colors.success }]}>{formatCurrency(neg.finalPrice)}</Text>
                       </View>
                     )}
                   </View>
@@ -243,7 +244,7 @@ export default function BookingsScreen() {
                           ]
                         )}
                       >
-                        <Icon name="check" size={14} color="#fff" />
+                        <Icon name="check" size={14} color={theme.colors.onBrand} />
                         <Text style={styles.negAcceptText}>Accept {formatCurrency(neg.providerCounter)}</Text>
                       </Pressable>
                       <Pressable
@@ -257,7 +258,7 @@ export default function BookingsScreen() {
                           ]
                         )}
                       >
-                        <Icon name="x" size={14} color={Colors.error} />
+                        <Icon name="x" size={14} color={theme.colors.danger} />
                         <Text style={styles.negRejectText}>Reject</Text>
                       </Pressable>
                     </View>
@@ -266,7 +267,7 @@ export default function BookingsScreen() {
                   {(neg.status === "customer_offer") && (
                     <View style={styles.negActions}>
                       <View style={styles.negWaitingBadge}>
-                        <Icon name="clock" size={13} color={Colors.textMuted} />
+                        <Icon name="clock" size={13} color={theme.colors.textMuted} />
                         <Text style={styles.negWaitingText}>Waiting for provider's response...</Text>
                       </View>
                       <Pressable
@@ -280,7 +281,7 @@ export default function BookingsScreen() {
                           ]
                         )}
                       >
-                        <Icon name="x" size={13} color={Colors.textSecondary} />
+                        <Icon name="x" size={13} color={theme.colors.textSecondary} />
                         <Text style={styles.negCancelText}>Cancel Offer</Text>
                       </Pressable>
                     </View>
@@ -295,7 +296,7 @@ export default function BookingsScreen() {
                           params: { providerId: neg.providerId, negotiatedPrice: String(neg.finalPrice) },
                         })}
                       >
-                        <Icon name="check-circle" size={14} color="#fff" />
+                        <Icon name="check-circle" size={14} color={theme.colors.onBrand} />
                         <Text style={styles.negBookNowText}>Complete Booking · {formatCurrency(neg.finalPrice)}</Text>
                       </Pressable>
                     </View>
@@ -303,7 +304,7 @@ export default function BookingsScreen() {
 
                   {neg.messages.length > 0 && (
                     <View style={styles.negLastMsg}>
-                      <Icon name="message-circle" size={12} color={Colors.textMuted} />
+                      <Icon name="message-circle" size={12} color={theme.colors.textMuted} />
                       <Text style={styles.negLastMsgText} numberOfLines={1}>{neg.messages[neg.messages.length - 1].text}</Text>
                     </View>
                   )}
@@ -317,17 +318,17 @@ export default function BookingsScreen() {
       <AnimatedCard delay={60}>
         <View style={styles.summaryStrip}>
           <View style={styles.stripItem}>
-            <Text style={[styles.stripVal, { color: Colors.primary }]}>{allBookings.length}</Text>
+            <Text style={[styles.stripVal, { color: theme.colors.primary }]}>{allBookings.length}</Text>
             <Text style={styles.stripLabel}>Total</Text>
           </View>
           <View style={styles.stripDiv} />
           <View style={styles.stripItem}>
-            <Text style={[styles.stripVal, { color: "#3B82F6" }]}>{activeCount}</Text>
+            <Text style={[styles.stripVal, { color: theme.colors.info }]}>{activeCount}</Text>
             <Text style={styles.stripLabel}>Active</Text>
           </View>
           <View style={styles.stripDiv} />
           <View style={styles.stripItem}>
-            <Text style={[styles.stripVal, { color: Colors.success }]}>
+            <Text style={[styles.stripVal, { color: theme.colors.success }]}>
               Rs.{totalSpent.toLocaleString()}
             </Text>
             <Text style={styles.stripLabel}>Spent</Text>
@@ -376,7 +377,7 @@ export default function BookingsScreen() {
           <AnimatedCard>
             <View style={styles.empty}>
               <View style={styles.emptyIcon}>
-                <Icon name="calendar" size={30} color={Colors.textMuted} />
+                <Icon name="calendar" size={30} color={theme.colors.textMuted} />
               </View>
               <Text style={styles.emptyTitle}>No bookings</Text>
               <Text style={styles.emptySubtitle}>
@@ -403,7 +404,7 @@ export default function BookingsScreen() {
                   style={styles.bookAgainBtn}
                   onPress={() => router.push({ pathname: "/(customer)/book-service" as any, params: buildRepeatBookingParams(b) } as any)}
                 >
-                  <Icon name="repeat" size={13} color={Colors.primary} />
+                  <Icon name="repeat" size={13} color={theme.colors.primary} />
                   <Text style={styles.bookAgainText}>Book Again</Text>
                 </Pressable>
               )}
@@ -417,9 +418,9 @@ export default function BookingsScreen() {
               style={styles.billingLink}
               onPress={() => router.push("/(customer)/billing")}
             >
-              <Icon name="file-text" size={15} color={Colors.primary} />
+              <Icon name="file-text" size={15} color={theme.colors.primary} />
               <Text style={styles.billingLinkText}>View Full Billing History & Invoices</Text>
-              <Icon name="chevron-right" size={14} color={Colors.primary} />
+              <Icon name="chevron-right" size={14} color={theme.colors.primary} />
             </Pressable>
           </AnimatedCard>
         )}
@@ -439,7 +440,7 @@ export default function BookingsScreen() {
             <View style={styles.starsRow}>
               {[1, 2, 3, 4, 5].map((s) => (
                 <Pressable key={s} onPress={() => setRatingVal(s)} hitSlop={8}>
-                  <Icon name="star" size={38} color={s <= ratingVal ? Colors.accent : Colors.border} />
+                  <Icon name="star" size={38} color={s <= ratingVal ? theme.colors.accent : theme.colors.border} />
                 </Pressable>
               ))}
             </View>
@@ -450,7 +451,7 @@ export default function BookingsScreen() {
             <TextInput
               style={styles.reviewInput}
               placeholder="Share your experience (optional)..."
-              placeholderTextColor={Colors.textMuted}
+              placeholderTextColor={theme.colors.textMuted}
               value={reviewText}
               onChangeText={setReviewText}
               multiline
@@ -468,7 +469,7 @@ export default function BookingsScreen() {
                 onPress={handleRateBooking}
                 disabled={ratingLoading}
               >
-                <Icon name="send" size={15} color="#fff" />
+                <Icon name="send" size={15} color={theme.colors.onBrand} />
                 <Text style={styles.rateSubmitText}>{ratingLoading ? "Submitting..." : "Submit Review"}</Text>
               </Pressable>
             </View>
@@ -479,8 +480,8 @@ export default function BookingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -488,37 +489,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 12,
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: theme.colors.border,
   },
-  title: { fontSize: 20, fontWeight: "800", color: Colors.text },
-  subtitle: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  title: { fontSize: 20, fontWeight: "800", color: theme.colors.text },
+  subtitle: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 },
   newBtn: {
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: Colors.primary,
+    backgroundColor: theme.colors.primary,
     alignItems: "center",
     justifyContent: "center",
   },
   summaryStrip: {
     flexDirection: "row",
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     paddingVertical: 12,
     paddingHorizontal: 20,
     alignItems: "center",
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: theme.colors.border,
   },
   stripItem: { flex: 1, alignItems: "center", gap: 2 },
   stripVal: { fontSize: 16, fontWeight: "800" },
-  stripLabel: { fontSize: 10, color: Colors.textSecondary, fontWeight: "600" },
-  stripDiv: { width: 1, height: 30, backgroundColor: Colors.border },
+  stripLabel: { fontSize: 10, color: theme.colors.textSecondary, fontWeight: "600" },
+  stripDiv: { width: 1, height: 30, backgroundColor: theme.colors.border },
   filterScroll: {
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: theme.colors.border,
     flexGrow: 0,
     flexShrink: 0,
   },
@@ -530,23 +531,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
-    backgroundColor: Colors.background,
+    backgroundColor: theme.colors.background,
     borderWidth: 1.5,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
-  filterText: { fontSize: 11, fontWeight: "600", color: Colors.textSecondary },
-  filterTextActive: { color: "#fff" },
+  filterText: { fontSize: 11, fontWeight: "600", color: theme.colors.textSecondary },
+  filterTextActive: { color: theme.colors.onBrand },
   badge: {
     width: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: Colors.border,
+    backgroundColor: theme.colors.border,
     alignItems: "center",
     justifyContent: "center",
   },
   badgeActive: { backgroundColor: "rgba(255,255,255,0.3)" },
-  badgeText: { fontSize: 9, fontWeight: "700", color: Colors.textSecondary },
-  badgeTextActive: { color: "#fff" },
+  badgeText: { fontSize: 9, fontWeight: "700", color: theme.colors.textSecondary },
+  badgeTextActive: { color: theme.colors.onBrand },
   scroll: { flex: 1 },
   scrollContent: { padding: 16, paddingBottom: 100, gap: 0 },
   empty: { alignItems: "center", paddingVertical: 60, gap: 8 },
@@ -554,53 +555,53 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 20,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 4,
   },
-  emptyTitle: { fontSize: 16, fontWeight: "700", color: Colors.text },
-  emptySubtitle: { fontSize: 13, color: Colors.textSecondary, textAlign: "center" },
+  emptyTitle: { fontSize: 16, fontWeight: "700", color: theme.colors.text },
+  emptySubtitle: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center" },
   findBtn: {
     marginTop: 10,
-    backgroundColor: Colors.primary,
+    backgroundColor: theme.colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 11,
     borderRadius: 14,
   },
-  findBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  findBtnText: { color: theme.colors.onBrand, fontWeight: "700", fontSize: 14 },
   bookAgainBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    backgroundColor: Colors.primary + "12",
+    backgroundColor: theme.colors.primary + "12",
     borderRadius: 10,
     paddingVertical: 8,
     marginTop: -6,
     marginBottom: 4,
     borderWidth: 1,
-    borderColor: Colors.primary + "30",
+    borderColor: theme.colors.primary + "30",
   },
-  bookAgainText: { fontSize: 12, fontWeight: "700", color: Colors.primary },
+  bookAgainText: { fontSize: 12, fontWeight: "700", color: theme.colors.primary },
   billingLink: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 13,
     marginTop: 4,
     borderWidth: 1,
-    borderColor: Colors.primary + "25",
+    borderColor: theme.colors.primary + "25",
   },
-  billingLinkText: { flex: 1, fontSize: 13, fontWeight: "600", color: Colors.primary },
+  billingLinkText: { flex: 1, fontSize: 13, fontWeight: "600", color: theme.colors.primary },
   mainTabRow: {
     flexDirection: "row",
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: theme.colors.border,
     paddingHorizontal: 16,
     gap: 4,
   },
@@ -614,25 +615,25 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
   },
-  mainTabActive: { borderBottomColor: Colors.primary },
-  mainTabActiveOrange: { borderBottomColor: Colors.secondary },
-  mainTabText: { fontSize: 13, fontWeight: "600", color: Colors.textMuted },
-  mainTabTextActive: { color: Colors.primary },
+  mainTabActive: { borderBottomColor: theme.colors.primary },
+  mainTabActiveOrange: { borderBottomColor: theme.colors.secondary },
+  mainTabText: { fontSize: 13, fontWeight: "600", color: theme.colors.textMuted },
+  mainTabTextActive: { color: theme.colors.primary },
   tabBadge: {
-    backgroundColor: Colors.border,
+    backgroundColor: theme.colors.border,
     borderRadius: 10,
     paddingHorizontal: 6,
     paddingVertical: 1,
   },
-  tabBadgeText: { fontSize: 10, fontWeight: "700", color: Colors.textSecondary },
+  tabBadgeText: { fontSize: 10, fontWeight: "700", color: theme.colors.textSecondary },
   negCard: {
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderRadius: 18,
     padding: 16,
     gap: 12,
     borderWidth: 1,
-    borderColor: Colors.secondary + "25",
-    shadowColor: Colors.shadow,
+    borderColor: theme.colors.secondary + "25",
+    shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 1,
     shadowRadius: 8,
@@ -643,24 +644,24 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: Colors.secondary + "15",
+    backgroundColor: theme.colors.secondary + "15",
     alignItems: "center",
     justifyContent: "center",
   },
-  negService: { fontSize: 15, fontWeight: "800", color: Colors.text },
-  negProvider: { fontSize: 12, color: Colors.textSecondary, marginTop: 1 },
+  negService: { fontSize: 15, fontWeight: "800", color: theme.colors.text },
+  negProvider: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 1 },
   negBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   negBadgeText: { fontSize: 10, fontWeight: "700" },
   negAmtRow: { flexDirection: "row", gap: 10 },
   negAmtBox: {
     flex: 1,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 12,
     padding: 10,
     alignItems: "center",
     gap: 3,
   },
-  negAmtLabel: { fontSize: 10, color: Colors.textSecondary, fontWeight: "600" },
+  negAmtLabel: { fontSize: 10, color: theme.colors.textSecondary, fontWeight: "600" },
   negAmt: { fontSize: 17, fontWeight: "800" },
   negActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "center" },
   negAcceptBtn: {
@@ -669,70 +670,70 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    backgroundColor: Colors.success,
+    backgroundColor: theme.colors.success,
     borderRadius: 12,
     paddingVertical: 11,
   },
-  negAcceptText: { fontSize: 13, fontWeight: "700", color: "#fff" },
+  negAcceptText: { fontSize: 13, fontWeight: "700", color: theme.colors.onBrand },
   negRejectBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",
     gap: 5, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12,
-    backgroundColor: Colors.error + "10", borderWidth: 1, borderColor: Colors.error + "30",
+    backgroundColor: theme.colors.danger + "10", borderWidth: 1, borderColor: theme.colors.danger + "30",
   },
-  negRejectText: { fontSize: 13, fontWeight: "700", color: Colors.error },
+  negRejectText: { fontSize: 13, fontWeight: "700", color: theme.colors.danger },
   negWaitingBadge: {
     flex: 1, flexDirection: "row", alignItems: "center", gap: 6,
-    backgroundColor: Colors.surface, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8,
+    backgroundColor: theme.colors.surfaceAlt, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8,
   },
-  negWaitingText: { fontSize: 12, color: Colors.textSecondary, fontStyle: "italic" },
+  negWaitingText: { fontSize: 12, color: theme.colors.textSecondary, fontStyle: "italic" },
   negCancelBtn: {
     flexDirection: "row", alignItems: "center", gap: 5,
     paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
-    backgroundColor: Colors.border + "50", borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: theme.colors.border + "50", borderWidth: 1, borderColor: theme.colors.border,
   },
-  negCancelText: { fontSize: 12, fontWeight: "600", color: Colors.textSecondary },
+  negCancelText: { fontSize: 12, fontWeight: "600", color: theme.colors.textSecondary },
   negBookNowBtn: {
     flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    backgroundColor: "#16A34A", borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14,
+    backgroundColor: theme.colors.success, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14,
   },
-  negBookNowText: { fontSize: 13, fontWeight: "700", color: "#fff" },
+  negBookNowText: { fontSize: 13, fontWeight: "700", color: theme.colors.onBrand },
   negLastMsg: { flexDirection: "row", alignItems: "center", gap: 6 },
-  negLastMsgText: { flex: 1, fontSize: 12, color: Colors.textSecondary, fontStyle: "italic" },
+  negLastMsgText: { flex: 1, fontSize: 12, color: theme.colors.textSecondary, fontStyle: "italic" },
   urduText: { writingDirection: "rtl", textAlign: "right" },
   rateOverlay: {
     flex: 1, backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-end",
   },
   rateBox: {
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
     padding: 24, paddingBottom: 40, gap: 16,
   },
   rateHandle: {
     width: 40, height: 4, borderRadius: 2,
-    backgroundColor: Colors.border, alignSelf: "center", marginBottom: 4,
+    backgroundColor: theme.colors.border, alignSelf: "center", marginBottom: 4,
   },
-  rateTitle: { fontSize: 20, fontWeight: "800", color: Colors.text, textAlign: "center" },
-  rateSubtitle: { fontSize: 13, color: Colors.textSecondary, textAlign: "center" },
+  rateTitle: { fontSize: 20, fontWeight: "800", color: theme.colors.text, textAlign: "center" },
+  rateSubtitle: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center" },
   starsRow: { flexDirection: "row", justifyContent: "center", gap: 8 },
-  ratingLabel: { fontSize: 15, fontWeight: "700", color: Colors.accent, textAlign: "center" },
+  ratingLabel: { fontSize: 15, fontWeight: "700", color: theme.colors.accent, textAlign: "center" },
   reviewInput: {
-    backgroundColor: Colors.background, borderRadius: 14, padding: 14,
-    fontSize: 14, color: Colors.text, minHeight: 90, textAlignVertical: "top",
-    borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: theme.colors.background, borderRadius: 14, padding: 14,
+    fontSize: 14, color: theme.colors.text, minHeight: 90, textAlignVertical: "top",
+    borderWidth: 1, borderColor: theme.colors.border,
   },
-  charCount: { fontSize: 11, color: Colors.textMuted, textAlign: "right" },
+  charCount: { fontSize: 11, color: theme.colors.textMuted, textAlign: "right" },
   rateActions: { flexDirection: "row", gap: 12 },
   rateCancelBtn: {
     flex: 1, paddingVertical: 14, alignItems: "center",
-    borderRadius: 14, backgroundColor: Colors.surface,
-    borderWidth: 1, borderColor: Colors.border,
+    borderRadius: 14, backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1, borderColor: theme.colors.border,
   },
-  rateCancelText: { fontSize: 14, fontWeight: "700", color: Colors.textSecondary },
+  rateCancelText: { fontSize: 14, fontWeight: "700", color: theme.colors.textSecondary },
   rateSubmitBtn: {
     flex: 2, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14,
+    backgroundColor: theme.colors.primary, borderRadius: 14, paddingVertical: 14,
   },
-  rateSubmitText: { fontSize: 14, fontWeight: "700", color: "#fff" },
+  rateSubmitText: { fontSize: 14, fontWeight: "700", color: theme.colors.onBrand },
 });
 

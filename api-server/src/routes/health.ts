@@ -6,12 +6,18 @@ import { getMigrationHealth } from "../lib/databaseMigrations";
 import { queueStats } from "../lib/queue";
 import { bookingSweeperStats } from "../lib/bookingSweeper";
 import { runtimeMetricsSnapshot } from "../lib/runtimeMetrics";
+import { getEmailConfigurationStatus } from "../lib/email";
+import { getMapConfigurationStatus } from "../lib/mapConfiguration";
+import { getPushConfigurationStatus } from "../lib/push";
+import { getOtpDeliveryConfigurationStatus } from "../lib/otpDelivery";
+import { getStorageConfigurationStatus } from "../lib/storageProvider";
+import { getReleaseIdentity } from "../lib/releaseIdentity";
 
 const router: IRouter = Router();
 
 router.get("/healthz", (_req, res) => {
   const data = HealthCheckResponse.parse({ status: "ok" });
-  res.json(data);
+  res.json({ ...data, release: getReleaseIdentity() });
 });
 
 // Deep health: pings the database. Use for production monitoring / load balancer.
@@ -24,11 +30,17 @@ router.get("/healthz/deep", async (_req, res) => {
     res.status(migrations.ok ? 200 : 503).json({
       status: migrations.ok ? "ok" : "degraded",
       uptimeSeconds: Math.round(process.uptime()),
+      release: getReleaseIdentity(),
       checks: {
         database: { ok: true, latencyMs: dbMs, rows: result.rows?.length ?? 0 },
         migrations,
         queue: queueStats(),
         bookingSweeper: bookingSweeperStats(),
+        email: getEmailConfigurationStatus(),
+        maps: getMapConfigurationStatus(),
+        push: getPushConfigurationStatus(),
+        storage: getStorageConfigurationStatus(),
+        otpDelivery: getOtpDeliveryConfigurationStatus(),
       },
     });
   } catch (e) {

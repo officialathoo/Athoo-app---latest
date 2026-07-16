@@ -1,15 +1,81 @@
 {
-  "schemaVersion": 1,
-  "evidenceRequired": ["screenshot-or-video", "device-and-os", "build-identifier", "timestamp", "result-and-notes"],
+  "schemaVersion": 2,
+  "evidenceRequired": [
+    "screenshot-or-video",
+    "device-and-os",
+    "build-identifier",
+    "timestamp",
+    "result-and-notes"
+  ],
   "platforms": {
     "android": [
-      "fresh-install-and-launch", "customer-login", "provider-login", "logout-and-session-clear", "home-navigation", "location-permission-and-map", "camera-image-upload", "gallery-image-upload", "video-upload", "push-notification-tap", "booking-and-negotiation", "premium-payment-proof"
+      "fresh-install-and-native-splash",
+      "customer-phone-otp-login",
+      "customer-email-otp-login",
+      "provider-phone-otp-login",
+      "account-status-login-rejection",
+      "logout-and-session-clear",
+      "single-device-session-revocation",
+      "dark-theme-all-primary-flows",
+      "light-theme-all-primary-flows",
+      "home-navigation-and-deep-links",
+      "location-permission-and-accuracy",
+      "map-tiles-search-reverse-geocoding",
+      "camera-image-upload",
+      "gallery-image-upload",
+      "video-upload",
+      "job-notification-sound",
+      "chat-notification-sound",
+      "general-notification-sound",
+      "incoming-call-sound-and-controls",
+      "push-notification-tap-from-background",
+      "push-notification-tap-from-killed-state",
+      "booking-and-negotiation",
+      "premium-payment-proof",
+      "weak-network-retry-and-offline-state"
     ],
     "ios": [
-      "fresh-install-and-launch", "customer-login", "provider-login", "logout-and-session-clear", "home-navigation", "location-permission-and-map", "camera-image-upload", "gallery-image-upload", "video-upload", "push-notification-tap", "booking-and-negotiation", "premium-payment-proof"
+      "fresh-install-and-native-splash",
+      "customer-phone-otp-login",
+      "customer-email-otp-login",
+      "provider-phone-otp-login",
+      "account-status-login-rejection",
+      "logout-and-session-clear",
+      "single-device-session-revocation",
+      "dark-theme-all-primary-flows",
+      "light-theme-all-primary-flows",
+      "home-navigation-and-deep-links",
+      "location-permission-and-accuracy",
+      "map-tiles-search-reverse-geocoding",
+      "camera-image-upload",
+      "gallery-image-upload",
+      "video-upload",
+      "job-notification-sound",
+      "chat-notification-sound",
+      "general-notification-sound",
+      "incoming-call-sound-and-controls",
+      "push-notification-tap-from-background",
+      "push-notification-tap-from-killed-state",
+      "booking-and-negotiation",
+      "premium-payment-proof",
+      "weak-network-retry-and-offline-state"
     ]
   },
   "crossRole": [
-    "customer-provider-direct-booking", "customer-provider-negotiation", "broadcast-provider-response", "chat-and-read-receipts", "incoming-and-outgoing-call", "provider-arrival-and-pin-start", "job-completion-and-review", "admin-approval-and-notification", "premium-approval-and-cancellation", "complaint-ticket-admin-response"
+    "customer-provider-direct-booking",
+    "customer-provider-negotiation",
+    "broadcast-provider-response",
+    "chat-and-read-receipts",
+    "incoming-and-outgoing-call",
+    "provider-arrival-and-pin-start",
+    "job-completion-and-review",
+    "admin-approval-and-notification",
+    "premium-approval-and-cancellation",
+    "complaint-ticket-admin-response",
+    "email-verification-and-welcome",
+    "password-reset-and-security-alert",
+    "map-location-shared-consistency",
+    "notification-deep-link-destination",
+    "media-upload-and-admin-review"
   ]
 }

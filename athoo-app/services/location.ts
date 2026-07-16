@@ -20,6 +20,7 @@ type Options = {
   timeoutMs?: number;
   maxCacheAgeMs?: number;
   requiredAccuracy?: number;
+  freshAccuracy?: "balanced" | "high" | "highest";
   requestPermission?: boolean;
   rationaleTitle?: string;
   rationaleBody?: string;
@@ -65,6 +66,55 @@ async function writeAppCache(location: AthooLocation): Promise<void> {
   } catch {
     // Location caching is an optimization; never fail a user flow because storage is unavailable.
   }
+}
+
+
+function resolveExpoAccuracy(value: Options["freshAccuracy"]): Location.Accuracy {
+  if (value === "highest") return Location.Accuracy.Highest;
+  if (value === "high") return Location.Accuracy.High;
+  return Location.Accuracy.Balanced;
+}
+
+function betterLocation(a: AthooLocation | null, b: AthooLocation | null): AthooLocation | null {
+  if (!a) return b;
+  if (!b) return a;
+  const accuracyA = a.accuracy ?? Number.MAX_SAFE_INTEGER;
+  const accuracyB = b.accuracy ?? Number.MAX_SAFE_INTEGER;
+  if (accuracyA !== accuracyB) return accuracyA < accuracyB ? a : b;
+  return a.timestamp >= b.timestamp ? a : b;
+}
+
+async function watchForBetterLocation(
+  timeoutMs: number,
+  requiredAccuracy: number,
+  accuracy: Location.Accuracy,
+  initial: AthooLocation | null,
+): Promise<AthooLocation | null> {
+  if (timeoutMs <= 0) return initial;
+  return await new Promise<AthooLocation | null>((resolve) => {
+    let settled = false;
+    let best = initial;
+    let subscription: Location.LocationSubscription | null = null;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      subscription?.remove();
+      resolve(best);
+    };
+    const timer = setTimeout(finish, timeoutMs);
+    void Location.watchPositionAsync(
+      { accuracy, timeInterval: 700, distanceInterval: 0 },
+      (value) => {
+        const candidate = fromLocationObject(value, "fresh");
+        best = betterLocation(best, candidate);
+        if (candidate && candidate.accuracy != null && candidate.accuracy <= requiredAccuracy) finish();
+      },
+    ).then((value) => {
+      subscription = value;
+      if (settled) value.remove();
+    }).catch(() => finish());
+  });
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -120,27 +170,52 @@ export async function getFastForegroundLocation(options: Options = {}): Promise<
       return b.timestamp - a.timestamp;
     })[0] ?? null;
 
-  // A recent, reasonably accurate device fix is immediately good enough for map previews and discovery.
-  if (bestCached && (bestCached.accuracy == null || bestCached.accuracy <= 250)) {
+  // Use cached coordinates only when they satisfy this flow's accuracy requirement.
+  const cachedAccuracyThreshold = Math.min(250, Math.max(25, requiredAccuracy));
+  if (bestCached && (bestCached.accuracy == null || bestCached.accuracy <= cachedAccuracyThreshold)) {
     void writeAppCache(bestCached);
     return { permission, location: bestCached, stale: false };
   }
 
+  const startedAt = Date.now();
+  const requestedAccuracy = resolveExpoAccuracy(options.freshAccuracy);
+  let fresh: AthooLocation | null = null;
   try {
+    const firstAttemptMs = Math.max(3_000, Math.min(timeoutMs, Math.round(timeoutMs * 0.65)));
     const freshObject = await withTimeout(
-      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-      timeoutMs,
+      Location.getCurrentPositionAsync({
+        accuracy: requestedAccuracy,
+        mayShowUserSettingsDialog: true,
+      }),
+      firstAttemptMs,
     );
-    const fresh = fromLocationObject(freshObject, "fresh");
-    if (fresh) {
-      await writeAppCache(fresh);
-      return { permission, location: fresh, stale: false };
-    }
+    fresh = fromLocationObject(freshObject, "fresh");
   } catch {
-    // Fall through to cached coordinates; callers can still allow manual address selection.
+    // Continue with a short watcher or cached coordinates.
   }
 
-  return { permission, location: bestCached, stale: Boolean(bestCached) };
+  const elapsed = Date.now() - startedAt;
+  const remainingMs = Math.max(0, timeoutMs - elapsed);
+  if (remainingMs >= 1_000 && (!fresh || fresh.accuracy == null || fresh.accuracy > requiredAccuracy)) {
+    fresh = await watchForBetterLocation(
+      remainingMs,
+      requiredAccuracy,
+      requestedAccuracy === Location.Accuracy.Balanced ? Location.Accuracy.High : requestedAccuracy,
+      fresh,
+    );
+  }
+
+  const best = betterLocation(fresh, bestCached);
+  if (best) {
+    await writeAppCache(best);
+    return {
+      permission,
+      location: best,
+      stale: best.source !== "fresh" || (best.accuracy != null && best.accuracy > requiredAccuracy),
+    };
+  }
+
+  return { permission, location: null, stale: false };
 }
 
 export async function cacheForegroundLocation(location: Location.LocationObject): Promise<void> {

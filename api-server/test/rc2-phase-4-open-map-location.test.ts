@@ -12,7 +12,9 @@ test("Athoo uses an interactive OpenStreetMap tile preview without Google config
   const config = read("athoo-app/app.config.js");
   const pkg = read("athoo-app/package.json");
 
-  assert.match(preview, /DEFAULT_TILE_TEMPLATE = "https:\/\/tile\.openstreetmap\.org\/\{z\}\/\{x\}\/\{y\}\.png"/);
+  assert.match(preview, /EXPO_PUBLIC_MAP_TILE_URL/);
+  assert.match(preview, /TILE_TEMPLATE_CONFIGURED/);
+  assert.doesNotMatch(preview, /athoo-api\.onrender\.com/);
   assert.match(preview, /tileUrl\(resolvedZoom, normalizedX, tileY, refreshKey\)/);
   assert.match(preview, /onCoordinateChange/);
   assert.match(preview, /SvgPolyline/);
@@ -43,6 +45,7 @@ test("foreground location is cache-first and bounded instead of waiting indefini
   assert.match(location, /getLastKnownPositionAsync/);
   assert.match(location, /LOCATION_CACHE_KEY/);
   assert.match(location, /Location\.Accuracy\.Balanced/);
+  assert.match(location, /watchPositionAsync/);
   assert.match(location, /LOCATION_TIMEOUT/);
   assert.match(booking, /getFastForegroundLocation/);
   assert.match(providerJob, /getFastForegroundLocation/);

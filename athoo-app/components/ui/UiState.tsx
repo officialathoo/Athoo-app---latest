@@ -135,9 +135,9 @@ export function OfflineBanner() {
   if (!offline) return null;
 
   return (
-    <Animated.View pointerEvents="none" style={[styles.offlineBanner, { opacity, backgroundColor: theme.colors.danger, borderRadius: theme.radius.sm }]}>
+    <Animated.View pointerEvents="none" style={[styles.offlineBanner, { opacity, backgroundColor: theme.colors.danger, borderRadius: theme.radius.sm, shadowColor: theme.colors.overlay }]}>
       <Feather name="wifi-off" size={theme.iconSize.xs} color={theme.colors.white} />
-      <Text style={styles.offlineText}>You are offline. Some features may not work.</Text>
+      <Text style={[styles.offlineText, { color: theme.colors.white }]}>You are offline. Some features may not work.</Text>
     </Animated.View>
   );
 }
@@ -153,23 +153,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  retryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 12,
-    marginTop: 4,
-  },
-  retryBtnText: { fontSize: 13, fontWeight: "700", color: "#fff" },
-  ctaBtn: {
-    paddingHorizontal: 20,
-    paddingVertical: 11,
-    borderRadius: 12,
-    marginTop: 4,
-  },
-  ctaBtnText: { fontSize: 13, fontWeight: "700", color: "#fff" },
   offlineBanner: {
     position: "absolute",
     top: Platform.OS === "ios" ? 56 : 28,
@@ -178,16 +161,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#DC2626",
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 12,
     zIndex: 9998,
     elevation: 18,
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.2,
     shadowRadius: 14,
   },
-  offlineText: { color: "#fff", fontSize: 12, fontWeight: "700", flex: 1 },
+  offlineText: { fontSize: 12, fontWeight: "700", flex: 1 },
 });

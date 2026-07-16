@@ -12,3 +12,11 @@
 10. Build internal Android/iOS packages from the same commit and complete the closed-beta checklist.
 
 A failed environment validation, release gate, migration, health check, or smoke test stops the deployment.
+
+## Phase 4C staging evidence
+
+After Render reaches healthy status, use `pnpm runtime:verify:connected` with a
+dedicated staging customer and admin. Do not use owner/personal accounts. Real
+email sending occurs only when `CONNECTED_EMAIL_TEST_TO` is explicitly set.
+Keep the generated `release-evidence/connected-runtime-*.json` with private
+release records, not in Git or the deployment ZIP.

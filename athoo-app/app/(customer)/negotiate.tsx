@@ -15,7 +15,8 @@ import {
 } from "react-native";
 import { PrivateImage } from "@/services/storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 import { AnimatedCard } from "@/components/ui/AnimatedCard";
 import { SuccessModal } from "@/components/ui/SuccessModal";
 import { useAuth } from "@/context/AuthContext";
@@ -65,44 +66,46 @@ function getTimeSlots() {
 
 const SUGGESTED_PRICES = [500, 800, 1000, 1500, 2000, 2500];
 
-function getStatusInfo(status?: string) {
+function getStatusInfo(theme: AthooTheme, status?: string) {
   if (status === "customer_offer") {
     return {
       label: "Offer Sent",
-      color: "#CA8A04",
-      bg: "#FEF9C3",
+      color: theme.colors.warning,
+      bg: theme.colors.warningSoft,
     };
   }
   if (status === "provider_counter") {
     return {
       label: "Counter Offer",
-      color: Colors.primary,
-      bg: "#EFF6FF",
+      color: theme.colors.primary,
+      bg: theme.colors.infoSoft,
     };
   }
   if (status === "accepted") {
     return {
       label: "Accepted",
-      color: "#16A34A",
-      bg: "#F0FDF4",
+      color: theme.colors.success,
+      bg: theme.colors.successSoft,
     };
   }
   if (status === "rejected") {
     return {
       label: "Rejected",
-      color: Colors.error,
-      bg: "#FEF2F2",
+      color: theme.colors.danger,
+      bg: theme.colors.dangerSoft,
     };
   }
 
   return {
     label: "Negotiation",
-    color: Colors.textSecondary,
-    bg: Colors.surface,
+    color: theme.colors.textSecondary,
+    bg: theme.colors.surfaceAlt,
   };
 }
 
 export default function NegotiateScreen() {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const {
     providerId,
     service,
@@ -321,7 +324,7 @@ export default function NegotiateScreen() {
     return (
       <View style={[styles.container, { paddingTop: topPad }]}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
       </View>
     );
@@ -331,7 +334,7 @@ export default function NegotiateScreen() {
     return (
       <View style={[styles.container, { paddingTop: topPad }]}>
         <View style={styles.notFound}>
-          <Icon name="alert-circle" size={40} color={Colors.error} />
+          <Icon name="alert-circle" size={40} color={theme.colors.danger} />
           <Text style={styles.notFoundText}>Provider not found</Text>
           <Pressable onPress={() => router.back()}>
             <Text style={styles.backLink}>Go back</Text>
@@ -344,9 +347,9 @@ export default function NegotiateScreen() {
   if (!isCreateMode) {
     return (
       <View style={[styles.container, { paddingTop: topPad }]}>
-        <LinearGradient colors={[Colors.primary, "#0D4BA0"]} style={styles.headerGrad}>
+        <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.headerGrad}>
           <Pressable style={styles.backBtn} onPress={() => router.back()}>
-            <Icon name="arrow-left" size={20} color="#fff" />
+            <Icon name="arrow-left" size={20} color={theme.colors.onBrand} />
           </Pressable>
           <Text style={styles.headerTitle}>My Negotiations</Text>
           <Text style={styles.headerSubtitle}>Track price offers and counters</Text>
@@ -362,7 +365,7 @@ export default function NegotiateScreen() {
               <View style={styles.selectedCard}>
                 <View style={styles.selectedHeader}>
                   <View style={styles.selectedIcon}>
-                    <Icon name="dollar-sign" size={18} color={Colors.secondary} />
+                    <Icon name="dollar-sign" size={18} color={theme.colors.secondary} />
                   </View>
 
                   <View style={{ flex: 1 }}>
@@ -375,16 +378,16 @@ export default function NegotiateScreen() {
                   <View
                     style={[
                       styles.statusBadge,
-                      { backgroundColor: getStatusInfo(selectedNegotiation.status).bg },
+                      { backgroundColor: getStatusInfo(theme, selectedNegotiation.status).bg },
                     ]}
                   >
                     <Text
                       style={[
                         styles.statusBadgeText,
-                        { color: getStatusInfo(selectedNegotiation.status).color },
+                        { color: getStatusInfo(theme, selectedNegotiation.status).color },
                       ]}
                     >
-                      {getStatusInfo(selectedNegotiation.status).label}
+                      {getStatusInfo(theme, selectedNegotiation.status).label}
                     </Text>
                   </View>
                 </View>
@@ -392,7 +395,7 @@ export default function NegotiateScreen() {
                 <View style={styles.amountsRow}>
                   <View style={styles.amountBox}>
                     <Text style={styles.amountLabel}>Your Offer</Text>
-                    <Text style={[styles.amountValue, { color: Colors.primary }]}>
+                    <Text style={[styles.amountValue, { color: theme.colors.primary }]}>
                       Rs. {selectedNegotiation.customerOffer}
                     </Text>
                   </View>
@@ -400,7 +403,7 @@ export default function NegotiateScreen() {
                   {selectedNegotiation.providerCounter !== undefined ? (
                     <View style={styles.amountBox}>
                       <Text style={styles.amountLabel}>Provider Counter</Text>
-                      <Text style={[styles.amountValue, { color: Colors.secondary }] }>
+                      <Text style={[styles.amountValue, { color: theme.colors.secondary }] }>
                         Rs. {selectedNegotiation.providerCounter}
                       </Text>
                     </View>
@@ -416,7 +419,7 @@ export default function NegotiateScreen() {
                         value={selectedCounter}
                         onChangeText={(v) => setSelectedCounter(v.replace(/[^0-9]/g, ""))}
                         keyboardType="numeric"
-                        placeholderTextColor={Colors.textMuted}
+                        placeholderTextColor={theme.colors.textMuted}
                       />
                       <Pressable style={styles.inlineBtn} onPress={handleCounterSelected} disabled={actionLoading}>
                         <Text style={styles.inlineBtnText}>Counter</Text>
@@ -456,7 +459,7 @@ export default function NegotiateScreen() {
 
           {myNegotiations.length === 0 ? (
             <View style={styles.emptyWrap}>
-              <Icon name="dollar-sign" size={42} color={Colors.textMuted} />
+              <Icon name="dollar-sign" size={42} color={theme.colors.textMuted} />
               <Text style={styles.emptyTitle}>No Negotiations Yet</Text>
               <Text style={styles.emptySubtitle}>
                 When you send price offers to providers, they will appear here.
@@ -464,7 +467,7 @@ export default function NegotiateScreen() {
             </View>
           ) : (
             myNegotiations.map((neg, index) => {
-              const statusInfo = getStatusInfo(neg.status);
+              const statusInfo = getStatusInfo(theme, neg.status);
               const isSelected = neg.id === negId;
 
               return (
@@ -483,7 +486,7 @@ export default function NegotiateScreen() {
                   >
                     <View style={styles.listHeader}>
                       <View style={styles.listIcon}>
-                        <Icon name="dollar-sign" size={16} color={Colors.secondary} />
+                        <Icon name="dollar-sign" size={16} color={theme.colors.secondary} />
                       </View>
 
                       <View style={{ flex: 1 }}>
@@ -501,7 +504,7 @@ export default function NegotiateScreen() {
                     <View style={styles.listAmounts}>
                       <Text style={styles.listAmountText}>
                         Your Offer:{" "}
-                        <Text style={{ color: Colors.primary, fontWeight: "800" }}>
+                        <Text style={{ color: theme.colors.primary, fontWeight: "800" }}>
                           Rs. {neg.customerOffer}
                         </Text>
                       </Text>
@@ -509,7 +512,7 @@ export default function NegotiateScreen() {
                       {neg.providerCounter !== undefined ? (
                         <Text style={styles.listAmountText}>
                           Counter:{" "}
-                          <Text style={{ color: Colors.secondary, fontWeight: "800" }}>
+                          <Text style={{ color: theme.colors.secondary, fontWeight: "800" }}>
                             Rs. {neg.providerCounter}
                           </Text>
                         </Text>
@@ -538,9 +541,9 @@ export default function NegotiateScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
-      <LinearGradient colors={[Colors.primary, "#0D4BA0"]} style={styles.headerGrad}>
+      <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.headerGrad}>
         <Pressable style={styles.backBtn} onPress={step > 1 ? () => setStep((s) => (s - 1) as 1 | 2 | 3) : () => router.back()}>
-          <Icon name="arrow-left" size={20} color="#fff" />
+          <Icon name="arrow-left" size={20} color={theme.colors.onBrand} />
         </Pressable>
         <Text style={styles.headerTitle}>Make an Offer</Text>
         <Text style={styles.headerSubtitle}>Negotiate with {provider!.name}</Text>
@@ -549,7 +552,7 @@ export default function NegotiateScreen() {
           {provider!.profileImage ? (
             <PrivateImage objectPath={provider!.profileImage} style={styles.providerBadgeAvatar} />
           ) : (
-            <View style={[styles.providerBadgeAvatar, { backgroundColor: (provider!.profileColor || Colors.primary) + "30" }]}>
+            <View style={[styles.providerBadgeAvatar, { backgroundColor: (provider!.profileColor || theme.colors.primary) + "30" }]}>
               <Text style={styles.providerBadgeInitials}>{initials}</Text>
             </View>
           )}
@@ -564,7 +567,7 @@ export default function NegotiateScreen() {
           <View key={label} style={styles.stepItem}>
             <View style={[styles.stepDot, step > i + 1 && styles.stepDotDone, step === i + 1 && styles.stepDotActive]}>
               {step > i + 1
-                ? <Icon name="check" size={10} color="#fff" />
+                ? <Icon name="check" size={10} color={theme.colors.onBrand} />
                 : <Text style={styles.stepDotNum}>{i + 1}</Text>}
             </View>
             <Text style={[styles.stepLabel, step === i + 1 && styles.stepLabelActive]}>{label}</Text>
@@ -584,7 +587,7 @@ export default function NegotiateScreen() {
           <AnimatedCard delay={60}>
             <View style={styles.section}>
               <View style={styles.stepHeaderRow}>
-                <Icon name="map-pin" size={20} color={Colors.primary} />
+                <Icon name="map-pin" size={20} color={theme.colors.primary} />
                 <Text style={styles.sectionTitle}>Where is the service needed?</Text>
               </View>
               <Text style={styles.stepHint}>Use your GPS location or type your address.</Text>
@@ -596,9 +599,9 @@ export default function NegotiateScreen() {
                 disabled={isGettingLocation}
               >
                 {isGettingLocation ? (
-                  <ActivityIndicator size="small" color={Colors.primary} />
+                  <ActivityIndicator size="small" color={theme.colors.primary} />
                 ) : (
-                  <Icon name="navigation" size={16} color={Colors.primary} />
+                  <Icon name="navigation" size={16} color={theme.colors.primary} />
                 )}
                 <Text style={styles.gpsBtnText}>
                   {isGettingLocation ? "Getting location…" : "Use My Current Location"}
@@ -616,14 +619,14 @@ export default function NegotiateScreen() {
                 value={address}
                 onChangeText={setAddress}
                 placeholder="e.g. House 12, Street 4, F-7/2, Islamabad"
-                placeholderTextColor={Colors.textMuted}
+                placeholderTextColor={theme.colors.textMuted}
                 multiline
                 numberOfLines={3}
                 textAlignVertical="top"
               />
               <Pressable style={[styles.nextBtn, !address.trim() && styles.submitBtnDisabled]} onPress={handleNextStep} disabled={!address.trim()}>
                 <Text style={styles.nextBtnText}>Next: Date & Time</Text>
-                <Icon name="arrow-right" size={16} color="#fff" />
+                <Icon name="arrow-right" size={16} color={theme.colors.onBrand} />
               </Pressable>
             </View>
           </AnimatedCard>
@@ -634,7 +637,7 @@ export default function NegotiateScreen() {
           <AnimatedCard delay={60}>
             <View style={styles.section}>
               <View style={styles.stepHeaderRow}>
-                <Icon name="calendar" size={20} color={Colors.primary} />
+                <Icon name="calendar" size={20} color={theme.colors.primary} />
                 <Text style={styles.sectionTitle}>When do you need the service?</Text>
               </View>
               <Text style={styles.stepHint}>Tap a date and time slot below.</Text>
@@ -682,7 +685,7 @@ export default function NegotiateScreen() {
                 <Text style={styles.nextBtnText}>
                   {scheduledDate && scheduledTime ? `Next – ${scheduledDate} at ${scheduledTime}` : "Next: Offer Amount"}
                 </Text>
-                <Icon name="arrow-right" size={16} color="#fff" />
+                <Icon name="arrow-right" size={16} color={theme.colors.onBrand} />
               </Pressable>
             </View>
           </AnimatedCard>
@@ -694,17 +697,17 @@ export default function NegotiateScreen() {
             <AnimatedCard delay={60}>
               <View style={styles.section}>
                 <View style={styles.stepHeaderRow}>
-                  <Icon name="dollar-sign" size={20} color={Colors.primary} />
+                  <Icon name="dollar-sign" size={20} color={theme.colors.primary} />
                   <Text style={styles.sectionTitle}>Your Offer</Text>
                 </View>
                 {/* Summary of previous steps */}
                 <View style={styles.summaryBox}>
                   <View style={styles.summaryRow}>
-                    <Icon name="map-pin" size={13} color={Colors.textSecondary} />
+                    <Icon name="map-pin" size={13} color={theme.colors.textSecondary} />
                     <Text style={styles.summaryText} numberOfLines={2}>{address}</Text>
                   </View>
                   <View style={styles.summaryRow}>
-                    <Icon name="calendar" size={13} color={Colors.textSecondary} />
+                    <Icon name="calendar" size={13} color={theme.colors.textSecondary} />
                     <Text style={styles.summaryText}>{scheduledDate} at {scheduledTime}</Text>
                   </View>
                 </View>
@@ -732,7 +735,7 @@ export default function NegotiateScreen() {
                     value={offerPrice}
                     onChangeText={(v) => setOfferPrice(v.replace(/[^0-9]/g, ""))}
                     placeholder="Enter amount"
-                    placeholderTextColor={Colors.textMuted}
+                    placeholderTextColor={theme.colors.textMuted}
                     keyboardType="number-pad"
                   />
                 </View>
@@ -741,7 +744,7 @@ export default function NegotiateScreen() {
 
             <AnimatedCard delay={120}>
               <View style={styles.tipsSection}>
-                <Icon name="trending-up" size={14} color={Colors.success} />
+                <Icon name="trending-up" size={14} color={theme.colors.success} />
                 <Text style={styles.tipText}>
                   A fair offer gets accepted faster. Providers value respectful negotiations.
                 </Text>
@@ -749,7 +752,7 @@ export default function NegotiateScreen() {
             </AnimatedCard>
 
             <Pressable style={styles.mediaBtn} onPress={pickNegotiationMedia} disabled={loading}>
-              <Icon name="file-text" size={16} color={Colors.primary} />
+              <Icon name="file-text" size={16} color={theme.colors.primary} />
               <Text style={styles.mediaBtnText}>{mediaAssets.length ? `${mediaAssets.length} attachment(s) selected` : "Add photo/video for provider"}</Text>
             </Pressable>
 
@@ -759,16 +762,16 @@ export default function NegotiateScreen() {
               disabled={!offerPrice || loading}
             >
               <LinearGradient
-                colors={[Colors.secondary, "#D45A0E"]}
+                colors={[theme.colors.secondary, theme.colors.secondaryPressed]}
                 style={styles.submitGrad}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
               >
                 {loading ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color={theme.colors.onBrand} />
                 ) : (
                   <>
-                    <Icon name="send" size={18} color="#fff" />
+                    <Icon name="send" size={18} color={theme.colors.onBrand} />
                     <Text style={styles.submitText}>
                       Send Offer – Rs.{" "}
                       {offerPrice ? parseInt(offerPrice, 10).toLocaleString() : "0"}
@@ -801,8 +804,8 @@ export default function NegotiateScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
 
   loadingContainer: {
     flex: 1,
@@ -819,13 +822,13 @@ const styles = StyleSheet.create({
 
   notFoundText: {
     fontSize: 16,
-    color: Colors.text,
+    color: theme.colors.text,
     fontWeight: "600",
   },
 
   backLink: {
     fontSize: 14,
-    color: Colors.primary,
+    color: theme.colors.primary,
     fontWeight: "700",
   },
 
@@ -852,7 +855,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#fff",
+    color: theme.colors.onBrand,
     marginTop: 16,
   },
 
@@ -880,13 +883,13 @@ const styles = StyleSheet.create({
   providerBadgeInitials: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#fff",
+    color: theme.colors.onBrand,
   },
 
   providerBadgeName: {
     fontSize: 15,
     fontWeight: "800",
-    color: "#fff",
+    color: theme.colors.onBrand,
   },
 
   providerBadgeService: {
@@ -903,11 +906,11 @@ const styles = StyleSheet.create({
   },
 
   howSection: {
-    backgroundColor: Colors.primary + "10",
+    backgroundColor: theme.colors.primary + "10",
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
-    borderColor: Colors.primary + "25",
+    borderColor: theme.colors.primary + "25",
     gap: 8,
   },
 
@@ -920,17 +923,17 @@ const styles = StyleSheet.create({
   howTitle: {
     fontSize: 13,
     fontWeight: "700",
-    color: Colors.primary,
+    color: theme.colors.primary,
   },
 
   howText: {
     fontSize: 13,
-    color: Colors.text,
+    color: theme.colors.text,
     lineHeight: 22,
   },
 
   section: {
-    backgroundColor: Colors.white,
+    backgroundColor: theme.colors.surface,
     borderRadius: 16,
     padding: 16,
     gap: 12,
@@ -939,7 +942,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 14,
     fontWeight: "700",
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   // Step wizard styles
@@ -949,9 +952,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 24,
     paddingVertical: 14,
-    backgroundColor: Colors.white,
+    backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: theme.colors.border,
     gap: 0,
   },
   stepItem: {
@@ -963,42 +966,42 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderWidth: 2,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
     alignItems: "center",
     justifyContent: "center",
   },
   stepDotActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
   },
   stepDotDone: {
-    backgroundColor: Colors.success,
-    borderColor: Colors.success,
+    backgroundColor: theme.colors.success,
+    borderColor: theme.colors.success,
   },
   stepDotNum: {
     fontSize: 11,
     fontWeight: "700",
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
   stepLabel: {
     fontSize: 11,
     fontWeight: "600",
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
   stepLabelActive: {
-    color: Colors.primary,
+    color: theme.colors.primary,
     fontWeight: "800",
   },
   stepLine: {
     width: 24,
     height: 2,
-    backgroundColor: Colors.border,
+    backgroundColor: theme.colors.border,
     marginHorizontal: 4,
   },
   stepLineDone: {
-    backgroundColor: Colors.success,
+    backgroundColor: theme.colors.success,
   },
   stepHeaderRow: {
     flexDirection: "row",
@@ -1007,7 +1010,7 @@ const styles = StyleSheet.create({
   },
   stepHint: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     lineHeight: 18,
   },
   // GPS / location button
@@ -1015,9 +1018,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: Colors.primary + "12",
+    backgroundColor: theme.colors.primary + "12",
     borderWidth: 1.5,
-    borderColor: Colors.primary + "40",
+    borderColor: theme.colors.primary + "40",
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 14,
@@ -1025,7 +1028,7 @@ const styles = StyleSheet.create({
   gpsBtnText: {
     fontSize: 14,
     fontWeight: "700",
-    color: Colors.primary,
+    color: theme.colors.primary,
   },
 
   // "or type manually" divider
@@ -1038,22 +1041,22 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: Colors.border,
+    backgroundColor: theme.colors.border,
   },
   dividerText: {
     fontSize: 12,
-    color: Colors.textMuted,
+    color: theme.colors.textMuted,
     fontWeight: "600",
   },
 
   addressInput: {
     borderWidth: 1.5,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
     borderRadius: 12,
     padding: 12,
     fontSize: 14,
-    color: Colors.text,
-    backgroundColor: Colors.surface,
+    color: theme.colors.text,
+    backgroundColor: theme.colors.surfaceAlt,
     minHeight: 80,
   },
 
@@ -1067,27 +1070,27 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 14,
     borderWidth: 1.5,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surface,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceAlt,
     minWidth: 64,
     gap: 2,
   },
   dateChipSelected: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
   },
   dateChipDay: {
     fontSize: 11,
     fontWeight: "700",
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
   dateChipNum: {
     fontSize: 13,
     fontWeight: "800",
-    color: Colors.text,
+    color: theme.colors.text,
   },
   dateChipTextSelected: {
-    color: "#fff",
+    color: theme.colors.onBrand,
   },
 
   // Time slot grid
@@ -1101,20 +1104,20 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderRadius: 10,
     borderWidth: 1.5,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surface,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceAlt,
   },
   timeChipSelected: {
-    backgroundColor: Colors.secondary,
-    borderColor: Colors.secondary,
+    backgroundColor: theme.colors.secondary,
+    borderColor: theme.colors.secondary,
   },
   timeChipText: {
     fontSize: 13,
     fontWeight: "600",
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
   timeChipTextSelected: {
-    color: "#fff",
+    color: theme.colors.onBrand,
     fontWeight: "700",
   },
   nextBtn: {
@@ -1122,7 +1125,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    backgroundColor: Colors.primary,
+    backgroundColor: theme.colors.primary,
     borderRadius: 14,
     paddingVertical: 14,
     marginTop: 4,
@@ -1130,30 +1133,30 @@ const styles = StyleSheet.create({
   nextBtnText: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#fff",
+    color: theme.colors.onBrand,
   },
   fieldLabel: {
     fontSize: 13,
     fontWeight: "600",
-    color: Colors.text,
+    color: theme.colors.text,
     marginBottom: 4,
   },
   fieldInput: {
     borderWidth: 1.5,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
     borderRadius: 12,
     padding: 12,
     fontSize: 14,
-    color: Colors.text,
-    backgroundColor: Colors.surface,
+    color: theme.colors.text,
+    backgroundColor: theme.colors.surfaceAlt,
   },
   summaryBox: {
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 12,
     padding: 12,
     gap: 8,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
   summaryRow: {
     flexDirection: "row",
@@ -1162,7 +1165,7 @@ const styles = StyleSheet.create({
   },
   summaryText: {
     fontSize: 13,
-    color: Colors.text,
+    color: theme.colors.text,
     flex: 1,
     lineHeight: 18,
   },
@@ -1177,33 +1180,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderWidth: 1.5,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
 
   suggestionChipActive: {
-    backgroundColor: Colors.secondary + "20",
-    borderColor: Colors.secondary,
+    backgroundColor: theme.colors.secondary + "20",
+    borderColor: theme.colors.secondary,
   },
 
   suggestionText: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     fontWeight: "600",
   },
 
   suggestionTextActive: {
-    color: Colors.secondary,
+    color: theme.colors.secondary,
   },
 
   priceInputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 14,
     borderWidth: 2,
-    borderColor: Colors.primary,
+    borderColor: theme.colors.primary,
     paddingHorizontal: 16,
     paddingVertical: 10,
     gap: 8,
@@ -1212,36 +1215,36 @@ const styles = StyleSheet.create({
   pricePrefix: {
     fontSize: 20,
     fontWeight: "800",
-    color: Colors.primary,
+    color: theme.colors.primary,
   },
 
   priceInput: {
     flex: 1,
     fontSize: 28,
     fontWeight: "800",
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   tipsSection: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 8,
-    backgroundColor: Colors.success + "10",
+    backgroundColor: theme.colors.success + "10",
     borderRadius: 12,
     padding: 12,
     borderWidth: 1,
-    borderColor: Colors.success + "25",
+    borderColor: theme.colors.success + "25",
   },
 
   tipText: {
     flex: 1,
     fontSize: 12,
-    color: Colors.text,
+    color: theme.colors.text,
     lineHeight: 18,
   },
 
-  mediaBtn: { flexDirection: "row", alignItems: "center", gap: 8, padding: 14, borderWidth: 1, borderColor: Colors.primary, borderRadius: 14, marginTop: 14, backgroundColor: "#EFF6FF" },
-  mediaBtnText: { color: Colors.primary, fontWeight: "800", flex: 1 },
+  mediaBtn: { flexDirection: "row", alignItems: "center", gap: 8, padding: 14, borderWidth: 1, borderColor: theme.colors.primary, borderRadius: 14, marginTop: 14, backgroundColor: theme.colors.infoSoft },
+  mediaBtnText: { color: theme.colors.primary, fontWeight: "800", flex: 1 },
   submitBtn: {
     borderRadius: 16,
     overflow: "hidden",
@@ -1262,7 +1265,7 @@ const styles = StyleSheet.create({
   submitText: {
     fontSize: 16,
     fontWeight: "800",
-    color: "#fff",
+    color: theme.colors.onBrand,
   },
 
   emptyWrap: {
@@ -1274,23 +1277,23 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   emptySubtitle: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     textAlign: "center",
     paddingHorizontal: 20,
   },
 
   selectedCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: theme.colors.surface,
     borderRadius: 18,
     padding: 16,
     gap: 14,
     borderWidth: 1,
-    borderColor: Colors.primary + "25",
+    borderColor: theme.colors.primary + "25",
   },
 
   selectedHeader: {
@@ -1303,7 +1306,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 12,
-    backgroundColor: Colors.secondary + "20",
+    backgroundColor: theme.colors.secondary + "20",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1311,12 +1314,12 @@ const styles = StyleSheet.create({
   selectedService: {
     fontSize: 15,
     fontWeight: "800",
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   selectedProvider: {
     fontSize: 12,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   statusBadge: {
@@ -1337,7 +1340,7 @@ const styles = StyleSheet.create({
 
   amountBox: {
     flex: 1,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 12,
     padding: 12,
     alignItems: "center",
@@ -1346,7 +1349,7 @@ const styles = StyleSheet.create({
 
   amountLabel: {
     fontSize: 11,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     fontWeight: "600",
   },
 
@@ -1356,17 +1359,17 @@ const styles = StyleSheet.create({
   },
 
   listCard: {
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderRadius: 16,
     padding: 14,
     gap: 10,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
 
   listCardSelected: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.primary + "06",
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.primary + "06",
   },
 
   listHeader: {
@@ -1379,7 +1382,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 11,
-    backgroundColor: Colors.secondary + "20",
+    backgroundColor: theme.colors.secondary + "20",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1387,12 +1390,12 @@ const styles = StyleSheet.create({
   listService: {
     fontSize: 14,
     fontWeight: "700",
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   listProvider: {
     fontSize: 12,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   listAmounts: {
@@ -1401,7 +1404,7 @@ const styles = StyleSheet.create({
 
   listAmountText: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   selectedActionsWrap: {
@@ -1416,25 +1419,25 @@ const styles = StyleSheet.create({
 
   counterInputInline: {
     flex: 1,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
     paddingHorizontal: 12,
     paddingVertical: 12,
-    color: Colors.text,
+    color: theme.colors.text,
     fontWeight: "700",
   },
 
   inlineBtn: {
-    backgroundColor: Colors.secondary,
+    backgroundColor: theme.colors.secondary,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
 
   inlineBtnText: {
-    color: Colors.text,
+    color: theme.colors.text,
     fontWeight: "800",
   },
 
@@ -1445,41 +1448,41 @@ const styles = StyleSheet.create({
 
   selectedAcceptBtn: {
     flex: 1,
-    backgroundColor: Colors.primary,
+    backgroundColor: theme.colors.primary,
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: "center",
   },
 
   selectedAcceptText: {
-    color: "#fff",
+    color: theme.colors.onBrand,
     fontWeight: "800",
   },
 
   selectedRejectBtn: {
     flex: 1,
-    backgroundColor: Colors.error + "15",
+    backgroundColor: theme.colors.danger + "15",
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: Colors.error + "30",
+    borderColor: theme.colors.danger + "30",
   },
 
   selectedRejectText: {
-    color: Colors.error,
+    color: theme.colors.danger,
     fontWeight: "800",
   },
 
   continueBookingBtn: {
-    backgroundColor: "#16A34A",
+    backgroundColor: theme.colors.success,
     borderRadius: 12,
     paddingVertical: 13,
     alignItems: "center",
   },
 
   continueBookingText: {
-    color: "#fff",
+    color: theme.colors.onBrand,
     fontWeight: "800",
   },
 

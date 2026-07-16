@@ -271,7 +271,7 @@ router.patch("/customers/:id/deactivate", requirePermission("users.write"), asyn
   if (!customer) return res.status(404).json({ error: "Customer not found" });
   await db.update(usersTable).set({ isDeactivated: true, updatedAt: new Date() }).where(eq(usersTable.id, customer.id));
   await revokeAllUserSessions(customer.id, "customer_deactivated_by_admin");
-  await notifyUser({ userId: customer.id, title: "Account deactivated", body: reason, type: "system", link: "/profile", data: { source: "admin" } }).catch(() => undefined);
+  await notifyUser({ userId: customer.id, title: "Account deactivated", body: reason, type: "system", link: "/profile", data: { source: "admin" }, email: { category: "security", templateKey: "account_status", variables: { status: "deactivated", reason } } }).catch(() => undefined);
   await logAdminAction(req, "customer_deactivated", "user", customer.id, { reason, customerName: customer.name });
   return res.json({ success: true });
 });
@@ -282,7 +282,7 @@ router.patch("/customers/:id/reactivate", requirePermission("users.write"), asyn
   const customer = await findCustomer(String(req.params.id));
   if (!customer) return res.status(404).json({ error: "Customer not found" });
   await db.update(usersTable).set({ isDeactivated: false, updatedAt: new Date() }).where(eq(usersTable.id, customer.id));
-  await notifyUser({ userId: customer.id, title: "Account reactivated", body: reason, type: "system", link: "/profile", data: { source: "admin" } }).catch(() => undefined);
+  await notifyUser({ userId: customer.id, title: "Account reactivated", body: reason, type: "system", link: "/profile", data: { source: "admin" }, email: { category: "security", templateKey: "account_status", variables: { status: "active", reason } } }).catch(() => undefined);
   await logAdminAction(req, "customer_reactivated", "user", customer.id, { reason, customerName: customer.name });
   return res.json({ success: true });
 });
@@ -891,7 +891,7 @@ router.patch("/users/:id/block", requirePermission("users.write"), async (req: A
     await db.update(usersTable).set({ isBlocked: true, blockedReason: reason, isAvailable: false, updatedAt: new Date() }).where(eq(usersTable.id, providerId));
     await revokeAllUserSessions(providerId, "provider_blocked_by_admin");
     emitToUser(providerId, "provider:availability", { isAvailable: false, reason: "admin_block" });
-    await notifyUser({ userId: providerId, title: "Provider account blocked", body: reason, type: "system", link: "/provider/profile", data: { source: "admin" } }).catch(() => undefined);
+    await notifyUser({ userId: providerId, title: "Provider account blocked", body: reason, type: "system", link: "/provider/profile", data: { source: "admin" }, email: { category: "security", templateKey: "account_status", variables: { status: "blocked", reason } } }).catch(() => undefined);
     const updated = await db.query.usersTable.findFirst({ where: eq(usersTable.id, providerId) });
     await logAdminAction(req, "provider_blocked", "user", providerId, { reason, providerName: provider.name });
     return res.json({ user: toSafeUser(updated) });
@@ -909,7 +909,7 @@ router.patch("/users/:id/unblock", requirePermission("users.write"), async (req:
     const provider = await db.query.usersTable.findFirst({ where: eq(usersTable.id, providerId) });
     if (!provider || provider.role !== "provider") return res.status(404).json({ error: "Provider not found" });
     await db.update(usersTable).set({ isBlocked: false, blockedReason: null, isAvailable: false, updatedAt: new Date() }).where(eq(usersTable.id, providerId));
-    await notifyUser({ userId: providerId, title: "Provider account unblocked", body: reason, type: "system", link: "/provider/profile", data: { source: "admin" } }).catch(() => undefined);
+    await notifyUser({ userId: providerId, title: "Provider account unblocked", body: reason, type: "system", link: "/provider/profile", data: { source: "admin" }, email: { category: "security", templateKey: "account_status", variables: { status: "active", reason } } }).catch(() => undefined);
     const updated = await db.query.usersTable.findFirst({ where: eq(usersTable.id, providerId) });
     await logAdminAction(req, "provider_unblocked", "user", providerId, { reason, providerName: provider.name });
     return res.json({ user: toSafeUser(updated) });
@@ -1015,7 +1015,7 @@ router.patch("/users/:id/deactivate", requirePermission("users.write"), async (r
     await db.update(usersTable).set({ isDeactivated: true, isAvailable: false, updatedAt: new Date() }).where(eq(usersTable.id, providerId));
     await revokeAllUserSessions(providerId, "provider_deactivated_by_admin");
     emitToUser(providerId, "provider:availability", { isAvailable: false, reason: "admin_deactivate" });
-    await notifyUser({ userId: providerId, title: "Provider account deactivated", body: reason, type: "system", link: "/provider/profile", data: { source: "admin" } }).catch(() => undefined);
+    await notifyUser({ userId: providerId, title: "Provider account deactivated", body: reason, type: "system", link: "/provider/profile", data: { source: "admin" }, email: { category: "security", templateKey: "account_status", variables: { status: "deactivated", reason } } }).catch(() => undefined);
     const updated = await db.query.usersTable.findFirst({ where: eq(usersTable.id, providerId) });
     await logAdminAction(req, "provider_deactivated", "user", providerId, { reason, providerName: provider.name });
     return res.json({ user: toSafeUser(updated) });
@@ -1032,7 +1032,7 @@ router.patch("/users/:id/reactivate", requirePermission("users.write"), async (r
     const provider = await db.query.usersTable.findFirst({ where: eq(usersTable.id, providerId) });
     if (!provider || provider.role !== "provider") return res.status(404).json({ error: "Provider not found" });
     await db.update(usersTable).set({ isDeactivated: false, isAvailable: false, updatedAt: new Date() }).where(eq(usersTable.id, providerId));
-    await notifyUser({ userId: providerId, title: "Provider account reactivated", body: reason, type: "system", link: "/provider/profile", data: { source: "admin" } }).catch(() => undefined);
+    await notifyUser({ userId: providerId, title: "Provider account reactivated", body: reason, type: "system", link: "/provider/profile", data: { source: "admin" }, email: { category: "security", templateKey: "account_status", variables: { status: "active", reason } } }).catch(() => undefined);
     const updated = await db.query.usersTable.findFirst({ where: eq(usersTable.id, providerId) });
     await logAdminAction(req, "provider_reactivated", "user", providerId, { reason, providerName: provider.name });
     return res.json({ user: toSafeUser(updated) });

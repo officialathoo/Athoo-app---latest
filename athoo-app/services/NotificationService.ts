@@ -1,4 +1,13 @@
 import { appLogger } from "@/lib/logger";
+import { isExpoGoRuntime } from "@/lib/runtimeEnvironment";
+import {
+  cleanupDeprecatedNotificationChannels,
+  deprecatedNotificationChannelIds,
+  notificationCategoryForType,
+  notificationPolicies,
+  type NotificationCategory,
+} from "@/config/notifications";
+import { soundService } from "@/services/SoundService";
 import { Alert, Linking, Platform } from "react-native";
 import Constants from "expo-constants";
 
@@ -6,107 +15,52 @@ function normalizeApiBaseUrl(value: string): string {
   return String(value || "").trim().replace(/\/$/, "");
 }
 
-function isExpoGo(): boolean {
-  const C = Constants as any;
-  const owner = String(C?.appOwnership || "").toLowerCase();
-  const env = String(C?.executionEnvironment || "").toLowerCase();
-  return owner === "expo" || owner === "guest" || env.includes("storeclient") || (!!__DEV__ && owner !== "standalone");
-}
-
-export type NotificationCategory = "job" | "message" | "general" | "call";
-
-type NotificationPolicy = {
-  channelId: string;
-  channelName: string;
-  sound: string;
-  importance: "max" | "high";
-  vibrationPattern: number[];
-  lightColor: string;
-};
-
-const NOTIFICATION_POLICIES: Record<NotificationCategory, NotificationPolicy> = {
-  job: {
-    channelId: "jobs-v2",
-    channelName: "Jobs and Booking Alerts",
-    sound: "athoo_job.wav",
-    importance: "max",
-    vibrationPattern: [0, 500, 180, 500, 180, 500],
-    lightColor: "#F97316",
-  },
-  message: {
-    channelId: "messages-v2",
-    channelName: "Chat Messages",
-    sound: "athoo_message.wav",
-    importance: "high",
-    vibrationPattern: [0, 220, 120, 220],
-    lightColor: "#8B5CF6",
-  },
-  general: {
-    channelId: "general-v2",
-    channelName: "General Updates",
-    sound: "athoo_general.wav",
-    importance: "high",
-    vibrationPattern: [0, 300, 120, 300],
-    lightColor: "#1A6EE0",
-  },
-  call: {
-    channelId: "calls-v2",
-    channelName: "Incoming Calls",
-    sound: "athoo_call.wav",
-    importance: "max",
-    vibrationPattern: [0, 700, 250, 700, 250, 700],
-    lightColor: "#22C55E",
-  },
-};
-
-export function notificationCategoryForType(type: unknown): NotificationCategory {
-  const normalized = String(type || "").trim().toLowerCase();
-  if (normalized === "call" || normalized === "incoming_call") return "call";
-  if (normalized === "message" || normalized === "chat") return "message";
-  if (
-    normalized === "booking" ||
-    normalized === "broadcast" ||
-    normalized === "job" ||
-    normalized === "negotiation" ||
-    normalized === "provider_response"
-  ) {
-    return "job";
-  }
-  return "general";
-}
-
 let Notifications: typeof import("expo-notifications") | null = null;
+let handlerConfigured = false;
 
 async function loadNotifications() {
   if (Notifications) return Notifications;
   try {
     Notifications = await import("expo-notifications");
 
-    Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: true,
-        shouldShowBanner: true,
-        shouldShowList: true,
-      }),
-    });
+    if (!handlerConfigured) {
+      Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldPlaySound: true,
+          shouldSetBadge: true,
+          shouldShowBanner: true,
+          shouldShowList: true,
+        }),
+      });
+      handlerConfigured = true;
+    }
   } catch {
     Notifications = null;
   }
   return Notifications;
 }
 
+export type NotificationDiagnostics = {
+  supported: boolean;
+  expoGo: boolean;
+  permissionGranted: boolean;
+  channelsCreated: boolean;
+  projectIdConfigured: boolean;
+  policies: typeof notificationPolicies;
+};
+
 class NotificationService {
   private channelsCreated = false;
   private permissionGranted = false;
   private initPromise: Promise<void> | null = null;
   private syncedToken: string | null = null;
+  private blockedAlertShown = false;
 
   async init(): Promise<void> {
     if (this.initPromise) return this.initPromise;
     this.initPromise = this._init().catch((error) => {
-      // Allow a later foreground retry after a temporary native-module failure.
+      // Permit a later foreground retry after a temporary native-module error.
       this.initPromise = null;
       throw error;
     });
@@ -114,30 +68,12 @@ class NotificationService {
   }
 
   private async _init(): Promise<void> {
-    if (Platform.OS === "web" || isExpoGo()) return;
+    if (Platform.OS === "web" || isExpoGoRuntime()) return;
     const N = await loadNotifications();
     if (!N) return;
 
     try {
-      if (Platform.OS === "android" && !this.channelsCreated) {
-        const visibility = N.AndroidNotificationVisibility?.PRIVATE;
-        for (const policy of Object.values(NOTIFICATION_POLICIES)) {
-          await N.setNotificationChannelAsync(policy.channelId, {
-            name: policy.channelName,
-            importance:
-              policy.importance === "max"
-                ? N.AndroidImportance.MAX
-                : N.AndroidImportance.HIGH,
-            vibrationPattern: policy.vibrationPattern,
-            lightColor: policy.lightColor,
-            sound: policy.sound,
-            enableVibrate: true,
-            enableLights: true,
-            ...(visibility ? { lockscreenVisibility: visibility } : {}),
-          });
-        }
-        this.channelsCreated = true;
-      }
+      await this.ensureAndroidChannels(N);
 
       const { status: existing, canAskAgain: existingCanAsk } = await N.getPermissionsAsync();
       let final = existing;
@@ -151,10 +87,11 @@ class NotificationService {
 
       this.permissionGranted = final === "granted";
 
-      if (!this.permissionGranted && canAskAgainFinal === false) {
+      if (!this.permissionGranted && canAskAgainFinal === false && !this.blockedAlertShown) {
+        this.blockedAlertShown = true;
         Alert.alert(
           "Notifications Disabled",
-          "Enable notifications to receive job alerts, chat messages, calls, and booking updates. Tap Open Settings → Athoo → Notifications.",
+          "Enable notifications to receive job alerts, chat messages, incoming calls, and booking updates.",
           [
             { text: "Not Now", style: "cancel" },
             { text: "Open Settings", onPress: () => Linking.openSettings() },
@@ -162,16 +99,76 @@ class NotificationService {
         );
       }
     } catch (error) {
-      appLogger.debug("notifications", "Notification init error:", error);
+      appLogger.debug("notifications", "Notification initialization failed:", error);
     }
+  }
+
+  private async ensureAndroidChannels(N: typeof import("expo-notifications")): Promise<void> {
+    if (Platform.OS !== "android" || this.channelsCreated) return;
+
+    if (cleanupDeprecatedNotificationChannels) {
+      for (const channelId of deprecatedNotificationChannelIds) {
+        try {
+          await N.deleteNotificationChannelAsync(channelId);
+        } catch {
+          // A missing or OS-managed channel is harmless.
+        }
+      }
+    }
+
+    const visibility = N.AndroidNotificationVisibility?.PRIVATE;
+    const audioUsage = (N as any).AndroidAudioUsage;
+    const audioContentType = (N as any).AndroidAudioContentType;
+    for (const policy of Object.values(notificationPolicies)) {
+      await N.setNotificationChannelAsync(policy.channelId, {
+        name: policy.channelName,
+        importance:
+          policy.importance === "max"
+            ? N.AndroidImportance.MAX
+            : N.AndroidImportance.HIGH,
+        vibrationPattern: policy.vibrationPattern,
+        lightColor: policy.lightColor,
+        sound: policy.sound,
+        enableVibrate: true,
+        enableLights: true,
+        showBadge: true,
+        ...(visibility ? { lockscreenVisibility: visibility } : {}),
+        ...(audioUsage && audioContentType
+          ? {
+              audioAttributes: {
+                usage:
+                  policy.category === "call"
+                    ? audioUsage.NOTIFICATION_RINGTONE
+                    : audioUsage.NOTIFICATION,
+                contentType: audioContentType.SONIFICATION,
+              },
+            }
+          : {}),
+      } as any);
+    }
+    this.channelsCreated = true;
   }
 
   resetSyncedToken(): void {
     this.syncedToken = null;
   }
 
+  async getDiagnostics(): Promise<NotificationDiagnostics> {
+    await this.init().catch(() => undefined);
+    return {
+      supported: Platform.OS !== "web" && !isExpoGoRuntime(),
+      expoGo: isExpoGoRuntime(),
+      permissionGranted: this.permissionGranted,
+      channelsCreated: this.channelsCreated,
+      projectIdConfigured: Boolean(
+        Constants?.expoConfig?.extra?.eas?.projectId || Constants?.easConfig?.projectId,
+      ),
+      policies: notificationPolicies,
+    };
+  }
+
   async getExpoPushToken(): Promise<string | null> {
-    if (Platform.OS === "web" || isExpoGo()) return null;
+    if (Platform.OS === "web" || isExpoGoRuntime()) return null;
     await this.init();
     const N = await loadNotifications();
     if (!N || !this.permissionGranted) return null;
@@ -181,12 +178,15 @@ class NotificationService {
         Constants?.expoConfig?.extra?.eas?.projectId ||
         Constants?.easConfig?.projectId;
 
-      if (!projectId) return null;
+      if (!projectId) {
+        appLogger.warn("notifications", "EAS project ID is missing; push token cannot be generated");
+        return null;
+      }
 
       const token = await N.getExpoPushTokenAsync({ projectId });
       return token?.data || null;
     } catch (error) {
-      appLogger.debug("notifications", "getExpoPushToken error:", error);
+      appLogger.debug("notifications", "getExpoPushToken failed:", error);
       return null;
     }
   }
@@ -209,8 +209,27 @@ class NotificationService {
       if (!response.ok) throw new Error(`Push token sync failed (${response.status})`);
       this.syncedToken = expoPushToken;
     } catch (error) {
-      appLogger.debug("notifications", "syncPushToken error:", error);
+      appLogger.debug("notifications", "syncPushToken failed:", error);
     }
+  }
+
+  /**
+   * Realtime WebSocket events only need an audio fallback in runtimes that do
+   * not receive native remote push sounds. Native builds rely on the server
+   * push, preventing duplicate foreground sounds and duplicate notifications.
+   */
+  async playRealtimeFallback(type: unknown): Promise<void> {
+    if (Platform.OS !== "web" && !isExpoGoRuntime()) return;
+    const category = notificationCategoryForType(type);
+    if (category === "call" || category === "job") {
+      await soundService.playRingtone().catch(() => soundService.playNotification());
+      return;
+    }
+    if (category === "message") {
+      await soundService.playMessage().catch(() => soundService.playNotification());
+      return;
+    }
+    await soundService.playNotification();
   }
 
   async scheduleBookingAlert(title: string, body: string, data?: Record<string, unknown>): Promise<void> {
@@ -244,12 +263,15 @@ class NotificationService {
     body: string,
     data?: Record<string, unknown>,
   ): Promise<void> {
-    if (Platform.OS === "web" || isExpoGo()) return;
+    if (Platform.OS === "web" || isExpoGoRuntime()) {
+      await this.playRealtimeFallback(type).catch(() => undefined);
+      return;
+    }
     await this.init();
     const N = await loadNotifications();
     if (!N || !this.permissionGranted) return;
 
-    const policy = NOTIFICATION_POLICIES[category];
+    const policy = notificationPolicies[category];
     try {
       await N.scheduleNotificationAsync({
         content: {
@@ -271,12 +293,12 @@ class NotificationService {
             : null,
       });
     } catch (error) {
-      appLogger.debug("notifications", "schedule notification error:", error);
+      appLogger.debug("notifications", "schedule notification failed:", error);
     }
   }
 
   async clearBadge(): Promise<void> {
-    if (Platform.OS === "web" || isExpoGo()) return;
+    if (Platform.OS === "web" || isExpoGoRuntime()) return;
     const N = await loadNotifications();
     if (!N) return;
     try {
@@ -285,4 +307,6 @@ class NotificationService {
   }
 }
 
+export { notificationCategoryForType } from "@/config/notifications";
+export type { NotificationCategory } from "@/config/notifications";
 export const notificationService = new NotificationService();

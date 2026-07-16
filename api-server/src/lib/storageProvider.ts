@@ -342,3 +342,44 @@ export function getConfiguredStorageProvider(): StorageProvider {
   }
   return cachedProvider;
 }
+
+export interface StorageConfigurationStatus {
+  provider: string;
+  configured: boolean;
+  productionSafe: boolean;
+  endpointConfigured: boolean;
+  accessKeyConfigured: boolean;
+  secretConfigured: boolean;
+  bucketConfigured: boolean;
+}
+
+export function getStorageConfigurationStatus(): StorageConfigurationStatus {
+  const provider = String(process.env.STORAGE_PROVIDER || "r2").toLowerCase().trim();
+  const isRemote = ["r2", "cloudflare-r2", "s3"].includes(provider);
+  if (!isRemote) {
+    return {
+      provider,
+      configured: process.env.NODE_ENV !== "production" && ["local", "dev", "filesystem"].includes(provider),
+      productionSafe: false,
+      endpointConfigured: false,
+      accessKeyConfigured: false,
+      secretConfigured: false,
+      bucketConfigured: false,
+    };
+  }
+  const accountId = envValue("CLOUDFLARE_R2_ACCOUNT_ID");
+  const endpoint = envValue("S3_ENDPOINT") || (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : "");
+  const accessKey = envValue("CLOUDFLARE_R2_ACCESS_KEY_ID") || envValue("S3_ACCESS_KEY_ID");
+  const secret = envValue("CLOUDFLARE_R2_SECRET_ACCESS_KEY") || envValue("S3_SECRET_ACCESS_KEY");
+  const bucket = envValue("CLOUDFLARE_R2_BUCKET") || envValue("S3_BUCKET");
+  const configured = Boolean(endpoint && accessKey && secret && bucket);
+  return {
+    provider,
+    configured,
+    productionSafe: configured,
+    endpointConfigured: Boolean(endpoint),
+    accessKeyConfigured: Boolean(accessKey),
+    secretConfigured: Boolean(secret),
+    bucketConfigured: Boolean(bucket),
+  };
+}

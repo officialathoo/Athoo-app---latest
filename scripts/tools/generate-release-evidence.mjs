@@ -29,14 +29,14 @@ const hashFile = (file) => crypto.createHash('sha256').update(fs.readFileSync(fi
 const migrationsDir = path.join(root, 'deploy/migrations');
 const migrations = fs.readdirSync(migrationsDir).filter((name) => name.endsWith('.sql')).sort();
 const evidence = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   releaseVersion: String(process.env.RELEASE_VERSION),
   environment,
   artifactSha256,
   approvedBy: String(process.env.RELEASE_APPROVED_BY),
   changeTicket: String(process.env.RELEASE_CHANGE_TICKET),
   generatedAt: new Date().toISOString(),
-  sourceRevision: String(process.env.RELEASE_SOURCE_REVISION || 'not-provided'),
+  sourceRevision: String(process.env.RELEASE_SOURCE_REVISION || process.env.RELEASE_COMMIT_SHA || 'not-provided'),
   dependencyLockSha256: hashFile(lockfile),
   migrationCount: migrations.length,
   latestMigration: migrations.at(-1) || null,
@@ -46,6 +46,9 @@ const evidence = {
     environmentValidation: 'pnpm env:validate <environment-file>',
     operationsValidation: 'pnpm ops:validate',
     postDeploySmoke: 'pnpm smoke:test',
+    connectedRuntime: 'pnpm rc2:connected-verify',
+    deviceEvidence: 'pnpm device:evidence:validate',
+    releaseDecision: 'pnpm rc2:decision',
     rollbackRunbook: 'ROLLBACK_RUNBOOK.md',
     incidentRunbook: 'INCIDENT_RESPONSE_RUNBOOK.md',
   },

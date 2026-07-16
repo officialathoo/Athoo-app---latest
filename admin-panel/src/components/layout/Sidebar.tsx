@@ -7,7 +7,7 @@ import {
   LayoutGrid, Building2, Receipt, Inbox, RotateCcw, ArrowUpFromLine,
   Image, Bell, MapPin, HelpCircle, ChevronDown, ChevronRight,
   Briefcase, Zap, Globe, Flag, TrendingUp, Phone, History, Ban, FileText,
-  UserPlus,
+  UserPlus, Mail,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "@/lib/api";
@@ -86,6 +86,7 @@ const NAV_SECTIONS: NavSection[] = [
       { to: "/plans", label: "Premium Plans", icon: Crown, perm: "settings.read" },
       { to: "/emergency-contacts", label: "Emergency Contacts", icon: Phone },
       { to: "/notification-templates", label: "Notification Templates", icon: Bell, perm: "settings.read" },
+      { to: "/email-center", label: "Email Center", icon: Mail, perm: "notifications.read" },
     ],
   },
   {

@@ -1,4 +1,5 @@
 import { AthooMapFallback } from "@/components/maps/AthooMapFallback";
+import { LocationSearchPicker, type LocationSelection, type SavedLocationOption } from "@/components/maps/LocationSearchPicker";
 import { Icon } from "@/components/ui/Icon";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -18,7 +19,6 @@ import { PrivateImage } from "@/services/storage";
 import { reverseGeocode } from "@/services/maps";
 import { getFastForegroundLocation } from "@/services/location";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/colors";
 import { AnimatedCard } from "@/components/ui/AnimatedCard";
 import { ProviderCard } from "@/components/ui/ProviderCard";
 import { Provider } from "@/data/services";
@@ -29,6 +29,8 @@ import { api } from "@/services/api";
 import { getDistanceKm } from "@/utils/distance";
 import { matchingCategories, normalizeDiscoveryText, providerRecommendationScore } from "@/utils/discovery";
 import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
+import { getCategoryAppearance } from "@/utils/categoryAppearance";
 
 // Only the "All Areas" sentinel is hardcoded here — actual city names are
 // loaded live from /api/service-areas below so this list always matches the
@@ -59,6 +61,7 @@ export default function SearchScreen() {
   const { providerId, providerRate, pickAddress } = useLocalSearchParams<{ providerId?: string; providerRate?: string; pickAddress?: string }>();
   const { t, isUrdu, translate: tr, textAlign, writingDirection } = useLang();
   const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const localizedText = { textAlign, writingDirection } as const;
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -84,6 +87,8 @@ export default function SearchScreen() {
   } | null>(null);
   const [pickedAddress, setPickedAddress] = useState("");
   const [resolvingAddress, setResolvingAddress] = useState(false);
+  const [locationPickerVisible, setLocationPickerVisible] = useState(false);
+  const [savedLocations, setSavedLocations] = useState<SavedLocationOption[]>([]);
 
   const loadServiceAreas = useCallback(() => {
     api.getActiveServiceAreas()
@@ -110,6 +115,23 @@ export default function SearchScreen() {
     return () => { off(); sub.remove(); };
   }, [loadServiceAreas]);
 
+  useEffect(() => {
+    let active = true;
+    api.getAddresses()
+      .then((response) => {
+        if (!active || !Array.isArray(response?.addresses)) return;
+        setSavedLocations(response.addresses.map((address: any) => ({
+          id: String(address.id),
+          label: String(address.label || tr("Saved address")),
+          address: String(address.address || ""),
+          latitude: address.latitude == null ? null : Number(address.latitude),
+          longitude: address.longitude == null ? null : Number(address.longitude),
+        })));
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [tr]);
+
   useFocusEffect(
     useCallback(() => {
       if (pickAddress === "1" || !!providerId) {
@@ -124,7 +146,10 @@ export default function SearchScreen() {
     setLocating(true);
     try {
       const result = await getFastForegroundLocation({
-        timeoutMs: 8_000,
+        timeoutMs: 12_000,
+        maxCacheAgeMs: 5 * 60 * 1000,
+        requiredAccuracy: 150,
+        freshAccuracy: "high",
         rationaleTitle: tr("Location permission"),
         rationaleBody: tr("Athoo uses your location to show nearby providers and choose an address."),
       });
@@ -133,6 +158,7 @@ export default function SearchScreen() {
       setUserLat(result.location.latitude);
       setUserLng(result.location.longitude);
       setPickedLocation({ latitude: result.location.latitude, longitude: result.location.longitude });
+      void resolveAddressFromCoords(result.location.latitude, result.location.longitude);
     } catch (e) {
       // locate error — silently ignore, user can proceed without GPS
     }
@@ -279,15 +305,20 @@ export default function SearchScreen() {
     } as any);
   };
 
-  const handleMapPress = async (e: any) => {
-    const { latitude, longitude } = e.nativeEvent.coordinate;
+  const handleCoordinateChange = async (latitude: number, longitude: number) => {
     setPickedLocation({ latitude, longitude });
-
+    setUserLat(latitude);
+    setUserLng(longitude);
     const resolvedAddress = await resolveAddressFromCoords(latitude, longitude);
+    if (providerId) navigateBackToBooking(latitude, longitude, resolvedAddress);
+  };
 
-    if (providerId) {
-      navigateBackToBooking(latitude, longitude, resolvedAddress);
-    }
+  const applyLocationSelection = (selection: LocationSelection) => {
+    setPickedLocation({ latitude: selection.latitude, longitude: selection.longitude });
+    setPickedAddress(selection.address);
+    setUserLat(selection.latitude);
+    setUserLng(selection.longitude);
+    setShowMap(true);
   };
 
   const openSelectedProvider = () => {
@@ -343,10 +374,19 @@ export default function SearchScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: topPad, backgroundColor: theme.colors.background }]}>
+      <LocationSearchPicker
+        visible={locationPickerVisible}
+        onClose={() => setLocationPickerVisible(false)}
+        onSelect={applyLocationSelection}
+        bias={pickedLocation || (userLat != null && userLng != null ? { latitude: userLat, longitude: userLng } : null)}
+        savedLocations={savedLocations}
+        title="Choose service location"
+        onChooseOnMap={() => setShowMap(true)}
+      />
       <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
         <View style={styles.searchRow}>
           <View style={[styles.searchBar, { backgroundColor: theme.colors.input, borderColor: theme.colors.border }]}>
-            <Icon name="search" size={17} color={Colors.textMuted} />
+            <Icon name="search" size={17} color={theme.colors.textMuted} />
             <TextInput
               style={[styles.searchInput, localizedText, { color: theme.colors.text }]}
               placeholder={t.searchPlaceholder}
@@ -356,7 +396,7 @@ export default function SearchScreen() {
             />
             {query.length > 0 && (
               <Pressable onPress={() => setQuery("")}>
-                <Icon name="x" size={16} color={Colors.textMuted} />
+                <Icon name="x" size={16} color={theme.colors.textMuted} />
               </Pressable>
             )}
           </View>
@@ -365,7 +405,7 @@ export default function SearchScreen() {
             style={[styles.mapToggle, showMap && styles.mapToggleActive]}
             onPress={() => setShowMap(!showMap)}
           >
-            <Icon name="map" size={20} color={showMap ? "#fff" : Colors.primary} />
+            <Icon name="map" size={20} color={showMap ? theme.colors.onBrand : theme.colors.primary} />
           </Pressable>
         </View>
 
@@ -417,6 +457,21 @@ export default function SearchScreen() {
 
       {showMap ? (
         <View style={styles.mapContainer}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={tr("Search for a service location")}
+            onPress={() => setLocationPickerVisible(true)}
+            style={[styles.mapLocationSearch, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+          >
+            <Icon name="search" size={18} color={theme.colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text numberOfLines={1} style={[styles.mapLocationSearchText, localizedText, { color: pickedAddress ? theme.colors.text : theme.colors.textMuted }]}>
+                {pickedAddress || tr("Search street, area, landmark or city")}
+              </Text>
+              <Text style={[styles.mapLocationSearchHint, localizedText, { color: theme.colors.textSecondary }]}>{tr("GPS, saved places and map pin")}</Text>
+            </View>
+            <Icon name="chevron-right" size={17} color={theme.colors.textMuted} />
+          </Pressable>
           {Platform.OS === "web" ? (
             <View
               style={[
@@ -424,14 +479,14 @@ export default function SearchScreen() {
                 { alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.infoSoft },
               ]}
             >
-              <Icon name="map-pin" size={40} color={Colors.primary} />
-              <Text style={{ fontSize: 16, fontWeight: "700", color: Colors.text, marginTop: 12 }}>
+              <Icon name="map-pin" size={40} color={theme.colors.primary} />
+              <Text style={{ fontSize: 16, fontWeight: "700", color: theme.colors.text, marginTop: 12 }}>
                 {tr("Map available in mobile app")}
               </Text>
               <Text
                 style={{
                   fontSize: 13,
-                  color: Colors.textSecondary,
+                  color: theme.colors.textSecondary,
                   marginTop: 6,
                   textAlign: "center",
                   paddingHorizontal: 24,
@@ -442,21 +497,26 @@ export default function SearchScreen() {
             </View>
           ) : loadingProviders ? (
             <View style={[styles.mapBg, styles.mapLoader]}>
-              <ActivityIndicator size="large" color={Colors.primary} />
+              <ActivityIndicator size="large" color={theme.colors.primary} />
               <Text style={styles.mapLoaderText}>Loading nearby workers...</Text>
             </View>
           ) : (
             <View style={{ flex: 1 }}>
-              <AthooMapFallback latitude={pickedLocation?.latitude ?? userLat} longitude={pickedLocation?.longitude ?? userLng} draggable={pickAddress === "1"} onCoordinateChange={(latitude, longitude) => void handleMapPress({ nativeEvent: { coordinate: { latitude, longitude } } } as any)} />
+              <AthooMapFallback
+                latitude={pickedLocation?.latitude ?? userLat}
+                longitude={pickedLocation?.longitude ?? userLng}
+                draggable={pickAddress === "1" || Boolean(providerId)}
+                onCoordinateChange={(latitude, longitude) => void handleCoordinateChange(latitude, longitude)}
+              />
 
               <Pressable style={styles.locateMeBtn} onPress={handleLocateMe}>
                 {locating ? (
-                  <ActivityIndicator size="small" color={Colors.primary} />
+                  <ActivityIndicator size="small" color={theme.colors.primary} />
                 ) : (
                   <Icon
                     name="navigation"
                     size={20}
-                    color={userLat ? Colors.primary : Colors.textSecondary}
+                    color={userLat ? theme.colors.primary : theme.colors.textSecondary}
                   />
                 )}
               </Pressable>
@@ -512,7 +572,7 @@ export default function SearchScreen() {
                     const firstSvcId = p.services?.[0];
                     const cat = getCategoryBySlug(firstSvcId || "");
                     const svcLabel = cat?.name || "Service";
-                    const color = p.profileColor || Colors.primary;
+                    const color = p.profileColor || theme.colors.primary;
                     const rating = p.rating ? (p.rating / 10).toFixed(1) : "New";
                     const rateLabel = p.ratePerHour
                       ? `Rs. ${p.ratePerHour.toLocaleString()}/hr`
@@ -549,7 +609,7 @@ export default function SearchScreen() {
                         <Text style={styles.mapProviderService}>{svcLabel}</Text>
 
                         <View style={styles.mapProviderRating}>
-                          <Icon name="star" size={10} color={Colors.accent} />
+                          <Icon name="star" size={10} color={theme.colors.accent} />
                           <Text style={styles.mapProviderRatingText}>{rating}</Text>
                         </View>
 
@@ -580,7 +640,7 @@ export default function SearchScreen() {
         >
           {query.trim().length > 0 && categoryMatches.length > 0 && (
             <View style={styles.matchHint} accessibilityRole="summary">
-              <Icon name="sparkles" size={15} color={Colors.primary} />
+              <Icon name="sparkles" size={15} color={theme.colors.primary} />
               <Text style={styles.matchHintText}>Matching {categoryMatches.slice(0, 3).map((category) => category.name).join(", ")}</Text>
             </View>
           )}
@@ -590,33 +650,37 @@ export default function SearchScreen() {
               <View style={styles.servicesSection}>
                 <Text style={styles.sectionLabel}>Browse by Service</Text>
                 <View style={styles.servicesGrid}>
-                  {categories.map((s) => (
-                    <Pressable
-                      key={s.id}
-                      onPress={() => setSelectedService(selectedService === s.slug ? null : s.slug)}
-                      style={[
-                        styles.serviceGridItem,
-                        selectedService === s.slug && {
-                          backgroundColor: s.bgColor,
-                          borderColor: s.color,
-                        },
-                      ]}
-                    >
-                      <Icon
-                        name={s.icon as any}
-                        size={18}
-                        color={selectedService === s.slug ? s.color : Colors.textSecondary}
-                      />
-                      <Text
+                  {categories.map((s) => {
+                    const appearance = getCategoryAppearance(s, theme);
+                    const selected = selectedService === s.slug;
+                    return (
+                      <Pressable
+                        key={s.id}
+                        onPress={() => setSelectedService(selected ? null : s.slug)}
                         style={[
-                          styles.serviceGridText,
-                          selectedService === s.slug && { color: s.color },
+                          styles.serviceGridItem,
+                          selected && {
+                            backgroundColor: appearance.selectedBackground,
+                            borderColor: appearance.accent,
+                          },
                         ]}
                       >
-                        {s.name}
-                      </Text>
-                    </Pressable>
-                  ))}
+                        <Icon
+                          name={s.icon as any}
+                          size={18}
+                          color={selected ? appearance.accent : theme.colors.textSecondary}
+                        />
+                        <Text
+                          style={[
+                            styles.serviceGridText,
+                            selected && { color: appearance.accent },
+                          ]}
+                        >
+                          {s.name}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
                 </View>
               </View>
             </AnimatedCard>
@@ -644,13 +708,13 @@ export default function SearchScreen() {
 
           {loadingProviders ? (
             <View style={styles.loadingListWrap}>
-              <ActivityIndicator size="large" color={Colors.primary} />
+              <ActivityIndicator size="large" color={theme.colors.primary} />
               <Text style={styles.loadingListText}>Loading workers...</Text>
             </View>
           ) : sorted.length === 0 ? (
             <AnimatedCard>
               <View style={styles.emptyState}>
-                <Icon name="search" size={36} color={Colors.textMuted} />
+                <Icon name="search" size={36} color={theme.colors.textMuted} />
                 <Text style={styles.emptyTitle}>{isUrdu ? "کوئی ملازم نہیں ملا" : "No workers found"}</Text>
                 <Text style={styles.emptySubtitle}>{isUrdu ? "مختلف تلاش یا خدمت آزمائیں" : "Try a different search or service"}</Text>
               </View>
@@ -661,7 +725,7 @@ export default function SearchScreen() {
                 <View style={styles.listCardWrap}>
                   {typeof p.distanceKm === "number" && (
                     <View style={styles.distanceBadge}>
-                      <Icon name="navigation" size={11} color={Colors.primary} />
+                      <Icon name="navigation" size={11} color={theme.colors.primary} />
                       <Text style={styles.distanceBadgeText}>
                         {p.distanceKm.toFixed(1)} km
                       </Text>
@@ -687,14 +751,14 @@ export default function SearchScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
 
   header: {
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     paddingHorizontal: 20,
     paddingBottom: 12,
-    shadowColor: "#000",
+    shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 8,
@@ -710,29 +774,29 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.background,
+    backgroundColor: theme.colors.background,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 11,
     gap: 10,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
 
-  searchInput: { flex: 1, fontSize: 14, color: Colors.text },
+  searchInput: { flex: 1, fontSize: 14, color: theme.colors.text },
 
   mapToggle: {
     width: 46,
     height: 46,
     borderRadius: 14,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: Colors.primary,
+    borderColor: theme.colors.primary,
   },
 
-  mapToggleActive: { backgroundColor: Colors.primary },
+  mapToggleActive: { backgroundColor: theme.colors.primary },
 
   cityRow: { flexDirection: "row", gap: 8 },
 
@@ -740,18 +804,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: Colors.background,
+    backgroundColor: theme.colors.background,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
 
   cityChipActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
   },
 
-  cityText: { fontSize: 12, fontWeight: "600", color: Colors.textSecondary },
-  cityTextActive: { color: "#fff" },
+  cityText: { fontSize: 12, fontWeight: "600", color: theme.colors.textSecondary },
+  cityTextActive: { color: theme.colors.onBrand },
 
   sortRow: { flexDirection: "row", gap: 8, paddingTop: 2 },
 
@@ -759,38 +823,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
 
   sortChipActive: {
-    backgroundColor: Colors.secondary,
-    borderColor: Colors.secondary,
+    backgroundColor: theme.colors.secondary,
+    borderColor: theme.colors.secondary,
   },
 
   sortText: {
     fontSize: 12,
     fontWeight: "700",
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   sortTextActive: {
-    color: "#fff",
+    color: theme.colors.onBrand,
   },
 
   mapContainer: { flex: 1 },
+  mapLocationSearch: { position: "absolute", top: 12, left: 14, right: 14, zIndex: 20, minHeight: 58, borderRadius: 16, borderWidth: 1, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 13, shadowColor: theme.colors.text, shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 5 },
+  mapLocationSearchText: { fontSize: 14, fontWeight: "800" },
+  mapLocationSearchHint: { marginTop: 2, fontSize: 10 },
   mapBg: { flex: 1 },
 
   mapLoader: {
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: Colors.background,
+    backgroundColor: theme.colors.background,
   },
 
   mapLoaderText: {
     marginTop: 10,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   locateMeBtn: {
@@ -800,10 +867,10 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
+    shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 8,
@@ -814,47 +881,47 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: theme.colors.border,
   },
 
   pickedAddressLabel: {
     fontSize: 11,
     fontWeight: "700",
-    color: Colors.primary,
+    color: theme.colors.primary,
     marginBottom: 2,
   },
 
   pickedAddressText: {
     fontSize: 12,
-    color: Colors.text,
+    color: theme.colors.text,
     lineHeight: 17,
   },
 
   useAddressBtn: {
-    backgroundColor: Colors.secondary,
+    backgroundColor: theme.colors.secondary,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
 
   useAddressBtnText: {
-    color: "#fff",
+    color: theme.colors.onBrand,
     fontWeight: "700",
     fontSize: 12,
   },
 
   mapBottomSheet: {
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 16,
     paddingBottom: 8,
     gap: 12,
-    shadowColor: "#000",
+    shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.08,
     shadowRadius: 16,
@@ -865,14 +932,14 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: Colors.border,
+    backgroundColor: theme.colors.border,
     alignSelf: "center",
   },
 
-  mapCount: { fontSize: 14, fontWeight: "700", color: Colors.text },
+  mapCount: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
 
   selectedProviderBox: {
-    backgroundColor: Colors.background,
+    backgroundColor: theme.colors.background,
     borderRadius: 16,
     padding: 14,
     gap: 12,
@@ -881,12 +948,12 @@ const styles = StyleSheet.create({
   selectedProviderName: {
     fontSize: 15,
     fontWeight: "800",
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   selectedProviderMeta: {
     fontSize: 12,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
     marginTop: 3,
   },
 
@@ -897,30 +964,30 @@ const styles = StyleSheet.create({
 
   profileBtn: {
     flex: 1,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
 
   profileBtnText: {
-    color: Colors.text,
+    color: theme.colors.text,
     fontWeight: "700",
     fontSize: 13,
   },
 
   bookBtn: {
     flex: 1,
-    backgroundColor: Colors.primary,
+    backgroundColor: theme.colors.primary,
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: "center",
   },
 
   bookBtnText: {
-    color: "#fff",
+    color: theme.colors.onBrand,
     fontWeight: "700",
     fontSize: 13,
   },
@@ -929,17 +996,17 @@ const styles = StyleSheet.create({
 
   mapProviderCard: {
     width: 108,
-    backgroundColor: Colors.background,
+    backgroundColor: theme.colors.background,
     borderRadius: 16,
     padding: 12,
     alignItems: "center",
     gap: 4,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
 
   mapProviderCardActive: {
-    borderColor: Colors.primary,
+    borderColor: theme.colors.primary,
     borderWidth: 2,
   },
 
@@ -947,28 +1014,28 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: Colors.primary,
+    borderColor: theme.colors.primary,
   },
 
   mapProviderAvatarText: {
     fontSize: 13,
     fontWeight: "800",
-    color: Colors.primary,
+    color: theme.colors.primary,
   },
 
   mapProviderName: {
     fontSize: 12,
     fontWeight: "700",
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   mapProviderService: {
     fontSize: 10,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   mapProviderRating: {
@@ -980,37 +1047,37 @@ const styles = StyleSheet.create({
   mapProviderRatingText: {
     fontSize: 10,
     fontWeight: "600",
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   mapProviderPrice: {
     fontSize: 11,
     fontWeight: "700",
-    color: Colors.primary,
+    color: theme.colors.primary,
     textAlign: "center",
   },
 
   mapProviderDistance: {
     fontSize: 10,
-    color: Colors.textMuted,
+    color: theme.colors.textMuted,
   },
 
   viewListBtn: {
-    backgroundColor: Colors.primary,
+    backgroundColor: theme.colors.primary,
     borderRadius: 14,
     paddingVertical: 12,
     alignItems: "center",
   },
 
   viewListText: {
-    color: "#fff",
+    color: theme.colors.onBrand,
     fontWeight: "700",
     fontSize: 14,
   },
 
   scroll: { flex: 1 },
-  matchHint: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 20, marginTop: 14, padding: 12, borderRadius: 12, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.primary + "33" },
-  matchHintText: { flex: 1, color: Colors.primaryDark, fontSize: 13, fontWeight: "700" },
+  matchHint: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 20, marginTop: 14, padding: 12, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.primary + "33" },
+  matchHintText: { flex: 1, color: theme.colors.primaryPressed, fontSize: 13, fontWeight: "700" },
 
   scrollContent: { padding: 20, paddingBottom: 100 },
 
@@ -1018,7 +1085,7 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 15,
     fontWeight: "700",
-    color: Colors.text,
+    color: theme.colors.text,
     marginBottom: 12,
   },
 
@@ -1031,15 +1098,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: Colors.card,
+    backgroundColor: theme.colors.surface,
     borderWidth: 1.5,
-    borderColor: Colors.border,
+    borderColor: theme.colors.border,
   },
 
   serviceGridText: {
     fontSize: 12,
     fontWeight: "600",
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   resultsHeader: {
@@ -1051,7 +1118,7 @@ const styles = StyleSheet.create({
 
   resultCount: {
     fontSize: 12,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   loadingListWrap: {
@@ -1062,7 +1129,7 @@ const styles = StyleSheet.create({
 
   loadingListText: {
     marginTop: 10,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   emptyState: {
@@ -1074,12 +1141,12 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 17,
     fontWeight: "700",
-    color: Colors.text,
+    color: theme.colors.text,
   },
 
   emptySubtitle: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 
   listCardWrap: {
@@ -1094,11 +1161,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "#fff",
+    backgroundColor: theme.colors.surface,
     paddingHorizontal: 8,
     paddingVertical: 5,
     borderRadius: 16,
-    shadowColor: "#000",
+    shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
@@ -1108,6 +1175,6 @@ const styles = StyleSheet.create({
   distanceBadgeText: {
     fontSize: 11,
     fontWeight: "700",
-    color: Colors.primary,
+    color: theme.colors.primary,
   },
 });

@@ -6,16 +6,23 @@ import path from "node:path";
 const root = path.resolve(import.meta.dirname, "../..");
 const read = (file: string) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("production OTP success requires a real delivery channel", () => {
+test("production OTP success requires a real portable delivery channel", () => {
   const source = read("api-server/src/routes/auth.ts");
-  assert.match(source, /const delivered = waSent \|\| emailSent/);
-  assert.match(source, /if \(!isDev && !delivered\)/);
+  const delivery = read("api-server/src/lib/otpDelivery.ts");
+  assert.match(source, /deliverAuthenticationOtp/);
+  assert.match(source, /const delivered = otpDelivery\.delivered \|\| isDev/);
+  assert.match(source, /if \(!delivered\)/);
   assert.match(source, /OTP_DELIVERY_UNAVAILABLE/);
   assert.match(source, /function hashOtp/);
   assert.match(source, /createHmac\("sha256"/);
-  assert.match(source, /code: hashOtp\(normalizedPhone, code\)/);
-  assert.match(source, /set\(\{ used: true \}\).*otpsTable\.id, otpId/s);
-  assert.match(source, /otpsTable\.phone, normalizedPhone[\s\S]*otpsTable\.used, false/);
+  assert.match(source, /code: hashOtp\(normalizedPhone, code, purpose\)/);
+  assert.match(source, /invalidatedReason: "delivery_failed"/);
+  assert.match(source, /otpsTable\.phone, phone[\s\S]*otpsTable\.purpose, purpose/);
+  assert.match(delivery, /OTP_DELIVERY_CHANNELS/);
+  assert.match(delivery, /OTP_DELIVERY_MODE/);
+  assert.match(delivery, /whatsapp_cloud/);
+  assert.match(delivery, /http_sms/);
+  assert.doesNotMatch(source, /graph\.facebook\.com/);
   assert.doesNotMatch(source, /OTP sent to your phone number/);
 });
 
@@ -46,7 +53,7 @@ test("configuration and crash screens show user-facing copy only", () => {
   const fallback = read("athoo-app/components/ErrorFallback.tsx");
   assert.match(rootLayout, /Service temporarily unavailable/);
   assert.doesNotMatch(rootLayout, /Set EXPO_PUBLIC_API_BASE_URL/);
-  assert.match(fallback, /Please try again\. If the issue continues, contact Athoo Support\./);
+  assert.match(fallback, /Please try again\. If the issue continues, contact support\./);
   assert.doesNotMatch(fallback, /error\.message|stack|componentStack/);
 });
 
@@ -66,7 +73,8 @@ test("release deployment declares OTP channels and consistent EAS configuration"
   assert.match(render, /WHATSAPP_ACCESS_TOKEN/);
   assert.match(render, /WHATSAPP_PHONE_NUMBER_ID/);
   assert.match(render, /WHATSAPP_GRAPH_API_VERSION[\s\S]*value: v25\.0/);
-  assert.match(read("api-server/src/routes/auth.ts"), /graphApiVersion/);
+  assert.match(render, /OTP_DELIVERY_CHANNELS[\s\S]*value: whatsapp_cloud,email/);
+  assert.match(read("api-server/src/lib/otpDelivery.ts"), /WHATSAPP_GRAPH_BASE_URL/);
   assert.match(render, /ALLOW_DEV_OTP_RESPONSE[\s\S]*value: "false"/);
   assert.equal(JSON.parse(rootEas).build.preview.env.EXPO_PUBLIC_API_BASE_URL, "https://athoo-api.onrender.com");
   assert.deepEqual(JSON.parse(rootEas), JSON.parse(appEas));

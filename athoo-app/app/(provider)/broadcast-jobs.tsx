@@ -2,7 +2,7 @@ import { Icon } from "@/components/ui/Icon";
 import { VideoPlayer } from "@/components/ui/VideoPlayer";
 import { router, useFocusEffect } from "expo-router";
 import { getDistanceKm, formatDistanceKm } from "@/utils/distance";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState , useMemo} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -17,13 +17,16 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 import { api, realtime } from "@/services/api";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { apiErrorToMessage } from "@/lib/apiError";
 
 function TimeLeft({ expiresAt }: { expiresAt: string }) {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [secs, setSecs] = useState(() =>
     Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000))
   );
@@ -32,12 +35,14 @@ function TimeLeft({ expiresAt }: { expiresAt: string }) {
     const t = setInterval(() => setSecs((p) => Math.max(0, p - 1)), 1000);
     return () => clearInterval(t);
   }, [secs]);
-  if (secs <= 0) return <Text style={[styles.timer, { color: Colors.textMuted }]}>Expired</Text>;
+  if (secs <= 0) return <Text style={[styles.timer, { color: theme.colors.textMuted }]}>Expired</Text>;
   const m = Math.floor(secs / 60), s = secs % 60;
-  return <Text style={[styles.timer, secs < 120 && { color: Colors.error }]}>{m}:{String(s).padStart(2, "0")}</Text>;
+  return <Text style={[styles.timer, secs < 120 && { color: theme.colors.danger }]}>{m}:{String(s).padStart(2, "0")}</Text>;
 }
 
 export default function BroadcastJobsScreen() {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { user } = useAuth();
@@ -141,8 +146,8 @@ export default function BroadcastJobsScreen() {
   if (loading) {
     return (
       <View style={[styles.container, { paddingTop: topPad, alignItems: "center", justifyContent: "center" }]}>
-        <ActivityIndicator size="large" color={Colors.secondary} />
-        <Text style={{ color: Colors.textSecondary, marginTop: 12 }}>Loading broadcast requests...</Text>
+        <ActivityIndicator size="large" color={theme.colors.secondary} />
+        <Text style={{ color: theme.colors.textSecondary, marginTop: 12 }}>Loading broadcast requests...</Text>
       </View>
     );
   }
@@ -161,7 +166,7 @@ export default function BroadcastJobsScreen() {
             <View style={styles.videoModalHeader}>
               <Text style={styles.videoModalTitle}>Customer&apos;s Video</Text>
               <Pressable onPress={() => setPlayingVideoUrl(null)} style={styles.videoModalClose}>
-                <Icon name="x" size={20} color={Colors.text} />
+                <Icon name="x" size={20} color={theme.colors.text} />
               </Pressable>
             </View>
             {playingVideoUrl ? <VideoPlayer uri={playingVideoUrl} style={styles.fullscreenVideo} /> : null}
@@ -171,7 +176,7 @@ export default function BroadcastJobsScreen() {
 
       <View style={styles.header}>
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <Icon name="arrow-left" size={20} color={Colors.text} />
+          <Icon name="arrow-left" size={20} color={theme.colors.text} />
         </Pressable>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Broadcast Jobs</Text>
@@ -192,13 +197,13 @@ export default function BroadcastJobsScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => { setRefreshing(true); load(); }}
-            tintColor={Colors.secondary}
+            tintColor={theme.colors.secondary}
           />
         }
       >
         {requests.length === 0 && (
           <View style={styles.emptyCard}>
-            <Icon name="radio" size={36} color={Colors.textMuted} />
+            <Icon name="radio" size={36} color={theme.colors.textMuted} />
             <Text style={styles.emptyTitle}>No Open Requests</Text>
             <Text style={styles.emptyText}>
               When customers broadcast a request in your service area, it will appear here. Pull to refresh.
@@ -227,24 +232,24 @@ export default function BroadcastJobsScreen() {
                     })();
                 return (
                   <View style={styles.reqHeader}>
-                    <View style={[styles.reqCatIcon, { backgroundColor: Colors.secondary + "20" }]}>
-                      <Icon name="tool" size={18} color={Colors.secondary} />
+                    <View style={[styles.reqCatIcon, { backgroundColor: theme.colors.secondary + "20" }]}>
+                      <Icon name="tool" size={18} color={theme.colors.secondary} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.reqService}>{req.serviceLabel}</Text>
                       <View style={styles.reqMeta}>
-                        <Icon name="map-pin" size={11} color={Colors.textMuted} />
+                        <Icon name="map-pin" size={11} color={theme.colors.textMuted} />
                         <Text style={styles.reqMetaText} numberOfLines={1}>{req.address}</Text>
                       </View>
                       {distKm != null && (
                         <View style={[styles.reqMeta, { marginTop: 2 }]}>
-                          <Icon name="navigation" size={11} color={Colors.primary} />
-                          <Text style={[styles.reqMetaText, { color: Colors.primary, fontWeight: "700" }]}>{formatDistanceKm(distKm)}</Text>
+                          <Icon name="navigation" size={11} color={theme.colors.primary} />
+                          <Text style={[styles.reqMetaText, { color: theme.colors.primary, fontWeight: "700" }]}>{formatDistanceKm(distKm)}</Text>
                         </View>
                       )}
                     </View>
                     <View style={styles.timerBox}>
-                      <Icon name="clock" size={11} color={Colors.textMuted} />
+                      <Icon name="clock" size={11} color={theme.colors.textMuted} />
                       <TimeLeft expiresAt={req.expiresAt} />
                     </View>
                   </View>
@@ -253,19 +258,19 @@ export default function BroadcastJobsScreen() {
 
               <View style={styles.reqDetails}>
                 <View style={styles.detailRow}>
-                  <Icon name="calendar" size={12} color={Colors.primary} />
+                  <Icon name="calendar" size={12} color={theme.colors.primary} />
                   <Text style={styles.detailText}>{req.scheduledDate} at {req.scheduledTime}</Text>
                 </View>
                 {req.description ? (
                   <View style={styles.detailRow}>
-                    <Icon name="file-text" size={12} color={Colors.primary} />
+                    <Icon name="file-text" size={12} color={theme.colors.primary} />
                     <Text style={styles.detailText} numberOfLines={2}>{req.description}</Text>
                   </View>
                 ) : null}
                 {req.videoUrl ? (
                   <Pressable style={styles.detailRow} onPress={() => setPlayingVideoUrl(req.videoUrl)}>
-                    <Icon name="video" size={12} color={Colors.success} />
-                    <Text style={[styles.detailText, { color: Colors.success, fontWeight: "600" }]}>▶ Play customer video</Text>
+                    <Icon name="video" size={12} color={theme.colors.success} />
+                    <Text style={[styles.detailText, { color: theme.colors.success, fontWeight: "600" }]}>▶ Play customer video</Text>
                   </Pressable>
                 ) : null}
               </View>
@@ -278,20 +283,20 @@ export default function BroadcastJobsScreen() {
                 </View>
               ) : (
                 <View style={styles.openPriceBox}>
-                  <Icon name="tag" size={12} color={Colors.textMuted} />
+                  <Icon name="tag" size={12} color={theme.colors.textMuted} />
                   <Text style={styles.openPriceText}>Open hourly rate — enter your per-hour labor/service rate</Text>
                 </View>
               )}
 
               <View style={styles.reqResponseCount}>
-                <Icon name="users" size={12} color={Colors.textMuted} />
+                <Icon name="users" size={12} color={theme.colors.textMuted} />
                 <Text style={styles.respCountText}>{(req.responses || []).length} provider(s) responded</Text>
               </View>
 
               {myResp ? (
                 <View style={styles.myRespBox}>
                   <View style={styles.myRespHeader}>
-                    <Icon name="check-circle" size={16} color={Colors.success} />
+                    <Icon name="check-circle" size={16} color={theme.colors.success} />
                     <Text style={styles.myRespTitle}>You responded</Text>
                     {myResp.providerOffer && (
                       <Text style={styles.myRespPrice}>Rs. {myResp.providerOffer.toLocaleString()}</Text>
@@ -301,7 +306,7 @@ export default function BroadcastJobsScreen() {
                     <Text style={styles.myRespMsg}>"{myResp.message}"</Text>
                   ) : null}
                   <Pressable style={styles.withdrawBtn} onPress={() => handleWithdraw(req.id)}>
-                    <Icon name="x" size={13} color={Colors.error} />
+                    <Icon name="x" size={13} color={theme.colors.danger} />
                     <Text style={styles.withdrawText}>Withdraw Response</Text>
                   </Pressable>
                 </View>
@@ -315,7 +320,7 @@ export default function BroadcastJobsScreen() {
                       value={offerInput[req.id] ?? defaultProviderRate}
                       onChangeText={(v) => setOfferInput((p) => ({ ...p, [req.id]: v.replace(/[^0-9]/g, "") }))}
                       placeholder={defaultProviderRate || (req.customerOffer ? String(req.customerOffer) : "PKR per hour")}
-                      placeholderTextColor={Colors.textMuted}
+                      placeholderTextColor={theme.colors.textMuted}
                       keyboardType="numeric"
                       returnKeyType="done"
                     />
@@ -328,7 +333,7 @@ export default function BroadcastJobsScreen() {
                       value={travelInput[req.id] ?? String(req.travellingCharge ?? 500)}
                       onChangeText={(v) => setTravelInput((p) => ({ ...p, [req.id]: v.replace(/[^0-9]/g, "") }))}
                       placeholder="Travelling charges"
-                      placeholderTextColor={Colors.textMuted}
+                      placeholderTextColor={theme.colors.textMuted}
                       keyboardType="numeric"
                       returnKeyType="done"
                     />
@@ -339,7 +344,7 @@ export default function BroadcastJobsScreen() {
                     value={messageInput[req.id] || ""}
                     onChangeText={(v) => setMessageInput((p) => ({ ...p, [req.id]: v }))}
                     placeholder="E.g. I have 10 years experience with this..."
-                    placeholderTextColor={Colors.textMuted}
+                    placeholderTextColor={theme.colors.textMuted}
                     multiline
                     numberOfLines={3}
                   />
@@ -353,14 +358,14 @@ export default function BroadcastJobsScreen() {
                       disabled={isSubmitting}
                     >
                       {isSubmitting
-                        ? <ActivityIndicator size="small" color="#fff" />
-                        : <><Icon name="send" size={14} color="#fff" /><Text style={styles.submitText}>Submit Response</Text></>}
+                        ? <ActivityIndicator size="small" color={theme.colors.onBrand} />
+                        : <><Icon name="send" size={14} color={theme.colors.onBrand} /><Text style={styles.submitText}>Submit Response</Text></>}
                     </Pressable>
                   </View>
                 </View>
               ) : (
                 <Pressable style={styles.respondBtn} onPress={() => setRespondingId(req.id)}>
-                  <Icon name="send" size={15} color="#fff" />
+                  <Icon name="send" size={15} color={theme.colors.onBrand} />
                   <Text style={styles.respondBtnText}>
                     {req.customerOffer ? `Accept / Counter Rs. ${req.customerOffer.toLocaleString()} / hour` : "Submit Hourly Quote"}
                   </Text>
@@ -374,113 +379,113 @@ export default function BroadcastJobsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
 
   header: {
-    backgroundColor: Colors.white, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 14,
+    backgroundColor: theme.colors.surface, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 14,
     flexDirection: "row", alignItems: "center", gap: 12,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
+    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
   },
   backBtn: {
-    width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.surface,
+    width: 40, height: 40, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center", justifyContent: "center",
   },
-  headerTitle: { fontSize: 17, fontWeight: "800", color: Colors.text },
-  headerSub: { fontSize: 12, color: Colors.textMuted, marginTop: 1 },
+  headerTitle: { fontSize: 17, fontWeight: "800", color: theme.colors.text },
+  headerSub: { fontSize: 12, color: theme.colors.textMuted, marginTop: 1 },
 
   countBadge: {
-    backgroundColor: Colors.secondary, width: 28, height: 28, borderRadius: 14,
+    backgroundColor: theme.colors.secondary, width: 28, height: 28, borderRadius: 14,
     alignItems: "center", justifyContent: "center",
   },
-  countBadgeText: { fontSize: 13, fontWeight: "800", color: "#fff" },
+  countBadgeText: { fontSize: 13, fontWeight: "800", color: theme.colors.onBrand },
 
   emptyCard: {
     alignItems: "center", padding: 40, gap: 12,
-    backgroundColor: Colors.white, borderRadius: 20, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: theme.colors.surface, borderRadius: 20, borderWidth: 1, borderColor: theme.colors.border,
   },
-  emptyTitle: { fontSize: 18, fontWeight: "800", color: Colors.text },
-  emptyText: { fontSize: 13, color: Colors.textSecondary, textAlign: "center", lineHeight: 20 },
+  emptyTitle: { fontSize: 18, fontWeight: "800", color: theme.colors.text },
+  emptyText: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center", lineHeight: 20 },
 
   reqCard: {
-    backgroundColor: Colors.white, borderRadius: 18, padding: 16, gap: 12,
-    borderWidth: 1, borderColor: Colors.border,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
+    backgroundColor: theme.colors.surface, borderRadius: 18, padding: 16, gap: 12,
+    borderWidth: 1, borderColor: theme.colors.border,
+    shadowColor: theme.colors.text, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
   },
 
   reqHeader: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
   reqCatIcon: { width: 44, height: 44, borderRadius: 13, alignItems: "center", justifyContent: "center" },
-  reqService: { fontSize: 16, fontWeight: "800", color: Colors.text },
+  reqService: { fontSize: 16, fontWeight: "800", color: theme.colors.text },
   reqMeta: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
-  reqMetaText: { flex: 1, fontSize: 12, color: Colors.textSecondary },
+  reqMetaText: { flex: 1, fontSize: 12, color: theme.colors.textSecondary },
   timerBox: { flexDirection: "row", alignItems: "center", gap: 4 },
-  timer: { fontSize: 13, fontWeight: "700", color: Colors.warning },
+  timer: { fontSize: 13, fontWeight: "700", color: theme.colors.warning },
 
   reqDetails: { gap: 6 },
   detailRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
-  detailText: { flex: 1, fontSize: 12, color: Colors.textSecondary, lineHeight: 17 },
+  detailText: { flex: 1, fontSize: 12, color: theme.colors.textSecondary, lineHeight: 17 },
 
   customerOfferBox: {
     flexDirection: "column", alignItems: "flex-start", justifyContent: "flex-start",
-    backgroundColor: Colors.secondary + "12", borderRadius: 12, padding: 12,
-    borderWidth: 1, borderColor: Colors.secondary + "30",
+    backgroundColor: theme.colors.secondary + "12", borderRadius: 12, padding: 12,
+    borderWidth: 1, borderColor: theme.colors.secondary + "30",
   },
-  offerLabel: { fontSize: 12, fontWeight: "600", color: Colors.textSecondary },
-  offerAmt: { fontSize: 22, fontWeight: "800", color: Colors.secondary, flexShrink: 1, flexWrap: "wrap" },
+  offerLabel: { fontSize: 12, fontWeight: "600", color: theme.colors.textSecondary },
+  offerAmt: { fontSize: 22, fontWeight: "800", color: theme.colors.secondary, flexShrink: 1, flexWrap: "wrap" },
 
   openPriceBox: {
     flexDirection: "row", alignItems: "center", gap: 6, padding: 10,
-    backgroundColor: Colors.surface, borderRadius: 10,
+    backgroundColor: theme.colors.surfaceAlt, borderRadius: 10,
   },
-  openPriceText: { fontSize: 12, color: Colors.textMuted, fontWeight: "600", lineHeight: 17, flexShrink: 1 },
+  openPriceText: { fontSize: 12, color: theme.colors.textMuted, fontWeight: "600", lineHeight: 17, flexShrink: 1 },
 
   reqResponseCount: { flexDirection: "row", alignItems: "center", gap: 6 },
-  respCountText: { fontSize: 12, color: Colors.textMuted },
+  respCountText: { fontSize: 12, color: theme.colors.textMuted },
 
   myRespBox: {
-    backgroundColor: Colors.success + "10", borderRadius: 12, padding: 12, gap: 8,
-    borderWidth: 1, borderColor: Colors.success + "30",
+    backgroundColor: theme.colors.success + "10", borderRadius: 12, padding: 12, gap: 8,
+    borderWidth: 1, borderColor: theme.colors.success + "30",
   },
   myRespHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
-  myRespTitle: { flex: 1, fontSize: 13, fontWeight: "700", color: Colors.success },
-  myRespPrice: { fontSize: 15, fontWeight: "800", color: Colors.success },
-  myRespMsg: { fontSize: 12, color: Colors.textSecondary, fontStyle: "italic" },
+  myRespTitle: { flex: 1, fontSize: 13, fontWeight: "700", color: theme.colors.success },
+  myRespPrice: { fontSize: 15, fontWeight: "800", color: theme.colors.success },
+  myRespMsg: { fontSize: 12, color: theme.colors.textSecondary, fontStyle: "italic" },
   withdrawBtn: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start" },
-  withdrawText: { fontSize: 12, fontWeight: "700", color: Colors.error },
+  withdrawText: { fontSize: 12, fontWeight: "700", color: theme.colors.danger },
 
   respondForm: { gap: 8 },
-  formLabel: { fontSize: 12, fontWeight: "700", color: Colors.text },
+  formLabel: { fontSize: 12, fontWeight: "700", color: theme.colors.text },
   formPriceRow: {
     flexDirection: "row", alignItems: "center", gap: 8,
-    backgroundColor: Colors.surface, borderRadius: 12, borderWidth: 1.5,
-    borderColor: Colors.secondary, paddingHorizontal: 12, paddingVertical: 4,
+    backgroundColor: theme.colors.surfaceAlt, borderRadius: 12, borderWidth: 1.5,
+    borderColor: theme.colors.secondary, paddingHorizontal: 12, paddingVertical: 4,
   },
-  formRs: { fontSize: 18, fontWeight: "800", color: Colors.secondary },
-  formPriceInput: { flex: 1, fontSize: 22, fontWeight: "800", color: Colors.text, paddingVertical: 8 },
+  formRs: { fontSize: 18, fontWeight: "800", color: theme.colors.secondary },
+  formPriceInput: { flex: 1, fontSize: 22, fontWeight: "800", color: theme.colors.text, paddingVertical: 8 },
   formMsgInput: {
-    backgroundColor: Colors.white, borderRadius: 12, borderWidth: 1.5, borderColor: Colors.border,
-    padding: 12, fontSize: 13, color: Colors.text, textAlignVertical: "top", minHeight: 72,
+    backgroundColor: theme.colors.surface, borderRadius: 12, borderWidth: 1.5, borderColor: theme.colors.border,
+    padding: 12, fontSize: 13, color: theme.colors.text, textAlignVertical: "top", minHeight: 72,
   },
   cancelFormBtn: {
     flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 12,
-    borderRadius: 12, borderWidth: 1.5, borderColor: Colors.border,
+    borderRadius: 12, borderWidth: 1.5, borderColor: theme.colors.border,
   },
-  cancelFormText: { fontSize: 14, fontWeight: "700", color: Colors.textSecondary },
+  cancelFormText: { fontSize: 14, fontWeight: "700", color: theme.colors.textSecondary },
   submitBtn: {
     flex: 2, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: Colors.secondary, borderRadius: 12, paddingVertical: 12,
+    backgroundColor: theme.colors.secondary, borderRadius: 12, paddingVertical: 12,
   },
   submitBtnDisabled: { opacity: 0.6 },
-  submitText: { fontSize: 14, fontWeight: "800", color: "#fff" },
+  submitText: { fontSize: 14, fontWeight: "800", color: theme.colors.onBrand },
 
   respondBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: Colors.secondary, borderRadius: 12, paddingVertical: 14,
+    backgroundColor: theme.colors.secondary, borderRadius: 12, paddingVertical: 14,
   },
-  respondBtnText: { fontSize: 14, fontWeight: "800", color: "#fff" },
+  respondBtnText: { fontSize: 14, fontWeight: "800", color: theme.colors.onBrand },
   videoModalOverlay: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: theme.colors.text,
     justifyContent: "center",
     alignItems: "stretch",
     padding: 0,
@@ -488,7 +493,7 @@ const styles = StyleSheet.create({
   videoModalBox: {
     flex: 1,
     width: "100%",
-    backgroundColor: "#000",
+    backgroundColor: theme.colors.text,
     borderRadius: 0,
     overflow: "hidden",
   },
@@ -500,9 +505,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#111827",
-    backgroundColor: "#000",
+    borderBottomColor: theme.colors.text,
+    backgroundColor: theme.colors.text,
   },
-  videoModalTitle: { fontSize: 15, fontWeight: "700", color: "#fff" },
+  videoModalTitle: { fontSize: 15, fontWeight: "700", color: theme.colors.onBrand },
   videoModalClose: { padding: 4 },
 });

@@ -1,6 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -37,16 +37,28 @@ export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
-  const [step, setStep] = useState<"phone" | "otp" | "details">(phoneParam ? "details" : "phone");
+  const [step, setStep] = useState<"phone" | "otp" | "details">("phone");
   const [phone, setPhone] = useState(phoneParam || "");
   const [otpHint, setOtpHint] = useState("");
   const [otp, setOtp] = useState("");
+  const [registrationToken, setRegistrationToken] = useState("");
+  const [otpExpiresIn, setOtpExpiresIn] = useState(0);
+  const [otpResendIn, setOtpResendIn] = useState(0);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [legalAccepted, setLegalAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (step !== "otp") return;
+    const timer = setInterval(() => {
+      setOtpExpiresIn((value) => (value > 0 ? value - 1 : 0));
+      setOtpResendIn((value) => (value > 0 ? value - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [step]);
 
   const handleSendOtp = async () => {
     const cleaned = phone.trim().replace(/\D/g, "");
@@ -56,40 +68,40 @@ export default function RegisterScreen() {
       return;
     }
     setLoading(true);
-    const res = await sendOtp(phone.trim());
+    const res = await sendOtp(phone.trim(), "registration", selectedRole);
     setLoading(false);
     if (!res.success || res.error) {
       Alert.alert(tr("Failed"), tr(apiErrorToMessage(res.error || res.message, "Unable to send OTP. Please try again.")));
       return;
     }
     if (__DEV__) setOtpHint(res.code || "");
+    setOtpExpiresIn(res.expiresInSeconds || 600);
+    setOtpResendIn(res.resendAfterSeconds || 45);
     setStep("otp");
     if (__DEV__ && res.code) Alert.alert(tr("Your OTP Code"), tr("Code: {{code}}\n\nEnter this code below to continue.", { code: res.code }), [{ text: "OK" }]);
   };
 
   const handleVerifyOtp = async () => {
+    if (otpExpiresIn === 0) {
+      Alert.alert(tr("Code Expired"), tr("Code expired. Request a new OTP."));
+      return;
+    }
     if (!otp || otp.length < 4) {
       Alert.alert(tr("Invalid OTP"), tr("Please enter the 4-digit OTP."));
       return;
     }
     setLoading(true);
-    const res = await verifyOtpAndLogin(phone.trim(), otp.trim());
+    const res = await verifyOtpAndLogin(phone.trim(), otp.trim(), true, "registration", selectedRole);
     setLoading(false);
     if (!res.success) {
       Alert.alert(tr("Invalid OTP"), tr(apiErrorToMessage(res.error, "OTP is wrong or expired.")));
       return;
     }
-    if (!res.isNewUser) {
-      const existingRole: AppRole = res.user?.role === "provider" ? "provider" : "customer";
-      Alert.alert(
-        tr("Account Already Exists"),
-        existingRole === "provider"
-          ? tr("This phone number is already registered as a provider. Please sign in instead.")
-          : tr("This phone number is already registered. Please sign in instead."),
-        [{ text: tr("Go to Sign In"), onPress: () => router.replace({ pathname: "/auth/login", params: { role: existingRole } }) }]
-      );
+    if (!res.registrationToken) {
+      Alert.alert(tr("Verification Failed"), tr("Phone verification could not be completed. Please request a new code."));
       return;
     }
+    setRegistrationToken(res.registrationToken);
     setStep("details");
   };
 
@@ -107,7 +119,7 @@ export default function RegisterScreen() {
       return;
     }
     setLoading(true);
-    const ok = await register({ name: name.trim(), phone: phone.trim(), email: email.trim() || undefined, role: selectedRole, password, termsAccepted: true, privacyAccepted: true, legalVersion: LEGAL_VERSION });
+    const ok = await register({ name: name.trim(), phone: phone.trim(), email: email.trim() || undefined, role: selectedRole, password, termsAccepted: true, privacyAccepted: true, legalVersion: LEGAL_VERSION, registrationToken });
     setLoading(false);
     if (!ok.success) {
       Alert.alert(tr("Error"), tr(apiErrorToMessage(ok.error, "Could not create account. Please try again.")));
@@ -115,6 +127,19 @@ export default function RegisterScreen() {
     }
     const registeredRole: AppRole = ok.user?.role === "provider" ? "provider" : "customer";
     await promptBiometricSetup(phone.trim(), registeredRole);
+    if (email.trim() && ok.emailVerificationRequired) {
+      router.replace({
+        pathname: "/auth/email-verification" as any,
+        params: {
+          role: registeredRole,
+          sent: String(ok.emailVerificationSent === true),
+          expires: String(ok.emailVerificationExpiresInSeconds || 600),
+          resend: String(ok.emailVerificationResendAfterSeconds || 45),
+          ...(__DEV__ && ok.emailVerificationCode ? { code: ok.emailVerificationCode } : {}),
+        },
+      });
+      return;
+    }
     const dest = registeredRole === "provider" ? "/(provider)/(tabs)/dashboard" : "/(customer)/(tabs)/home";
     router.replace(dest as any);
   };
@@ -137,7 +162,16 @@ export default function RegisterScreen() {
 
         {step === "phone" && <View style={styles.form}><View style={styles.inputGroup}><Text style={[styles.label, localizedText]}>{tr("Phone Number")}</Text><View style={[styles.inputWrapper, localizedRow]}><Icon name="phone" size={18} color={theme.colors.textMuted} /><TextInput style={[styles.input, localizedText]} value={phone} onChangeText={setPhone} placeholder="03XX-XXXXXXX" placeholderTextColor={theme.colors.textMuted} keyboardType="phone-pad" autoFocus /></View></View><Button title={loading ? tr("Sending...") : tr("Get Verification Code")} onPress={handleSendOtp} loading={loading} fullWidth style={{ marginTop: 8 }} /></View>}
 
-        {step === "otp" && <View style={styles.form}>{otpHint ? <View style={[styles.otpHintBox, localizedRow]}><Icon name="info" size={14} color={theme.colors.secondary} /><Text style={styles.otpHintText}>{tr("Your OTP: {{code}}", { code: otpHint })}</Text></View> : null}<View style={styles.inputGroup}><Text style={[styles.label, localizedText]}>{tr("4-Digit OTP")}</Text><View style={[styles.inputWrapper, localizedRow]}><Icon name="lock" size={18} color={theme.colors.textMuted} /><TextInput style={[styles.input, styles.otpInput]} value={otp} onChangeText={(v) => setOtp(v.replace(/[^0-9]/g, "").slice(0, 4))} placeholder="----" placeholderTextColor={theme.colors.textMuted} keyboardType="number-pad" maxLength={4} autoFocus /></View></View><Button title={loading ? tr("Verifying...") : tr("Verify & Continue")} onPress={handleVerifyOtp} loading={loading} fullWidth style={{ marginTop: 8 }} /><Pressable style={styles.resendBtn} onPress={() => { setStep("phone"); setOtp(""); }}><Text style={[styles.resendText, localizedText]}>{tr("Change phone number")}</Text></Pressable></View>}
+        {step === "otp" && (
+          <View style={styles.form}>
+            {otpHint ? <View style={[styles.otpHintBox, localizedRow]}><Icon name="info" size={14} color={theme.colors.secondary} /><Text style={styles.otpHintText}>{tr("Your OTP: {{code}}", { code: otpHint })}</Text></View> : null}
+            <View style={styles.inputGroup}><Text style={[styles.label, localizedText]}>{tr("4-Digit OTP")}</Text><View style={[styles.inputWrapper, localizedRow]}><Icon name="lock" size={18} color={theme.colors.textMuted} /><TextInput style={[styles.input, styles.otpInput]} value={otp} onChangeText={(v) => setOtp(v.replace(/[^0-9]/g, "").slice(0, 4))} placeholder="----" placeholderTextColor={theme.colors.textMuted} keyboardType="number-pad" maxLength={4} autoFocus /></View></View>
+            <Text style={[styles.otpTimerText, otpExpiresIn === 0 && styles.otpTimerExpired]}>{otpExpiresIn > 0 ? tr("Code expires in {{time}}", { time: `${Math.floor(otpExpiresIn / 60)}:${String(otpExpiresIn % 60).padStart(2, "0")}` }) : tr("Code expired. Request a new OTP.")}</Text>
+            <Button title={loading ? tr("Verifying...") : tr("Verify & Continue")} onPress={handleVerifyOtp} loading={loading} disabled={otpExpiresIn === 0} fullWidth style={{ marginTop: 8 }} />
+            <Pressable style={styles.resendBtn} disabled={loading || otpResendIn > 0} onPress={handleSendOtp}><Text style={[styles.resendText, localizedText, (loading || otpResendIn > 0) && { color: theme.colors.textMuted }]}>{otpResendIn > 0 ? tr("Resend in {{seconds}}s", { seconds: otpResendIn }) : tr("Resend OTP")}</Text></Pressable>
+            <Pressable style={styles.resendBtn} onPress={() => { setStep("phone"); setOtp(""); setOtpExpiresIn(0); setOtpResendIn(0); }}><Text style={[styles.resendText, localizedText]}>{tr("Change phone number")}</Text></Pressable>
+          </View>
+        )}
 
         {step === "details" && <View style={styles.form}><View style={styles.inputGroup}><Text style={[styles.label, localizedText]}>{tr("Full Name *")}</Text><View style={[styles.inputWrapper, localizedRow]}><Icon name="user" size={18} color={theme.colors.textMuted} /><TextInput style={[styles.input, localizedText]} value={name} onChangeText={setName} placeholder={tr("Your full name")} placeholderTextColor={theme.colors.textMuted} autoFocus /></View></View><View style={styles.inputGroup}><Text style={[styles.label, localizedText]}>{tr("Email (optional)")}</Text><View style={[styles.inputWrapper, localizedRow]}><Icon name="mail" size={18} color={theme.colors.textMuted} /><TextInput style={[styles.input, localizedText]} value={email} onChangeText={setEmail} placeholder="your@email.com" placeholderTextColor={theme.colors.textMuted} keyboardType="email-address" autoCapitalize="none" /></View></View><View style={styles.inputGroup}><Text style={[styles.label, localizedText]}>{tr("Password *")}</Text><View style={[styles.inputWrapper, localizedRow]}><Icon name="lock" size={18} color={theme.colors.textMuted} /><TextInput style={[styles.input, localizedText]} value={password} onChangeText={setPassword} placeholder={tr("Enter your password")} placeholderTextColor={theme.colors.textMuted} secureTextEntry={!showPassword} autoCapitalize="none" /><Pressable onPress={() => setShowPassword((prev) => !prev)}><Icon name={showPassword ? "eye-off" : "eye"} size={18} color={theme.colors.textMuted} /></Pressable></View></View><View style={[styles.phoneDisplay, localizedRow]}><Icon name="check-circle" size={16} color={theme.colors.success} /><Text style={[styles.phoneDisplayText, localizedText]}>{tr("Phone verified: {{phone}}", { phone })}</Text></View><LegalAcceptanceCheckbox value={legalAccepted} onChange={setLegalAccepted} /><Button title={loading ? tr("Creating Account...") : tr("Create Account")} onPress={handleRegister} loading={loading} disabled={!legalAccepted} fullWidth style={{ marginTop: 8 }} /></View>}
 
@@ -163,6 +197,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   otpInput: { fontSize: 24, fontWeight: "800", letterSpacing: 12 },
   otpHintBox: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: theme.colors.secondary + "15", borderRadius: 12, padding: 12, borderWidth: 1, borderColor: theme.colors.secondary + "30" },
   otpHintText: { fontSize: 13, color: theme.colors.text },
+  otpTimerText: { textAlign: "center", fontSize: 12, color: theme.colors.textSecondary },
+  otpTimerExpired: { color: theme.colors.danger, fontWeight: "700" },
   resendBtn: { alignSelf: "center", paddingVertical: 8 },
   resendText: { fontSize: 14, color: theme.colors.primary, fontWeight: "600" },
   phoneDisplay: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: theme.colors.success + "15", borderRadius: 12, padding: 12, borderWidth: 1, borderColor: theme.colors.success + "30" },

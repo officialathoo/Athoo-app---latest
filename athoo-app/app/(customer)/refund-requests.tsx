@@ -36,12 +36,14 @@ interface Refund {
   createdAt: string;
 }
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; icon: string }> = {
-  pending: { label: "Pending Review", color: "#D97706", bg: "#FEF3C7", icon: "clock" },
-  approved: { label: "Approved", color: "#059669", bg: "#D1FAE5", icon: "check-circle" },
-  rejected: { label: "Declined", color: "#DC2626", bg: "#FEE2E2", icon: "x-circle" },
-  paid: { label: "Refund Paid", color: "#047857", bg: "#D1FAE5", icon: "check-circle" },
-};
+function getStatusConfig(theme: AthooTheme): Record<string, { label: string; color: string; bg: string; icon: string }> {
+  return {
+    pending: { label: "Pending Review", color: theme.colors.warning, bg: theme.colors.warningSoft, icon: "clock" },
+    approved: { label: "Approved", color: theme.colors.success, bg: theme.colors.successSoft, icon: "check-circle" },
+    rejected: { label: "Declined", color: theme.colors.danger, bg: theme.colors.dangerSoft, icon: "x-circle" },
+    paid: { label: "Refund Paid", color: theme.colors.success, bg: theme.colors.successSoft, icon: "check-circle" },
+  };
+}
 
 export default function RefundRequestsScreen() {
   const { theme } = useTheme();
@@ -167,7 +169,7 @@ export default function RefundRequestsScreen() {
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 0 : insets.top }]}>
       <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.header}>
         <Pressable style={styles.backBtn} onPress={() => router.back()} accessibilityRole="button" accessibilityLabel={tr("Back")}>
-          <Icon name={isUrdu ? "arrow-right" : "arrow-left"} size={20} color="#fff" />
+          <Icon name={isUrdu ? "arrow-right" : "arrow-left"} size={20} color={theme.colors.onBrand} />
         </Pressable>
         <View>
           <Text style={styles.headerTitle}>{tr("Refund Requests")}</Text>
@@ -187,7 +189,7 @@ export default function RefundRequestsScreen() {
               style={({ pressed }) => [styles.newBtn, pressed && { opacity: 0.85 }]}
               onPress={openForm}
             >
-              <Icon name="rotate-ccw" size={18} color="#fff" />
+              <Icon name="rotate-ccw" size={18} color={theme.colors.onBrand} />
               <Text style={styles.newBtnText}>{tr("New Refund Request")}</Text>
             </Pressable>
           ) : (
@@ -293,7 +295,7 @@ export default function RefundRequestsScreen() {
               </View>
 
               <View style={styles.infoBox}>
-                <Icon name="info" size={14} color="#2563EB" />
+                <Icon name="info" size={14} color={theme.colors.info} />
                 <Text style={styles.infoText}>{tr("Approved refunds are normally processed within 3–5 business days. We will notify you when your request is reviewed.")}</Text>
               </View>
 
@@ -303,10 +305,10 @@ export default function RefundRequestsScreen() {
                 disabled={submitting}
               >
                 {submitting ? (
-                  <ActivityIndicator color="#fff" size="small" />
+                  <ActivityIndicator color={theme.colors.onBrand} size="small" />
                 ) : (
                   <>
-                    <Icon name="send" size={16} color="#fff" />
+                    <Icon name="send" size={16} color={theme.colors.onBrand} />
                     <Text style={styles.submitBtnText}>{tr("Submit Refund Request")}</Text>
                   </>
                 )}
@@ -321,7 +323,7 @@ export default function RefundRequestsScreen() {
             </View>
           ) : error ? (
             <View style={styles.emptyBox}>
-              <View style={[styles.emptyIcon, { backgroundColor: "#FEE2E2" }]}>
+              <View style={[styles.emptyIcon, { backgroundColor: theme.colors.dangerSoft }]}>
                 <Icon name="alert-circle" size={32} color={theme.colors.danger} />
               </View>
               <Text style={[styles.emptyTitle, { color: theme.colors.danger }]}>{tr("Unable to load refunds")}</Text>
@@ -342,7 +344,8 @@ export default function RefundRequestsScreen() {
             <View style={styles.list}>
               <Text style={styles.sectionLabel}>{tr("Refund History")}</Text>
               {refunds.map((r) => {
-                const cfg = STATUS_CONFIG[r.status] || STATUS_CONFIG.pending;
+                const statusConfig = getStatusConfig(theme);
+                const cfg = statusConfig[r.status] || statusConfig.pending;
                 return (
                   <View key={r.id} style={styles.card}>
                     <View style={styles.cardTop}>
@@ -360,9 +363,9 @@ export default function RefundRequestsScreen() {
                       <Text style={styles.cardDetailText} numberOfLines={2}>{r.reason}</Text>
                     </View>
                     {r.resolutionNote && (
-                      <View style={[styles.noteBox, { backgroundColor: r.status === "approved" ? "#ECFDF5" : "#FFF7ED" }]}>
-                        <Icon name={r.status === "approved" ? "check-circle" : "alert-circle"} size={13} color={r.status === "approved" ? "#059669" : "#D97706"} />
-                        <Text style={[styles.noteText, { color: r.status === "approved" ? "#059669" : "#D97706" }]}>{r.resolutionNote}</Text>
+                      <View style={[styles.noteBox, { backgroundColor: r.status === "approved" ? theme.colors.successSoft : theme.colors.premiumSoft }]}>
+                        <Icon name={r.status === "approved" ? "check-circle" : "alert-circle"} size={13} color={r.status === "approved" ? theme.colors.success : theme.colors.warning} />
+                        <Text style={[styles.noteText, { color: r.status === "approved" ? theme.colors.success : theme.colors.warning }]}>{r.resolutionNote}</Text>
                       </View>
                     )}
                   </View>
@@ -395,7 +398,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     alignItems: "center",
     justifyContent: "center",
   },
-  headerTitle: { fontSize: 18, fontWeight: "700", color: "#fff" },
+  headerTitle: { fontSize: 18, fontWeight: "700", color: theme.colors.onBrand },
   headerSub: { fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 2 },
   scroll: { width: "100%", maxWidth: 760, alignSelf: "center", flex: 1 },
   scrollContent: { width: "100%", maxWidth: 760, alignSelf: "center", padding: 16, gap: 16 },
@@ -408,13 +411,13 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     borderRadius: 14,
     paddingVertical: 14,
   },
-  newBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
+  newBtnText: { fontSize: 15, fontWeight: "700", color: theme.colors.onBrand },
   form: {
     backgroundColor: theme.colors.surface,
     borderRadius: 16,
     padding: 18,
     gap: 14,
-    shadowColor: "#000",
+    shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
@@ -462,25 +465,25 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     paddingVertical: 10,
     fontSize: 13,
     borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+    borderBottomColor: theme.colors.neutralSoft,
     color: theme.colors.text,
   },
   pickerEmpty: { padding: 16, textAlign: "center", fontSize: 13, color: theme.colors.textSecondary },
-  pickerItem: { paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#F1F5F9" },
-  pickerItemSelected: { backgroundColor: "#EFF6FF" },
+  pickerItem: { paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.colors.neutralSoft },
+  pickerItemSelected: { backgroundColor: theme.colors.infoSoft },
   pickerItemTitle: { fontSize: 14, fontWeight: "600", color: theme.colors.text },
   pickerItemSub: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 },
   infoBox: {
     flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "flex-start",
     gap: 8,
-    backgroundColor: "#EFF6FF",
+    backgroundColor: theme.colors.infoSoft,
     borderRadius: 10,
     padding: 12,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
+    borderColor: theme.colors.infoSoft,
   },
-  infoText: { fontSize: 12, color: "#1E40AF", flex: 1, lineHeight: 18 },
+  infoText: { fontSize: 12, color: theme.colors.info, flex: 1, lineHeight: 18 },
   submitBtn: {
     flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "center",
@@ -491,7 +494,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     paddingVertical: 14,
     marginTop: 4,
   },
-  submitBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
+  submitBtnText: { fontSize: 15, fontWeight: "700", color: theme.colors.onBrand },
   loadingBox: { alignItems: "center", paddingVertical: 48, gap: 12 },
   loadingText: { fontSize: 14, color: theme.colors.textSecondary },
   emptyBox: { alignItems: "center", paddingVertical: 48, gap: 10 },
@@ -514,7 +517,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     borderRadius: 14,
     padding: 16,
     gap: 8,
-    shadowColor: "#000",
+    shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 4,

@@ -6,6 +6,7 @@ import { setupWebSocket } from "./ws";
 import { startBookingSweeper, stopBookingSweeper } from "./lib/bookingSweeper";
 import { shutdownQueue, startQueueWorker } from "./lib/queue";
 import { assertDatabaseMigrationsCurrent } from "./lib/databaseMigrations";
+import { startEmailMaintenance, stopEmailMaintenance } from "./lib/emailDelivery";
 
 const rawPort = process.env["PORT"] || "5000";
 
@@ -34,6 +35,7 @@ async function startServer(): Promise<void> {
     }
     logger.info({ port }, "Server listening");
     startQueueWorker();
+    startEmailMaintenance();
     startBookingSweeper();
     logger.info("bookingSweeper started (5-min no-show cancel, 1-min interval)");
   });
@@ -49,6 +51,7 @@ startServer().catch((err) => {
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, "shutdown signal received");
   stopBookingSweeper();
+  stopEmailMaintenance();
   const serverClosed = new Promise<void>((resolve) => {
     server.close((error?: Error) => {
       if (error) logger.error({ err: error }, "error while closing HTTP server");

@@ -1,9 +1,10 @@
 import { Stack, router, usePathname } from "expo-router";
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { AthooLoader } from "@/components/ui/AthooLoader";
 import { View, Text, StyleSheet, Pressable } from "react-native";
-import { Colors } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 import { Icon } from "@/components/ui/Icon";
 
 // ── Verification wall ─────────────────────────────────────────────────────────
@@ -11,6 +12,8 @@ import { Icon } from "@/components/ui/Icon";
 // their profile and logout, but cannot access jobs, broadcast, or earnings.
 function VerificationWall({ status, note }: { status: string; note?: string | null }) {
   const { logout, refreshUser } = useAuth();
+  const { theme } = useTheme();
+  const vw = useMemo(() => createVerificationStyles(theme), [theme]);
   const isRejected = status === "rejected";
   return (
     <View style={vw.container}>
@@ -18,7 +21,7 @@ function VerificationWall({ status, note }: { status: string; note?: string | nu
         <Icon
           name={isRejected ? "shield-x" : "shield-check"}
           size={52}
-          color={isRejected ? Colors.error : Colors.warning}
+          color={isRejected ? theme.colors.danger : theme.colors.warning}
         />
         <Text style={vw.title}>
           {isRejected ? "Verification Rejected" : "Verification Pending"}
@@ -42,17 +45,17 @@ function VerificationWall({ status, note }: { status: string; note?: string | nu
   );
 }
 
-const vw = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background, alignItems: "center", justifyContent: "center", padding: 24 },
-  card: { backgroundColor: Colors.surface, borderRadius: 20, padding: 32, alignItems: "center", gap: 16, maxWidth: 360, width: "100%", shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
-  title: { fontSize: 20, fontWeight: "600", color: Colors.text, textAlign: "center" },
-  body: { fontSize: 14, color: Colors.textSecondary, textAlign: "center", lineHeight: 22 },
-  primaryBtn: { marginTop: 8, backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 28 },
-  primaryBtnText: { fontSize: 14, fontWeight: "700", color: "#fff" },
-  btn: { backgroundColor: Colors.border, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 28 },
-  btnText: { fontSize: 14, fontWeight: "600", color: Colors.textSecondary },
+const createVerificationStyles = (theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background, alignItems: "center", justifyContent: "center", padding: 24 },
+  card: { backgroundColor: theme.colors.surface, borderRadius: 20, padding: 32, alignItems: "center", gap: 16, maxWidth: 360, width: "100%", borderWidth: 1, borderColor: theme.colors.border, shadowColor: theme.colors.overlay, shadowOpacity: 0.12, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
+  title: { fontSize: 20, fontWeight: "600", color: theme.colors.text, textAlign: "center" },
+  body: { fontSize: 14, color: theme.colors.textSecondary, textAlign: "center", lineHeight: 22 },
+  primaryBtn: { marginTop: 8, backgroundColor: theme.colors.primary, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 28 },
+  primaryBtnText: { fontSize: 14, fontWeight: "700", color: theme.colors.white },
+  btn: { backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 28 },
+  btnText: { fontSize: 14, fontWeight: "600", color: theme.colors.text },
   linkBtn: { paddingVertical: 8, paddingHorizontal: 18 },
-  linkText: { fontSize: 13, fontWeight: "600", color: Colors.textMuted },
+  linkText: { fontSize: 13, fontWeight: "600", color: theme.colors.textSecondary },
 });
 
 export default function ProviderLayout() {

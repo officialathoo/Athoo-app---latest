@@ -1,0 +1,64 @@
+name: Athoo Connected Runtime Verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: Deployed Athoo API base URL
+        required: true
+        type: string
+      admin_origin:
+        description: Deployed admin origin for CORS verification
+        required: true
+        type: string
+      release_version:
+        description: Expected deployed release version
+        required: true
+        default: rc2-candidate
+        type: string
+      commit_sha:
+        description: Expected deployed commit SHA (leave empty to use selected workflow commit)
+        required: false
+        type: string
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.2
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify connected deployment
+        env:
+          CONNECTED_API_BASE_URL: ${{ inputs.api_base_url }}
+          CONNECTED_ADMIN_ORIGIN: ${{ inputs.admin_origin }}
+          CONNECTED_EXPECTED_RELEASE_VERSION: ${{ inputs.release_version }}
+          CONNECTED_EXPECTED_COMMIT_SHA: ${{ inputs.commit_sha || github.sha }}
+          CONNECTED_CUSTOMER_IDENTIFIER: ${{ secrets.CONNECTED_CUSTOMER_IDENTIFIER }}
+          CONNECTED_CUSTOMER_PASSWORD: ${{ secrets.CONNECTED_CUSTOMER_PASSWORD }}
+          CONNECTED_CUSTOMER_ROLE: customer
+          CONNECTED_ADMIN_IDENTIFIER: ${{ secrets.CONNECTED_ADMIN_IDENTIFIER }}
+          CONNECTED_ADMIN_PASSWORD: ${{ secrets.CONNECTED_ADMIN_PASSWORD }}
+          CONNECTED_EMAIL_TEST_TO: ${{ secrets.CONNECTED_EMAIL_TEST_TO }}
+          CONNECTED_OTP_TEST_PHONE: ${{ secrets.CONNECTED_OTP_TEST_PHONE }}
+          CONNECTED_OTP_TEST_ROLE: customer
+          CONNECTED_STRICT: "true"
+        run: pnpm runtime:verify:connected
+      - name: Upload redacted release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: connected-runtime-evidence
+          path: release-evidence/
+          if-no-files-found: warn
+          retention-days: 30

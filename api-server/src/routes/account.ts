@@ -1,4 +1,6 @@
 import { revokeAllUserSessions } from "../lib/session";
+import { normalizeEmailAddress, queuePasswordChangedEmail, sendEmailChallenge, verifyEmailChallenge } from "../lib/emailAuth";
+import { queueEmail } from "../lib/emailDelivery";
 import { notifyUser } from "../lib/notifications";
 import { Router } from "express";
 import { logger } from "../lib/logger";
@@ -10,14 +12,13 @@ import { cleanupReplacedOwnedMedia } from "../lib/mediaLifecycle";
 import {
   usersTable,
   accountDeletionRequestsTable,
-  emailChangeRequestsTable,
   phoneChangeRequestsTable,
   serviceAddRequestsTable,
   serviceCategoriesTable,
   auditLogTable,
   adminNotificationsTable,
 } from "@workspace/db/schema";
-import { and, desc, eq, gt, ne } from "drizzle-orm";
+import { and, desc, eq, gt, ne, sql } from "drizzle-orm";
 import {
   requireAuth,
   requireAuthAllowDeactivated,
@@ -32,10 +33,21 @@ const otp = () => crypto.randomInt(100000, 1000000).toString();
 
 // Endpoints that must remain reachable for soft-deactivated / pending-deletion users
 router.post("/reactivate", requireAuthAllowDeactivated, async (req: AuthRequest, res) => {
+  const user = await db.query.usersTable.findFirst({ where: eq(usersTable.id, req.user!.userId) });
   await db
     .update(usersTable)
     .set({ isDeactivated: false, accountStatus: "active", deletionScheduledAt: null, updatedAt: new Date() })
     .where(eq(usersTable.id, req.user!.userId));
+  if (user?.email) {
+    void queueEmail({
+      userId: user.id,
+      to: user.email,
+      templateKey: "account_status",
+      category: "security",
+      dedupeKey: `account-reactivated:${user.id}:${Date.now()}`,
+      variables: { name: user.name, status: "active", reason: "Your account was reactivated successfully.", category: "security" },
+    }).catch(() => undefined);
+  }
   return res.json({ success: true });
 });
 
@@ -62,6 +74,17 @@ router.post("/delete-request/cancel", requireAuthAllowDeactivated, async (req: A
         updatedAt: new Date(),
       })
       .where(eq(usersTable.id, req.user!.userId));
+    const user = await db.query.usersTable.findFirst({ where: eq(usersTable.id, req.user!.userId) });
+    if (user?.email) {
+      void queueEmail({
+        userId: user.id,
+        to: user.email,
+        templateKey: "account_status",
+        category: "security",
+        dedupeKey: `account-deletion-cancelled:${user.id}:${Date.now()}`,
+        variables: { name: user.name, status: "active", reason: "Your account deletion request was cancelled.", category: "security" },
+      }).catch(() => undefined);
+    }
     return res.json({ success: true });
   } catch (e) {
     logger.error({ err: e }, "account.cancel-delete error");
@@ -154,6 +177,7 @@ router.post("/password", async (req: AuthRequest, res) => {
     const hashed = await bcrypt.hash(String(newPassword), 10);
     await db.update(usersTable).set({ password: hashed, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
     await revokeAllUserSessions(user.id, "password_changed");
+    void queuePasswordChangedEmail(user, "changed").catch(() => undefined);
     return res.json({ success: true });
   } catch (e) {
     logger.error({ err: e }, "account.password error");
@@ -176,6 +200,16 @@ router.post("/deactivate", async (req: AuthRequest, res) => {
       .set({ isDeactivated: true, accountStatus: "deactivated", updatedAt: new Date() })
       .where(eq(usersTable.id, user.id));
     await revokeAllUserSessions(user.id, "account_deactivated");
+    if (user.email) {
+      void queueEmail({
+        userId: user.id,
+        to: user.email,
+        templateKey: "account_status",
+        category: "security",
+        dedupeKey: `account-deactivated:${user.id}:${Date.now()}`,
+        variables: { name: user.name, status: "deactivated", reason: "Your account was temporarily deactivated.", category: "security" },
+      }).catch(() => undefined);
+    }
     return res.json({ success: true });
   } catch (e) {
     logger.error({ err: e }, "account.deactivate error");
@@ -229,6 +263,21 @@ router.post("/delete-request", async (req: AuthRequest, res) => {
       type: "warning",
       link: `/admin/users/${user.id}`,
     });
+    if (user.email) {
+      void queueEmail({
+        userId: user.id,
+        to: user.email,
+        templateKey: "account_status",
+        category: "security",
+        dedupeKey: `account-pending-deletion:${user.id}:${scheduledDeleteAt.toISOString()}`,
+        variables: {
+          name: user.name,
+          status: "pending deletion",
+          reason: `Your account is scheduled for deletion on ${scheduledDeleteAt.toISOString()}. You can cancel before that date.`,
+          category: "security",
+        },
+      }).catch(() => undefined);
+    }
     return res.json({ success: true, scheduledDeleteAt });
   } catch (e) {
     logger.error({ err: e }, "account.delete-request error");
@@ -236,58 +285,118 @@ router.post("/delete-request", async (req: AuthRequest, res) => {
   }
 });
 
-// EMAIL change — request OTP, then verify
+// EMAIL change — provider-neutral verification challenge, then update
 router.post("/email/request", async (req: AuthRequest, res) => {
-  const { newEmail } = req.body ?? {};
-  if (!newEmail || !/.+@.+\..+/.test(String(newEmail))) {
-    return res.status(400).json({ error: "Valid new email required" });
+  try {
+    const normalizedEmail = normalizeEmailAddress(req.body?.newEmail);
+    if (!normalizedEmail) return res.status(400).json({ error: "Valid new email required", code: "INVALID_EMAIL" });
+    const user = await db.query.usersTable.findFirst({ where: eq(usersTable.id, req.user!.userId) });
+    if (!user) return res.status(404).json({ error: "User not found" });
+    if (normalizeEmailAddress(user.email) === normalizedEmail && user.emailVerified) {
+      return res.json({ success: true, alreadyVerified: true, email: normalizedEmail });
+    }
+    const taken = await db.query.usersTable.findFirst({
+      where: and(sql`lower(trim(${usersTable.email})) = ${normalizedEmail}`, ne(usersTable.id, user.id)),
+    });
+    if (taken) return res.status(409).json({ error: "Email address already in use", code: "EMAIL_IN_USE" });
+    const result = await sendEmailChallenge({
+      userId: user.id,
+      email: normalizedEmail,
+      name: user.name,
+      role: user.role,
+      purpose: "email_change",
+    });
+    if (!result.success) {
+      const status = result.errorCode === "EMAIL_OTP_RESEND_COOLDOWN" ? 429 : 503;
+      return res.status(status).json({
+        error: result.errorCode === "EMAIL_OTP_RESEND_COOLDOWN"
+          ? `Please wait ${result.resendAfterSeconds} seconds before requesting another code.`
+          : "The email verification code could not be delivered.",
+        code: result.errorCode,
+        retryAfterSeconds: result.resendAfterSeconds,
+      });
+    }
+    return res.json({
+      success: true,
+      email: normalizedEmail,
+      expiresInSeconds: result.expiresInSeconds,
+      resendAfterSeconds: result.resendAfterSeconds,
+      ...(result.code ? { code: result.code } : {}),
+    });
+  } catch (error) {
+    logger.error({ err: error }, "account.email-change request failed");
+    return res.status(500).json({ error: "Failed to send email verification code" });
   }
-  const normalizedEmail = String(newEmail).toLowerCase().trim();
-  const taken = await db.query.usersTable.findFirst({
-    where: and(eq(usersTable.email, normalizedEmail), ne(usersTable.id, req.user!.userId)),
-  });
-  if (taken) return res.status(409).json({ error: "Email address already in use" });
-  const code = otp();
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-  await db.insert(emailChangeRequestsTable).values({
-    id: id(),
-    userId: req.user!.userId,
-    newEmail: normalizedEmail,
-    otpCode: code,
-    expiresAt,
-  });
-  const isDev = process.env.NODE_ENV !== "production";
-  return res.json({ success: true, ...(isDev ? { code } : {}) });
 });
 
 router.post("/email/verify", async (req: AuthRequest, res) => {
-  const { code } = req.body ?? {};
-  const reqRow = await db.query.emailChangeRequestsTable.findFirst({
-    where: and(
-      eq(emailChangeRequestsTable.userId, req.user!.userId),
-      eq(emailChangeRequestsTable.otpCode, String(code ?? "")),
-      eq(emailChangeRequestsTable.verified, false),
-      gt(emailChangeRequestsTable.expiresAt, new Date()),
-    ),
-    orderBy: desc(emailChangeRequestsTable.createdAt),
-  });
-  if (!reqRow) return res.status(400).json({ error: "Invalid or expired code" });
-  const taken = await db.query.usersTable.findFirst({
-    where: and(eq(usersTable.email, reqRow.newEmail), ne(usersTable.id, req.user!.userId)),
-  });
-  if (taken) return res.status(409).json({ error: "Email address already in use" });
-  await db.transaction(async (tx) => {
-    await tx
-      .update(emailChangeRequestsTable)
-      .set({ verified: true })
-      .where(eq(emailChangeRequestsTable.id, reqRow.id));
-    await tx
-      .update(usersTable)
-      .set({ email: reqRow.newEmail, updatedAt: new Date() })
-      .where(eq(usersTable.id, req.user!.userId));
-  });
-  await revokeAllUserSessions(req.user!.userId, "email_changed");
-  return res.json({ success: true, email: reqRow.newEmail });
+  try {
+    const normalizedEmail = normalizeEmailAddress(req.body?.newEmail);
+    const code = String(req.body?.code || "").trim();
+    if (!normalizedEmail || !/^\d{6}$/.test(code)) {
+      return res.status(400).json({ error: "New email and a valid 6-digit code are required", code: "EMAIL_OTP_REQUIRED" });
+    }
+    const user = await db.query.usersTable.findFirst({ where: eq(usersTable.id, req.user!.userId) });
+    if (!user) return res.status(404).json({ error: "User not found" });
+    const taken = await db.query.usersTable.findFirst({
+      where: and(sql`lower(trim(${usersTable.email})) = ${normalizedEmail}`, ne(usersTable.id, user.id)),
+    });
+    if (taken) return res.status(409).json({ error: "Email address already in use", code: "EMAIL_IN_USE" });
+    const verified = await verifyEmailChallenge({
+      userId: user.id,
+      email: normalizedEmail,
+      purpose: "email_change",
+      code,
+      role: user.role,
+    });
+    if (!verified.success) {
+      const status = verified.code === "EMAIL_OTP_ATTEMPT_LIMIT" ? 429 : 400;
+      return res.status(status).json({
+        error: verified.code === "EMAIL_OTP_EXPIRED"
+          ? "Email code expired. Request a new code."
+          : verified.code === "EMAIL_OTP_ATTEMPT_LIMIT"
+            ? "Too many incorrect attempts. Request a new code."
+            : "Email verification code is incorrect.",
+        code: verified.code,
+        attemptsRemaining: verified.attemptsRemaining,
+      });
+    }
+    const oldEmail = normalizeEmailAddress(user.email);
+    try {
+      await db.update(usersTable).set({ email: normalizedEmail, emailVerified: true, updatedAt: new Date() })
+        .where(eq(usersTable.id, user.id));
+    } catch (error: any) {
+      if (String(error?.code || "") === "23505") {
+        return res.status(409).json({ error: "Email address already verified on another account", code: "EMAIL_IN_USE" });
+      }
+      throw error;
+    }
+    await revokeAllUserSessions(req.user!.userId, "email_changed");
+    const variables = { name: user.name, email: normalizedEmail, timestamp: new Date().toISOString(), category: "security" };
+    void queueEmail({
+      userId: user.id,
+      to: normalizedEmail,
+      templateKey: "email_changed",
+      category: "security",
+      dedupeKey: `email-changed-new:${user.id}:${normalizedEmail}`,
+      variables,
+    }).catch(() => undefined);
+    if (oldEmail && oldEmail !== normalizedEmail) {
+      void queueEmail({
+        userId: null,
+        to: oldEmail,
+        templateKey: "email_changed",
+        category: "security",
+        dedupeKey: `email-changed-old:${user.id}:${normalizedEmail}`,
+        variables,
+        metadata: { previousAddressAlert: true, userId: user.id },
+      }).catch(() => undefined);
+    }
+    return res.json({ success: true, email: normalizedEmail, emailVerified: true, signedOut: true });
+  } catch (error) {
+    logger.error({ err: error }, "account.email-change verify failed");
+    return res.status(500).json({ error: "Failed to verify email change" });
+  }
 });
 
 // PHONE change — request OTP, then verify

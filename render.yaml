@@ -11,6 +11,16 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: DEPLOYMENT_ENVIRONMENT
+        value: production
+      - key: RELEASE_SERVICE_NAME
+        value: athoo-api
+      - key: RELEASE_VERSION
+        value: rc2-candidate
+      - key: RELEASE_COMMIT_SHA
+        sync: false
+      - key: RELEASE_BUILD_ID
+        sync: false
       - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET
@@ -53,24 +63,166 @@ services:
         value: memory
       - key: PUSH_PROVIDER
         value: expo
+      - key: PUSH_PROVIDER_ENDPOINT
+        value: https://exp.host/--/api/v2/push/send
       - key: EXPO_ACCESS_TOKEN
         sync: false
+      - key: PUSH_TIMEOUT_MS
+        value: "10000"
+      - key: EXPO_PUSH_BATCH_SIZE
+        value: "100"
+      - key: PUSH_MAX_ATTEMPTS
+        value: "3"
+      - key: PUSH_RETRY_BASE_MS
+        value: "500"
+      - key: PUSH_BADGE_COUNT
+        value: "1"
+      - key: NOTIFICATION_CHANNEL_VERSION
+        value: "3"
+      - key: NOTIFICATION_JOB_CHANNEL_ID
+        value: jobs-v3
+      - key: NOTIFICATION_JOB_SOUND
+        value: athoo_job.wav
+      - key: NOTIFICATION_JOB_TTL_SECONDS
+        value: "900"
+      - key: NOTIFICATION_MESSAGE_CHANNEL_ID
+        value: messages-v3
+      - key: NOTIFICATION_MESSAGE_SOUND
+        value: athoo_message.wav
+      - key: NOTIFICATION_MESSAGE_TTL_SECONDS
+        value: "86400"
+      - key: NOTIFICATION_GENERAL_CHANNEL_ID
+        value: general-v3
+      - key: NOTIFICATION_GENERAL_SOUND
+        value: athoo_general.wav
+      - key: NOTIFICATION_GENERAL_TTL_SECONDS
+        value: "86400"
+      - key: NOTIFICATION_CALL_CHANNEL_ID
+        value: calls-v3
+      - key: NOTIFICATION_CALL_SOUND
+        value: athoo_call.wav
+      - key: NOTIFICATION_CALL_TTL_SECONDS
+        value: "35"
+      - key: EMAIL_PROVIDER
+        value: smtp
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
         value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_REQUIRE_TLS
+        value: "true"
+      - key: SMTP_TLS_REJECT_UNAUTHORIZED
+        value: "true"
       - key: SMTP_USER
         sync: false
       - key: SMTP_PASS
         sync: false
-      - key: SMTP_FROM
+      - key: SMTP_POOL
+        value: "true"
+      - key: SMTP_MAX_CONNECTIONS
+        value: "3"
+      - key: SMTP_MAX_MESSAGES_PER_CONNECTION
+        value: "100"
+      - key: SMTP_CONNECTION_TIMEOUT_MS
+        value: "10000"
+      - key: SMTP_GREETING_TIMEOUT_MS
+        value: "10000"
+      - key: SMTP_SOCKET_TIMEOUT_MS
+        value: "20000"
+      - key: EMAIL_FROM_NAME
+        value: Athoo
+      - key: EMAIL_FROM_ADDRESS
         sync: false
+      - key: EMAIL_REPLY_TO
+        sync: false
+      - key: EMAIL_BRAND_NAME
+        value: Athoo
+      - key: EMAIL_BRAND_DESCRIPTOR
+        value: Trusted services, connected safely
+      - key: EMAIL_BRAND_COLOR
+        value: "#1A6EE0"
+      - key: EMAIL_SUPPORT_ADDRESS
+        sync: false
+      - key: EMAIL_OTP_HASH_SECRET
+        sync: false
+      - key: EMAIL_OTP_TTL_SECONDS
+        value: "600"
+      - key: EMAIL_OTP_RESEND_COOLDOWN_SECONDS
+        value: "45"
+      - key: EMAIL_OTP_MAX_ATTEMPTS
+        value: "5"
+      - key: EMAIL_VERIFICATION_RATE_LIMIT_MAX
+        value: "10"
+      - key: EMAIL_VERIFICATION_ATTEMPT_RATE_LIMIT_MAX
+        value: "20"
+      - key: EMAIL_CHANGE_RATE_LIMIT_MAX
+        value: "10"
+      - key: EMAIL_CHANGE_VERIFY_RATE_LIMIT_MAX
+        value: "20"
+      - key: EMAIL_ADMIN_TEST_RATE_LIMIT_MAX
+        value: "10"
+      - key: EMAIL_QUEUE_MAX_ATTEMPTS
+        value: "4"
+      - key: EMAIL_CHALLENGE_RETENTION_DAYS
+        value: "7"
+      - key: EMAIL_DELIVERY_RETENTION_DAYS
+        value: "180"
+      - key: EMAIL_MAINTENANCE_INTERVAL_MS
+        value: "21600000"
+      - key: EMAIL_NEW_DEVICE_ALERTS_ENABLED
+        value: "true"
+      - key: EMAIL_MARKETING_ENABLED
+        value: "false"
+      - key: EMAIL_MARKETING_MAX_RECIPIENTS
+        value: "500"
+      - key: API_PUBLIC_URL
+        sync: false
+      - key: OTP_TTL_SECONDS
+        value: "600"
+      - key: OTP_RESEND_COOLDOWN_SECONDS
+        value: "45"
+      - key: OTP_MAX_ATTEMPTS
+        value: "5"
+      - key: OTP_DELIVERY_CHANNELS
+        value: whatsapp_cloud,email
+      - key: OTP_DELIVERY_MODE
+        value: first_success
+      - key: WHATSAPP_GRAPH_BASE_URL
+        value: https://graph.facebook.com
       - key: WHATSAPP_ACCESS_TOKEN
         sync: false
       - key: WHATSAPP_PHONE_NUMBER_ID
         sync: false
       - key: WHATSAPP_GRAPH_API_VERSION
         value: v25.0
+      - key: WHATSAPP_OTP_TEMPLATE_NAME
+        value: otp_verification
+      - key: WHATSAPP_OTP_TEMPLATE_LANGUAGE
+        value: en
+      - key: WHATSAPP_TIMEOUT_MS
+        value: "10000"
+      - key: SMS_PROVIDER
+        value: disabled
+      - key: SMS_HTTP_ENDPOINT
+        sync: false
+      - key: SMS_HTTP_METHOD
+        value: POST
+      - key: SMS_HTTP_AUTH_HEADER
+        value: Authorization
+      - key: SMS_HTTP_AUTH_VALUE
+        sync: false
+      - key: SMS_HTTP_PHONE_FIELD
+        value: to
+      - key: SMS_HTTP_MESSAGE_FIELD
+        value: message
+      - key: SMS_HTTP_SENDER_FIELD
+        value: sender
+      - key: SMS_HTTP_SENDER_VALUE
+        sync: false
+      - key: SMS_HTTP_TIMEOUT_MS
+        value: "10000"
       - key: ALLOW_DEV_OTP_RESPONSE
         value: "false"
       - key: SENTRY_DSN
@@ -79,3 +231,85 @@ services:
         generateValue: true
       - key: ALLOW_PENDING_MIGRATIONS
         value: "0"
+      - key: MAP_PROVIDER
+        value: mapbox
+      - key: MAP_TILE_PROVIDER
+        value: mapbox
+      - key: MAP_SEARCH_PROVIDER
+        value: photon
+      - key: MAP_REVERSE_PROVIDER
+        value: photon
+      - key: MAP_DIRECTIONS_PROVIDER
+        value: mapbox
+      - key: MAP_PROVIDER_FALLBACK_ENABLED
+        value: "false"
+      - key: MAPBOX_ACCESS_TOKEN
+        sync: false
+      - key: MAPBOX_STYLE_OWNER
+        value: mapbox
+      - key: MAPBOX_STYLE_ID
+        value: streets-v12
+      - key: MAPBOX_TILE_SIZE
+        value: "512"
+      - key: MAPBOX_TILE_SCALE
+        value: ""
+      - key: MAPBOX_COUNTRY_CODES
+        value: pk
+      - key: MAPBOX_LANGUAGE
+        value: en
+      - key: MAPBOX_GEOCODING_PERMANENT
+        value: "false"
+      - key: MAPBOX_GEOCODING_BASE_URL
+        value: https://api.mapbox.com/search/geocode/v6
+      - key: MAPBOX_DIRECTIONS_BASE_URL
+        value: https://api.mapbox.com/directions/v5
+      - key: MAPBOX_DIRECTIONS_PROFILE
+        value: mapbox/driving
+      - key: MAP_TILE_UPSTREAM_URL
+        sync: false
+      - key: MAP_TILE_API_KEY
+        sync: false
+      - key: MAP_TILE_PROVIDER_NAME
+        sync: false
+      - key: MAP_TILE_ATTRIBUTION
+        value: "© Mapbox © OpenStreetMap contributors"
+      - key: MAP_TILE_USER_AGENT
+        value: "AthooApp/1.0 (+https://athoo.pk)"
+      - key: MAP_TILE_ALLOW_OSM_DEVELOPMENT
+        value: "false"
+      - key: MAP_TILE_TIMEOUT_MS
+        value: "8000"
+      - key: MAP_TILE_BROWSER_CACHE_SECONDS
+        value: "86400"
+      - key: MAP_TILE_CDN_CACHE_SECONDS
+        value: "604800"
+      - key: MAP_TILE_MAX_BYTES
+        value: "2097152"
+      - key: MAP_TILE_MAX_ZOOM
+        value: "20"
+      - key: MAP_TILE_RESPECT_UPSTREAM_CACHE
+        value: "true"
+      - key: MAP_CONTACT_EMAIL
+        value: "support@athoo.pk"
+      - key: MAP_USER_AGENT
+        value: "AthooApp/1.0 (+https://athoo.pk; contact: support@athoo.pk)"
+      - key: PHOTON_BASE_URL
+        value: "https://photon.komoot.io"
+      - key: NOMINATIM_BASE_URL
+        value: "https://nominatim.openstreetmap.org"
+      - key: NOMINATIM_SEARCH_FALLBACK
+        value: "false"
+      - key: OSRM_BASE_URL
+        value: "https://router.project-osrm.org"
+      - key: GEO_UPSTREAM_TIMEOUT_MS
+        value: "6000"
+      - key: GEO_CACHE_MAX_ITEMS
+        value: "500"
+      - key: GEO_RATE_LIMIT_WINDOW_MS
+        value: "60000"
+      - key: GEO_SEARCH_RATE_LIMIT_MAX
+        value: "60"
+      - key: GEO_REVERSE_RATE_LIMIT_MAX
+        value: "60"
+      - key: GEO_DIRECTIONS_RATE_LIMIT_MAX
+        value: "60"

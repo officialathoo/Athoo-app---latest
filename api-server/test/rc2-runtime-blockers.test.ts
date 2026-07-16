@@ -12,7 +12,8 @@ test("open map preview is interactive and location acquisition is bounded", () =
   const screen = read("athoo-app/app/(customer)/map.tsx");
   const location = read("athoo-app/services/location.ts");
   assert.match(map, /OpenStreetMapPreview/);
-  assert.match(preview, /tile\.openstreetmap\.org/);
+  assert.match(preview, /EXPO_PUBLIC_MAP_TILE_URL/);
+  assert.match(preview, /TILE_TEMPLATE_CONFIGURED/);
   assert.match(preview, /onCoordinateChange/);
   assert.match(screen, /getFastForegroundLocation/);
   assert.match(location, /Location\.Accuracy\.Balanced/);

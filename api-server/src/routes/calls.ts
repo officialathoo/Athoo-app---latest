@@ -16,6 +16,51 @@ function generateId(): string {
   return crypto.randomUUID();
 }
 
+function parseConfiguredUrls(...values: Array<string | undefined>): string[] {
+  return values
+    .flatMap((value) => String(value || "").split(","))
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function getIceConfiguration() {
+  const stunUrls = parseConfiguredUrls(process.env.STUN_URLS, process.env.STUN_URL);
+  const turnUrls = parseConfiguredUrls(process.env.TURN_URLS, process.env.TURN_URL);
+  const iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }> = [];
+
+  if (stunUrls.length) iceServers.push({ urls: stunUrls });
+  if (turnUrls.length) {
+    const turnServer: { urls: string | string[]; username?: string; credential?: string } = { urls: turnUrls };
+    const username = String(process.env.TURN_USERNAME || "").trim();
+    const credential = String(process.env.TURN_CREDENTIAL || "").trim();
+    if (username && credential) {
+      turnServer.username = username;
+      turnServer.credential = credential;
+    }
+    iceServers.push(turnServer);
+  }
+
+  return {
+    provider: process.env.CALL_PROVIDER || (turnUrls.length ? "webrtc-turn" : stunUrls.length ? "webrtc-stun" : "audio-fallback"),
+    iceServers,
+  };
+}
+
+function boundedInteger(value: unknown, fallback: number, minimum: number, maximum: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(maximum, Math.max(minimum, Math.round(parsed)));
+}
+
+function configuredBrandName(): string {
+  return String(process.env.APP_DISPLAY_NAME || process.env.BRAND_DISPLAY_NAME || "Athoo").trim() || "Athoo";
+}
+
+function configuredBrandColor(): string {
+  const value = String(process.env.BRAND_PRIMARY_COLOR || "#1A6EE0").trim();
+  return /^#[0-9A-Fa-f]{6}$/.test(value) ? value.toUpperCase() : "#1A6EE0";
+}
+
 // ── In-memory audio chunk store (cleared when call ends) ────────────────────
 interface AudioChunk { index: number; senderId: string; data: string; ext: string; ts: number; }
 const audioStore = new Map<string, AudioChunk[]>();   // callId → chunks
@@ -92,7 +137,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       callerId,
       callerName,
       callerInitials: callerInitials || "??",
-      callerColor: callerColor || "#1A6EE0",
+      callerColor: callerColor || configuredBrandColor(),
       receiverId,
       service: service || null,
       status: "ringing",
@@ -106,10 +151,11 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
     emitToUser(receiverId, "call:incoming", { call });
     // WebSocket is the fastest path while the app is open. The push-backed
     // notification is the recovery path when the app is backgrounded or killed.
+    const brandName = configuredBrandName();
     void notifyUser({
       userId: receiverId,
-      title: "Incoming Athoo call",
-      body: `${callerName || "An Athoo user"} is calling${service ? ` about ${service}` : ""}.`,
+      title: `Incoming ${brandName} call`,
+      body: `${callerName || `A ${brandName} user`} is calling${service ? ` about ${service}` : ""}.`,
       type: "call",
       link: "/call",
       data: {
@@ -128,13 +174,14 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
 
 router.get("/config", requireAuth, (_req: AuthRequest, res: Response) => {
+  const configuration = getIceConfiguration();
+  res.setHeader("Cache-Control", "private, no-store");
   res.json({
-    provider: process.env.CALL_PROVIDER || "webrtc-ready",
-    iceServers: [
-      process.env.STUN_URL ? { urls: process.env.STUN_URL } : { urls: "stun:stun.l.google.com:19302" },
-      ...(process.env.TURN_URL ? [{ urls: process.env.TURN_URL, username: process.env.TURN_USERNAME || "", credential: process.env.TURN_CREDENTIAL || "" }] : []),
-    ],
-    audio: { preferredCodec: "opus", fallbackChunkMs: Number(process.env.CALL_FALLBACK_CHUNK_MS || 800) },
+    ...configuration,
+    audio: {
+      preferredCodec: process.env.CALL_PREFERRED_CODEC || "opus",
+      fallbackChunkMs: boundedInteger(process.env.CALL_FALLBACK_CHUNK_MS, 800, 300, 2_000),
+    },
   });
 });
 

@@ -11,16 +11,27 @@ import {
 import Svg, { Polyline as SvgPolyline } from "react-native-svg";
 import Constants from "expo-constants";
 import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
 
-const TILE_SIZE = 256;
+const configuredTileSize = Number(
+  process.env.EXPO_PUBLIC_MAP_TILE_SIZE ||
+  Constants.expoConfig?.extra?.MAP_TILE_SIZE ||
+  256,
+);
+const TILE_SIZE = configuredTileSize === 512 ? 512 : 256;
 const MAX_LATITUDE = 85.05112878;
 const DEFAULT_CENTER = { latitude: 30.3753, longitude: 69.3451 };
-const DEFAULT_TILE_TEMPLATE = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const TILE_TEMPLATE = String(
   process.env.EXPO_PUBLIC_MAP_TILE_URL ||
   Constants.expoConfig?.extra?.MAP_TILE_URL ||
-  DEFAULT_TILE_TEMPLATE,
-).trim() || DEFAULT_TILE_TEMPLATE;
+  "",
+).trim();
+const TILE_TEMPLATE_CONFIGURED = ["{z}", "{x}", "{y}"].every((token) => TILE_TEMPLATE.includes(token));
+const MAP_ATTRIBUTION = String(
+  process.env.EXPO_PUBLIC_MAP_ATTRIBUTION ||
+  Constants.expoConfig?.extra?.MAP_ATTRIBUTION ||
+  "© OpenStreetMap contributors",
+).trim();
 
 function tileUrl(zoom: number, x: number, y: number, refreshKey: number): string {
   const base = TILE_TEMPLATE
@@ -115,10 +126,10 @@ function normalizeTileX(x: number, zoom: number): number {
   return ((x % count) + count) % count;
 }
 
-function markerColor(kind: OpenMapMarker["kind"]): string {
-  if (kind === "provider") return "#1A6EE0";
-  if (kind === "customer" || kind === "job") return "#FF6B1A";
-  return "#DC2626";
+function markerColor(kind: OpenMapMarker["kind"], theme: AthooTheme): string {
+  if (kind === "provider") return theme.colors.primary;
+  if (kind === "customer" || kind === "job") return theme.colors.secondary;
+  return theme.colors.danger;
 }
 
 export function OpenStreetMapPreview({
@@ -132,6 +143,7 @@ export function OpenStreetMapPreview({
   onCoordinateChange,
 }: Props) {
   const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [size, setSize] = useState<Size>({ width: 360, height });
   const [failedTiles, setFailedTiles] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -162,6 +174,7 @@ export function OpenStreetMapPreview({
   const centerWorld = useMemo(() => project(center, resolvedZoom), [center, resolvedZoom]);
 
   const tiles = useMemo(() => {
+    if (!TILE_TEMPLATE_CONFIGURED || !size.width || !size.height) return [];
     const startX = Math.floor((centerWorld.x - size.width / 2) / TILE_SIZE);
     const endX = Math.floor((centerWorld.x + size.width / 2) / TILE_SIZE);
     const startY = Math.floor((centerWorld.y - size.height / 2) / TILE_SIZE);
@@ -234,7 +247,7 @@ export function OpenStreetMapPreview({
           <SvgPolyline
             points={routePoints}
             fill="none"
-            stroke="#1A6EE0"
+            stroke={theme.colors.primary}
             strokeWidth={4}
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -244,7 +257,7 @@ export function OpenStreetMapPreview({
 
       {validMarkers.map((marker, index) => {
         const screen = pointOnScreen(marker);
-        const color = markerColor(marker.kind);
+        const color = markerColor(marker.kind, theme);
         return (
           <View
             key={marker.id || `${marker.latitude}-${marker.longitude}-${index}`}
@@ -257,27 +270,33 @@ export function OpenStreetMapPreview({
         );
       })}
 
-      {failedTiles >= Math.max(3, Math.ceil(tiles.length / 2)) ? (
-        <View style={[styles.failureOverlay, { backgroundColor: theme.colors.surface + "F2" }]}> 
-          <Text style={[styles.failureTitle, { color: theme.colors.text }]}>Map tiles could not load</Text>
-          <Text style={[styles.failureText, { color: theme.colors.textSecondary }]}>Check your connection or continue with the saved coordinates.</Text>
-          <Pressable
-            onPress={() => { setFailedTiles(0); setRefreshKey((value) => value + 1); }}
-            style={[styles.retryButton, { backgroundColor: theme.colors.primary }]}
-          >
-            <Text style={styles.retryText}>Retry Map</Text>
-          </Pressable>
+      {!TILE_TEMPLATE_CONFIGURED || failedTiles >= Math.max(3, Math.ceil(tiles.length / 2)) ? (
+        <View style={styles.failureOverlay}>
+          <Text style={styles.failureTitle}>Map preview unavailable</Text>
+          <Text style={styles.failureText}>
+            {TILE_TEMPLATE_CONFIGURED
+              ? "Your selected address is still saved. Check your connection and retry the map."
+              : "Map tiles are not configured for this build. Your selected address is still saved."}
+          </Text>
+          {TILE_TEMPLATE_CONFIGURED ? (
+            <Pressable
+              onPress={() => { setFailedTiles(0); setRefreshKey((value) => value + 1); }}
+              style={styles.retryButton}
+            >
+              <Text style={styles.retryText}>Retry Map</Text>
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
 
       {interactive ? (
-        <View pointerEvents="none" style={[styles.tapHint, { backgroundColor: theme.colors.surface + "E6" }]}> 
-          <Text style={[styles.tapHintText, { color: theme.colors.textSecondary }]}>Tap map to move pin</Text>
+        <View pointerEvents="none" style={styles.tapHint}>
+          <Text style={styles.tapHintText}>Tap map to move pin</Text>
         </View>
       ) : null}
 
       <View pointerEvents="none" style={styles.attribution}>
-        <Text style={styles.attributionText}>© OpenStreetMap contributors</Text>
+        <Text style={styles.attributionText}>{MAP_ATTRIBUTION}</Text>
       </View>
     </View>
   );
@@ -285,74 +304,73 @@ export function OpenStreetMapPreview({
   return interactive ? <Pressable onPress={handlePress}>{content}</Pressable> : content;
 }
 
-const styles = StyleSheet.create({
-  container: {
-    width: "100%",
-    borderRadius: 16,
-    borderWidth: 1,
-    overflow: "hidden",
-    position: "relative",
-  },
-  tile: {
-    position: "absolute",
-    width: TILE_SIZE,
-    height: TILE_SIZE,
-  },
-  markerWrap: {
-    position: "absolute",
-    width: 28,
-    height: 34,
-    alignItems: "center",
-  },
-  markerDot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 3,
-    borderColor: "#FFFFFF",
-    shadowColor: "#000000",
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 5,
-  },
-  markerTip: {
-    width: 0,
-    height: 0,
-    marginTop: -2,
-    borderLeftWidth: 6,
-    borderRightWidth: 6,
-    borderTopWidth: 10,
-    borderLeftColor: "transparent",
-    borderRightColor: "transparent",
-  },
-  attribution: {
-    position: "absolute",
-    right: 5,
-    bottom: 4,
-    backgroundColor: "rgba(255,255,255,0.86)",
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  attributionText: { fontSize: 8, color: "#334155" },
-  tapHint: {
-    position: "absolute",
-    left: 8,
-    top: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  tapHintText: { fontSize: 11, fontWeight: "600" },
-  failureOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
-  },
-  failureTitle: { fontSize: 15, fontWeight: "700", textAlign: "center" },
-  failureText: { marginTop: 5, fontSize: 12, lineHeight: 18, textAlign: "center" },
-  retryButton: { marginTop: 12, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 9 },
-  retryText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
-});
+function createStyles(theme: AthooTheme) {
+  return StyleSheet.create({
+    container: {
+      width: "100%",
+      borderRadius: 16,
+      borderWidth: 1,
+      overflow: "hidden",
+      position: "relative",
+    },
+    tile: { position: "absolute", width: TILE_SIZE, height: TILE_SIZE },
+    markerWrap: { position: "absolute", width: 28, height: 34, alignItems: "center" },
+    markerDot: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      borderWidth: 3,
+      borderColor: theme.colors.white,
+      shadowColor: theme.colors.overlay,
+      shadowOpacity: 0.25,
+      shadowRadius: 4,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: 5,
+    },
+    markerTip: {
+      width: 0,
+      height: 0,
+      marginTop: -2,
+      borderLeftWidth: 6,
+      borderRightWidth: 6,
+      borderTopWidth: 10,
+      borderLeftColor: "transparent",
+      borderRightColor: "transparent",
+    },
+    attribution: {
+      position: "absolute",
+      right: 5,
+      bottom: 4,
+      backgroundColor: theme.colors.elevated,
+      borderColor: theme.colors.border,
+      borderWidth: 1,
+      paddingHorizontal: 5,
+      paddingVertical: 2,
+      borderRadius: 4,
+    },
+    attributionText: { fontSize: 8, color: theme.colors.textSecondary },
+    tapHint: {
+      position: "absolute",
+      left: 8,
+      top: 8,
+      paddingHorizontal: 8,
+      paddingVertical: 5,
+      borderRadius: 8,
+      backgroundColor: theme.colors.elevated,
+      borderColor: theme.colors.border,
+      borderWidth: 1,
+    },
+    tapHintText: { fontSize: 11, fontWeight: "600", color: theme.colors.textSecondary },
+    failureOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 20,
+      backgroundColor: theme.colors.elevated,
+    },
+    failureTitle: { fontSize: 15, fontWeight: "700", textAlign: "center", color: theme.colors.text },
+    failureText: { marginTop: 5, fontSize: 12, lineHeight: 18, textAlign: "center", color: theme.colors.textSecondary },
+    retryButton: { marginTop: 12, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 9, backgroundColor: theme.colors.primary },
+    retryText: { color: theme.colors.white, fontSize: 13, fontWeight: "700" },
+  });
+}
