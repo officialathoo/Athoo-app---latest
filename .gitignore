@@ -59,3 +59,5 @@ release-evidence/
 # Local release acceptance records contain private test-account and device metadata.
 device-acceptance-evidence.json
 rc2-evidence.json
+
+.env.local
