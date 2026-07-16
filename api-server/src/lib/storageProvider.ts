@@ -16,6 +16,7 @@ export interface UploadFileInput {
   key: string;
   body: Buffer | Uint8Array | string | Readable;
   contentType?: string;
+  size?: number;
   metadata?: Record<string, string>;
 }
 
@@ -36,6 +37,7 @@ export interface SignedUploadInput {
   key?: string;
   fileName?: string;
   contentType?: string;
+  size?: number;
   metadata?: Record<string, string>;
   ttlSeconds?: number;
 }
@@ -171,6 +173,7 @@ export class R2StorageProvider implements StorageProvider {
       Key: key,
       Body: input.body,
       ContentType: input.contentType,
+      ContentLength: Number.isFinite(input.size) && Number(input.size) > 0 ? Number(input.size) : undefined,
       Metadata: input.metadata,
     }));
     return { key, objectPath: objectPathFromKey(key) };

@@ -565,16 +565,21 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     if (!user || !currentRole) return;
     const off = realtime.on((message) => {
-      if (message.type !== "notification:new") return;
+      if (message.type !== "notification:new" && message.type !== "notification:push-failed") return;
       const payload = message.payload as any;
       if (!payload?.title) return;
       const data = (payload.data && typeof payload.data === "object" ? payload.data : {}) as Record<string, unknown>;
       const type = normalizeNotificationType(payload.type, data);
+      const notificationId = toStringValue(payload.id) || toStringValue(data.notificationId) || `local-realtime-${Date.now()}`;
+      const title = String(payload.title);
+      const body = String(payload.body || payload.message || "");
+      const link = toStringValue(payload.link) || toStringValue(data.link);
+
       ingestNotification({
-        id: toStringValue(payload.id) || `local-realtime-${Date.now()}`,
+        id: notificationId,
         type,
-        title: String(payload.title),
-        message: String(payload.body || payload.message || ""),
+        title,
+        message: body,
         timestamp: new Date().toISOString(),
         read: false,
         role: currentRole,
@@ -588,13 +593,23 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         withdrawalId: toStringValue(data.withdrawalId),
         ticketId: toStringValue(data.ticketId),
         invoiceId: toStringValue(data.invoiceId),
-        link: toStringValue(payload.link) || toStringValue(data.link),
+        link,
       });
 
-      // Native builds receive sound through the remote push channel. Only web
-      // and Expo Go use an in-app fallback, which prevents double foreground
-      // audio when WebSocket and Expo push deliver the same event.
-      notificationService.playRealtimeFallback(type).catch(() => {});
+      const fallbackRequired =
+        message.type === "notification:push-failed" || payload.nativePushExpected === false;
+      if (fallbackRequired) {
+        notificationService.scheduleRealtimeFallback(type, title, body, {
+          notificationId,
+          type,
+          link,
+          role: currentRole,
+          ...data,
+        }).catch(() => {});
+      } else {
+        // Web and Expo Go do not receive native remote-push audio.
+        notificationService.playRealtimeFallback(type).catch(() => {});
+      }
     });
     return off;
   }, [user, currentRole, ingestNotification]);
@@ -623,8 +638,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
           if (responseId && handledResponseIdsRef.current.has(responseId)) return;
           if (responseId) handledResponseIdsRef.current.add(responseId);
 
+          const responseData = content.data as Record<string, unknown>;
+          void notificationService.acknowledgeNativeDelivery(responseData?.notificationId);
           const notif = notificationFromResponseData(
-            content.data as Record<string, unknown>,
+            responseData,
             currentRole,
           );
           if (!notif) return;
@@ -654,8 +671,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
           receivedSubscription = Notifications.addNotificationReceivedListener((notification: any) => {
             const content = notification?.request?.content;
             if (!content) return;
+            const receivedData = content.data as Record<string, unknown>;
+            void notificationService.acknowledgeNativeDelivery(receivedData?.notificationId);
             const parsed = notificationFromResponseData(
-              content.data as Record<string, unknown>,
+              receivedData,
               currentRole,
             );
             if (!parsed) return;

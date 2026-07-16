@@ -161,6 +161,10 @@ export interface PlatformSettings {
   defaultServiceRadiusKm?: number;
   customerCancellationFee?: number;
   providerCancellationPenalty?: number;
+  inactivityLifecycleEnabled?: boolean;
+  inactivityWarningDays?: number;
+  inactivityRestrictionDays?: number;
+  inactivityReviewDays?: number;
 }
 
 export interface AdminBlacklist {
@@ -182,6 +186,9 @@ export interface SidebarCounts {
   openSupportTickets: number;
   pendingRateRequests: number;
   pendingSubscriptions: number;
+  pendingServiceRequests: number;
+  pendingDeletionRequests: number;
+  inactiveAccountsForReview: number;
   unreadNotifications: number;
 }
 

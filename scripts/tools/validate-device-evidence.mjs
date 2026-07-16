@@ -82,7 +82,7 @@ if (errors.length) {
 }
 
 const summary = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   releaseVersion: evidence.releaseVersion,
   releaseCommitSha: evidence.releaseCommitSha,
   artifactSha256: evidence.artifactSha256,

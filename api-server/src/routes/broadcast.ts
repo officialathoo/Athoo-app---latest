@@ -13,6 +13,7 @@ import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { getPlatformSettings } from "../lib/admin";
 import { emitToUser, emitToRole, type EventName } from "../lib/eventBus";
 import { notifyUser } from "../lib/notifications";
+import { enqueueJob, registerJobHandler } from "../lib/queue";
 import { activeWorkHttpPayload, getBusyProviderIds, getCustomerActiveWorkBlock, getProviderActiveWorkBlock } from "../lib/businessRules";
 
 const router = Router();
@@ -26,7 +27,7 @@ function generatePublicId(): string {
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, "0");
   const d = String(now.getDate()).padStart(2, "0");
-  const rand = Math.floor(10000 + Math.random() * 90000);
+  const rand = crypto.randomInt(10000, 100000);
   return `ATH-${y}${m}${d}-${rand}`;
 }
 
@@ -72,6 +73,146 @@ function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number): num
       Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
+
+type ProviderRecord = typeof usersTable.$inferSelect;
+type BroadcastRecord = typeof broadcastRequestsTable.$inferSelect;
+
+type ProviderBroadcastMatch = {
+  eligible: boolean;
+  reason?: string;
+  distanceKm?: number;
+  effectiveRadiusKm?: number;
+};
+
+const BROADCAST_EXPANSION_JOB = "broadcast_expand_notifications";
+
+function normalizeServiceKey(value: unknown): string {
+  return String(value || "")
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function providerMatchesService(
+  providerServices: string[] | null,
+  requestedService: unknown,
+  requestedServiceLabel?: unknown,
+): boolean {
+  const requestedKeys = new Set(
+    [requestedService, requestedServiceLabel]
+      .map(normalizeServiceKey)
+      .filter(Boolean),
+  );
+  if (requestedKeys.size === 0) return false;
+
+  const services = new Set((providerServices || []).map(normalizeServiceKey).filter(Boolean));
+  if (services.size === 0) return false;
+  if (requestedKeys.has("general") || services.has("general")) return true;
+
+  // Provider profiles normally store canonical category slugs. The label key
+  // keeps older profiles compatible when they stored the category display name,
+  // while exact normalized matching prevents unrelated partial-name matches.
+  return [...requestedKeys].some((key) => services.has(key));
+}
+
+function providerTravelRadiusKm(provider: ProviderRecord): number {
+  const parsed = Number(provider.maxTravelDistanceKm || 15);
+  return Math.max(1, Math.min(100, Number.isFinite(parsed) ? parsed : 15));
+}
+
+function matchProviderToBroadcast(
+  provider: ProviderRecord,
+  request: Pick<BroadcastRecord, "service" | "serviceLabel" | "latitude" | "longitude">,
+  platformRadiusKm: number,
+  busyProviderIds: Set<string>,
+): ProviderBroadcastMatch {
+  if (provider.isBlocked) return { eligible: false, reason: "blocked" };
+  if (provider.isDeactivated) return { eligible: false, reason: "deactivated" };
+  if (!provider.isVerified || provider.verificationStatus !== "approved") {
+    return { eligible: false, reason: "not_approved" };
+  }
+  if (busyProviderIds.has(provider.id)) return { eligible: false, reason: "busy" };
+  if (!providerMatchesService(provider.services, request.service, request.serviceLabel)) {
+    return { eligible: false, reason: "service_mismatch" };
+  }
+
+  const providerLat = toCoord(provider.latitude);
+  const providerLng = toCoord(provider.longitude);
+  const requestLat = toCoord(request.latitude);
+  const requestLng = toCoord(request.longitude);
+  if (providerLat === null || providerLng === null) return { eligible: false, reason: "provider_location_required" };
+  if (requestLat === null || requestLng === null) return { eligible: false, reason: "request_location_missing" };
+
+  const distance = distanceKm(providerLat, providerLng, requestLat, requestLng);
+  const effectiveRadius = Math.min(Math.max(1, platformRadiusKm), providerTravelRadiusKm(provider));
+  if (distance > effectiveRadius) {
+    return {
+      eligible: false,
+      reason: "outside_service_area",
+      distanceKm: Math.round(distance * 10) / 10,
+      effectiveRadiusKm: effectiveRadius,
+    };
+  }
+  return {
+    eligible: true,
+    distanceKm: Math.round(distance * 10) / 10,
+    effectiveRadiusKm: effectiveRadius,
+  };
+}
+
+async function deliverExpandedBroadcast(requestId: string): Promise<void> {
+  const request = await db.query.broadcastRequestsTable.findFirst({
+    where: eq(broadcastRequestsTable.id, requestId),
+  });
+  if (!request || request.status !== "open" || isExpiredBroadcast(request)) return;
+
+  const [settings, providers] = await Promise.all([
+    getPlatformSettings(),
+    db.select().from(usersTable).where(eq(usersTable.role, "provider")),
+  ]);
+  if (settings.broadcastExpansionRadiusKm <= settings.broadcastInitialRadiusKm) return;
+
+  const busyProviderIds = await getBusyProviderIds(providers.map((provider) => provider.id));
+  const expandedOnly = providers.filter((provider) => {
+    const initial = matchProviderToBroadcast(provider, request, settings.broadcastInitialRadiusKm, busyProviderIds);
+    const expanded = matchProviderToBroadcast(provider, request, settings.broadcastExpansionRadiusKm, busyProviderIds);
+    return !initial.eligible && initial.reason === "outside_service_area" && expanded.eligible;
+  });
+
+  let inAppCreated = 0;
+  let pushAccepted = 0;
+  let fallbackSignaled = 0;
+  await Promise.all(expandedOnly.map(async (provider) => {
+    emitToUser(provider.id, "broadcast:new" as EventName, { request, expanded: true });
+    const result = await notifyUser({
+      userId: provider.id,
+      title: "New Job Request Nearby",
+      body: `${request.customerName} needs ${request.serviceLabel}`,
+      type: "broadcast",
+      link: `/broadcasts/${request.id}`,
+      data: { broadcastRequestId: request.id, role: "provider", type: "broadcast", expanded: true },
+    });
+    if (result.created) inAppCreated += 1;
+    if (result.pushSent) pushAccepted += 1;
+    if (result.fallbackSignaled) fallbackSignaled += 1;
+  }));
+
+  logger.info({
+    broadcastRequestId: request.id,
+    expandedRecipientCount: expandedOnly.length,
+    inAppCreated,
+    pushAccepted,
+    fallbackSignaled,
+  }, "expanded broadcast notification delivery completed");
+}
+
+registerJobHandler<{ requestId: string }>(BROADCAST_EXPANSION_JOB, async (payload) => {
+  const requestId = String(payload?.requestId || "").trim();
+  if (!requestId) return;
+  await deliverExpandedBroadcast(requestId);
+});
 
 // ─── Customer: Create broadcast request ──────────────────────────────────────
 router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
@@ -173,75 +314,69 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
     await db.insert(broadcastRequestsTable).values(request);
 
+    const deliverySummary = {
+      candidateCount: 0,
+      matchedCount: 0,
+      inAppCreated: 0,
+      onlineRecipients: 0,
+      pushTokenCount: 0,
+      pushAccepted: 0,
+      pushFailed: 0,
+      fallbackSignaled: 0,
+      skippedByReason: {} as Record<string, number>,
+      expansionQueued: false,
+    };
+
+    if (settings.broadcastExpansionRadiusKm > settings.broadcastInitialRadiusKm) {
+      try {
+        await enqueueJob(BROADCAST_EXPANSION_JOB, { requestId: request.id }, {
+          attempts: 3,
+          delayMs: settings.broadcastExpandAfterMinutes * 60 * 1000,
+          dedupeKey: `broadcast-expand:${request.id}`,
+        });
+        deliverySummary.expansionQueued = true;
+      } catch (queueError) {
+        req.log?.warn?.({ err: queueError, broadcastRequestId: request.id }, "broadcast expansion delivery could not be queued");
+      }
+    }
+
     // Provider matching and notification delivery are best-effort. Once the
     // broadcast row is committed, downstream push/socket failures must never
     // turn a successful creation into an HTTP 500 or encourage duplicate retries.
     try {
-      // Fetch ALL providers as candidates. The matching criteria (approved +
-      // not-blocked + service-match + within-radius) are still enforced below —
-      // we only widen the initial fetch so every rejection can be logged with a
-      // precise reason for diagnostics.
+      // Fetch all provider candidates so the delivery summary explains every
+      // exclusion rather than silently returning "sent" with zero recipients.
       const candidateProviders = await db
         .select()
         .from(usersTable)
         .where(eq(usersTable.role, "provider"));
+      deliverySummary.candidateCount = candidateProviders.length;
 
-      const serviceKey = String(service).toLowerCase();
-      const MAX_RADIUS_KM = settings.broadcastInitialRadiusKm;
-
-      // Returns true when the provider's service list matches the broadcast service.
-      function providerMatchesService(providerServices: string[] | null): boolean {
-        const svcs = providerServices || [];
-        if (svcs.length === 0) return true; // unspecialised provider sees everything
-        return svcs.some((s) => {
-          const ps = (s || "").toLowerCase();
-          return ps === serviceKey || ps.includes(serviceKey) || serviceKey.includes(ps);
-        });
-      }
-
-      const busyProviderIds = await getBusyProviderIds(candidateProviders.map((p) => p.id));
-
+      const busyProviderIds = await getBusyProviderIds(candidateProviders.map((provider) => provider.id));
       const matchedProviders: typeof candidateProviders = [];
-      const skipped: { id: string; reason: string }[] = [];
+      const skipped: { id: string; reason: string; distanceKm?: number; effectiveRadiusKm?: number }[] = [];
 
-      for (const p of candidateProviders) {
-        if (p.isBlocked) {
-          skipped.push({ id: p.id, reason: "blocked" });
-          continue;
-        }
-        if (p.isDeactivated) {
-          skipped.push({ id: p.id, reason: "deactivated" });
-          continue;
-        }
-        if (p.verificationStatus !== "approved") {
-          skipped.push({ id: p.id, reason: "not approved" });
-          continue;
-        }
-        if (busyProviderIds.has(p.id)) {
-          skipped.push({ id: p.id, reason: "provider busy on active job or negotiation" });
-          continue;
-        }
-        if (!providerMatchesService(p.services)) {
-          skipped.push({ id: p.id, reason: "service mismatch" });
-          continue;
-        }
-
-        const pLat = parseFloat(p.latitude || "");
-        const pLng = parseFloat(p.longitude || "");
-        if (isNaN(pLat) || isNaN(pLng)) {
-          skipped.push({ id: p.id, reason: "no location" });
-          continue;
-        }
-        const dist = distanceKm(parsedLat, parsedLng, pLat, pLng);
-        if (dist > MAX_RADIUS_KM) {
+      for (const provider of candidateProviders) {
+        const match = matchProviderToBroadcast(
+          provider,
+          request,
+          settings.broadcastInitialRadiusKm,
+          busyProviderIds,
+        );
+        if (!match.eligible) {
+          const reason = match.reason || "not_eligible";
+          deliverySummary.skippedByReason[reason] = (deliverySummary.skippedByReason[reason] || 0) + 1;
           skipped.push({
-            id: p.id,
-            reason: `out of radius (${Math.round(dist * 10) / 10} km > ${MAX_RADIUS_KM} km)`,
+            id: provider.id,
+            reason,
+            ...(match.distanceKm !== undefined ? { distanceKm: match.distanceKm } : {}),
+            ...(match.effectiveRadiusKm !== undefined ? { effectiveRadiusKm: match.effectiveRadiusKm } : {}),
           });
           continue;
         }
-        matchedProviders.push(p);
+        matchedProviders.push(provider);
       }
+      deliverySummary.matchedCount = matchedProviders.length;
 
       const priceText = parsedOffer ? `Rs. ${parsedOffer}` : "open price";
 
@@ -250,6 +385,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       let dbNotificationCount = 0;
       let pushSuccessCount = 0;
       let pushFailureCount = 0;
+      let fallbackSignaledCount = 0;
 
       // Every MATCHED provider gets a DB notification + push attempt REGARDLESS of
       // availability so the broadcast reliably surfaces in their notification list
@@ -268,11 +404,13 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
               title: "New Job Request",
               body: `${customer.name} needs ${serviceLabel} — ${priceText}`,
               type: "broadcast",
-              link: `/broadcast/${request.id}`,
+              link: `/broadcasts/${request.id}`,
               data: { broadcastRequestId: request.id, role: "provider", type: "broadcast" },
             });
 
             if (result.created) dbNotificationCount += 1;
+            if (result.onlineConnections > 0) deliverySummary.onlineRecipients += 1;
+            if (result.fallbackSignaled) fallbackSignaledCount += 1;
             if (result.hasToken) {
               if (result.pushSent) pushSuccessCount += 1;
               else pushFailureCount += 1;
@@ -283,6 +421,12 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
           }
         })
       );
+
+      deliverySummary.inAppCreated = dbNotificationCount;
+      deliverySummary.pushTokenCount = pushTokenCount;
+      deliverySummary.pushAccepted = pushSuccessCount;
+      deliverySummary.pushFailed = pushFailureCount;
+      deliverySummary.fallbackSignaled = fallbackSignaledCount;
 
       req.log?.info?.(
         {
@@ -296,6 +440,8 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
           pushSendStatus: { success: pushSuccessCount, failure: pushFailureCount },
           socketEmitCount,
           dbNotificationCount,
+          fallbackSignaledCount,
+          expansionQueued: deliverySummary.expansionQueued,
         },
         "broadcast created — provider notification delivery summary"
       );
@@ -316,7 +462,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       );
     }
 
-    res.json({ request });
+    res.json({ request, delivery: deliverySummary });
   } catch (e: any) {
     logger.error({ err: e }, "broadcast create error");
     // Drizzle wraps the underlying pg error in DrizzleQueryError, which
@@ -393,47 +539,50 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
         return;
       }
 
-      // Get all open, non-expired broadcasts
+      const providerLat = toCoord(provider.latitude);
+      const providerLng = toCoord(provider.longitude);
+      const accountReason = provider.isBlocked
+        ? "blocked"
+        : provider.isDeactivated
+          ? "deactivated"
+          : (!provider.isVerified || provider.verificationStatus !== "approved")
+            ? "not_approved"
+            : !(provider.services || []).map(normalizeServiceKey).filter(Boolean).length
+              ? "service_categories_required"
+              : (providerLat === null || providerLng === null)
+                ? "location_required"
+                : null;
+      if (accountReason) {
+        res.json({ requests: [], eligibility: { eligible: false, reason: accountReason }, limit: 100, hasMore: false });
+        return;
+      }
+
+      const busyProviderIds = await getBusyProviderIds([userId]);
+      if (busyProviderIds.has(userId)) {
+        res.json({ requests: [], eligibility: { eligible: false, reason: "busy" }, limit: 100, hasMore: false });
+        return;
+      }
+
+      // Get all open broadcasts, then apply the same service, account, location
+      // and radius policy used by initial push delivery. Keeping list and push
+      // eligibility identical prevents jobs from appearing only after a manual
+      // refresh or being pushed to providers who cannot open them.
       const rows = await db
         .select()
         .from(broadcastRequestsTable)
         .where(eq(broadcastRequestsTable.status, "open"))
         .orderBy(desc(broadcastRequestsTable.createdAt));
 
-      const providerServices = (provider.services || []).map((s) => s.toLowerCase());
-
-      const pLat = parseFloat(provider.latitude || "");
-      const pLng = parseFloat(provider.longitude || "");
       const settings = await getPlatformSettings();
-      const INITIAL_RADIUS_KM = settings.broadcastInitialRadiusKm;
-      const EXPANDED_RADIUS_KM = settings.broadcastExpansionRadiusKm;
-      const EXPAND_AFTER_MS = settings.broadcastExpandAfterMinutes * 60 * 1000;
+      const expandAfterMs = settings.broadcastExpandAfterMinutes * 60 * 1000;
       const now = Date.now();
-
-      const filtered = rows.filter((r) => {
-        if (new Date(r.expiresAt).getTime() <= now) return false;
-
-        // Service matching: provider with empty services list sees everything.
-        // Otherwise at least one of their services must overlap with the broadcast service.
-        if (providerServices.length > 0) {
-          const rSvc = r.service.toLowerCase();
-          const match = providerServices.some(
-            (ps) => ps === rSvc || ps.includes(rSvc) || rSvc.includes(ps)
-          );
-          if (!match && !rSvc.includes("general")) return false;
-        }
-
-
-        if (!isNaN(pLat) && !isNaN(pLng) && r.latitude != null && r.longitude != null) {
-          const createdMs = r.createdAt ? new Date(r.createdAt).getTime() : now;
-          const broadcastAgeMs = now - createdMs;
-          const platformRadius = broadcastAgeMs >= EXPAND_AFTER_MS ? EXPANDED_RADIUS_KM : INITIAL_RADIUS_KM;
-          const providerRadius = Math.max(1, Math.min(100, Number(provider.maxTravelDistanceKm || 15)));
-          const effectiveRadius = Math.min(platformRadius, providerRadius);
-          return distanceKm(pLat, pLng, r.latitude, r.longitude) <= effectiveRadius;
-        }
-
-        return true;
+      const filtered = rows.filter((request) => {
+        if (new Date(request.expiresAt).getTime() <= now) return false;
+        const createdMs = request.createdAt ? new Date(request.createdAt).getTime() : now;
+        const platformRadius = now - createdMs >= expandAfterMs
+          ? settings.broadcastExpansionRadiusKm
+          : settings.broadcastInitialRadiusKm;
+        return matchProviderToBroadcast(provider, request, platformRadius, busyProviderIds).eligible;
       });
 
       // Attach provider's own response and customer ratings using batched queries.
@@ -470,8 +619,8 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
       const enriched = filteredLimited.map((r) => {
         const distKm =
-          !isNaN(pLat) && !isNaN(pLng) && r.latitude != null && r.longitude != null
-            ? Math.round(distanceKm(pLat, pLng, r.latitude, r.longitude) * 10) / 10
+          providerLat !== null && providerLng !== null && r.latitude != null && r.longitude != null
+            ? Math.round(distanceKm(providerLat, providerLng, r.latitude, r.longitude) * 10) / 10
             : null;
 
         return {
@@ -483,7 +632,12 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
         };
       });
 
-      res.json({ requests: enriched, limit: 100, hasMore: filtered.length > filteredLimited.length });
+      res.json({
+        requests: enriched,
+        eligibility: { eligible: true, maxTravelDistanceKm: providerTravelRadiusKm(provider) },
+        limit: 100,
+        hasMore: filtered.length > filteredLimited.length,
+      });
       return;
     }
 
@@ -548,28 +702,35 @@ router.get("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    // Providers may only view broadcasts they are eligible for (service
-    // match), same as the list endpoint — otherwise any provider could pull
-    // full customer address/contact detail for a service they don't offer
-    // just by guessing/enumerating a broadcast id.
+    // A provider may revisit a request they already responded to. Otherwise,
+    // enforce the exact same account/service/location/radius rules as listing
+    // and push delivery before exposing the customer's address and job detail.
     if (role === "provider") {
-      const provider = await db.query.usersTable.findFirst({ where: eq(usersTable.id, userId) });
-      const providerServices = (provider?.services || []).map((s) => s.toLowerCase());
-      const rSvc = request.service.toLowerCase();
-      const serviceMatches =
-        providerServices.length === 0 ||
-        rSvc.includes("general") ||
-        providerServices.some((ps) => ps === rSvc || ps.includes(rSvc) || rSvc.includes(ps));
-
-      if (!serviceMatches) {
-        const ownResponse = await db.query.broadcastResponsesTable.findFirst({
-          where: and(
-            eq(broadcastResponsesTable.requestId, request.id),
-            eq(broadcastResponsesTable.providerId, userId),
-          ),
-        });
-        if (!ownResponse) {
-          res.status(403).json({ error: "Access denied" });
+      const ownResponse = await db.query.broadcastResponsesTable.findFirst({
+        where: and(
+          eq(broadcastResponsesTable.requestId, request.id),
+          eq(broadcastResponsesTable.providerId, userId),
+        ),
+      });
+      if (!ownResponse) {
+        const provider = await db.query.usersTable.findFirst({ where: eq(usersTable.id, userId) });
+        if (!provider || request.status !== "open" || isExpiredBroadcast(request)) {
+          res.status(403).json({ error: "This job request is not available", code: "BROADCAST_NOT_AVAILABLE" });
+          return;
+        }
+        const settings = await getPlatformSettings();
+        const ageMs = Date.now() - (request.createdAt ? new Date(request.createdAt).getTime() : Date.now());
+        const radius = ageMs >= settings.broadcastExpandAfterMinutes * 60 * 1000
+          ? settings.broadcastExpansionRadiusKm
+          : settings.broadcastInitialRadiusKm;
+        const busyProviderIds = await getBusyProviderIds([userId]);
+        const match = matchProviderToBroadcast(provider, request, radius, busyProviderIds);
+        if (!match.eligible) {
+          res.status(403).json({
+            error: "This job request is outside your current eligibility or service area",
+            code: "BROADCAST_NOT_ELIGIBLE",
+            reason: match.reason,
+          });
           return;
         }
       }
@@ -653,6 +814,21 @@ router.post("/:id/respond", requireAuth, async (req: AuthRequest, res: Response)
       return;
     }
 
+    const settings = await getPlatformSettings();
+    const ageMs = Date.now() - (request.createdAt ? new Date(request.createdAt).getTime() : Date.now());
+    const radius = ageMs >= settings.broadcastExpandAfterMinutes * 60 * 1000
+      ? settings.broadcastExpansionRadiusKm
+      : settings.broadcastInitialRadiusKm;
+    const match = matchProviderToBroadcast(provider, request, radius, new Set());
+    if (!match.eligible) {
+      res.status(403).json({
+        error: "This job request is outside your current service category or service area",
+        code: "BROADCAST_NOT_ELIGIBLE",
+        reason: match.reason,
+      });
+      return;
+    }
+
     // Check for existing response
     const existing = await db.query.broadcastResponsesTable.findFirst({
       where: and(
@@ -699,7 +875,7 @@ router.post("/:id/respond", requireAuth, async (req: AuthRequest, res: Response)
       title: "Provider responded!",
       body: `${provider.name} responded to your ${request.serviceLabel} request — ${priceText}`,
       type: "broadcast",
-      link: `/broadcast/${request.id}`,
+      link: `/broadcasts/${request.id}`,
       data: { broadcastRequestId: request.id, role: "customer", type: "broadcast" },
     }).catch(() => undefined);
 

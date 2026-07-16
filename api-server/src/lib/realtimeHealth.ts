@@ -1,3 +1,5 @@
+import { getCallConfigurationStatus } from "./callConfiguration";
+
 export type RealtimeCapability = {
   websocketEvents: boolean;
   websocketCalls: boolean;
@@ -10,6 +12,6 @@ export function getRealtimeCapability(): RealtimeCapability {
     websocketEvents: true,
     websocketCalls: true,
     httpAudioFallback: true,
-    turnRequiredForProduction: !process.env.TURN_URLS,
+    turnRequiredForProduction: !getCallConfigurationStatus().productionReady,
   };
 }

@@ -16,6 +16,7 @@ export function UsersPage() {
   const { toast } = useToast();
   const { hasPermission } = usePermissions();
   const canWrite = hasPermission("users.write");
+  const focusId = new URLSearchParams(window.location.search).get("focus") || "";
   const [customers, setCustomers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -27,6 +28,7 @@ export function UsersPage() {
   const [total, setTotal] = useState(0);
   const limit = 25;
   const [selected, setSelected] = useState<User | null>(null);
+  const [focusOpened, setFocusOpened] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState({ name: "", location: "", bio: "" });
   const [reason, setReason] = useState("");
@@ -58,6 +60,16 @@ export function UsersPage() {
 
   useEffect(() => { load(); }, [page, status, sort, direction, debouncedSearch]);
   useEffect(() => { setPage(1); setSelectedIds(new Set()); }, [status, sort, direction, debouncedSearch]);
+  useEffect(() => {
+    if (!focusId || focusOpened) return;
+    setFocusOpened(true);
+    api<{ user: User }>(`/api/admin/users/${focusId}`)
+      .then(({ user }) => {
+        if (user.role !== "customer") return;
+        openCustomer(user);
+      })
+      .catch((error) => toast({ title: "Could not open customer", description: (error as Error).message, variant: "destructive" }));
+  }, [focusId, focusOpened]);
 
   const pages = Math.max(1, Math.ceil(total / limit));
   const range = useMemo(() => ({ from: total ? (page - 1) * limit + 1 : 0, to: Math.min(page * limit, total) }), [page, total]);

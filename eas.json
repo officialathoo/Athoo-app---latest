@@ -1,19 +1,21 @@
 {
   "cli": {
-    "version": ">= 16.0.0",
+    "version": ">=21.0.0",
     "appVersionSource": "remote"
   },
   "build": {
+    "base": {
+      "cache": {
+        "disabled": false
+      }
+    },
     "development": {
+      "extends": "base",
       "developmentClient": true,
       "distribution": "internal",
       "channel": "development",
       "env": {
-        "APP_ENV": "development",
-        "EXPO_PUBLIC_API_BASE_URL": "https://athoo-api.onrender.com",
-        "EAS_PROJECT_ID": "42a7f8fe-68ea-4422-8f46-0def1f55abb9",
-        "EXPO_PUBLIC_MAP_TILE_SIZE": "512",
-        "EXPO_PUBLIC_MAP_ATTRIBUTION": "© Mapbox © OpenStreetMap contributors"
+        "APP_ENV": "development"
       },
       "android": {
         "buildType": "apk"
@@ -23,29 +25,23 @@
       }
     },
     "preview": {
+      "extends": "base",
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "APP_ENV": "staging",
-        "EXPO_PUBLIC_API_BASE_URL": "https://athoo-api.onrender.com",
-        "EAS_PROJECT_ID": "42a7f8fe-68ea-4422-8f46-0def1f55abb9",
-        "EXPO_PUBLIC_MAP_TILE_SIZE": "512",
-        "EXPO_PUBLIC_MAP_ATTRIBUTION": "© Mapbox © OpenStreetMap contributors"
+        "APP_ENV": "staging"
       },
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
+      "extends": "base",
       "distribution": "store",
       "channel": "production",
       "autoIncrement": true,
       "env": {
-        "APP_ENV": "production",
-        "EXPO_PUBLIC_API_BASE_URL": "https://athoo-api.onrender.com",
-        "EAS_PROJECT_ID": "42a7f8fe-68ea-4422-8f46-0def1f55abb9",
-        "EXPO_PUBLIC_MAP_TILE_SIZE": "512",
-        "EXPO_PUBLIC_MAP_ATTRIBUTION": "© Mapbox © OpenStreetMap contributors"
+        "APP_ENV": "production"
       },
       "android": {
         "buildType": "app-bundle"

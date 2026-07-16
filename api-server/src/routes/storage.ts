@@ -8,6 +8,7 @@ interface UploadUrlBody {
   name: string;
   size?: number;
   contentType?: string;
+  scope?: "private" | "shared";
 }
 
 function parseUploadUrlBody(body: unknown): { success: true; data: UploadUrlBody } | { success: false } {
@@ -20,6 +21,7 @@ function parseUploadUrlBody(body: unknown): { success: true; data: UploadUrlBody
       name: b.name as string,
       size: typeof b.size === "number" ? b.size : undefined,
       contentType: typeof b.contentType === "string" ? b.contentType : undefined,
+      scope: b.scope === "private" || b.scope === "shared" ? b.scope : undefined,
     },
   };
 }
@@ -74,7 +76,7 @@ router.post("/storage/uploads/request-url", async (req: Request, res: Response) 
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
-  const decoded = await verifyActiveAccessToken(token);
+  const decoded = await verifyActiveAccessToken(token, req.headers["x-athoo-device-id"]);
   if (!decoded) {
     res.status(401).json({ error: "Invalid or expired token" });
     return;
@@ -93,12 +95,13 @@ router.post("/storage/uploads/request-url", async (req: Request, res: Response) 
       return;
     }
 
-    const { name, size, contentType } = parsed.data;
+    const { name, size, contentType, scope } = parsed.data;
 
     const signed = await storageProvider().getSignedUploadUrl({
-      key: userUploadKey(decoded.userId, name, randomUUID()),
+      key: userUploadKey(decoded.userId, name, randomUUID(), new Date(), scope),
       fileName: name,
       contentType,
+      size,
       ttlSeconds: Number(process.env.SIGNED_UPLOAD_TTL_SECONDS || 900),
     });
 
@@ -109,7 +112,7 @@ router.post("/storage/uploads/request-url", async (req: Request, res: Response) 
       objectPath: signed.objectPath,
       key: signed.key,
       headers: signed.headers,
-      metadata: { name, size, contentType },
+      metadata: { name, size, contentType, scope: scope || "auto" },
     });
   } catch (error) {
     respondStorageError(req, res, error, "Failed to generate upload URL");
@@ -118,7 +121,7 @@ router.post("/storage/uploads/request-url", async (req: Request, res: Response) 
 
 router.post("/storage/uploads/complete", async (req: Request, res: Response) => {
   const token = extractToken(req);
-  const decoded = token ? await verifyActiveAccessToken(token) : null;
+  const decoded = token ? await verifyActiveAccessToken(token, req.headers["x-athoo-device-id"]) : null;
   if (!decoded) { res.status(401).json({ error: "Unauthorized" }); return; }
   const objectPath = typeof req.body?.objectPath === "string" ? req.body.objectPath.trim() : "";
   const expectedSize = Number(req.body?.size);
@@ -127,16 +130,32 @@ router.post("/storage/uploads/complete", async (req: Request, res: Response) => 
     res.status(400).json({ error: "Invalid upload reference" }); return;
   }
   try {
-    const metadata = await storageProvider().statObject(objectPath);
-    if (!metadata.contentLength || metadata.contentLength <= 0) { res.status(409).json({ error: "Uploaded file is empty" }); return; }
+    const provider = storageProvider();
+    const metadata = await provider.statObject(objectPath);
+    if (!metadata.contentLength || metadata.contentLength <= 0) {
+      await provider.deleteObject(objectPath).catch(() => undefined);
+      res.status(409).json({ error: "Uploaded file is empty" }); return;
+    }
     if (Number.isFinite(expectedSize) && expectedSize > 0 && metadata.contentLength !== expectedSize) {
+      await provider.deleteObject(objectPath).catch(() => undefined);
       res.status(409).json({ error: "Uploaded file size could not be verified" }); return;
     }
     const storedType = String(metadata.contentType || "").toLowerCase();
     if (expectedContentType && storedType && storedType !== expectedContentType) {
+      await provider.deleteObject(objectPath).catch(() => undefined);
       res.status(409).json({ error: "Uploaded file type could not be verified" }); return;
     }
-    res.json({ success: true, objectPath, size: metadata.contentLength, contentType: metadata.contentType || expectedContentType });
+    const actualType = storedType || expectedContentType;
+    const actualPolicyError = validateUploadPolicy({
+      name: objectPath.split("/").pop() || "upload",
+      size: metadata.contentLength,
+      contentType: actualType,
+    });
+    if (actualPolicyError) {
+      await provider.deleteObject(objectPath).catch(() => undefined);
+      res.status(409).json({ error: actualPolicyError }); return;
+    }
+    res.json({ success: true, objectPath, size: metadata.contentLength, contentType: actualType });
   } catch (error) {
     if (error instanceof StorageObjectNotFoundError) { res.status(409).json({ error: "Uploaded file was not found in storage" }); return; }
     respondStorageError(req, res, error, "Failed to verify uploaded file");
@@ -181,7 +200,7 @@ router.get("/storage/public-objects/*filePath", async (req: Request, res: Respon
  */
 router.get("/storage/objects/*path", async (req: Request, res: Response) => {
   const token = extractToken(req);
-  const decoded = token ? (await verifyActiveAccessToken(token) || await verifyActivePurposeToken(token, "object-read")) : null;
+  const decoded = token ? (await verifyActiveAccessToken(token, req.headers["x-athoo-device-id"]) || await verifyActivePurposeToken(token, "object-read")) : null;
   if (!decoded) {
     res.status(401).json({ error: "Unauthorized" });
     return;
@@ -228,7 +247,7 @@ router.put("/storage/local-upload/*path", async (req: Request, res: Response) =>
     return;
   }
   const token = extractToken(req);
-  const decoded = token ? await verifyActiveAccessToken(token) : null;
+  const decoded = token ? await verifyActiveAccessToken(token, req.headers["x-athoo-device-id"]) : null;
   if (!decoded) {
     res.status(401).json({ error: "Unauthorized" });
     return;

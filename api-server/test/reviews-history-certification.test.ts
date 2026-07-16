@@ -1,12 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
+import { readRepo } from "./helpers/repo.ts";
 
-const service = fs.readFileSync("src/domain/reviews.ts", "utf8");
-const providers = fs.readFileSync("src/routes/providers.ts", "utf8");
-const admin = fs.readFileSync("src/routes/admin.ts", "utf8");
-const app = fs.readFileSync("../admin-panel/src/App.tsx", "utf8");
-const migration = fs.readFileSync("../deploy/migrations/20260711_review_history_integrity.sql", "utf8");
+const service = readRepo("api-server/src/domain/reviews.ts");
+const providers = readRepo("api-server/src/routes/providers.ts");
+const admin = readRepo("api-server/src/routes/admin.ts");
+const app = readRepo("admin-panel/src/App.tsx");
+const migration = readRepo("deploy/migrations/20260711_review_history_integrity.sql");
 
 test("all review submissions enforce booking ownership and completion", () => {
   assert.match(service, /booking\.customerId !== input\.customerId/);

@@ -180,7 +180,15 @@ userRouter.post("/verification/verify", async (req: AuthRequest, res) => {
       return res.status(status).json({ error: result.code === "EMAIL_OTP_EXPIRED" ? "Email code expired. Request a new code." : result.code === "EMAIL_OTP_ATTEMPT_LIMIT" ? "Too many incorrect attempts. Request a new code." : "Email verification code is incorrect.", code: result.code, attemptsRemaining: result.attemptsRemaining });
     }
     try {
-      const [updated] = await db.update(usersTable).set({ emailVerified: true, updatedAt: new Date() }).where(eq(usersTable.id, user.id)).returning();
+      const [updated] = await db.update(usersTable).set({ emailVerified: true, updatedAt: new Date() }).where(eq(usersTable.id, user.id)).returning({
+        id: usersTable.id,
+        name: usersTable.name,
+        email: usersTable.email,
+        emailVerified: usersTable.emailVerified,
+        phone: usersTable.phone,
+        role: usersTable.role,
+        updatedAt: usersTable.updatedAt,
+      });
       return res.json({ success: true, user: updated });
     } catch (error: any) {
       if (String(error?.code || "") === "23505") {

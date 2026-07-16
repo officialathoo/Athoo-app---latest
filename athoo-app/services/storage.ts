@@ -15,6 +15,7 @@ import React, { useEffect, useState } from "react";
 import { Image, Platform, type ImageStyle, type StyleProp } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
 import { api, getToken } from "@/services/api";
+import { getDeviceId } from "@/services/deviceIdentity";
 
 // ─── Resolve API base ─────────────────────────────────────────────────────────
 
@@ -182,10 +183,14 @@ export type UploadUrlResult = {
  * Request a presigned PUT URL + objectPath from the API server.
  */
 async function confirmUploadedObject(objectPath: string, size: number, contentType: string): Promise<void> {
-  const token = await getToken();
+  const [token, deviceId] = await Promise.all([getToken(), getDeviceId()]);
   const res = await fetch(`${STORAGE_API_BASE}/api/storage/uploads/complete`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Athoo-Device-Id": deviceId,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify({ objectPath, size, contentType }),
   });
   if (!res.ok) {
@@ -196,19 +201,23 @@ async function confirmUploadedObject(objectPath: string, size: number, contentTy
   }
 }
 
+export type UploadScope = "private" | "shared";
+
 export async function getUploadUrl(
   name: string,
   size: number,
   contentType: string,
+  scope?: UploadScope,
 ): Promise<UploadUrlResult> {
-  const token = await getToken();
+  const [token, deviceId] = await Promise.all([getToken(), getDeviceId()]);
   const res = await fetch(`${STORAGE_API_BASE}/api/storage/uploads/request-url`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "X-Athoo-Device-Id": deviceId,
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ name, size, contentType }),
+    body: JSON.stringify({ name, size, contentType, scope }),
   });
   if (!res.ok) {
     const raw = await res.text();
@@ -230,6 +239,7 @@ async function uploadFileToCloudinary(
   contentType: string,
   fields: Record<string, string | number | boolean> = {},
   onProgress?: UploadProgressCallback,
+  scope?: UploadScope,
 ): Promise<string> {
   const formData = new FormData();
   Object.entries(fields).forEach(([key, value]) => {
@@ -334,13 +344,14 @@ export async function uploadPickedImage(
   filename = "image.jpg",
   contentType = "image/jpeg",
   onProgress?: UploadProgressCallback,
+  scope: UploadScope = "shared",
 ): Promise<string> {
   const metadata = normalizeUploadMetadata(filename, contentType);
   const prepared = await prepareLocalUploadUri(uri, metadata.filename);
   try {
     const size = await resolveFileSize(prepared.uri);
     emitProgress(onProgress, { loaded: 0, total: size, percent: 0, stage: "preparing" });
-    const uploadInstructions = await getUploadUrl(metadata.filename, size, metadata.contentType);
+    const uploadInstructions = await getUploadUrl(metadata.filename, size, metadata.contentType, scope);
     if (uploadInstructions.provider === "cloudinary" || uploadInstructions.method === "POST") {
       return await uploadFileToCloudinary(
         prepared.uri,
@@ -348,6 +359,7 @@ export async function uploadPickedImage(
         metadata.contentType,
         uploadInstructions.fields || {},
         onProgress,
+        scope,
       );
     }
     let lastError: unknown = null;

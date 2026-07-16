@@ -119,7 +119,7 @@ export default function ProfileScreen() {
 
   const toggleBiometric = async () => {
     if (biometricOn) {
-      Alert.alert("Disable Biometric Login", "You will need to use OTP to log in next time.", [
+      Alert.alert("Disable Biometric Login", "You will need to use OTP or your password to sign in next time.", [
         { text: "Cancel", style: "cancel" },
         {
           text: "Disable",

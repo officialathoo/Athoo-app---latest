@@ -61,7 +61,7 @@ export default function VerificationDocumentsScreen() {
         ? await ImagePicker.launchCameraAsync({ mediaTypes: "images", quality: 0.85, allowsEditing: true, aspect: [1, 1] })
         : await ImagePicker.launchImageLibraryAsync({ mediaTypes: "images", quality: 0.85, allowsEditing: true, aspect: [4, 3] });
       if (result.canceled || !result.assets?.[0]?.uri) return;
-      const objectPath = await uploadPickedImage(result.assets[0].uri, `${item.type}.jpg`, "image/jpeg");
+      const objectPath = await uploadPickedImage(result.assets[0].uri, `${item.type}.jpg`, "image/jpeg", undefined, "private");
       await api.postDocument({ type: item.type, label: item.label, url: objectPath });
       await load();
       Alert.alert("Uploaded", `${item.label} was submitted for review.`);

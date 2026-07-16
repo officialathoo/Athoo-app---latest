@@ -39,6 +39,22 @@ export const ADMIN_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
   ],
 };
 
+
+const PERMISSION_ALIASES: Record<string, string> = {
+  "operations.read": "bookings.read",
+  "operations.write": "bookings.write",
+  "providers.read": "verification.read",
+  "providers.write": "verification.write",
+  "support.read": "complaints.read",
+  "support.write": "complaints.write",
+  "broadcast.read": "broadcasts.read",
+  "broadcast.write": "broadcasts.write",
+};
+
+export function canonicalAdminPermission(permission: string): string {
+  return PERMISSION_ALIASES[permission] || permission;
+}
+
 export function validateAdminPermissions(value: unknown): string[] | null {
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) return null;
   const allowed = new Set<string>(ADMIN_PERMISSIONS);
@@ -49,10 +65,16 @@ export function validateAdminPermissions(value: unknown): string[] | null {
 export function hasAdminPermission(input: { role?: string; adminRole?: string; adminPermissions?: string[] }, permission: string): boolean {
   if (input.role !== "admin") return false;
   if (input.adminRole === "super_admin") return true;
+  const canonical = canonicalAdminPermission(permission);
   const rolePermissions = ADMIN_ROLE_PERMISSIONS[input.adminRole || ""] || [];
   const customPermissions = Array.isArray(input.adminPermissions) ? input.adminPermissions : [];
-  const [resource] = permission.split(".");
-  return [rolePermissions, customPermissions].some((permissions) =>
-    permissions.includes("*") || permissions.includes(permission) || permissions.includes(`${resource}.*`)
-  );
+  const [resource] = canonical.split(".");
+  return [rolePermissions, customPermissions].some((permissions) => {
+    const canonicalPermissions = permissions.map(canonicalAdminPermission);
+    return canonicalPermissions.includes("*") ||
+      canonicalPermissions.includes(canonical) ||
+      permissions.includes(permission) ||
+      permissions.includes(`${resource}.*`) ||
+      canonicalPermissions.includes(`${resource}.*`);
+  });
 }

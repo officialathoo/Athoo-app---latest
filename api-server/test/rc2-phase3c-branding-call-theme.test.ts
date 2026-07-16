@@ -42,13 +42,15 @@ test("Phase 3C native splash and notification branding are configuration driven"
 
 test("Phase 3C call ICE providers are server configured without embedded public credentials", () => {
   const server = read("api-server/src/routes/calls.ts");
+  const callConfiguration = read("api-server/src/lib/callConfiguration.ts");
   const mobile = read("athoo-app/context/CallContext.tsx");
   const api = read("athoo-app/services/api.ts");
   const env = read(".env.production.example");
 
-  assert.match(server, /STUN_URLS/);
-  assert.match(server, /TURN_URLS/);
-  assert.doesNotMatch(server, /stun\.l\.google\.com/);
+  assert.match(callConfiguration, /STUN_URLS/);
+  assert.match(callConfiguration, /TURN_URLS/);
+  assert.match(server, /getCallConfiguration/);
+  assert.doesNotMatch(callConfiguration, /stun\.l\.google\.com/);
   assert.match(api, /getCallConfig\(\)/);
   assert.match(mobile, /api\.getCallConfig\(\)/);
   assert.match(mobile, /iceConfigurationRef\.current/);

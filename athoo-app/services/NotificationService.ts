@@ -10,6 +10,7 @@ import {
 import { soundService } from "@/services/SoundService";
 import { Alert, Linking, Platform } from "react-native";
 import Constants from "expo-constants";
+import { getDeviceId } from "@/services/deviceIdentity";
 
 function normalizeApiBaseUrl(value: string): string {
   return String(value || "").trim().replace(/\/$/, "");
@@ -56,6 +57,7 @@ class NotificationService {
   private initPromise: Promise<void> | null = null;
   private syncedToken: string | null = null;
   private blockedAlertShown = false;
+  private fallbackScheduleByNotificationId = new Map<string, string>();
 
   async init(): Promise<void> {
     if (this.initPromise) return this.initPromise;
@@ -198,11 +200,13 @@ class NotificationService {
     if (!expoPushToken || this.syncedToken === expoPushToken) return;
 
     try {
+      const deviceId = await getDeviceId();
       const response = await fetch(`${normalizeApiBaseUrl(apiBaseUrl)}/api/auth/push-token`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${authToken}`,
+          "X-Athoo-Device-Id": deviceId,
         },
         body: JSON.stringify({ expoPushToken }),
       });
@@ -230,6 +234,44 @@ class NotificationService {
       return;
     }
     await soundService.playNotification();
+  }
+
+
+  async scheduleRealtimeFallback(
+    type: unknown,
+    title: string,
+    body: string,
+    data?: Record<string, unknown>,
+  ): Promise<void> {
+    const notificationId = String(data?.notificationId || "").trim();
+    if (notificationId && this.fallbackScheduleByNotificationId.has(notificationId)) return;
+
+    const category = notificationCategoryForType(type);
+    const identifier = await this.schedule(category, String(type || "system"), title, body, {
+      ...(data || {}),
+      localFallback: true,
+    });
+    if (!notificationId || !identifier) return;
+
+    this.fallbackScheduleByNotificationId.set(notificationId, identifier);
+    while (this.fallbackScheduleByNotificationId.size > 200) {
+      const oldest = this.fallbackScheduleByNotificationId.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.fallbackScheduleByNotificationId.delete(oldest);
+    }
+  }
+
+  async acknowledgeNativeDelivery(notificationId: unknown): Promise<void> {
+    const normalizedId = String(notificationId || "").trim();
+    if (!normalizedId) return;
+    const scheduledIdentifier = this.fallbackScheduleByNotificationId.get(normalizedId);
+    if (!scheduledIdentifier) return;
+    this.fallbackScheduleByNotificationId.delete(normalizedId);
+
+    if (Platform.OS === "web" || isExpoGoRuntime()) return;
+    const N = await loadNotifications();
+    if (!N) return;
+    await N.cancelScheduledNotificationAsync(scheduledIdentifier).catch(() => undefined);
   }
 
   async scheduleBookingAlert(title: string, body: string, data?: Record<string, unknown>): Promise<void> {
@@ -262,18 +304,18 @@ class NotificationService {
     title: string,
     body: string,
     data?: Record<string, unknown>,
-  ): Promise<void> {
+  ): Promise<string | null> {
     if (Platform.OS === "web" || isExpoGoRuntime()) {
       await this.playRealtimeFallback(type).catch(() => undefined);
-      return;
+      return null;
     }
     await this.init();
     const N = await loadNotifications();
-    if (!N || !this.permissionGranted) return;
+    if (!N || !this.permissionGranted) return null;
 
     const policy = notificationPolicies[category];
     try {
-      await N.scheduleNotificationAsync({
+      const identifier = await N.scheduleNotificationAsync({
         content: {
           title,
           body,
@@ -292,8 +334,10 @@ class NotificationService {
             ? ({ seconds: 1, channelId: policy.channelId, repeats: false } as any)
             : null,
       });
+      return identifier;
     } catch (error) {
       appLogger.debug("notifications", "schedule notification failed:", error);
+      return null;
     }
   }
 

@@ -1,6 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import { VideoPlayer } from "@/components/ui/VideoPlayer";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { getDistanceKm, formatDistanceKm } from "@/utils/distance";
 import React, { useCallback, useEffect, useRef, useState , useMemo} from "react";
 import {
@@ -46,6 +46,7 @@ export default function BroadcastJobsScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { user } = useAuth();
+  const { requestId } = useLocalSearchParams<{ requestId?: string }>();
   const { showError } = useToast();
 
   const [requests, setRequests] = useState<any[]>([]);
@@ -65,14 +66,18 @@ export default function BroadcastJobsScreen() {
     if (!silent) setLoading(true);
     try {
       const res = await api.getBroadcastRequests({ status: "open" });
-      setRequests(res.requests || []);
+      const next = Array.isArray(res.requests) ? [...res.requests] : [];
+      if (requestId) {
+        next.sort((a, b) => Number(b?.id === requestId) - Number(a?.id === requestId));
+      }
+      setRequests(next);
     } catch (e: any) {
       if (!silent) showError("Unable to load requests", apiErrorToMessage(e, "We couldn't load broadcast requests. Please try again."));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [requestId, showError]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 

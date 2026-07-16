@@ -23,7 +23,7 @@ export default function WelcomeScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 48 : insets.top;
   const bottomPad = Platform.OS === "web" ? 28 : insets.bottom;
-  const { requiresBiometric, completeBiometricLogin, user } = useAuth();
+  const { requiresBiometric, completeBiometricLogin } = useAuth();
   const { t } = useLang();
   const { theme } = useTheme();
   const [biometricType, setBiometricType] = useState<"face" | "fingerprint" | "iris" | "none">("none");
@@ -45,11 +45,6 @@ export default function WelcomeScreen() {
     }
   }, [requiresBiometric]);
 
-  useEffect(() => {
-    if (user && !requiresBiometric) {
-      router.replace(user.role === "provider" ? "/(provider)/(tabs)/dashboard" : "/(customer)/(tabs)/home");
-    }
-  }, [user, requiresBiometric]);
 
   const handleBiometricLogin = async () => {
     setBioError("");
@@ -59,7 +54,7 @@ export default function WelcomeScreen() {
     if (result.success) return;
     if (result.error === "Session expired. Please login again.") {
       setBioError(t.sessionExpired);
-      setTimeout(() => router.push("/auth/login?role=customer"), 1200);
+      setTimeout(() => router.push(`/auth/login?role=${bioRole}` as never), 1200);
       return;
     }
     setBioError(t.authenticationCancelled);

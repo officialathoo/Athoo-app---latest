@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, formatDate } from "@/lib/api";
 import { Flag, Loader2, CheckCircle, XCircle, Clock, AlertTriangle } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
 type ReportIssue = {
@@ -34,12 +34,14 @@ const CATEGORY_STYLE: Record<string, string> = {
 };
 
 export function ReportedIssuesPage() {
+  const focusId = new URLSearchParams(window.location.search).get("focus") || "";
   const { toast } = useToast();
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState("open");
   const [selected, setSelected] = useState<ReportIssue | null>(null);
   const [adminNote, setAdminNote] = useState("");
   const [newStatus, setNewStatus] = useState("");
+  const [focusOpened, setFocusOpened] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["report-issues", statusFilter],
@@ -59,6 +61,16 @@ export function ReportedIssuesPage() {
   });
 
   const reports = data?.reports ?? [];
+  useEffect(() => {
+    if (!focusId || focusOpened || reports.length === 0) return;
+    const focused = reports.find((report) => report.id === focusId);
+    if (!focused) return;
+    setStatusFilter(focused.status);
+    setSelected(focused);
+    setAdminNote(focused.adminNote || "");
+    setNewStatus(focused.status);
+    setFocusOpened(true);
+  }, [focusId, focusOpened, reports]);
   const openCount = reports.filter(r => r.status === "open").length;
 
   return (
@@ -107,7 +119,8 @@ export function ReportedIssuesPage() {
           {reports.map(r => (
             <div
               key={r.id}
-              className="bg-white rounded-xl border border-slate-200 p-4 hover:shadow-sm transition-shadow cursor-pointer"
+              data-focus-id={r.id === focusId ? r.id : undefined}
+              className={`bg-white rounded-xl border p-4 transition-shadow cursor-pointer ${r.id === focusId ? "border-blue-400 bg-blue-50 ring-2 ring-blue-300" : "border-slate-200 hover:shadow-sm"}`}
               onClick={() => { setSelected(r); setAdminNote(r.adminNote || ""); setNewStatus(r.status); }}
             >
               <div className="flex items-start justify-between gap-3">

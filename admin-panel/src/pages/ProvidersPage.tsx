@@ -32,6 +32,7 @@ export function ProvidersPage() {
   const canReadVerification = hasPermission("verification.read");
   const canWriteVerification = hasPermission("verification.write");
   const canManageFinance = hasPermission("finance.write");
+  const focusId = new URLSearchParams(window.location.search).get("focus") || "";
 
   const [providers, setProviders] = useState<User[]>([]);
   const [total, setTotal] = useState(0);
@@ -40,6 +41,7 @@ export function ProvidersPage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [selectedProvider, setSelectedProvider] = useState<User | null>(null);
+  const [focusOpened, setFocusOpened] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [commissionLimit, setCommissionLimit] = useState("");
   const [editMode, setEditMode] = useState(false);
@@ -73,6 +75,16 @@ export function ProvidersPage() {
   }, [load]);
 
   useEffect(() => { setSelectedIds(new Set()); }, [filter, search]);
+  useEffect(() => {
+    if (!focusId || focusOpened) return;
+    setFocusOpened(true);
+    api<{ user: User }>(`/api/admin/users/${focusId}`)
+      .then(({ user }) => {
+        if (user.role !== "provider") return;
+        void openProvider(user);
+      })
+      .catch((error) => toast({ title: "Could not open provider", description: (error as Error).message, variant: "destructive" }));
+  }, [focusId, focusOpened]);
 
   const selectedFromList = useMemo(
     () => selectedProvider ? providers.find((provider) => provider.id === selectedProvider.id) || selectedProvider : null,

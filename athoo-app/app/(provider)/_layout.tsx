@@ -1,5 +1,5 @@
 import { Stack, router, usePathname } from "expo-router";
-import React, { useEffect, useMemo } from "react";
+import React, { useMemo } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { AthooLoader } from "@/components/ui/AthooLoader";
 import { View, Text, StyleSheet, Pressable } from "react-native";
@@ -62,15 +62,10 @@ export default function ProviderLayout() {
   const { user, isLoading } = useAuth();
   const pathname = usePathname();
 
-  useEffect(() => {
-    if (isLoading) return;
-    if (!user) {
-      router.replace("/auth/welcome" as any);
-    }
-  }, [user, isLoading]);
+
 
   if (isLoading) return <AthooLoader />;
-  if (!user) return null;
+  if (!user || user.role !== "provider") return <AthooLoader />;
 
   // Block access until admin approves the provider account.
   // "approved" is set by admin via the verification panel.

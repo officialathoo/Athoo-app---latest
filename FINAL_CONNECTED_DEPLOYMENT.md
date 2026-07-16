@@ -1,190 +1,113 @@
-# Athoo RC2 Final Connected Deployment
+# Athoo Final Connected Deployment
 
-Use the latest Phase 5 source package as the only baseline. Do not merge files from older ZIPs.
+Use `ATHOO_PHASE14_MOBILE_UPLOAD_TYPECHECK_FIXED.zip` as the only release baseline. Do not merge files from older ZIPs.
 
-## 1. Local source gates
+## 1. Local source certification
 
-From the monorepo root:
+Use Node 22 and pnpm 10.33.2 from the committed package-manager metadata:
 
 ```powershell
 corepack enable
 corepack prepare pnpm@10.33.2 --activate
 pnpm install --frozen-lockfile
-pnpm rc2:source-verify
-pnpm db:verify
-pnpm db:integrity
+pnpm release:verify:code
 pnpm mobile:doctor
 pnpm mobile:export
 ```
 
-Stop when any command fails. Do not build an APK from a partially verified folder.
+Stop on the first failure. Dependency-aware typecheck, Metro loading, API/admin builds and Expo export must pass in a connected environment.
 
-## 2. Commit exact release identity
+## 2. Release identity
+
+Commit the exact source and record the full Git SHA and ZIP SHA-256:
 
 ```powershell
 git status --short
 git add .
-git commit -m "Athoo RC2 Phase 5 release candidate"
+git commit -m "Athoo final audited production candidate"
 git push origin main
 git rev-parse HEAD
+Get-FileHash .\ATHOO_PHASE14_MOBILE_UPLOAD_TYPECHECK_FIXED.zip -Algorithm SHA256
 ```
 
-Record the full commit SHA. Render, Vercel, EAS and the connected verifier must point to this same source.
+Render, Vercel, EAS, connected verification and device evidence must reference the same commit.
 
-## 3. Render configuration
+## 3. Production secrets and providers
 
-Set all secrets in Render, never in GitHub, Expo public values, the admin bundle, or the mobile application.
+Configure Render from `.env.production.example`. Never commit actual credentials. Required production groups include:
 
-### Release identity
+- Neon PostgreSQL and migration controls
+- JWT, refresh, session and OTP secrets
+- Explicit CORS origins
+- Cloudflare R2 private object storage
+- PostgreSQL durable queue
+- Expo push and receipt endpoints
+- SMTP and a phone-bound OTP channel
+- Map providers and credentials
+- TURN URLs, username and credential
+- Monitoring and escalation contacts
+- Release version, commit and build identity
 
-```env
-DEPLOYMENT_ENVIRONMENT=production
-RELEASE_SERVICE_NAME=athoo-api
-RELEASE_VERSION=rc2-candidate
-```
+Production validation rejects local storage, wildcard CORS, development OTP responses, missing phone-bound OTP, missing TURN credentials and placeholder release identity.
 
-`RELEASE_COMMIT_SHA` and `RELEASE_BUILD_ID` may be explicit, but the API also supports trusted host-provided release metadata.
+## 4. Database deployment
 
-### Phone OTP delivery
-
-Athoo phone registration requires at least one phone-bound channel:
-
-```env
-OTP_DELIVERY_CHANNELS=whatsapp_cloud,email
-OTP_DELIVERY_MODE=first_success
-```
-
-Configure either WhatsApp Cloud:
-
-```env
-WHATSAPP_GRAPH_BASE_URL=https://graph.facebook.com
-WHATSAPP_GRAPH_API_VERSION=v25.0
-WHATSAPP_ACCESS_TOKEN=<render-secret>
-WHATSAPP_PHONE_NUMBER_ID=<render-secret>
-WHATSAPP_OTP_TEMPLATE_NAME=otp_verification
-WHATSAPP_OTP_TEMPLATE_LANGUAGE=en
-```
-
-or the portable HTTPS SMS adapter:
-
-```env
-OTP_DELIVERY_CHANNELS=http_sms,email
-SMS_PROVIDER=http_json
-SMS_HTTP_ENDPOINT=https://<provider-endpoint>
-SMS_HTTP_METHOD=POST
-SMS_HTTP_AUTH_HEADER=Authorization
-SMS_HTTP_AUTH_VALUE=<render-secret>
-SMS_HTTP_PHONE_FIELD=to
-SMS_HTTP_MESSAGE_FIELD=message
-SMS_HTTP_SENDER_FIELD=sender
-SMS_HTTP_SENDER_VALUE=<approved-sender>
-```
-
-SMTP alone provides verified-email login/recovery fallback but does not prove possession of a phone number for phone registration.
-
-### Transactional email
-
-```env
-EMAIL_PROVIDER=smtp
-SMTP_HOST=smtp.zoho.com
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_REQUIRE_TLS=true
-SMTP_TLS_REJECT_UNAUTHORIZED=true
-SMTP_USER=<zoho-mailbox>
-SMTP_PASS=<zoho-app-password>
-EMAIL_FROM_NAME=Athoo
-EMAIL_FROM_ADDRESS=<verified-sender>
-EMAIL_REPLY_TO=<support-address>
-EMAIL_SUPPORT_ADDRESS=<support-address>
-EMAIL_MARKETING_ENABLED=false
-```
-
-Keep marketing disabled until consent, unsubscribe, provider limits and a controlled campaign are verified.
-
-### Maps
-
-Recommended beta configuration:
-
-```env
-MAP_PROVIDER=mapbox
-MAP_TILE_PROVIDER=mapbox
-MAP_SEARCH_PROVIDER=photon
-MAP_REVERSE_PROVIDER=photon
-MAP_DIRECTIONS_PROVIDER=mapbox
-MAP_PROVIDER_FALLBACK_ENABLED=false
-MAPBOX_ACCESS_TOKEN=<render-secret>
-MAPBOX_STYLE_OWNER=mapbox
-MAPBOX_STYLE_ID=streets-v12
-MAPBOX_TILE_SIZE=512
-MAP_TILE_RESPECT_UPSTREAM_CACHE=true
-```
-
-Mapbox credentials remain on Render. The mobile app uses only the Athoo API tile/search/directions contracts.
-
-### Other required providers
-
-Configure Neon, Cloudflare R2/S3-compatible storage, Expo push, CORS, JWT/session secrets and all values documented in `.env.production.example`.
-
-Production validation must reject:
-
-```env
-ALLOW_DEV_OTP_RESPONSE=true
-STORAGE_PROVIDER=local
-QUEUE_PROVIDER!=postgres
-```
-
-## 4. Neon migration order
-
-Before starting the updated API against production data:
+Create a Neon restore point before deployment, then run:
 
 ```powershell
 pnpm db:migrate
+pnpm db:status
 pnpm db:verify
 pnpm db:integrity
 ```
 
-The cumulative package includes the prior portable-email migration. Phase 5 adds no new migration.
-
-## 5. Confirm deployed commit
-
-Open:
+The expected latest migration is:
 
 ```text
-https://athoo-api.onrender.com/api/healthz
-https://athoo-api.onrender.com/api/healthz/deep
+20260716_workflow_inactivity_policy_governance.sql
 ```
 
-Confirm the reported release version and commit SHA match the exact Git commit. Deep health must report database, migrations, maps, storage, email and phone-registration OTP readiness.
+Do not start the updated API if migration verification or integrity checks fail.
 
-## 6. Run connected verification
+## 5. Render and Vercel
+
+Deploy the same Git SHA to both services. Confirm:
+
+```text
+https://<api-domain>/api/healthz
+https://<api-domain>/api/healthz/deep
+```
+
+Deep health must report current migrations, database, storage, maps, email, OTP, push and `calls.productionReady=true`.
+
+Vercel must use the same API origin and exact Git SHA. Verify admin login and exact notification navigation for support, premium, bookings, finance, verification, users, providers, policies and inactivity review.
+
+## 6. Connected runtime verification
+
+Use controlled customer, provider and administrator accounts:
 
 ```powershell
-$env:CONNECTED_API_BASE_URL="https://athoo-api.onrender.com"
-$env:CONNECTED_ADMIN_ORIGIN="https://<your-vercel-admin-domain>"
-$env:CONNECTED_EXPECTED_RELEASE_VERSION="rc2-candidate"
-$env:CONNECTED_EXPECTED_COMMIT_SHA="<exact-git-commit-sha>"
-$env:CONNECTED_CUSTOMER_IDENTIFIER="<controlled-test-customer>"
+$env:CONNECTED_API_BASE_URL="https://<api-domain>"
+$env:CONNECTED_ADMIN_ORIGIN="https://<admin-domain>"
+$env:CONNECTED_EXPECTED_RELEASE_VERSION="<release-version>"
+$env:CONNECTED_EXPECTED_COMMIT_SHA="<full-git-sha>"
+$env:CONNECTED_CUSTOMER_IDENTIFIER="<test-customer>"
 $env:CONNECTED_CUSTOMER_PASSWORD="<test-password>"
-$env:CONNECTED_CUSTOMER_ROLE="customer"
-$env:CONNECTED_ADMIN_IDENTIFIER="<controlled-test-admin>"
+$env:CONNECTED_PROVIDER_IDENTIFIER="<eligible-test-provider>"
+$env:CONNECTED_PROVIDER_PASSWORD="<test-password>"
+$env:CONNECTED_ADMIN_IDENTIFIER="<test-admin>"
 $env:CONNECTED_ADMIN_PASSWORD="<test-password>"
-$env:CONNECTED_OTP_TEST_PHONE="<registered-controlled-test-phone>"
-$env:CONNECTED_OTP_TEST_ROLE="customer"
-$env:CONNECTED_EMAIL_TEST_TO="<controlled-test-email>"
+$env:CONNECTED_OTP_TEST_PHONE="<controlled-phone>"
+$env:CONNECTED_EMAIL_TEST_TO="<controlled-email>"
 $env:CONNECTED_STRICT="true"
-pnpm rc2:connected-verify
+pnpm runtime:verify:connected
 ```
 
-This generates redacted evidence under `release-evidence/`. The directory is ignored and must not be packaged publicly.
+The controlled provider must be approved, active, have categories and coordinates, and not be busy. This verifies that the provider broadcast endpoint does not silently exclude the account. Actual customer-job receipt and notification sound remain physical-device acceptance cases.
 
-## 7. Vercel admin
+## 7. Fresh native builds
 
-Confirm Vercel deployed the same Git SHA. Verify admin login, Email Center, maps/configuration, CORS and all live counts against the deployed API.
-
-## 8. EAS preview builds
-
-Run from `athoo-app`:
+From `athoo-app`:
 
 ```powershell
 eas whoami
@@ -193,18 +116,26 @@ eas build --platform android --profile preview --clear-cache
 eas build --platform ios --profile preview --clear-cache
 ```
 
-A new native build is required for splash, notification channel and sound changes.
+Fresh builds are mandatory for notification sounds, Android channel v4, biometrics and WebRTC native configuration.
 
-## 9. Device evidence and decision
+## 8. Physical-device acceptance
 
-From the monorepo root:
+Complete `device-acceptance-evidence.json` using the exact Android and iOS builds:
 
 ```powershell
 Copy-Item device-acceptance-evidence-template.json device-acceptance-evidence.json
 pnpm device:evidence:validate
+```
 
+Required evidence includes customer-to-provider job broadcast receipt, message badge and sound, keyboard visibility, provider rates and multiple categories, two-way calls across different networks, one-device revocation, biometrics, admin exact destinations, policies and inactivity safety.
+
+## 9. Final decision
+
+Complete the production evidence file:
+
+```powershell
 Copy-Item rc2-evidence-template.json rc2-evidence.json
 pnpm rc2:decision
 ```
 
-Do not launch until the decision is `GO` and both P0 and P1 defect counts are zero.
+Launch is prohibited unless the result is `GO`, every non-waivable gate passes, legal review is recorded, production credentials have been rotated, monitoring is active, and open P0/P1 defects are both zero.

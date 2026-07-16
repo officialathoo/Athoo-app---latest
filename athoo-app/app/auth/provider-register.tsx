@@ -337,7 +337,7 @@ export default function ProviderRegisterScreen() {
           try {
             const ext = (localUri.split(".").pop() || "jpg").toLowerCase();
             const contentType = ext === "mp4" || ext === "mov" ? "video/mp4" : "image/jpeg";
-            const objectPath = await uploadPickedImage(localUri, `${docId}.${ext}`, contentType);
+            const objectPath = await uploadPickedImage(localUri, `${docId}.${ext}`, contentType, undefined, "private");
             await api.postDocument({ type: docId, label: docLabel[docId] || docId, url: objectPath });
           } catch {
             if (["cnic_front", "cnic_back", "selfie", "police"].includes(docId)) failedRequired.push(tr(docLabel[docId] || docId));

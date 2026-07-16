@@ -19,7 +19,7 @@ import { getCategoryAppearance } from "@/utils/categoryAppearance";
 import { ProviderCard } from "@/components/ui/ProviderCard";
 import { Provider } from "@/data/services";
 import { useCategories } from "@/context/CategoriesContext";
-import { api } from "@/services/api";
+import { api, realtime } from "@/services/api";
 import { getFastForegroundLocation } from "@/services/location";
 import { useAuth } from "@/context/AuthContext";
 import { getDistanceKm } from "@/utils/distance";
@@ -51,6 +51,7 @@ export default function ServiceProvidersScreen() {
   const [onlyAvailable, setOnlyAvailable] = useState(false);
   const [providers, setProviders] = useState<ExtendedProvider[]>([]);
   const [loading, setLoading] = useState(true);
+  const [providerRefreshVersion, setProviderRefreshVersion] = useState(0);
 
   const [cityFilter, setCityFilter] = useState("All");
   const [cityFilters, setCityFilters] = useState<string[]>(DEFAULT_CITY_FILTERS);
@@ -99,6 +100,19 @@ export default function ServiceProvidersScreen() {
         // silent fail — keep the "All" sentinel only
       });
   }, []);
+
+  useEffect(() => realtime.on((message) => {
+    const payload = (message.payload || {}) as Record<string, unknown>;
+    if (message.type !== "admin:event" || payload.resource !== "providers" || typeof payload.providerId !== "string") return;
+    setProviders((current) => current.map((provider) => provider.id === payload.providerId
+      ? {
+          ...provider,
+          ...(typeof payload.ratePerHour === "number" ? { ratePerHour: payload.ratePerHour } : {}),
+          ...(Array.isArray(payload.services) ? { services: payload.services.map(String) } : {}),
+        }
+      : provider));
+    setProviderRefreshVersion((version) => version + 1);
+  }), []);
 
   useEffect(() => {
     const load = async () => {
@@ -150,7 +164,7 @@ export default function ServiceProvidersScreen() {
     };
 
     load();
-  }, [serviceId, userLocation]);
+  }, [serviceId, userLocation, providerRefreshVersion]);
 
   const isSaved = (id: string) => {
     return !!user?.savedProviders?.includes(id);
@@ -384,6 +398,7 @@ export default function ServiceProvidersScreen() {
                     pathname: "/(customer)/provider-detail",
                     params: {
                       providerId: p.id,
+                      serviceId: serviceId && serviceId !== "all" ? serviceId : undefined,
                     },
                   } as any)
                 }

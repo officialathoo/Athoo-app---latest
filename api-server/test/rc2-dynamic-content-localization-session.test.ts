@@ -36,10 +36,13 @@ test("profile menus consume runtime translations", () => {
   assert.match(language, /dangerZone: "خطرناک اختیارات"/);
 });
 
-test("logout performs local navigation before bounded network cleanup", () => {
+test("logout clears local state before bounded server cleanup and root navigation", () => {
   const auth = read("athoo-app/context/AuthContext.tsx");
+  const layout = read("athoo-app/app/_layout.tsx");
   const localClear = auth.indexOf("setUser(null)");
-  const networkCleanup = auth.indexOf("Promise.allSettled");
+  const networkCleanup = auth.indexOf("/api/auth/logout");
   assert.ok(localClear >= 0 && networkCleanup > localClear);
   assert.match(auth, /setTimeout\(\(\) => controller\.abort\(\), 4000\)/);
+  assert.doesNotMatch(auth, /router\.replace/);
+  assert.match(layout, /function SessionRouteGuard/);
 });

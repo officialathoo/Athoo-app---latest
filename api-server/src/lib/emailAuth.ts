@@ -241,13 +241,14 @@ export async function queuePasswordChangedEmail(user: { id: string; email?: stri
   });
 }
 
-export async function queueNewDeviceEmail(user: { id: string; email?: string | null; name: string }, details: { device?: string | null; ip?: string | null }) {
+export async function queueNewDeviceEmail(user: { id: string; email?: string | null; name: string }, details: { device?: string | null; deviceId?: string | null; ip?: string | null }) {
   const email = normalizeEmailAddress(user.email);
   if (!email || user.id.length === 0) return null;
   if (String(process.env.EMAIL_NEW_DEVICE_ALERTS_ENABLED || "true").toLowerCase() === "false") return null;
   const device = String(details.device || "Unknown device").slice(0, 250);
   const ip = String(details.ip || "Unknown IP").slice(0, 80);
-  const digest = crypto.createHash("sha256").update(`${user.id}|${device}`).digest("hex").slice(0, 20);
+  const identity = String(details.deviceId || device);
+  const digest = crypto.createHash("sha256").update(`${user.id}|${identity}`).digest("hex").slice(0, 20);
   return queueEmail({
     userId: user.id,
     to: email,
@@ -258,14 +259,24 @@ export async function queueNewDeviceEmail(user: { id: string; email?: string | n
   });
 }
 
-export async function hasSeenDevice(userId: string, userAgent: string | undefined): Promise<boolean> {
-  const clean = String(userAgent || "").trim();
-  if (!clean) return true;
+export async function hasSeenDevice(
+  userId: string,
+  deviceId: string | undefined,
+  userAgent: string | undefined,
+): Promise<boolean> {
+  const cleanDeviceId = String(deviceId || "").trim().toLowerCase();
+  const cleanUserAgent = String(userAgent || "").trim();
+  if (!cleanDeviceId && !cleanUserAgent) return true;
   const user = await db.query.usersTable.findFirst({ where: eq(usersTable.id, userId) });
   if (!user) return true;
-  const result = await pool.query<{ exists: boolean }>(
-    "SELECT EXISTS(SELECT 1 FROM login_history WHERE user_id = $1 AND success = true AND user_agent = $2) AS exists",
-    [userId, clean],
-  ).catch(() => null);
+  const result = cleanDeviceId
+    ? await pool.query<{ exists: boolean }>(
+      "SELECT EXISTS(SELECT 1 FROM login_history WHERE user_id = $1 AND success = true AND device_id = $2) AS exists",
+      [userId, cleanDeviceId],
+    ).catch(() => null)
+    : await pool.query<{ exists: boolean }>(
+      "SELECT EXISTS(SELECT 1 FROM login_history WHERE user_id = $1 AND success = true AND user_agent = $2) AS exists",
+      [userId, cleanUserAgent],
+    ).catch(() => null);
   return Boolean(result?.rows?.[0]?.exists);
 }

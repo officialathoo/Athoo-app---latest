@@ -27,7 +27,8 @@ import { useNotifications } from "@/context/NotificationContext";
 import { useNegotiation } from "@/context/NegotiationContext";
 import { Provider } from "@/data/services";
 import { useCategories } from "@/context/CategoriesContext";
-import { api } from "@/services/api";
+import { api, realtime } from "@/services/api";
+import { openSafeActionLink } from "@/services/safeLinks";
 import { AppText, CustomerHomeSkeleton } from "@/components/design";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
@@ -256,6 +257,22 @@ export default function HomeScreen() {
       void loadFocusData("background");
     }
   }, [loadFocusData]));
+
+  useEffect(() => realtime.on((message) => {
+    const payload = (message.payload || {}) as Record<string, unknown>;
+    if (message.type !== "admin:event" || payload.resource !== "providers" || typeof payload.providerId !== "string") return;
+    setTopProviders((current) => {
+      const next = current.map((provider) => provider.id === payload.providerId
+        ? {
+            ...provider,
+            ...(typeof payload.ratePerHour === "number" ? { ratePerHour: payload.ratePerHour } : {}),
+            ...(Array.isArray(payload.services) ? { services: payload.services.map(String) } : {}),
+          }
+        : provider);
+      void cacheHomePart({ providers: next });
+      return next;
+    });
+  }), [cacheHomePart]);
 
   const firstName = user?.name?.split(" ")[0] || tr("there");
   const displayBanners = apiBanners;
@@ -663,7 +680,7 @@ export default function HomeScreen() {
               onPress={() => {
                 dismissAnnouncement();
                 if (announcement?.buttonLink) {
-                  Linking.openURL(announcement.buttonLink).catch(() => {});
+                  void openSafeActionLink(router, announcement.buttonLink);
                 }
               }}
             >

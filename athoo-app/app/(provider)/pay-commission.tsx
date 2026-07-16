@@ -125,7 +125,7 @@ export default function PayCommissionScreen() {
       try {
         const ext = (asset.uri.split(".").pop() || "jpg").toLowerCase();
         const contentType = ext === "png" ? "image/png" : "image/jpeg";
-        const objectPath = await uploadPickedImage(asset.uri, `screenshot.${ext}`, contentType);
+        const objectPath = await uploadPickedImage(asset.uri, `screenshot.${ext}`, contentType, undefined, "private");
         setScreenshot(objectPath);
       } catch (e) {
         showError(tr("Upload Failed"), apiErrorToMessage(e, tr("We couldn't upload the screenshot. Please try again.")));

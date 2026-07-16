@@ -76,8 +76,11 @@ test("release deployment declares OTP channels and consistent EAS configuration"
   assert.match(render, /OTP_DELIVERY_CHANNELS[\s\S]*value: whatsapp_cloud,email/);
   assert.match(read("api-server/src/lib/otpDelivery.ts"), /WHATSAPP_GRAPH_BASE_URL/);
   assert.match(render, /ALLOW_DEV_OTP_RESPONSE[\s\S]*value: "false"/);
-  assert.equal(JSON.parse(rootEas).build.preview.env.EXPO_PUBLIC_API_BASE_URL, "https://athoo-api.onrender.com");
-  assert.deepEqual(JSON.parse(rootEas), JSON.parse(appEas));
+  const rootEasConfig = JSON.parse(rootEas);
+  const serializedEas = JSON.stringify(rootEasConfig);
+  assert.doesNotMatch(serializedEas, /athoo-api\.onrender\.com|EXPO_PUBLIC_API_BASE_URL|EXPO_PUBLIC_MAP_PROVIDER|EAS_PROJECT_ID/);
+  assert.deepEqual(rootEasConfig, JSON.parse(appEas));
+  assert.match(read("athoo-app/app.config.js"), /readEnv\(\s*"EAS_PROJECT_ID"/);
 });
 
 test("runtime diagnostics are routed through the production-safe logger", () => {

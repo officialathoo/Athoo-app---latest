@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
+
 export function shortPublicId(prefix: string, rawId?: string | null): string {
-  const seed = String(rawId || Math.random().toString(36).slice(2)).replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  const seed = String(rawId || randomUUID()).replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
   return `${prefix}-${seed.slice(-8).padStart(8, '0')}`;
 }
 

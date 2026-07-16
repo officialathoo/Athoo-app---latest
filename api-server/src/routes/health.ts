@@ -12,6 +12,7 @@ import { getPushConfigurationStatus } from "../lib/push";
 import { getOtpDeliveryConfigurationStatus } from "../lib/otpDelivery";
 import { getStorageConfigurationStatus } from "../lib/storageProvider";
 import { getReleaseIdentity } from "../lib/releaseIdentity";
+import { getCallConfigurationStatus } from "../lib/callConfiguration";
 
 const router: IRouter = Router();
 
@@ -41,6 +42,7 @@ router.get("/healthz/deep", async (_req, res) => {
         push: getPushConfigurationStatus(),
         storage: getStorageConfigurationStatus(),
         otpDelivery: getOtpDeliveryConfigurationStatus(),
+        calls: getCallConfigurationStatus(),
       },
     });
   } catch (e) {

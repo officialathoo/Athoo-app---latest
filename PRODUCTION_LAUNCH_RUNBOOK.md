@@ -1,92 +1,54 @@
 # Athoo Production Launch Runbook
 
-This is the controlled path from the Phase 5 source candidate to production.
+This runbook promotes the Phase 14 mobile-upload-typecheck-fixed candidate to release without bypassing connected or physical-device evidence.
 
-## 1. Immutable artifact
+## 1. Freeze the artifact
 
-Create the release ZIP without dependencies, build output, `.env` files, credentials or generated evidence. Record:
+Record the Git SHA, release version, ZIP SHA-256, Render deploy ID, Vercel deployment, Android build ID and iOS build ID. Every component must trace to the same source revision.
 
-- full Git commit SHA
-- ZIP SHA-256
-- API release version
-- Android EAS build ID
-- iOS EAS build ID
-
-All deployed components must trace to the same release source.
-
-## 2. Source and environment gates
+## 2. Run source and environment gates
 
 ```powershell
 pnpm install --frozen-lockfile
-pnpm rc2:source-verify
-pnpm db:verify
-pnpm db:integrity
+pnpm release:verify:code
 pnpm mobile:doctor
 pnpm mobile:export
-pnpm launch:preflight /secure/production.env /releases/athoo-rc2.zip
+pnpm env:validate .\production.env
+pnpm launch:preflight .\production.env .\ATHOO_PHASE14_MOBILE_UPLOAD_TYPECHECK_FIXED.zip
 ```
 
-The production environment must pass `scripts/tools/validate-environment.mjs` and must include a phone-bound OTP channel, remote storage, PostgreSQL queueing, secure secrets, release identity and all selected provider configuration.
+`--skip-code` is allowed only when the exact commit already passed trusted CI and that evidence is attached.
 
-Use `--skip-code` only when the exact Git SHA already passed the trusted CI source workflow and that evidence is attached.
+## 3. Back up and migrate
 
-## 3. Backup and migrate
+Create a Neon restore point. Apply and verify every migration through `20260716_workflow_inactivity_policy_governance.sql`. Retain previous API, admin and mobile artifacts. Use `ROLLBACK_RUNBOOK.md` for rollback.
 
-- Create a Neon restore point or backup immediately before deployment.
-- Retain the previous API, admin and mobile artifacts.
-- Apply migrations before starting the updated API.
-- Run `pnpm db:verify` and `pnpm db:integrity` after migration.
-- Follow `ROLLBACK_RUNBOOK.md` for any rollback. Do not manually reverse additive migrations without review.
+## 4. Deploy the exact source
 
-## 4. Deploy exact source
+Deploy the same commit to Render and Vercel. Build Android and iOS from the same commit. Confirm release version and commit identity through deep health.
 
-Deploy the same Git SHA to Render and Vercel. Create EAS builds from that same source. Confirm `/api/healthz` and `/api/healthz/deep` report the expected release version and commit.
-
-## 5. Post-deployment smoke and connected runtime evidence
-
-Run the public post-deployment smoke test first:
+## 5. Run post-deployment verification
 
 ```powershell
-$env:SMOKE_API_BASE_URL="https://athoo-api.onrender.com"
+$env:SMOKE_API_BASE_URL="https://<api-domain>"
 pnpm launch:postdeploy
+pnpm runtime:verify:connected
 ```
 
-Then run the environment described in `FINAL_CONNECTED_DEPLOYMENT.md`:
+Connected verification must include controlled customer, provider and admin credentials. TURN, storage, maps, email, OTP, provider broadcast eligibility, policies and admin operational queues must pass.
 
-```powershell
-pnpm rc2:connected-verify
-```
+## 6. Complete Android and iPhone evidence
 
-This must pass release identity, database, migration, storage, maps, CORS, email and controlled OTP checks.
+Run every item in `device-acceptance-checklist.json`, including the original reported failures. Attach screenshots or video, device/OS, build ID, timestamp and notes.
 
-## 6. Android and iPhone evidence
+## 7. Obtain approvals
 
-Complete `device-acceptance-evidence.json` from its template using the exact preview/release builds:
+Engineering, QA, product and operations approvals are required. Legal review is mandatory for customer-facing policies. Confirm temporary development credentials were replaced with production secrets and monitoring/escalation contacts are active.
 
-```powershell
-pnpm device:evidence:validate
-```
+## 8. Decide
 
-Both physical platforms and all cross-role cases must pass.
+Run `pnpm rc2:decision`. Release only on `GO`, with no open P0 or P1 defects and no pending non-waivable check.
 
-## 7. Final production decision
+## 9. Observe and roll back
 
-Complete `rc2-evidence.json` from its template and attach the evidence locations for every check:
-
-```powershell
-pnpm rc2:decision
-```
-
-Launch is prohibited unless the result is:
-
-```text
-GO
-```
-
-There must be zero open P0 defects and zero open P1 defects, with engineering, QA, product and operations approvals.
-
-## 8. Observe and roll back
-
-Monitor authentication, OTP delivery, email queues, push notifications, map failures, storage uploads, booking workflows, finance queues, database connections, error rate and latency.
-
-Roll back immediately for authentication outage, privacy exposure, data corruption, financial inconsistency, widespread booking failure or incompatible migration behavior.
+Monitor authentication, one-device revocation, OTP, email, push receipts, broadcasts, chat, calls, maps, uploads, bookings, premium/support operations, finance queues, lifecycle automation, database connections, latency and error rate. Roll back for privacy exposure, authentication outage, data corruption, financial inconsistency, widespread broadcast/booking failure or incompatible migrations.

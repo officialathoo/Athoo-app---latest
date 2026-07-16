@@ -18,8 +18,8 @@ test("EAS defines development, preview and production profiles", () => {
 test("mobile config uses environment-driven release identity and no public TURN credentials", () => {
   const config = read("athoo-app/app.config.js");
   assert.match(config, /EAS_PROJECT_ID/);
-  assert.match(config, /ANDROID_VERSION_CODE/);
-  assert.match(config, /IOS_BUILD_NUMBER/);
+  assert.match(config, /EAS Remote Versioning controls Android versionCode and iOS buildNumber/);
+  assert.match(config, /runtimeVersion:[\s\S]*policy:\s*"appVersion"/);
   assert.doesNotMatch(config, /EXPO_PUBLIC_TURN_CREDENTIAL/);
   assert.doesNotMatch(config, /TURN_USERNAME/);
 });

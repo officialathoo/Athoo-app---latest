@@ -31,6 +31,15 @@ type Sub = {
   startedAt: string | null;
   expiresAt: string | null;
   createdAt: string;
+  userName: string | null;
+  userPhone: string | null;
+  userEmail: string | null;
+  userRole: string | null;
+  planName: string | null;
+  planAudience: string | null;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  rejectionNote?: string | null;
 };
 
 export function SubscriptionPlansPage() {
@@ -39,7 +48,16 @@ export function SubscriptionPlansPage() {
   const canWriteSettings = hasPermission("settings.write");
   const canReadFinance = hasPermission("finance.read");
   const canWriteFinance = hasPermission("finance.write");
-  const [tab, setTab] = useState<"plans" | "subs">(canReadSettings ? "plans" : "subs");
+  const query = new URLSearchParams(window.location.search);
+  const requestedTab = query.get("tab");
+  const initialTab: "plans" | "subs" = requestedTab === "subs" && canReadFinance
+    ? "subs"
+    : requestedTab === "plans" && canReadSettings
+      ? "plans"
+      : canReadSettings ? "plans" : "subs";
+  const [tab, setTab] = useState<"plans" | "subs">(initialTab);
+  const initialStatus = query.get("status") || "pending";
+  const focusId = query.get("focus") || "";
   return (
     <div className="space-y-6">
       <div>
@@ -51,7 +69,7 @@ export function SubscriptionPlansPage() {
         {canReadFinance && <button onClick={() => setTab("subs")} className={`px-4 py-1.5 rounded-md text-sm ${tab === "subs" ? "bg-blue-600 text-white" : "text-slate-600"}`}>Subscriptions</button>}
       </div>
       {!canReadSettings && !canReadFinance ? <div className="p-6 bg-amber-50 border border-amber-200 rounded-xl text-amber-800">You do not have permission to view subscriptions.</div> :
-        tab === "plans" ? <PlansList canWrite={canWriteSettings} /> : <SubsList canWrite={canWriteFinance} />}
+        tab === "plans" ? <PlansList canWrite={canWriteSettings} /> : <SubsList canWrite={canWriteFinance} initialStatus={initialStatus} focusId={focusId} />}
     </div>
   );
 }
@@ -190,10 +208,14 @@ function Field({ label, children, wide }: { label: string; children: React.React
   return <div className={wide ? "md:col-span-2" : undefined}><label className="text-xs font-medium text-slate-600 mb-1 block">{label}</label>{children}</div>;
 }
 
-function SubsList({ canWrite }: { canWrite: boolean }) {
+function SubsList({ canWrite, initialStatus, focusId }: { canWrite: boolean; initialStatus: string; focusId: string }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [status, setStatus] = useState<"pending" | "active" | "expired" | "cancelled" | "rejected" | "cancellation_scheduled">("pending");
+  type SubscriptionStatus = "pending" | "active" | "expired" | "cancelled" | "rejected" | "cancellation_scheduled";
+  const validStatus = (["pending", "active", "expired", "cancelled", "rejected", "cancellation_scheduled"] as const).includes(initialStatus as SubscriptionStatus)
+    ? initialStatus as SubscriptionStatus
+    : "pending";
+  const [status, setStatus] = useState<SubscriptionStatus>(validStatus);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const { data, isLoading } = useQuery({
     queryKey: ["admin", "subs", status],
@@ -201,18 +223,30 @@ function SubsList({ canWrite }: { canWrite: boolean }) {
   });
   const approve = useMutation({
     mutationFn: (id: string) => api(`/api/admin/subscriptions/${id}/approve`, { method: "POST" }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin"] }); toast({ title: "Activated" }); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin"] });
+      qc.invalidateQueries({ queryKey: ["sidebar-counts"] });
+      qc.invalidateQueries({ queryKey: ["admin-notifications"] });
+      toast({ title: "Premium subscription activated" });
+    },
+    onError: (error: any) => toast({ title: "Approval failed", description: error.message, variant: "destructive" }),
   });
   const reject = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) => api(`/api/admin/subscriptions/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin"] }); toast({ title: "Rejected" }); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin"] });
+      qc.invalidateQueries({ queryKey: ["sidebar-counts"] });
+      qc.invalidateQueries({ queryKey: ["admin-notifications"] });
+      toast({ title: "Subscription rejected" });
+    },
+    onError: (error: any) => toast({ title: "Rejection failed", description: error.message, variant: "destructive" }),
   });
   const items = data?.subscriptions ?? [];
   return (
     <div className="space-y-4">
       <div className="inline-flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1">
         {(["pending", "active", "cancellation_scheduled", "expired", "cancelled", "rejected"] as const).map((s) => (
-          <button key={s} onClick={() => setStatus(s)} className={`px-3 py-1.5 text-xs font-medium rounded-md capitalize ${status === s ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}>
+          <button key={s} onClick={() => { setStatus(s); setSelectedIds(new Set()); }} className={`px-3 py-1.5 text-xs font-medium rounded-md capitalize ${status === s ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}>
             {s.replace(/_/g, " ")}
           </button>
         ))}
@@ -235,7 +269,7 @@ function SubsList({ canWrite }: { canWrite: boolean }) {
               <tr>
                 <th className="px-4 py-3 w-10"><input type="checkbox" aria-label="Select all pending subscriptions" disabled={status !== "pending" || !canWrite} checked={status === "pending" && items.length > 0 && items.every((item) => selectedIds.has(item.id))} onChange={() => setSelectedIds(items.every((item) => selectedIds.has(item.id)) ? new Set() : new Set(items.map((item) => item.id)))} /></th>
                 <th className="px-4 py-3 font-medium">User</th>
-                <th className="px-4 py-3 font-medium">Period</th>
+                <th className="px-4 py-3 font-medium">Plan / period</th>
                 <th className="px-4 py-3 font-medium">Amount</th>
                 <th className="px-4 py-3 font-medium">Payment proof</th>
                 <th className="px-4 py-3 font-medium">Submitted</th>
@@ -246,11 +280,19 @@ function SubsList({ canWrite }: { canWrite: boolean }) {
             <tbody className="divide-y divide-slate-100">
               {items.map((s) => {
                 const rowBusy = (approve.isPending && approve.variables === s.id) || (reject.isPending && reject.variables?.id === s.id);
+                const focused = s.id === focusId;
                 return (
-                <tr key={s.id} className="hover:bg-slate-50">
+                <tr key={s.id} data-focus-id={focused ? s.id : undefined} className={focused ? "bg-blue-50 ring-2 ring-inset ring-blue-400" : "hover:bg-slate-50"}>
                   <td className="px-4 py-3"><input type="checkbox" aria-label={`Select subscription ${s.id}`} disabled={s.status !== "pending" || !canWrite} checked={selectedIds.has(s.id)} onChange={() => setSelectedIds((previous) => { const next = new Set(previous); next.has(s.id) ? next.delete(s.id) : next.add(s.id); return next; })} /></td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-600">{s.userId.slice(0, 8)}…</td>
-                  <td className="px-4 py-3 capitalize">{s.billingPeriod}</td>
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-slate-900">{s.userName || "Unknown user"}</div>
+                    <div className="text-xs text-slate-500">{s.userPhone || s.userEmail || `${s.userId.slice(0, 8)}…`}</div>
+                    <div className="text-xs text-slate-400 capitalize">{s.userRole || "user"}{focused ? " · Opened from notification" : ""}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-slate-800">{s.planName || "Unknown plan"}</div>
+                    <div className="text-xs text-slate-500 capitalize">{s.billingPeriod} · {s.planAudience || "all"}</div>
+                  </td>
                   <td className="px-4 py-3 font-semibold">Rs {s.amount.toLocaleString()}</td>
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-1">
@@ -273,7 +315,7 @@ function SubsList({ canWrite }: { canWrite: boolean }) {
                         <button disabled={rowBusy} onClick={() => approve.mutate(s.id)} className="inline-flex items-center gap-1 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50 rounded disabled:opacity-40 disabled:cursor-not-allowed"><CheckCircle2 size={14} /> Approve</button>
                         <button disabled={rowBusy} onClick={() => { const r = prompt("Rejection reason?") ?? ""; if (r.trim()) reject.mutate({ id: s.id, reason: r }); }} className="inline-flex items-center gap-1 px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded disabled:opacity-40 disabled:cursor-not-allowed"><XCircle size={14} /> Reject</button>
                       </div>
-                    ) : <span className="text-xs text-slate-500 capitalize">{s.status.replace(/_/g, " ")}</span>}
+                    ) : <div className="text-right"><span className="text-xs text-slate-500 capitalize">{s.status.replace(/_/g, " ")}</span>{s.rejectionNote && <p className="text-xs text-red-600 mt-1 max-w-[180px]">{s.rejectionNote}</p>}</div>}
                   </td>
                 </tr>
                 );

@@ -8,42 +8,13 @@ import { requireAuth, AuthRequest } from "../middlewares/auth";
 import { emitToUser } from "../lib/eventBus";
 import { notifyUser } from "../lib/notifications";
 import { Response } from "express";
+import { getCallConfiguration } from "../lib/callConfiguration";
 
 const router = Router();
 const incomingCallCache = new Map<string, { ts: number; payload: any }>();
 
 function generateId(): string {
   return crypto.randomUUID();
-}
-
-function parseConfiguredUrls(...values: Array<string | undefined>): string[] {
-  return values
-    .flatMap((value) => String(value || "").split(","))
-    .map((value) => value.trim())
-    .filter(Boolean);
-}
-
-function getIceConfiguration() {
-  const stunUrls = parseConfiguredUrls(process.env.STUN_URLS, process.env.STUN_URL);
-  const turnUrls = parseConfiguredUrls(process.env.TURN_URLS, process.env.TURN_URL);
-  const iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }> = [];
-
-  if (stunUrls.length) iceServers.push({ urls: stunUrls });
-  if (turnUrls.length) {
-    const turnServer: { urls: string | string[]; username?: string; credential?: string } = { urls: turnUrls };
-    const username = String(process.env.TURN_USERNAME || "").trim();
-    const credential = String(process.env.TURN_CREDENTIAL || "").trim();
-    if (username && credential) {
-      turnServer.username = username;
-      turnServer.credential = credential;
-    }
-    iceServers.push(turnServer);
-  }
-
-  return {
-    provider: process.env.CALL_PROVIDER || (turnUrls.length ? "webrtc-turn" : stunUrls.length ? "webrtc-stun" : "audio-fallback"),
-    iceServers,
-  };
 }
 
 function boundedInteger(value: unknown, fallback: number, minimum: number, maximum: number): number {
@@ -174,10 +145,11 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
 
 router.get("/config", requireAuth, (_req: AuthRequest, res: Response) => {
-  const configuration = getIceConfiguration();
+  const configuration = getCallConfiguration();
   res.setHeader("Cache-Control", "private, no-store");
   res.json({
     ...configuration,
+    warning: configuration.warning,
     audio: {
       preferredCodec: process.env.CALL_PREFERRED_CODEC || "opus",
       fallbackChunkMs: boundedInteger(process.env.CALL_FALLBACK_CHUNK_MS, 800, 300, 2_000),
@@ -234,6 +206,10 @@ router.patch("/:callId/accept", requireAuth, async (req: AuthRequest, res: Respo
     if (!call) return;
     if (call.receiverId !== req.user!.userId) {
       res.status(403).json({ error: "Only the receiver can accept this call" });
+      return;
+    }
+    if (call.status !== "ringing") {
+      res.status(409).json({ error: `Call is already ${call.status}` });
       return;
     }
     const { answer } = req.body;
@@ -294,8 +270,8 @@ router.patch("/:callId/end", requireAuth, async (req: AuthRequest, res: Response
 router.post("/:callId/ice-candidate", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { candidate, role } = req.body;
-    if (!candidate || !role) {
-      res.status(400).json({ error: "candidate and role required" });
+    if (!candidate || !role || !["caller", "callee"].includes(role)) {
+      res.status(400).json({ error: "A valid candidate and role are required" });
       return;
     }
 
@@ -310,6 +286,10 @@ router.post("/:callId/ice-candidate", requireAuth, async (req: AuthRequest, res:
       res.status(403).json({ error: "You can only update your own calls" });
       return;
     }
+    if (!["ringing", "active"].includes(call.status)) {
+      res.status(409).json({ error: "Call is no longer accepting ICE candidates" });
+      return;
+    }
     if ((role === "caller" && call.callerId !== req.user!.userId) || (role === "callee" && call.receiverId !== req.user!.userId)) {
       res.status(403).json({ error: "Invalid call role" });
       return;
@@ -317,17 +297,27 @@ router.post("/:callId/ice-candidate", requireAuth, async (req: AuthRequest, res:
 
     if (role === "caller") {
       const existing = JSON.parse(call.callerCandidates || "[]");
+      if (existing.length >= 128) {
+        res.status(413).json({ error: "Too many ICE candidates" });
+        return;
+      }
       existing.push(candidate);
       await db.update(callsTable).set({ callerCandidates: JSON.stringify(existing) }).where(eq(callsTable.id, call.id));
     } else {
       const existing = JSON.parse(call.calleeCandidates || "[]");
+      if (existing.length >= 128) {
+        res.status(413).json({ error: "Too many ICE candidates" });
+        return;
+      }
       existing.push(candidate);
       await db.update(callsTable).set({ calleeCandidates: JSON.stringify(existing) }).where(eq(callsTable.id, call.id));
     }
 
     res.json({ success: true });
+    return;
   } catch (e) {
     res.status(500).json({ error: "Failed to add ICE candidate" });
+    return;
   }
 });
 
@@ -346,6 +336,8 @@ router.post("/:callId/audio", requireAuth, async (req: AuthRequest, res: Respons
 
   const call = await getAuthorizedCall(callId, senderId, res);
   if (!call) return;
+
+  if (call.status !== "active") return res.status(409).json({ error: "Call is not active" });
 
   const chunks = getChunks(callId);
   const chunk: AudioChunk = { index: nextIndex(callId), senderId, data, ext: safeExt, ts: Date.now() };
@@ -366,6 +358,7 @@ router.get("/:callId/audio", requireAuth, async (req: AuthRequest, res: Response
 
   const call = await getAuthorizedCall(callId, userId, res);
   if (!call) return;
+  if (call.status !== "active") return res.status(409).json({ error: "Call is not active" });
 
   const chunks = getChunks(callId);
   const results = chunks.filter((c) => c.senderId !== userId && c.index >= from);

@@ -14,6 +14,7 @@ type LoginEntry = {
   failReason?: string;
   ipAddress?: string;
   userAgent?: string;
+  deviceId?: string;
   createdAt: string;
 };
 
@@ -111,6 +112,7 @@ export function LoginHistoryPage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Method</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Role</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Result</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Device</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">IP Address</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Time</th>
                 </tr>
@@ -147,6 +149,15 @@ export function LoginHistoryPage() {
                           {l.failReason && <p className="text-xs text-red-400 mt-0.5">{l.failReason}</p>}
                         </div>
                       )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2" title={l.userAgent || l.deviceId || "Unknown device"}>
+                        {/mobile|android|iphone|ipad/i.test(l.userAgent || "") ? <Smartphone size={14} className="text-slate-400" /> : <Monitor size={14} className="text-slate-400" />}
+                        <div>
+                          <p className="text-xs text-slate-600">{/mobile|android|iphone|ipad/i.test(l.userAgent || "") ? "Mobile" : "Web / desktop"}</p>
+                          <p className="text-[10px] font-mono text-slate-400">{l.deviceId ? `${l.deviceId.slice(0, 8)}…` : "legacy"}</p>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-500 font-mono">{l.ipAddress || "—"}</td>
                     <td className="px-4 py-3 text-xs text-slate-400">{formatDate(l.createdAt)}</td>

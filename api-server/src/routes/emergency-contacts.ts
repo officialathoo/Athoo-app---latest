@@ -27,7 +27,7 @@ publicRouter.get("/", async (_req, res: Response) => {
 // Admin routes
 adminRouter.use(requireAuth, requireAdmin);
 
-adminRouter.get("/", async (_req, res: Response) => {
+adminRouter.get("/", requirePermission("settings.read"), async (_req, res: Response) => {
   try {
     const contacts = await db
       .select()

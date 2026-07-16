@@ -23,7 +23,7 @@ type RawNotificationConfig = {
 const DEFAULT_POLICIES: Record<NotificationCategory, NotificationPolicy> = {
   job: {
     category: "job",
-    channelId: "jobs-v3",
+    channelId: "jobs-v4",
     channelName: "Jobs and Booking Alerts",
     sound: "athoo_job.wav",
     importance: "max",
@@ -32,7 +32,7 @@ const DEFAULT_POLICIES: Record<NotificationCategory, NotificationPolicy> = {
   },
   message: {
     category: "message",
-    channelId: "messages-v3",
+    channelId: "messages-v4",
     channelName: "Chat Messages",
     sound: "athoo_message.wav",
     importance: "high",
@@ -41,7 +41,7 @@ const DEFAULT_POLICIES: Record<NotificationCategory, NotificationPolicy> = {
   },
   general: {
     category: "general",
-    channelId: "general-v3",
+    channelId: "general-v4",
     channelName: "General Updates",
     sound: "athoo_general.wav",
     importance: "high",
@@ -50,7 +50,7 @@ const DEFAULT_POLICIES: Record<NotificationCategory, NotificationPolicy> = {
   },
   call: {
     category: "call",
-    channelId: "calls-v3",
+    channelId: "calls-v4",
     channelName: "Incoming Calls",
     sound: "athoo_call.wav",
     importance: "max",
@@ -116,7 +116,7 @@ export const deprecatedNotificationChannelIds = Array.from(
   new Set(
     (Array.isArray(rawDeprecated)
       ? rawDeprecated
-      : String(rawDeprecated || "jobs-v2,messages-v2,general-v2,calls-v2").split(","))
+      : String(rawDeprecated || "jobs-v2,messages-v2,general-v2,calls-v2,jobs-v3,messages-v3,general-v3,calls-v3").split(","))
       .map((item) => String(item || "").trim())
       .filter((item) => /^[a-z0-9._-]{1,100}$/i.test(item))
       .filter((item) => !Object.values(notificationPolicies).some((policy) => policy.channelId === item)),

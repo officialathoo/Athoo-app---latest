@@ -63,12 +63,22 @@ export function NotificationTemplatesPage() {
   });
 
   const broadcastMutation = useMutation({
-    mutationFn: () => api<{ sent: number; audience: string; tokenCount: number }>("/api/admin/broadcast-push", {
+    mutationFn: () => api<{
+      sent: number;
+      audience: string;
+      tokenCount: number;
+      inAppCount: number;
+      onlineCount: number;
+      failedCount: number;
+    }>("/api/admin/broadcast-push", {
       method: "POST",
       body: JSON.stringify({ title: broadcastTitle, body: broadcastBody, audience: broadcastAudience }),
     }),
     onSuccess: (d) => {
-      toast({ title: `Broadcast sent to ${d.sent} device(s)` });
+      toast({
+        title: "Broadcast processed",
+        description: `${d.inAppCount} in-app · ${d.sent} push accepted · ${d.onlineCount} online${d.failedCount ? ` · ${d.failedCount} push failed` : ""}`,
+      });
       setBroadcastTitle("");
       setBroadcastBody("");
       setBroadcastAudience("all");

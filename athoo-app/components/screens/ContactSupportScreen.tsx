@@ -117,7 +117,7 @@ export function ContactSupportScreen({ role }: { role: Role }) {
         const filename = `support-${Date.now()}-${index + 1}.${ext}`;
         const objectPath = await uploadPickedImage(asset.uri, filename, mime, (progress) => {
           setUploadProgress((current) => ({ ...current, [asset.uri]: progress }));
-        });
+        }, "private");
         mediaUrls.push(objectPath);
       }
       await api.submitComplaint({ subject, message: trimmed, mediaUrls });

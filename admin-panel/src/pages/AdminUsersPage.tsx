@@ -20,41 +20,43 @@ interface AdminUser {
 }
 
 const ALL_PERMISSIONS = [
+  { key: "dashboard.read", label: "View Dashboard", group: "Operations" },
   { key: "users.read", label: "View Users", group: "Users" },
-  { key: "users.write", label: "Edit Users", group: "Users" },
-  { key: "providers.write", label: "Edit Providers", group: "Providers" },
-  { key: "operations.read", label: "View Bookings & Requests", group: "Operations" },
+  { key: "users.write", label: "Edit or Restrict Users", group: "Users" },
+  { key: "verification.read", label: "View Provider Verification", group: "Providers" },
+  { key: "verification.write", label: "Manage Providers and Verification", group: "Providers" },
+  { key: "bookings.read", label: "View Bookings and Requests", group: "Operations" },
+  { key: "bookings.write", label: "Manage Bookings and Requests", group: "Operations" },
   { key: "finance.read", label: "View Finance", group: "Finance" },
-  { key: "finance.write", label: "Manage Finance (Withdrawals/Refunds)", group: "Finance" },
-  { key: "reports.read", label: "View Reports & Analytics", group: "Analytics" },
-  { key: "export.read", label: "Export Data (CSV)", group: "Analytics" },
+  { key: "finance.write", label: "Manage Finance", group: "Finance" },
+  { key: "reports.read", label: "View Reports and Analytics", group: "Analytics" },
+  { key: "export.read", label: "Export Data", group: "Analytics" },
   { key: "audit.read", label: "View Audit Log", group: "Analytics" },
-  { key: "support.write", label: "Manage Support Tickets", group: "Support" },
-  { key: "notifications.write", label: "Send Push Notifications", group: "Support" },
+  { key: "complaints.read", label: "View Support Tickets", group: "Support" },
+  { key: "complaints.write", label: "Manage Support Tickets", group: "Support" },
+  { key: "notifications.read", label: "View Admin Notifications", group: "Support" },
+  { key: "notifications.write", label: "Send Notifications", group: "Support" },
   { key: "promotions.read", label: "View Promotions", group: "Marketing" },
-  { key: "promotions.write", label: "Manage Promotions & Promo Codes", group: "Marketing" },
+  { key: "promotions.write", label: "Manage Promotions", group: "Marketing" },
+  { key: "broadcasts.read", label: "View Broadcasts", group: "Marketing" },
   { key: "broadcasts.write", label: "Send Broadcasts", group: "Marketing" },
   { key: "marketing.read", label: "View Marketing Content", group: "Marketing" },
-  { key: "marketing.write", label: "Manage Banners, Popups & FAQs", group: "Marketing" },
+  { key: "marketing.write", label: "Manage Marketing Content", group: "Marketing" },
+  { key: "settings.read", label: "View Platform Settings", group: "Admin" },
   { key: "settings.write", label: "Edit Platform Settings", group: "Admin" },
 ];
 
 const ROLE_PRESETS: Record<string, string[]> = {
-  super_admin: ALL_PERMISSIONS.map(p => p.key),
+  super_admin: ALL_PERMISSIONS.map((permission) => permission.key),
   ops: [
-    "users.read", "users.write", "providers.write", "operations.read",
-    "support.write", "export.read", "reports.read", "audit.read",
+    "dashboard.read", "notifications.read", "users.read", "users.write",
+    "verification.read", "verification.write", "bookings.read", "bookings.write",
+    "complaints.read", "complaints.write", "broadcasts.read", "reports.read", "audit.read",
   ],
-  finance: ["finance.read", "finance.write", "reports.read", "export.read", "operations.read"],
-  support: ["users.read", "complaints.read", "complaints.write", "support.read", "support.write", "notifications.write", "operations.read"],
-  marketing: [
-    "marketing.read", "marketing.write", "broadcasts.read", "broadcasts.write", "promotions.read", "promotions.write",
-    "reports.read",
-  ],
-  technical: [
-    "users.read", "operations.read", "audit.read", "reports.read",
-    "settings.write", "export.read",
-  ],
+  finance: ["dashboard.read", "notifications.read", "users.read", "bookings.read", "finance.read", "finance.write", "reports.read", "export.read", "audit.read", "settings.read"],
+  support: ["dashboard.read", "notifications.read", "users.read", "bookings.read", "complaints.read", "complaints.write", "broadcasts.read"],
+  marketing: ["dashboard.read", "notifications.read", "notifications.write", "marketing.read", "marketing.write", "broadcasts.read", "broadcasts.write", "promotions.read", "promotions.write", "reports.read"],
+  technical: ["dashboard.read", "notifications.read", "users.read", "bookings.read", "audit.read", "reports.read", "settings.read", "settings.write", "export.read"],
 };
 
 const ROLE_LABELS: Record<string, { label: string; color: string; icon: React.ReactNode }> = {

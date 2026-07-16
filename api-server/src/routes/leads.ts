@@ -19,12 +19,14 @@
 
 import { Router, type Response, type Request } from "express";
 import { db } from "@workspace/db";
-import { leadsTable, adminNotificationsTable, usersTable } from "@workspace/db/schema";
+import { leadsTable, usersTable } from "@workspace/db/schema";
 import { and, desc, eq, gte, ilike, or, sql } from "drizzle-orm";
-import { requireAuth, requireAdmin, type AuthRequest } from "../middlewares/auth";
+import { requireAuth, requireAdmin, requirePermission, type AuthRequest } from "../middlewares/auth";
 import { generateId } from "../lib/admin";
 import { logger } from "../lib/logger";
 import { sendEmail } from "../lib/email";
+import { createAdminNotification } from "../lib/adminNotifications";
+import { csvCell, escapeHtml } from "../lib/contentSecurity";
 
 const router = Router();
 const adminRouter = Router();
@@ -99,22 +101,18 @@ router.post("/", async (req: Request, res: Response) => {
 
     // Notify admins about new non-duplicate leads
     if (!isDuplicate) {
-      await db.insert(adminNotificationsTable).values({
-        id: generateId(),
+      await createAdminNotification({
         type: "lead",
         title: `New ${type} lead`,
         message: `${name.trim()} (${cleanPhone}) submitted a ${type} enquiry`,
         link: `/admin/leads/${id}`,
-        targetAdminId: null, // broadcast to all admins
-        readByAdminIds: [],
-        createdAt: new Date(),
       }).catch(() => undefined); // non-critical
 
       // Also send email to support if SMTP is configured
       sendEmail({
         to: process.env.SMTP_USER || "admin@athoo.pk",
         subject: `New Athoo ${type} lead: ${name.trim()}`,
-        html: `<div style="font-family:Arial,sans-serif;padding:20px"><h2>New Lead</h2><p><b>Type:</b> ${type}</p><p><b>Name:</b> ${name.trim()}</p><p><b>Phone:</b> ${cleanPhone}</p>${cleanEmail ? `<p><b>Email:</b> ${cleanEmail}</p>` : ""}${message ? `<p><b>Message:</b> ${message.trim()}</p>` : ""}${service ? `<p><b>Service:</b> ${service}</p>` : ""}${city ? `<p><b>City:</b> ${city}</p>` : ""}</div>`,
+        html: `<div style="font-family:Arial,sans-serif;padding:20px"><h2>New Lead</h2><p><b>Type:</b> ${escapeHtml(type)}</p><p><b>Name:</b> ${escapeHtml(name.trim())}</p><p><b>Phone:</b> ${escapeHtml(cleanPhone)}</p>${cleanEmail ? `<p><b>Email:</b> ${escapeHtml(cleanEmail)}</p>` : ""}${message ? `<p><b>Message:</b> ${escapeHtml(message.trim())}</p>` : ""}${service ? `<p><b>Service:</b> ${escapeHtml(service)}</p>` : ""}${city ? `<p><b>City:</b> ${escapeHtml(city)}</p>` : ""}</div>`,
         text: `New ${type} lead: ${name.trim()} | ${cleanPhone}${cleanEmail ? ` | ${cleanEmail}` : ""}${message ? `\n${message}` : ""}`,
       }).catch(() => undefined);
     }
@@ -127,7 +125,7 @@ router.post("/", async (req: Request, res: Response) => {
 });
 
 // ── GET /api/admin/leads ──────────────────────────────────────────────────────
-adminRouter.get("/leads", async (req: AuthRequest, res: Response) => {
+adminRouter.get("/leads", requirePermission("users.read"), async (req: AuthRequest, res: Response) => {
   try {
     const { type, status, search, from, to, limit: lim, offset: off } = req.query as Record<string, string | undefined>;
     const pageLimit = Math.min(Number(lim) || 50, 200);
@@ -169,29 +167,18 @@ adminRouter.get("/leads", async (req: AuthRequest, res: Response) => {
 });
 
 // ── GET /api/admin/leads/export (CSV) ────────────────────────────────────────
-adminRouter.get("/leads/export", async (_req: AuthRequest, res: Response) => {
+adminRouter.get("/leads/export", requirePermission("users.read"), async (_req: AuthRequest, res: Response) => {
   try {
     const leads = await db.select().from(leadsTable).orderBy(desc(leadsTable.createdAt)).limit(5000);
-    const header = ["ID", "Type", "Name", "Phone", "Email", "Service", "City", "Status", "Source", "Duplicate", "Message", "Created"].join(",");
-    const rows = leads.map(l =>
-      [
-        l.id,
-        l.type,
-        `"${(l.name || "").replace(/"/g, '""')}"`,
-        l.phone,
-        l.email || "",
-        l.service || "",
-        l.city || "",
-        l.status,
-        l.source || "",
-        l.isDuplicate ? "Yes" : "No",
-        `"${(l.message || "").replace(/"/g, '""').replace(/\n/g, " ")}"`,
-        l.createdAt?.toISOString() || "",
-      ].join(",")
-    );
+    const header = ["ID", "Type", "Name", "Phone", "Email", "Service", "City", "Status", "Source", "Duplicate", "Message", "Created"].map(csvCell).join(",");
+    const rows = leads.map((lead) => [
+      lead.id, lead.type, lead.name, lead.phone, lead.email || "", lead.service || "",
+      lead.city || "", lead.status, lead.source || "", lead.isDuplicate ? "Yes" : "No",
+      String(lead.message || "").replace(/\r?\n/g, " "), lead.createdAt?.toISOString() || "",
+    ].map(csvCell).join(","));
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", `attachment; filename="athoo-leads-${new Date().toISOString().split("T")[0]}.csv"`);
-    res.send([header, ...rows].join("\n"));
+    res.send("\uFEFF" + [header, ...rows].join("\n"));
   } catch (err) {
     logger.error({ err }, "admin leads export error");
     res.status(500).json({ error: "Export failed" });
@@ -199,7 +186,7 @@ adminRouter.get("/leads/export", async (_req: AuthRequest, res: Response) => {
 });
 
 // ── GET /api/admin/leads/:id ──────────────────────────────────────────────────
-adminRouter.get("/leads/:id", async (req: AuthRequest, res: Response) => {
+adminRouter.get("/leads/:id", requirePermission("users.read"), async (req: AuthRequest, res: Response) => {
   try {
     const lead = await db.query.leadsTable.findFirst({ where: eq(leadsTable.id, req.params.id) });
     if (!lead) { res.status(404).json({ error: "Lead not found" }); return; }
@@ -211,7 +198,7 @@ adminRouter.get("/leads/:id", async (req: AuthRequest, res: Response) => {
 });
 
 // ── PATCH /api/admin/leads/:id/status ────────────────────────────────────────
-adminRouter.patch("/leads/:id/status", async (req: AuthRequest, res: Response) => {
+adminRouter.patch("/leads/:id/status", requirePermission("users.write"), async (req: AuthRequest, res: Response) => {
   try {
     const { status, notes } = req.body as { status?: string; notes?: string };
     const valid = ["new", "contacted", "converted", "not_interested", "duplicate", "archived"];
@@ -232,7 +219,7 @@ adminRouter.patch("/leads/:id/status", async (req: AuthRequest, res: Response) =
 });
 
 // ── PATCH /api/admin/leads/:id/notes ─────────────────────────────────────────
-adminRouter.patch("/leads/:id/notes", async (req: AuthRequest, res: Response) => {
+adminRouter.patch("/leads/:id/notes", requirePermission("users.write"), async (req: AuthRequest, res: Response) => {
   try {
     const { notes } = req.body as { notes?: string };
     await db.update(leadsTable).set({ notes: notes?.trim() || null, updatedAt: new Date() }).where(eq(leadsTable.id, req.params.id));
@@ -245,7 +232,7 @@ adminRouter.patch("/leads/:id/notes", async (req: AuthRequest, res: Response) =>
 });
 
 // ── DELETE /api/admin/leads/:id ───────────────────────────────────────────────
-adminRouter.delete("/leads/:id", async (req: AuthRequest, res: Response) => {
+adminRouter.delete("/leads/:id", requirePermission("users.write"), async (req: AuthRequest, res: Response) => {
   try {
     await db.delete(leadsTable).where(eq(leadsTable.id, req.params.id));
     res.json({ ok: true });

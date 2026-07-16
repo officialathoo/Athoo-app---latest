@@ -9,7 +9,7 @@
  *   - objectPath (/objects/<id>) is served through the API with ?token=
  *   - Legacy Cloudinary https URLs (pre-migration) are still rendered directly
  */
-import { createPurposeToken, getApiBase, getToken } from "@/lib/api";
+import { createPurposeToken, getAdminDeviceId, getApiBase, getToken } from "@/lib/api";
 
 export type UploadUrlResult = {
   uploadURL: string;
@@ -58,6 +58,7 @@ export async function getUploadUrl(
   name: string,
   size: number,
   contentType: string,
+  scope: "private" | "shared" = "shared",
 ): Promise<UploadUrlResult> {
   const token = getToken();
   const base = getApiBase();
@@ -66,8 +67,9 @@ export async function getUploadUrl(
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "X-Athoo-Device-Id": getAdminDeviceId(),
     },
-    body: JSON.stringify({ name, size, contentType }),
+    body: JSON.stringify({ name, size, contentType, scope }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -80,9 +82,9 @@ export async function getUploadUrl(
  * Upload a browser File directly to the presigned URL (GCS).
  * Returns the stable objectPath to persist.
  */
-export async function uploadFile(file: File): Promise<string> {
+export async function uploadFile(file: File, scope: "private" | "shared" = "shared"): Promise<string> {
   const mime = file.type || "application/octet-stream";
-  const { uploadURL, objectPath } = await getUploadUrl(file.name, file.size, mime);
+  const { uploadURL, objectPath } = await getUploadUrl(file.name, file.size, mime, scope);
 
   const res = await fetch(uploadURL, {
     method: "PUT",
@@ -90,8 +92,17 @@ export async function uploadFile(file: File): Promise<string> {
     body: file,
   });
   if (!res.ok) {
-    const errText = await res.text().catch(() => "");
-    throw new Error(`Upload failed (${res.status}): ${errText}`);
+    throw new Error(`Upload failed (${res.status})`);
   }
+  const completed = await fetch(`${getApiBase()}/api/storage/uploads/complete`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${getToken()}`,
+      "X-Athoo-Device-Id": getAdminDeviceId(),
+    },
+    body: JSON.stringify({ objectPath, size: file.size, contentType: mime }),
+  });
+  if (!completed.ok) throw new Error("Uploaded file could not be verified");
   return objectPath;
 }

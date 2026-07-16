@@ -112,6 +112,7 @@ requireCondition(deepChecks.storage?.productionSafe !== false, "Object storage i
 requireCondition(deepChecks.otpDelivery?.configured === true, "No production authentication OTP delivery channel is configured");
 requireCondition(deepChecks.otpDelivery?.phoneRegistrationConfigured === true, "No phone-bound registration OTP channel is configured");
 requireCondition(deepChecks.push?.configured !== false, "Push provider is not configured", "warning");
+requireCondition(deepChecks.calls?.productionReady === true, `Production voice calling is not ready: ${deepChecks.calls?.warning || "TURN configuration missing"}`);
 requireCondition(Boolean(release.version), "Deployment health did not expose a release version");
 requireCondition(Boolean(release.environment), "Deployment health did not expose a deployment environment");
 
@@ -139,6 +140,8 @@ if (adminOrigin) {
 }
 
 await request("service categories", "/api/categories");
+const publicPolicies = await request("public policy center", "/api/policies?audience=customer");
+requireCondition(Array.isArray(publicPolicies.body?.policies) && publicPolicies.body.policies.length >= 2, "Published customer policy center is incomplete");
 
 if (deepChecks.maps?.configured) {
   const tileZ = Number(process.env.CONNECTED_TILE_Z || 6);
@@ -179,6 +182,29 @@ if (userToken) {
   warnings.push("Authenticated map checks skipped because no customer token or credentials were supplied");
 }
 
+let providerToken = String(process.env.CONNECTED_PROVIDER_TOKEN || "").trim() || null;
+if (!providerToken) {
+  providerToken = await login(
+    "provider",
+    process.env.CONNECTED_PROVIDER_IDENTIFIER,
+    process.env.CONNECTED_PROVIDER_PASSWORD,
+    "provider",
+  );
+}
+requireCondition(Boolean(providerToken), "Controlled provider credentials are required for strict connected verification");
+if (providerToken) {
+  const providerAuth = { authorization: `Bearer ${providerToken}` };
+  const providerMe = await request("provider identity", "/api/auth/me", { headers: providerAuth });
+  requireCondition(providerMe.body?.user?.role === "provider", "Provider identity returned the wrong role");
+  const providerBroadcasts = await request("provider broadcast eligibility", "/api/broadcast", { headers: providerAuth });
+  requireCondition(Array.isArray(providerBroadcasts.body?.requests), "Provider broadcast endpoint did not return a request list");
+  requireCondition(providerBroadcasts.body?.eligibility?.eligible !== false, `Controlled provider is not eligible for customer broadcasts: ${providerBroadcasts.body?.eligibility?.reason || "unknown"}`);
+  const callConfig = await request("production call configuration", "/api/calls/config", { headers: providerAuth });
+  requireCondition(callConfig.body?.productionReady === true && callConfig.body?.hasTurnCredentials === true, `Authenticated call configuration is not production ready: ${callConfig.body?.warning || "TURN missing"}`);
+  const providerPolicies = await request("provider policy center", "/api/policies?audience=provider", { headers: providerAuth });
+  requireCondition(Array.isArray(providerPolicies.body?.policies) && providerPolicies.body.policies.length >= 2, "Published provider policy center is incomplete");
+}
+
 const otpTestPhone = String(process.env.CONNECTED_OTP_TEST_PHONE || "").trim();
 if (otpTestPhone) {
   const otpTest = await request("authentication OTP delivery", "/api/auth/send-otp", {
@@ -204,6 +230,14 @@ if (!adminToken) {
   );
 }
 
+if (adminToken) {
+  const adminAuth = { authorization: `Bearer ${adminToken}` };
+  await request("admin sidebar counts", "/api/admin/sidebar-counts", { headers: adminAuth });
+  const governedPolicies = await request("admin policy governance", "/api/admin/policies", { headers: adminAuth });
+  requireCondition(Array.isArray(governedPolicies.body?.policies) && governedPolicies.body.policies.length >= 2, "Admin policy governance returned no policy documents");
+  await request("admin inactive account queue", "/api/admin/inactive-accounts?limit=1", { headers: adminAuth });
+}
+
 if (adminToken && String(process.env.CONNECTED_VERIFY_EMAIL_TRANSPORT || "true").toLowerCase() !== "false") {
   const auth = { authorization: `Bearer ${adminToken}` };
   const transport = await request("email transport verification", "/api/admin/email/verify-transport", { method: "POST", headers: auth });
@@ -225,7 +259,7 @@ if (adminToken && String(process.env.CONNECTED_VERIFY_EMAIL_TRANSPORT || "true")
 }
 
 const evidence = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   status: failures.length ? "failed" : "passed",
   baseUrl: base,
   strict,
@@ -238,6 +272,7 @@ const evidence = {
     otpDelivery: redact(deepChecks.otpDelivery || null),
     maps: redact(deepChecks.maps || null),
     push: redact(deepChecks.push || null),
+    calls: redact(deepChecks.calls || null),
   },
   failures,
   warnings,

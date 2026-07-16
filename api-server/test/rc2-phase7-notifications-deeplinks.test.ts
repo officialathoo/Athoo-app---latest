@@ -29,10 +29,10 @@ test("android uses configurable versioned channels so custom sounds replace immu
   const runtimeConfig = read("athoo-app/config/notifications.ts");
   const service = read("athoo-app/services/NotificationService.ts");
   assert.match(appConfig, /NOTIFICATION_CHANNEL_VERSION/);
-  assert.match(runtimeConfig, /jobs-v3/);
-  assert.match(runtimeConfig, /messages-v3/);
-  assert.match(runtimeConfig, /general-v3/);
-  assert.match(runtimeConfig, /calls-v3/);
+  assert.match(runtimeConfig, /jobs-v4/);
+  assert.match(runtimeConfig, /messages-v4/);
+  assert.match(runtimeConfig, /general-v4/);
+  assert.match(runtimeConfig, /calls-v4/);
   assert.match(service, /deleteNotificationChannelAsync/);
   assert.match(service, /sound: policy\.sound/);
 });

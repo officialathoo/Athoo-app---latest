@@ -151,10 +151,35 @@ if (values.get("ALLOW_DEV_OTP_RESPONSE") === "true") {
   errors.push("ALLOW_DEV_OTP_RESPONSE must not be true in staging or production");
 }
 
+const callProvider = (values.get("CALL_PROVIDER") || "webrtc").trim().toLowerCase();
+if (!new Set(["webrtc", "webrtc-turn", "webrtc-stun", "audio-fallback"]).has(callProvider)) {
+  errors.push("CALL_PROVIDER must be webrtc, webrtc-turn, webrtc-stun, or audio-fallback");
+}
+const parseCsvValues = (...keys) => [...new Set(keys
+  .flatMap((key) => String(values.get(key) || "").split(","))
+  .map((value) => value.trim())
+  .filter(Boolean))];
+const stunUrls = parseCsvValues("STUN_URLS", "STUN_URL");
+const turnUrls = parseCsvValues("TURN_URLS", "TURN_URL");
+for (const url of stunUrls) if (!/^stuns?:/i.test(url)) errors.push(`Invalid STUN URL scheme: ${url}`);
+for (const url of turnUrls) if (!/^turns?:/i.test(url)) errors.push(`Invalid TURN URL scheme: ${url}`);
+const turnUsername = values.get("TURN_USERNAME") || "";
+const turnCredential = values.get("TURN_CREDENTIAL") || "";
+if (Boolean(turnUsername) !== Boolean(turnCredential)) errors.push("TURN_USERNAME and TURN_CREDENTIAL must be configured together");
+if (values.get("NODE_ENV") === "production") {
+  if (!turnUrls.length) errors.push("Production voice calling requires TURN_URLS (or legacy TURN_URL)");
+  if (!turnUsername || !turnCredential) errors.push("Production voice calling requires TURN_USERNAME and TURN_CREDENTIAL");
+}
+validateBoundedInteger("CALL_FALLBACK_CHUNK_MS", 800, 300, 2000);
+validateBoundedInteger("INACTIVITY_SWEEP_MIN_INTERVAL_MS", 21600000, 900000, 86400000);
+validateBoundedInteger("USER_ACTIVITY_WRITE_INTERVAL_MS", 600000, 60000, 86400000);
+validateBoundedInteger("BOOKING_SWEEP_INTERVAL_MS", 60000, 10000, 3600000);
+
 const releaseVersion = values.get("RELEASE_VERSION") || "";
 const releaseCommit = values.get("RELEASE_COMMIT_SHA") || "";
 const releaseBuildId = values.get("RELEASE_BUILD_ID") || "";
 if (!releaseVersion) warnings.push("RELEASE_VERSION is not set; deployment health will report an unversioned release");
+if (/REPLACE_WITH|CHANGE_ME|example/i.test(releaseVersion)) errors.push("RELEASE_VERSION must be replaced with the actual release identity");
 if (releaseVersion && !/^[a-zA-Z0-9._+-]{1,80}$/.test(releaseVersion)) errors.push("RELEASE_VERSION contains unsupported characters");
 if (releaseCommit && !/^[a-f0-9]{7,64}$/i.test(releaseCommit)) errors.push("RELEASE_COMMIT_SHA must contain 7 to 64 hexadecimal characters");
 if (releaseBuildId && !/^[a-zA-Z0-9._:@+-]{1,160}$/.test(releaseBuildId)) errors.push("RELEASE_BUILD_ID contains unsupported characters");
@@ -164,6 +189,16 @@ const pushEndpoint = values.get("PUSH_PROVIDER_ENDPOINT") || "";
 if (pushProvider === "expo" && pushEndpoint && !pushEndpoint.startsWith("https://")) {
   errors.push("PUSH_PROVIDER_ENDPOINT must use HTTPS");
 }
+const pushReceiptEndpoint = values.get("PUSH_RECEIPT_ENDPOINT") || "https://exp.host/--/api/v2/push/getReceipts";
+if (pushProvider === "expo" && !pushReceiptEndpoint.startsWith("https://")) {
+  errors.push("PUSH_RECEIPT_ENDPOINT must use HTTPS");
+}
+validateBoundedInteger("PUSH_TIMEOUT_MS", 10000, 1000, 60000);
+validateBoundedInteger("PUSH_RECEIPT_TIMEOUT_MS", 10000, 1000, 60000);
+validateBoundedInteger("PUSH_RECEIPT_DELAY_MS", 20000, 5000, 300000);
+validateBoundedInteger("PUSH_RECEIPT_MAX_ATTEMPTS", 5, 1, 10);
+validateBoundedInteger("EXPO_PUSH_BATCH_SIZE", 100, 1, 100);
+validateBoundedInteger("PUSH_MAX_ATTEMPTS", 3, 1, 5);
 const notificationChannelKeys = [
   "NOTIFICATION_JOB_CHANNEL_ID",
   "NOTIFICATION_MESSAGE_CHANNEL_ID",
@@ -179,6 +214,20 @@ if (new Set(configuredChannelIds).size !== configuredChannelIds.length) {
 for (const key of notificationChannelKeys) {
   const value = values.get(key);
   if (value && !/^[a-z0-9._-]{1,100}$/i.test(value)) errors.push(`${key} contains unsupported characters`);
+}
+const channelVersion = values.get("NOTIFICATION_CHANNEL_VERSION") || "4";
+if (!/^[a-z0-9._-]{1,20}$/i.test(channelVersion)) errors.push("NOTIFICATION_CHANNEL_VERSION contains unsupported characters");
+const conventionalChannelPrefixes = new Map([
+  ["NOTIFICATION_JOB_CHANNEL_ID", "jobs"],
+  ["NOTIFICATION_MESSAGE_CHANNEL_ID", "messages"],
+  ["NOTIFICATION_GENERAL_CHANNEL_ID", "general"],
+  ["NOTIFICATION_CALL_CHANNEL_ID", "calls"],
+]);
+for (const [key, prefix] of conventionalChannelPrefixes) {
+  const value = values.get(key);
+  if (value && value.startsWith(`${prefix}-v`) && value !== `${prefix}-v${channelVersion}`) {
+    errors.push(`${key} must match NOTIFICATION_CHANNEL_VERSION (${prefix}-v${channelVersion})`);
+  }
 }
 for (const key of [
   "NOTIFICATION_JOB_SOUND",

@@ -27,7 +27,11 @@ const STATUSES = ["pending", "approved", "rejected"] as const;
 export function CommissionPaymentsPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [status, setStatus] = useState<typeof STATUSES[number]>("pending");
+  const query = new URLSearchParams(window.location.search);
+  const requestedStatus = query.get("status");
+  const initialStatus = STATUSES.includes(requestedStatus as typeof STATUSES[number]) ? requestedStatus as typeof STATUSES[number] : "pending";
+  const focusId = query.get("focus") || "";
+  const [status, setStatus] = useState<typeof STATUSES[number]>(initialStatus);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [reason, setReason] = useState("");
 
@@ -41,6 +45,8 @@ export function CommissionPaymentsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "payments"] });
       qc.invalidateQueries({ queryKey: ["admin", "dashboard"] });
+      qc.invalidateQueries({ queryKey: ["sidebar-counts"] });
+      qc.invalidateQueries({ queryKey: ["admin-notifications"] });
       toast({ title: "Approved", description: "Provider commission balance was updated." });
     },
     onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
@@ -52,9 +58,12 @@ export function CommissionPaymentsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "payments"] });
       qc.invalidateQueries({ queryKey: ["admin", "dashboard"] });
+      qc.invalidateQueries({ queryKey: ["sidebar-counts"] });
+      qc.invalidateQueries({ queryKey: ["admin-notifications"] });
       setRejectingId(null); setReason("");
       toast({ title: "Rejected" });
     },
+    onError: (error: any) => toast({ title: "Rejection failed", description: error.message, variant: "destructive" }),
   });
 
   const items = data?.payments ?? [];
@@ -97,11 +106,14 @@ export function CommissionPaymentsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {items.map((p) => (
-                <tr key={p.id} className="hover:bg-slate-50">
+              {items.map((p) => {
+                const focused = p.id === focusId;
+                return (
+                <tr key={p.id} data-focus-id={focused ? p.id : undefined} className={focused ? "bg-blue-50 ring-2 ring-inset ring-blue-400" : "hover:bg-slate-50"}>
                   <td className="px-4 py-3">
                     <div className="font-medium text-slate-900 text-sm">{p.providerName || "Unknown"}</div>
                     {p.providerPhone && <div className="text-xs text-slate-500">{p.providerPhone}</div>}
+                    {focused && <div className="text-xs text-blue-700 mt-1">Opened from notification</div>}
                   </td>
                   <td className="px-4 py-3 font-semibold text-slate-900">Rs {p.amount.toLocaleString()}</td>
                   <td className="px-4 py-3 text-slate-700">{p.reference || <span className="text-slate-400 italic">—</span>}</td>
@@ -137,7 +149,8 @@ export function CommissionPaymentsPage() {
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         )}

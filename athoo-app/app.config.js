@@ -158,7 +158,6 @@ const iosBundleIdentifier = readEnv(
  */
 const easProjectId = readEnv(
   "EAS_PROJECT_ID",
-  "42a7f8fe-68ea-4422-8f46-0def1f55abb9",
 );
 
 /* -------------------------------------------------------------------------- */
@@ -261,7 +260,7 @@ const adaptiveIconBackground = readEnv(
 
 const notificationChannelVersion = readEnv(
   "NOTIFICATION_CHANNEL_VERSION",
-  "3",
+  "4",
 );
 
 const notificationJobSound = readEnv(
@@ -319,6 +318,10 @@ const notificationConfiguration = {
       "messages-v2",
       "general-v2",
       "calls-v2",
+      "jobs-v3",
+      "messages-v3",
+      "general-v3",
+      "calls-v3",
     ],
   ),
 

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "auditDate": "2026-07-17",
+  "inputBaseline": "ATHOO_PHASE13_ADMIN_TYPECHECK_FIXED.zip",
+  "candidateBaseline": "ATHOO_PHASE14_MOBILE_UPLOAD_TYPECHECK_FIXED.zip",
+  "status": "TYPECHECK-RERUN-REQUIRED",
+  "trigger": "The third connected Windows release:verify:code run passed API and admin-panel typechecks but exposed eight mobile TypeScript errors caused by an incomplete upload-scope function refactor.",
+  "remediation": {
+    "reportedCompilerErrors": 8,
+    "rootCauseCount": 1,
+    "filesChanged": [
+      "athoo-app/services/storage.ts",
+      "api-server/test/phase14-mobile-upload-typecheck-regression.test.ts"
+    ],
+    "changes": [
+      "added the private/shared UploadScope parameter to the shared uploadPickedImage contract",
+      "defined the scope value used when requesting portable storage upload instructions",
+      "forwarded scope through the Cloudinary branch for a consistent provider-agnostic upload contract",
+      "preserved shared as the backward-compatible default for profile, booking, negotiation, and broadcast media",
+      "preserved explicit private scope for premium payment, commission, verification, registration, and support evidence"
+    ]
+  },
+  "sourceVerification": {
+    "phase14TargetedTests": "3/3 passed",
+    "rootRegressionTests": "452/452 passed",
+    "typescriptSyntaxParsing": "506/506 passed",
+    "projectValidation": "passed",
+    "releaseValidation": "passed",
+    "operationsValidation": "passed",
+    "blueprintValidation": "passed",
+    "securityScan": "passed",
+    "expoWorkspaceValidation": "passed",
+    "reactNativeStyleValidation": "passed",
+    "mobileReleaseValidation": "passed",
+    "betaQaValidation": "passed",
+    "devicePreparationValidation": "passed",
+    "dependencyAwareMobileTypecheckMetroAndBuild": "rerun required on Windows"
+  },
+  "requiredNextEvidence": [
+    "pnpm install --frozen-lockfile in a clean Phase 14 folder",
+    "pnpm run release:verify:code with zero mobile typecheck and build errors",
+    "then Neon backup/migrations/integrity and connected infrastructure/device verification"
+  ],
+  "launchRule": "Do not deploy or migrate until Phase 14 release:verify:code passes completely."
+}

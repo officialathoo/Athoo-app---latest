@@ -14,7 +14,6 @@ on:
       release_version:
         description: Expected deployed release version
         required: true
-        default: rc2-candidate
         type: string
       commit_sha:
         description: Expected deployed commit SHA (leave empty to use selected workflow commit)
@@ -47,6 +46,8 @@ jobs:
           CONNECTED_CUSTOMER_IDENTIFIER: ${{ secrets.CONNECTED_CUSTOMER_IDENTIFIER }}
           CONNECTED_CUSTOMER_PASSWORD: ${{ secrets.CONNECTED_CUSTOMER_PASSWORD }}
           CONNECTED_CUSTOMER_ROLE: customer
+          CONNECTED_PROVIDER_IDENTIFIER: ${{ secrets.CONNECTED_PROVIDER_IDENTIFIER }}
+          CONNECTED_PROVIDER_PASSWORD: ${{ secrets.CONNECTED_PROVIDER_PASSWORD }}
           CONNECTED_ADMIN_IDENTIFIER: ${{ secrets.CONNECTED_ADMIN_IDENTIFIER }}
           CONNECTED_ADMIN_PASSWORD: ${{ secrets.CONNECTED_ADMIN_PASSWORD }}
           CONNECTED_EMAIL_TEST_TO: ${{ secrets.CONNECTED_EMAIL_TEST_TO }}

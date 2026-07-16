@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, currency, formatDate } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -32,6 +32,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export function RefundsPage() {
+  const focusId = new URLSearchParams(window.location.search).get("focus") || "";
   const qc = useQueryClient();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
@@ -39,6 +40,7 @@ export function RefundsPage() {
   const [selected, setSelected] = useState<Refund | null>(null);
   const [resolutionNote, setResolutionNote] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
+  const [focusOpened, setFocusOpened] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["admin", "refunds"],
@@ -63,6 +65,16 @@ export function RefundsPage() {
   });
 
   const refunds = data?.refunds ?? [];
+  useEffect(() => {
+    if (!focusId || focusOpened || refunds.length === 0) return;
+    const focused = refunds.find((refund) => refund.id === focusId);
+    if (!focused) return;
+    setStatusFilter(focused.status);
+    setSelected(focused);
+    setResolutionNote(focused.resolutionNote || "");
+    setPaymentReference(focused.paymentReference || "");
+    setFocusOpened(true);
+  }, [focusId, focusOpened, refunds]);
   const filtered = refunds.filter((r) => {
     const q = search.toLowerCase();
     const matchSearch =
@@ -157,7 +169,7 @@ export function RefundsPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filtered.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50/50 transition-colors">
+                  <tr key={r.id} data-focus-id={r.id === focusId ? r.id : undefined} className={r.id === focusId ? "bg-blue-50 ring-2 ring-inset ring-blue-400" : "hover:bg-slate-50/50 transition-colors"}>
                     <td className="px-5 py-3.5">
                       <p className="font-medium text-slate-800">{r.customer?.name || "—"}</p>
                       <p className="text-xs text-slate-500">{r.customer?.phone || "—"}</p>

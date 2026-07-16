@@ -48,11 +48,8 @@ import {
   PlatformSettingsValidationError,
   toSafeUser,
 } from "../lib/admin";
-import {
-  getAudiencePushTokens,
-  sendExpoPushNotifications,
-} from "../lib/push";
 import { notifyUser, notifyUsers } from "../lib/notifications";
+import { createAdminNotification } from "../lib/adminNotifications";
 import { sendEmail, renderVerificationEmail } from "../lib/email";
 import { ADMIN_ROLES, validateAdminPermissions, hasAdminPermission } from "../lib/adminPermissions";
 import { revokeAllUserSessions } from "../lib/session";
@@ -749,7 +746,16 @@ router.post("/broadcasts", requirePermission("broadcasts.write"), async (req: Au
       ? Array.from(new Set(targetUserIds.map((v) => String(v).trim()).filter(Boolean)))
       : [];
 
-    const resolvedAudience = normalizedUserIds.length > 0 ? "specific" : (audience || "all");
+    const normalizedAudience = String(audience || "all").trim().toLowerCase();
+    const allowedAudiences = new Set(["all", "customers", "providers"]);
+    if (normalizedUserIds.length === 0 && !allowedAudiences.has(normalizedAudience)) {
+      return res.status(400).json({
+        error: "Audience must be all, customers, or providers",
+        code: "INVALID_BROADCAST_AUDIENCE",
+      });
+    }
+
+    const resolvedAudience = normalizedUserIds.length > 0 ? "specific" : normalizedAudience;
 
     const broadcast = {
       id: generateId(),
@@ -764,50 +770,53 @@ router.post("/broadcasts", requirePermission("broadcasts.write"), async (req: Au
     await db.insert(adminBroadcastsTable).values(broadcast);
 
     // Persist as in-app notifications for the targeted audience.
-    const targetUsers = normalizedUserIds.length > 0
-      ? await db
-          .select({ id: usersTable.id })
-          .from(usersTable)
-          .where(sql`${usersTable.id} in (${sql.join(normalizedUserIds.map((id) => sql`${id}`), sql`, `)})`)
-      : await db
-          .select({ id: usersTable.id })
-          .from(usersTable)
-          .where(
-            broadcast.audience === "customers"
-              ? eq(usersTable.role, "customer")
-              : broadcast.audience === "providers"
-                ? eq(usersTable.role, "provider")
-                : undefined
-          );
+    const audienceCondition = broadcast.audience === "customers"
+      ? eq(usersTable.role, "customer")
+      : broadcast.audience === "providers"
+        ? eq(usersTable.role, "provider")
+        : inArray(usersTable.role, ["customer", "provider"]);
+    const targetUsers = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(and(
+        normalizedUserIds.length > 0 ? inArray(usersTable.id, normalizedUserIds) : audienceCondition,
+        inArray(usersTable.role, ["customer", "provider"]),
+        eq(usersTable.isBlocked, false),
+        eq(usersTable.isDeactivated, false),
+      ));
 
-    if (targetUsers.length > 0) {
-      // notifyUsers() persists the notification row AND delivers it over both
-      // channels (websocket for online users, Expo push otherwise) in one call,
-      // instead of writing the DB row and pushing separately (which used to skip
-      // the websocket "notification:new" event entirely for mass broadcasts).
-      await notifyUsers(
-        targetUsers.map((u) => u.id),
-        {
-          title: broadcast.title,
-          body: broadcast.message,
-          type: "broadcast",
-          data: { broadcastId: broadcast.id, audience: broadcast.audience },
-        }
-      );
-    }
+    // Platform announcements are general notifications, not customer job
+    // broadcasts. They must open the recipient's Notifications screen rather
+    // than the provider job-broadcast screen.
+    const delivery = await notifyUsers(
+      targetUsers.map((u) => u.id),
+      {
+        title: broadcast.title,
+        body: broadcast.message,
+        type: "system",
+        link: "/notifications",
+        data: {
+          broadcastId: broadcast.id,
+          audience: broadcast.audience,
+          source: "admin_broadcast",
+        },
+      },
+    );
 
     await db
       .update(adminBroadcastsTable)
-      .set({ sentCount: targetUsers.length })
+      .set({ sentCount: delivery.created })
       .where(eq(adminBroadcastsTable.id, broadcast.id));
 
     await logAdminAction(req, "broadcast_sent", "broadcast", broadcast.id, {
       audience: broadcast.audience,
       targetUserCount: targetUsers.length,
+      delivery,
     });
 
     return res.json({
-      broadcast: { ...broadcast, sentCount: targetUsers.length },
+      broadcast: { ...broadcast, sentCount: delivery.created },
+      delivery,
     });
   } catch (error) {
     logger.error({ err: error }, "admin broadcast create error");
@@ -1118,66 +1127,115 @@ router.patch("/users/:id/mark-commission-paid", requirePermission("finance.write
   return res.status(410).json({ error: "Direct commission clearing is disabled. Review and approve submitted payment evidence instead." });
 });
 
-router.get("/support", requirePermission("complaints.read"), async (_req, res) => {
+router.get("/support", requirePermission("complaints.read"), async (req, res) => {
   try {
+    const q = String(req.query.q || "").trim().slice(0, 120);
+    const status = String(req.query.status || "all");
+    const priority = String(req.query.priority || "all");
+    const focus = String(req.query.focus || "").trim();
+    const validStatuses = new Set(["all", "open", "in_progress", "resolved", "closed"]);
+    const validPriorities = new Set(["all", "urgent", "high", "normal", "low"]);
+    if (!validStatuses.has(status)) return res.status(400).json({ error: "Invalid support status" });
+    if (!validPriorities.has(priority)) return res.status(400).json({ error: "Invalid support priority" });
+
+    const conditions: any[] = [];
+    if (focus) {
+      conditions.push(eq(supportTicketsTable.id, focus));
+    } else {
+      if (status !== "all") conditions.push(eq(supportTicketsTable.status, status));
+      if (priority !== "all") conditions.push(eq(supportTicketsTable.priority, priority));
+      if (q) {
+        const like = `%${q}%`;
+        conditions.push(or(
+          ilike(supportTicketsTable.subject, like),
+          ilike(supportTicketsTable.message, like),
+          ilike(supportTicketsTable.userName, like),
+          ilike(supportTicketsTable.userPhone, like),
+          eq(supportTicketsTable.id, q),
+          eq(supportTicketsTable.bookingId, q),
+        ));
+      }
+    }
+
     const tickets = await db
       .select()
       .from(supportTicketsTable)
+      .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(supportTicketsTable.createdAt))
-      .limit(200);
-    return res.json({ tickets });
+      .limit(focus ? 1 : 200);
+
+    const assignedIds = [...new Set(tickets.map((ticket) => ticket.assignedTo).filter((id): id is string => Boolean(id)))];
+    const assignedAdmins = assignedIds.length
+      ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, assignedIds))
+      : [];
+    const assignedNames = new Map(assignedAdmins.map((admin) => [admin.id, admin.name]));
+
+    return res.json({
+      tickets: tickets.map((ticket) => ({
+        ...ticket,
+        assignedToName: ticket.assignedTo ? assignedNames.get(ticket.assignedTo) || null : null,
+      })),
+    });
   } catch (e) {
     logger.error({ err: e }, "admin support tickets error");
     return res.status(500).json({ error: "Failed to load support tickets" });
   }
 });
 
-router.patch("/support/:id/status", requirePermission("complaints.write"), async (req: any, res) => {
+router.patch("/support/:id/status", requirePermission("complaints.write"), async (req: AuthRequest, res) => {
   try {
+    const ticketId = String(req.params.id);
+    const existing = await db.query.supportTicketsTable.findFirst({ where: eq(supportTicketsTable.id, ticketId) });
+    if (!existing) return res.status(404).json({ error: "Support ticket not found" });
+
     const { status, adminNotes, resolutionNote, priority } = req.body as { status?: string; adminNotes?: string; resolutionNote?: string; priority?: string };
+    if (!status && priority === undefined && adminNotes === undefined) {
+      return res.status(400).json({ error: "A status, priority, or admin note update is required" });
+    }
 
     const update: Record<string, any> = { updatedAt: new Date() };
-
     if (status) {
       const validStatuses = ["open", "in_progress", "resolved", "closed"];
       if (!validStatuses.includes(status)) return res.status(400).json({ error: "Invalid status" });
+      const cleanResolution = String(resolutionNote || "").trim();
+      if (status === "resolved" && cleanResolution.length < 10) {
+        return res.status(400).json({ error: "A clear resolution note of at least 10 characters is required" });
+      }
       update.status = status;
-      if (adminNotes !== undefined) update.adminNotes = adminNotes || null;
-      if (resolutionNote) update.resolutionNote = resolutionNote;
+      if (adminNotes !== undefined) update.adminNotes = String(adminNotes || "").trim() || null;
       if (["resolved", "closed"].includes(status)) {
-        update.resolvedBy = req.user?.userId || null;
+        update.resolvedBy = req.user!.userId;
         update.resolvedAt = new Date();
-        if (resolutionNote) update.resolutionNote = resolutionNote;
+        if (cleanResolution) update.resolutionNote = cleanResolution;
+      } else {
+        update.resolvedBy = null;
+        update.resolvedAt = null;
+        update.resolutionNote = null;
       }
     }
-    if (priority) {
+    if (priority !== undefined) {
       const validPriorities = ["urgent", "high", "normal", "low"];
       if (!validPriorities.includes(priority)) return res.status(400).json({ error: "Invalid priority" });
       update.priority = priority;
     }
 
-    await db
-      .update(supportTicketsTable)
-      .set(update)
-      .where(eq(supportTicketsTable.id, req.params.id));
+    await db.update(supportTicketsTable).set(update).where(eq(supportTicketsTable.id, ticketId));
+    const ticket = await db.query.supportTicketsTable.findFirst({ where: eq(supportTicketsTable.id, ticketId) });
+    if (!ticket) return res.status(404).json({ error: "Support ticket not found" });
 
-    const ticket = await db.query.supportTicketsTable.findFirst({
-      where: eq(supportTicketsTable.id, req.params.id),
-    });
-
-    if (ticket?.userId) {
+    if (status || priority) {
       await notifyUser({
         userId: ticket.userId,
-        title: status ? "Support Ticket Updated" : "Support Ticket Changed",
+        title: status ? "Support Ticket Updated" : "Support Ticket Priority Updated",
         body: status
           ? `Your support request "${ticket.subject}" is now ${String(status).replace(/_/g, " ")}.`
           : `Priority for your support request "${ticket.subject}" was updated.`,
         type: "system",
-        data: { ticketId: ticket.id, status: ticket.status, priority: ticket.priority },
+        data: { ticketId: ticket.id, status: ticket.status, priority: ticket.priority, link: "/support" },
       });
     }
 
-    await logAdminAction(req, "support_ticket_updated", "support_ticket", req.params.id, { status, priority });
+    await logAdminAction(req, "support_ticket_updated", "support_ticket", ticketId, { status, priority });
     return res.json({ ticket });
   } catch (e) {
     logger.error({ err: e }, "admin support status error");
@@ -1189,6 +1247,8 @@ router.patch("/support/:id/status", requirePermission("complaints.write"), async
 
 router.get("/support/:id/notes", requirePermission("complaints.read"), async (req, res) => {
   try {
+    const ticket = await db.query.supportTicketsTable.findFirst({ where: eq(supportTicketsTable.id, String(req.params.id)) });
+    if (!ticket) return res.status(404).json({ error: "Support ticket not found" });
     const notes = await db
       .select()
       .from(ticketNotesTable)
@@ -1202,39 +1262,39 @@ router.get("/support/:id/notes", requirePermission("complaints.read"), async (re
 
 router.post("/support/:id/notes", requirePermission("complaints.write"), async (req: AuthRequest, res) => {
   try {
+    const ticketId = String(req.params.id);
+    const ticket = await db.query.supportTicketsTable.findFirst({ where: eq(supportTicketsTable.id, ticketId) });
+    if (!ticket) return res.status(404).json({ error: "Support ticket not found" });
+
     const { note, isInternal } = req.body as { note?: string; isInternal?: boolean };
-    if (!note?.trim()) return res.status(400).json({ error: "Note is required" });
+    const cleanNote = String(note || "").trim();
+    if (cleanNote.length < 2) return res.status(400).json({ error: "Note is required" });
+    if (cleanNote.length > 4000) return res.status(400).json({ error: "Note cannot exceed 4,000 characters" });
 
     const admin = await db.query.usersTable.findFirst({ where: eq(usersTable.id, req.user!.userId) });
-
     const internal = isInternal !== false;
     const newNote = {
       id: generateId(),
-      ticketId: req.params.id,
+      ticketId,
       adminId: req.user!.userId,
       adminName: admin?.name || "Admin",
-      note: note.trim(),
+      note: cleanNote,
       isInternal: internal,
     };
     await db.insert(ticketNotesTable).values(newNote);
 
     if (!internal) {
-      const ticket = await db.query.supportTicketsTable.findFirst({
-        where: eq(supportTicketsTable.id, req.params.id),
+      await notifyUser({
+        userId: ticket.userId,
+        title: "Support Team Replied",
+        body: `New reply on your support request: "${ticket.subject}"`,
+        type: "system",
+        data: { ticketId: ticket.id, link: "/support" },
       });
-      if (ticket?.userId) {
-        await notifyUser({
-          userId: ticket.userId,
-          title: "Support Team Replied",
-          body: `New reply on your support request: "${ticket.subject}"`,
-          type: "system",
-          data: { ticketId: ticket.id },
-        });
-      }
     }
 
-    await logAdminAction(req, "ticket_note_added", "support_ticket", req.params.id, { note: note.trim().slice(0, 100), isInternal: internal });
-    return res.json({ note: newNote });
+    await logAdminAction(req, "ticket_note_added", "support_ticket", ticketId, { note: cleanNote.slice(0, 100), isInternal: internal });
+    return res.status(201).json({ note: newNote });
   } catch (e) {
     return res.status(500).json({ error: "Failed to add ticket note" });
   }
@@ -1242,19 +1302,25 @@ router.post("/support/:id/notes", requirePermission("complaints.write"), async (
 
 router.patch("/support/:id/assign", requirePermission("complaints.write"), async (req: AuthRequest, res) => {
   try {
+    const ticketId = String(req.params.id);
+    const ticket = await db.query.supportTicketsTable.findFirst({ where: eq(supportTicketsTable.id, ticketId) });
+    if (!ticket) return res.status(404).json({ error: "Support ticket not found" });
+
     const { assignedTo } = req.body as { assignedTo?: string | null };
-    await db
-      .update(supportTicketsTable)
-      .set({ assignedTo: assignedTo || null, updatedAt: new Date() })
-      .where(eq(supportTicketsTable.id, req.params.id));
-    const ticket = await db.query.supportTicketsTable.findFirst({ where: eq(supportTicketsTable.id, req.params.id) });
-    await logAdminAction(req, "support_ticket_assigned", "support_ticket", req.params.id, { assignedTo: assignedTo || null, subject: ticket?.subject });
-    return res.json({ ticket });
+    const targetAdminId = assignedTo ? String(assignedTo) : null;
+    if (targetAdminId) {
+      const target = await db.query.usersTable.findFirst({ where: and(eq(usersTable.id, targetAdminId), eq(usersTable.role, "admin"), eq(usersTable.isDeactivated, false)) });
+      if (!target) return res.status(400).json({ error: "Assigned administrator is not active" });
+    }
+
+    await db.update(supportTicketsTable).set({ assignedTo: targetAdminId, updatedAt: new Date() }).where(eq(supportTicketsTable.id, ticketId));
+    const updated = await db.query.supportTicketsTable.findFirst({ where: eq(supportTicketsTable.id, ticketId) });
+    await logAdminAction(req, "support_ticket_assigned", "support_ticket", ticketId, { assignedTo: targetAdminId, subject: ticket.subject });
+    return res.json({ ticket: updated });
   } catch (e) {
     return res.status(500).json({ error: "Failed to assign ticket" });
   }
 });
-
 
 // ─── Chat moderation ───────────────────────────────────────────────────────
 router.get("/chats", requirePermission("complaints.read"), async (req, res) => {
@@ -1495,16 +1561,13 @@ router.post("/notifications", requirePermission("notifications.write"), async (r
     };
     if (!title?.trim() || !message?.trim()) return res.status(400).json({ error: "Title and message required" });
 
-    const notif = {
-      id: generateId(),
-      title: title.trim(),
-      message: message.trim(),
+    const notif = await createAdminNotification({
+      title,
+      message,
       type: type || "info",
       link: link || null,
       targetAdminId: targetAdminId || null,
-      readByAdminIds: [] as string[],
-    };
-    await db.insert(adminNotificationsTable).values(notif);
+    });
     return res.json({ notification: notif });
   } catch (e) {
     return res.status(500).json({ error: "Failed to create notification" });
@@ -1998,28 +2061,67 @@ router.post("/promotions/validate", requireAuth, async (req, res) => {
 // ── Broadcast Push Notification ───────────────────────────────────────────────
 router.post("/broadcast-push", requirePermission("notifications.write"), async (req: AuthRequest, res) => {
   try {
-    const { title, body, audience } = req.body as { title: string; body: string; audience: string };
-    if (!title || !body) return res.status(400).json({ error: "title and body are required" });
+    const { title, body, audience } = req.body as { title?: string; body?: string; audience?: string };
+    const cleanTitle = String(title || "").trim();
+    const cleanBody = String(body || "").trim();
+    if (!cleanTitle || !cleanBody) return res.status(400).json({ error: "title and body are required" });
 
-    const validAudiences = ["all", "customers", "providers"];
-    const aud = validAudiences.includes(audience) ? audience : "all";
+    // The legacy UI submits singular values (customer/provider), while the
+    // primary broadcast page uses plural values. Normalize both safely; never
+    // fall back an unknown value to the much broader "all" audience.
+    const audienceMap: Record<string, "all" | "customers" | "providers"> = {
+      all: "all",
+      customer: "customers",
+      customers: "customers",
+      provider: "providers",
+      providers: "providers",
+    };
+    const aud = audienceMap[String(audience || "").trim().toLowerCase()];
+    if (!aud) return res.status(400).json({ error: "Invalid audience" });
 
-    const tokens = await getAudiencePushTokens(aud);
-    if (tokens.length === 0) return res.json({ sent: 0, message: "No registered push tokens for this audience" });
+    const audienceCondition = aud === "customers"
+      ? eq(usersTable.role, "customer")
+      : aud === "providers"
+        ? eq(usersTable.role, "provider")
+        : inArray(usersTable.role, ["customer", "provider"]);
+    const users = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(and(
+        audienceCondition,
+        eq(usersTable.isBlocked, false),
+        eq(usersTable.isDeactivated, false),
+      ));
 
-    const result = await sendExpoPushNotifications(tokens, { title, body, data: { type: "broadcast" } });
+    const broadcastId = generateId();
+    const delivery = await notifyUsers(users.map((user) => user.id), {
+      title: cleanTitle,
+      body: cleanBody,
+      type: "system",
+      link: "/notifications",
+      data: { type: "system", broadcastId, audience: aud, source: "admin_broadcast" },
+    });
 
     await db.insert(adminBroadcastsTable).values({
-      id: generateId(),
-      title,
-      message: body,
+      id: broadcastId,
+      title: cleanTitle,
+      message: cleanBody,
       audience: aud,
       createdBy: req.user!.userId,
-      sentCount: result.sent || 0,
+      sentCount: delivery.created,
       createdAt: new Date(),
-    }).catch(() => undefined); // non-fatal
+    });
+    await logAdminAction(req, "broadcast_push_sent", "broadcast", broadcastId, { audience: aud, delivery });
 
-    return res.json({ sent: result.sent, audience: aud, tokenCount: tokens.length });
+    return res.json({
+      sent: delivery.pushAccepted,
+      audience: aud,
+      tokenCount: delivery.withPushToken,
+      inAppCount: delivery.created,
+      onlineCount: delivery.onlineRecipients,
+      failedCount: delivery.pushFailed,
+      delivery,
+    });
   } catch (e) {
     logger.error({ err: e }, "admin broadcast push error");
     return res.status(500).json({ error: "Failed to send broadcast" });
@@ -2049,14 +2151,20 @@ router.get("/sidebar-counts", async (req: AuthRequest, res) => {
       openSupportTickets,
       pendingRateRequests,
       pendingSubscriptions,
+      pendingServiceRequests,
+      pendingDeletionRequests,
+      inactiveAccountsForReview,
     ] = await Promise.all([
       db.$count(usersTable, and(eq(usersTable.role, "provider"), eq(usersTable.verificationStatus, "pending"))),
       db.$count(commissionPaymentsTable, eq(commissionPaymentsTable.status, "pending")),
       db.$count(withdrawalRequestsTable, eq(withdrawalRequestsTable.status, "pending")),
       db.$count(refundRequestsTable, eq(refundRequestsTable.status, "pending")),
-      db.$count(supportTicketsTable, eq(supportTicketsTable.status, "open")),
+      db.$count(supportTicketsTable, inArray(supportTicketsTable.status, ["open", "in_progress"])),
       db.$count(hourlyRateRequestsTable, eq(hourlyRateRequestsTable.status, "pending")),
       db.$count(userSubscriptionsTable, eq(userSubscriptionsTable.status, "pending")),
+      db.$count(serviceAddRequestsTable, eq(serviceAddRequestsTable.status, "pending")),
+      db.$count(accountDeletionRequestsTable, eq(accountDeletionRequestsTable.status, "pending")),
+      db.$count(usersTable, and(eq(usersTable.inactivityState, "review"), eq(usersTable.accountStatus, "active"), eq(usersTable.isDeactivated, false), eq(usersTable.isBlocked, false))),
     ]);
 
     // Count unread notifications for this admin
@@ -2084,6 +2192,9 @@ router.get("/sidebar-counts", async (req: AuthRequest, res) => {
         openSupportTickets,
         pendingRateRequests,
         pendingSubscriptions,
+        pendingServiceRequests,
+        pendingDeletionRequests,
+        inactiveAccountsForReview,
         unreadNotifications,
       },
     });

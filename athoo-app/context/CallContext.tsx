@@ -1,4 +1,5 @@
 import { appLogger } from "@/lib/logger";
+import { apiErrorToMessage } from "@/lib/apiError";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -223,6 +224,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const setMuted = useCallback((v: boolean) => {
     mutedRef.current = v;
     setMutedState(v);
+    try {
+      localStreamRef.current?.getAudioTracks?.().forEach((track: any) => {
+        track.enabled = !v;
+      });
+    } catch (error) {
+      appLogger.warn("calls", "[CallContext] unable to update microphone track", error);
+    }
   }, []);
 
   // Toggle loudspeaker routing via Audio.setAudioModeAsync.
@@ -231,16 +239,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const setSpeaker = useCallback(async (on: boolean) => {
     setIsSpeaker(on);
     try {
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: true,
-        shouldDuckAndroid: false,
-        // false = loudspeaker, true = earpiece
-        playThroughEarpieceAndroid: !on,
-        interruptionModeIOS: (Audio as any).INTERRUPTION_MODE_IOS_MIX_WITH_OTHERS ?? 2,
-        interruptionModeAndroid: (Audio as any).INTERRUPTION_MODE_ANDROID_DUCK_OTHERS ?? 2,
-      });
+      await soundService.setCallSpeakerMode(on);
     } catch (e) {
       appLogger.warn("calls", "[CallContext] setSpeaker error:", e);
     }
@@ -261,6 +260,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // WebRTC refs
   const pcRef = useRef<any>(null);
   const localStreamRef = useRef<any>(null);
+  const remoteStreamRef = useRef<any>(null);
+  const rtcConnectedRef = useRef(false);
+  const rtcFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const signalingCallIdRef = useRef<string | null>(null);
+  const pendingLocalCandidatesRef = useRef<any[]>([]);
   const appliedCalleeCandRef = useRef(0);
   const appliedCallerCandRef = useRef(0);
 
@@ -288,6 +292,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (r.current) clearInterval(r.current);
       });
       if (outgoingTimeoutRef.current) clearTimeout(outgoingTimeoutRef.current);
+      if (rtcFallbackTimerRef.current) clearTimeout(rtcFallbackTimerRef.current);
       soundService.stopRingtone();
       closePeerConnection();
       stopVoiceStreaming();
@@ -308,7 +313,23 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       timerRef.current = setInterval(() => setCallDuration((p) => p + 1), 1000);
       const callId = activeCall?.callId;
       appLogger.debug("calls", "[CallContext] Call active, starting voice streaming for:", callId);
-      if (callId) startVoiceStreaming(callId);
+      if (callId) {
+        void soundService.setCallSpeakerMode(isSpeaker);
+        // WebRTC owns the microphone when available. Start the authenticated
+        // HTTP fallback only when RTC is unavailable or fails to connect.
+        if (!WebRTCAvailable || !pcRef.current) {
+          startVoiceStreaming(callId);
+        } else {
+          if (rtcFallbackTimerRef.current) clearTimeout(rtcFallbackTimerRef.current);
+          rtcFallbackTimerRef.current = setTimeout(() => {
+            if (!rtcConnectedRef.current && activeCallRef.current?.state === "active") {
+              appLogger.warn("calls", "[CallContext] WebRTC connection timed out; activating audio fallback");
+              closePeerConnection();
+              startVoiceStreaming(callId);
+            }
+          }, 8_000);
+        }
+      }
 
       // Poll every 2s to detect when the remote side ends the call.
       if (activeCallWatcherRef.current) clearInterval(activeCallWatcherRef.current);
@@ -369,25 +390,65 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   function closePeerConnection() {
     try { localStreamRef.current?.getTracks().forEach((t: any) => t.stop()); } catch {}
     try { pcRef.current?.close(); } catch {}
+    if (rtcFallbackTimerRef.current) { clearTimeout(rtcFallbackTimerRef.current); rtcFallbackTimerRef.current = null; }
     localStreamRef.current = null;
+    remoteStreamRef.current = null;
     pcRef.current = null;
+    rtcConnectedRef.current = false;
+    signalingCallIdRef.current = null;
+    pendingLocalCandidatesRef.current = [];
     appliedCalleeCandRef.current = 0;
     appliedCallerCandRef.current = 0;
   }
 
-  async function createPeerConnection(callId: string, role: "caller" | "callee") {
+  async function flushPendingLocalCandidates(callId: string, role: "caller" | "callee") {
+    signalingCallIdRef.current = callId;
+    const queued = pendingLocalCandidatesRef.current.splice(0);
+    for (const candidate of queued) {
+      try { await api.addIceCandidate(callId, candidate, role); } catch (error) {
+        appLogger.warn("calls", "[CallContext] unable to upload queued ICE candidate", error);
+      }
+    }
+  }
+
+  async function createPeerConnection(callId: string | null, role: "caller" | "callee") {
     if (!WebRTCAvailable) return null;
+    signalingCallIdRef.current = callId;
+    pendingLocalCandidatesRef.current = [];
+    rtcConnectedRef.current = false;
     const pc = new _RTCPeerConnection(iceConfigurationRef.current);
     pcRef.current = pc;
     pc.onicecandidate = async (event: any) => {
-      if (event.candidate) {
-        try { await api.addIceCandidate(callId, event.candidate.toJSON(), role); } catch {}
+      if (!event.candidate) return;
+      const candidate = event.candidate.toJSON();
+      const resolvedCallId = signalingCallIdRef.current;
+      if (!resolvedCallId) {
+        pendingLocalCandidatesRef.current.push(candidate);
+        return;
+      }
+      try { await api.addIceCandidate(resolvedCallId, candidate, role); } catch (error) {
+        appLogger.warn("calls", "[CallContext] unable to upload ICE candidate", error);
       }
     };
+    pc.ontrack = (event: any) => {
+      remoteStreamRef.current = event.streams?.[0] || remoteStreamRef.current;
+      appLogger.debug("calls", "[CallContext] remote audio track received");
+    };
     pc.onconnectionstatechange = () => {
-      if (["disconnected", "failed", "closed"].includes(pc.connectionState)) {
-        setActiveCall((p) => p ? { ...p, state: "ended" } : null);
+      const state = pc.connectionState;
+      if (state === "connected") {
+        rtcConnectedRef.current = true;
+        if (rtcFallbackTimerRef.current) { clearTimeout(rtcFallbackTimerRef.current); rtcFallbackTimerRef.current = null; }
+        if (isStreamingRef.current) stopVoiceStreaming();
+        void soundService.setCallSpeakerMode(isSpeaker);
+      } else if (state === "failed") {
+        rtcConnectedRef.current = false;
+        const callIdForFallback = activeCallRef.current?.callId;
+        closePeerConnection();
+        if (callIdForFallback && activeCallRef.current?.state === "active") startVoiceStreaming(callIdForFallback);
       }
+      // `disconnected` can be transient during network switching. The server
+      // status watcher remains authoritative for ending the call.
     };
     return pc;
   }
@@ -707,8 +768,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     let offerSdp: string | undefined;
     if (WebRTCAvailable) {
       try {
-        const pc = await createPeerConnection("pending", "caller");
+        const pc = await createPeerConnection(null, "caller");
         if (pc) {
+          await soundService.setCallSpeakerMode(isSpeaker);
           const stream = await (require("react-native-webrtc").mediaDevices.getUserMedia)({ audio: true, video: false });
           if (stream) { localStreamRef.current = stream; stream.getTracks().forEach((t: any) => pc.addTrack(t, stream)); }
           const offer = await pc.createOffer({ offerToReceiveAudio: true });
@@ -728,6 +790,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         offer: offerSdp,
       });
       const call = res.call as any;
+      if (pcRef.current && WebRTCAvailable) await flushPendingLocalCandidates(call.id, "caller");
 
       setActiveCall({
         callId: call.id,
@@ -788,7 +851,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }, 1000);
 
     } catch (err) {
-      Alert.alert("Call Failed", "Unable to connect the call. Please check your connection and try again.");
+      closePeerConnection();
+      Alert.alert("Call Failed", apiErrorToMessage(err, "Unable to connect the call. Please check your connection and try again."));
     }
   }, [user]);
 
@@ -803,17 +867,25 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         const pc = await createPeerConnection(current.callId, "callee");
         if (pc) {
           await pc.setRemoteDescription(new _RTCSessionDescription(JSON.parse(current.offer)));
+          await soundService.setCallSpeakerMode(isSpeaker);
           const stream = await (require("react-native-webrtc").mediaDevices.getUserMedia)({ audio: true, video: false });
           if (stream) { localStreamRef.current = stream; stream.getTracks().forEach((t: any) => pc.addTrack(t, stream)); }
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           answerSdp = JSON.stringify(answer);
+          await flushPendingLocalCandidates(current.callId, "callee");
           startCandidatePolling(current.callId, "callee");
         }
       } catch {}
     }
 
-    try { await api.acceptCall(current.callId, { answer: answerSdp }); } catch {}
+    try {
+      await api.acceptCall(current.callId, { answer: answerSdp });
+    } catch (error) {
+      closePeerConnection();
+      Alert.alert("Call Failed", apiErrorToMessage(error, "The call could not be accepted."));
+      return;
+    }
 
     setActiveCall((p) => p ? { ...p, state: "active", startedAt: Date.now() } : null);
     try { router.push("/call" as any); } catch {}

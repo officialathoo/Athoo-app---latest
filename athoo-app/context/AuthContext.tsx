@@ -1,12 +1,22 @@
 import { appLogger } from "@/lib/logger";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
-import { router } from "expo-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { api, setToken, setRefreshToken, clearToken, getToken, realtime, setUnauthorizedHandler } from "@/services/api";
 import { notificationService } from "@/services/NotificationService";
-import { isBiometricAvailable, authenticateWithBiometric } from "@/services/biometric";
+import {
+  authenticateWithBiometric,
+  disableBiometric,
+  enableBiometric,
+  getBiometricPhone,
+  getBiometricRole,
+  isBiometricAvailable,
+  isBiometricEnabled,
+} from "@/services/biometric";
 import { apiErrorToMessage } from "@/lib/apiError";
+import { getDeviceId } from "@/services/deviceIdentity";
+import { getSecureItem, removeSecureItem, setSecureItem } from "@/services/secureSessionStorage";
 
 export type UserRole = "customer" | "provider" | "admin";
 export type AppUserRole = "customer" | "provider";
@@ -94,10 +104,9 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 const SAVED_KEY = "athoo_saved_providers";
-const BIO_ENABLED_KEY = "athoo_biometric_enabled";
-const BIO_PHONE_KEY = "athoo_biometric_phone";
-const BIO_ROLE_KEY = "athoo_biometric_role";
 const REMEMBER_KEY = "athoo_remember_me";
+const SESSION_USER_CACHE_KEY = "athoo_session_user_cache";
+const BIOMETRIC_RELOCK_MS = Math.max(60, Number(process.env.EXPO_PUBLIC_BIOMETRIC_RELOCK_SECONDS || 300)) * 1000;
 
 function toAppRole(role?: string): AppUserRole {
   return role === "provider" ? "provider" : "customer";
@@ -134,6 +143,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [requiresBiometric, setRequiresBiometric] = useState(false);
+  const queryClient = useQueryClient();
+  const sessionClearPromiseRef = useRef<Promise<void> | null>(null);
+  const logoutPromiseRef = useRef<Promise<void> | null>(null);
+  const backgroundedAtRef = useRef<number | null>(null);
 
   const attachSavedProviders = useCallback(async (u: User | null) => {
     if (!u) return null;
@@ -157,15 +170,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loadUser = useCallback(async () => {
     try {
       const token = await getToken();
-      const remember = await AsyncStorage.getItem(REMEMBER_KEY);
-      const biometricEnabled = await AsyncStorage.getItem(BIO_ENABLED_KEY);
       if (!token) {
+        await removeSecureItem(SESSION_USER_CACHE_KEY).catch(() => undefined);
         setUser(null);
         setRequiresBiometric(false);
         return;
       }
-      // Biometric is an optional fast-login shortcut, not a forced lock screen.
-      // Never block normal remembered sessions; random app restarts must not log users out.
+
+      const remember = (await AsyncStorage.getItem(REMEMBER_KEY)) === "true";
+      const biometricEnabled = await isBiometricEnabled();
+      if (remember && biometricEnabled) {
+        const available = await isBiometricAvailable();
+        if (available) {
+          // A remembered session stays encrypted on the device, but the app UI
+          // remains locked until Face ID / Touch ID / Fingerprint succeeds.
+          setUser(null);
+          setRequiresBiometric(true);
+          return;
+        }
+        await disableBiometric();
+      }
+
       const res = await api.getMe();
       const rawUser = (res?.user as any) || null;
       if (!rawUser) {
@@ -178,13 +203,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(hydrated);
       setRequiresBiometric(false);
     } catch (error) {
-      // Do not log the user out on temporary slow network / Neon timeouts.
-      // Only clear the saved token when the server explicitly rejects it.
+      // Temporary network failures must never destroy a valid remembered
+      // session. Explicit server rejection is handled by the unauthorized
+      // callback, which performs one idempotent local session clear.
       if (isUnauthorizedError(error)) {
         await clearToken();
+        await disableBiometric();
         setUser(null);
         setRequiresBiometric(false);
-      } else if (!isTransientNetworkError(error)) {
+      } else if (isTransientNetworkError(error)) {
+        try {
+          const cachedRaw = await getSecureItem(SESSION_USER_CACHE_KEY);
+          const cached = cachedRaw ? sanitizeUser(JSON.parse(cachedRaw)) : null;
+          if (cached?.id && cached?.phone) setUser(cached);
+        } catch {
+          // The offline banner remains visible; a later foreground activation
+          // retries the authoritative server profile.
+        }
+      } else {
         appLogger.warn("auth", "Failed to load user profile:", error);
       }
     } finally {
@@ -195,9 +231,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { loadUser(); }, [loadUser]);
 
   useEffect(() => {
+    if (!user || requiresBiometric) return;
+    void setSecureItem(SESSION_USER_CACHE_KEY, JSON.stringify(user)).catch(() => undefined);
+  }, [requiresBiometric, user]);
+
+  useEffect(() => {
     let mounted = true;
     (async () => {
-      if (!user) {
+      if (!user || requiresBiometric) {
         realtime.stop();
         return;
       }
@@ -207,7 +248,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       realtime.start();
     })();
     return () => { mounted = false; };
-  }, [user]);
+  }, [requiresBiometric, user]);
 
   useEffect(() => {
     return () => { realtime.stop(); };
@@ -216,10 +257,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user) return;
     const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "background" || state === "inactive") {
+        if (backgroundedAtRef.current === null) backgroundedAtRef.current = Date.now();
+        return;
+      }
       if (state !== "active") return;
+
+      const backgroundedAt = backgroundedAtRef.current;
+      backgroundedAtRef.current = null;
       void (async () => {
         const token = await getToken();
         if (token) await notificationService.syncPushToken(api.baseUrl, token);
+
+        if (
+          backgroundedAt &&
+          Date.now() - backgroundedAt >= BIOMETRIC_RELOCK_MS &&
+          await isBiometricEnabled() &&
+          await isBiometricAvailable()
+        ) {
+          setRequiresBiometric(true);
+        }
       })();
     });
     return () => subscription.remove();
@@ -234,9 +291,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(hydrated);
     } catch (error) {
       if (isUnauthorizedError(error)) {
-        await clearToken();
-        setUser(null);
-        setRequiresBiometric(false);
+        // The shared API unauthorized handler performs the complete,
+        // idempotent session cleanup.
+        return;
       }
     }
   }, [attachSavedProviders]);
@@ -385,49 +442,75 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user?.id]);
 
-  const logout = useCallback(async () => {
-    // Logout must feel immediate even on a slow or unavailable network.
-    // Capture the current token first, clear local UI/session state, then perform
-    // server cleanup as a bounded best-effort background task.
-    const token = await getToken().catch(() => null);
+  const clearLocalSession = useCallback((disableQuickLogin = true): Promise<void> => {
+    if (sessionClearPromiseRef.current) return sessionClearPromiseRef.current;
 
-    realtime.stop();
-    notificationService.resetSyncedToken();
-    setUser(null);
-    setRequiresBiometric(false);
-    try { router.replace("/auth/welcome" as any); } catch { router.replace("/" as any); }
+    const task = (async () => {
+      realtime.stop();
+      notificationService.resetSyncedToken();
+      queryClient.clear();
+      setUser(null);
+      setRequiresBiometric(false);
+      await Promise.all([
+        clearToken().catch(() => undefined),
+        removeSecureItem(SESSION_USER_CACHE_KEY).catch(() => undefined),
+        disableQuickLogin ? disableBiometric().catch(() => undefined) : Promise.resolve(),
+      ]);
+    })().finally(() => {
+      sessionClearPromiseRef.current = null;
+    });
+    sessionClearPromiseRef.current = task;
+    return task;
+  }, [queryClient]);
 
-    await clearToken().catch(() => {});
-    await AsyncStorage.removeItem(REMEMBER_KEY).catch(() => {});
+  const expireSession = useCallback(async () => {
+    await clearLocalSession(true);
+  }, [clearLocalSession]);
 
-    if (!token) return;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 4000);
-    const baseUrl = String(api.baseUrl || "").replace(/\/$/, "");
-    if (!baseUrl) {
-      clearTimeout(timeout);
-      return;
-    }
+  const logout = useCallback((): Promise<void> => {
+    if (logoutPromiseRef.current) return logoutPromiseRef.current;
 
-    void Promise.allSettled([
-      fetch(`${baseUrl}/api/auth/push-token`, {
-        method: "PATCH",
-        headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ expoPushToken: "" }),
-        signal: controller.signal,
-      }),
-      fetch(`${baseUrl}/api/auth/logout`, {
+    const task = (async () => {
+      const [token, deviceId] = await Promise.all([
+        getToken().catch(() => null),
+        getDeviceId().catch(() => ""),
+      ]);
+
+      // Local state is cleared exactly once. Route protection in the root
+      // navigator owns the transition to Welcome, avoiding competing redirects
+      // from the profile screen, role layout, and unauthorized callbacks.
+      await clearLocalSession(true);
+
+      if (!token) return;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+      const baseUrl = String(api.baseUrl || "").replace(/\/$/, "");
+      if (!baseUrl) {
+        clearTimeout(timeout);
+        return;
+      }
+
+      await fetch(`${baseUrl}/api/auth/logout`, {
         method: "POST",
-        headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+          ...(deviceId ? { "X-Athoo-Device-Id": deviceId } : {}),
+        },
         signal: controller.signal,
-      }),
-    ]).finally(() => clearTimeout(timeout));
-  }, []);
+      }).catch(() => undefined).finally(() => clearTimeout(timeout));
+    })().finally(() => {
+      logoutPromiseRef.current = null;
+    });
+
+    logoutPromiseRef.current = task;
+    return task;
+  }, [clearLocalSession]);
 
   useEffect(() => {
-    setUnauthorizedHandler(logout);
+    setUnauthorizedHandler(() => { void expireSession(); });
     return () => { setUnauthorizedHandler(null); };
-  }, [logout]);
+  }, [expireSession]);
 
   const updateUser = useCallback(async (data: Partial<User>) => {
     if (!user) return;
@@ -477,52 +560,71 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const updatedUser = await attachSavedProviders(sanitizeUser(res.user as any));
     setUser(updatedUser);
     setRequiresBiometric(false);
-    const biometricEnabled = await AsyncStorage.getItem(BIO_ENABLED_KEY);
-    if (biometricEnabled === "true" && updatedUser?.phone) {
-      await AsyncStorage.setItem(BIO_PHONE_KEY, updatedUser.phone);
-      await AsyncStorage.setItem(BIO_ROLE_KEY, updatedUser.role);
+    if (await isBiometricEnabled() && updatedUser?.phone) {
+      await enableBiometric(updatedUser.phone, updatedUser.role);
     }
-    router.replace(updatedUser?.role === "provider" ? "/(provider)/(tabs)/dashboard" : "/(customer)/(tabs)/home");
+    // The root session route guard owns role transitions, preventing duplicate
+    // navigation and startup/login flicker.
   }, [user, attachSavedProviders]);
 
   const completeBiometricLogin = useCallback(async () => {
     try {
-      const biometricEnabled = await AsyncStorage.getItem(BIO_ENABLED_KEY);
-      if (biometricEnabled !== "true") return { success: false, error: "Biometric login is not enabled" };
+      if (!(await isBiometricEnabled())) {
+        return { success: false, error: "Biometric login is not enabled" };
+      }
       const available = await isBiometricAvailable();
       if (!available) {
-        return { success: false, error: "No Face ID / Fingerprint enrolled on this device. Please sign in with your password." };
+        await disableBiometric();
+        return { success: false, error: "No Face ID / Fingerprint is enrolled on this device. Please sign in normally." };
       }
-      const result = await authenticateWithBiometric("Sign in to ATHOO");
+      const result = await authenticateWithBiometric("Sign in to Athoo");
       if (!result.success) return { success: false, error: result.error || "Authentication cancelled or failed" };
+
       const token = await getToken();
-      if (!token) return { success: false, error: "Session expired. Please login again." };
+      if (!token) {
+        await disableBiometric();
+        return { success: false, error: "Session expired. Please login again." };
+      }
       const res = await api.getMe();
       const rawUser = (res?.user as any) || null;
-      if (!rawUser) { await clearToken(); return { success: false, error: "Session expired. Please login again." }; }
+      if (!rawUser) {
+        await clearLocalSession(true);
+        return { success: false, error: "Session expired. Please login again." };
+      }
       const hydrated = await attachSavedProviders(sanitizeUser(rawUser));
-      setUser(hydrated); setRequiresBiometric(false);
+      setUser(hydrated);
+      setRequiresBiometric(false);
       return { success: true, user: hydrated };
-    } catch (e: unknown) {
-      return { success: false, error: "Biometric login failed. Please try again or use password/OTP." };
+    } catch (error: unknown) {
+      if (isUnauthorizedError(error)) {
+        await clearLocalSession(true);
+        return { success: false, error: "Session expired. Please login again." };
+      }
+      return { success: false, error: apiErrorToMessage(error, "Biometric login failed. Please try again or use password/OTP.") };
     }
-  }, [attachSavedProviders]);
+  }, [attachSavedProviders, clearLocalSession]);
 
   const promptBiometricSetup = useCallback(async (phone: string, role?: AppUserRole) => {
     try {
+      const remember = (await AsyncStorage.getItem(REMEMBER_KEY)) === "true";
+      if (!remember) return;
+
+      const normalizedRole = role || "customer";
+      const [enabled, savedPhone, savedRole] = await Promise.all([
+        isBiometricEnabled(),
+        getBiometricPhone(),
+        getBiometricRole(),
+      ]);
+      if (enabled && savedPhone === phone && savedRole === normalizedRole) return;
+
       const available = await isBiometricAvailable();
       if (!available) {
-        await AsyncStorage.removeItem(BIO_ENABLED_KEY);
-        await AsyncStorage.removeItem(BIO_PHONE_KEY);
-        await AsyncStorage.removeItem(BIO_ROLE_KEY);
+        await disableBiometric();
         return;
       }
-      // Enable after one successful biometric prompt. If the user cancels, keep normal login working.
       const result = await authenticateWithBiometric("Enable biometric login for faster sign in");
       if (!result.success) return;
-      await AsyncStorage.setItem(BIO_ENABLED_KEY, "true");
-      await AsyncStorage.setItem(BIO_PHONE_KEY, phone);
-      await AsyncStorage.setItem(BIO_ROLE_KEY, role || "customer");
+      await enableBiometric(phone, normalizedRole);
     } catch {}
   }, []);
 

@@ -139,10 +139,8 @@ export default function LoginScreen() {
     }
 
     const loggedInRole = res.user?.role === "provider" ? "provider" : "customer";
-    if (otpChannel === "phone") await promptBiometricSetup(phoneRef.current, loggedInRole);
-    router.replace(
-      loggedInRole === "provider" ? "/(provider)/(tabs)/dashboard" : "/(customer)/(tabs)/home"
-    );
+    if (rememberMe && res.user?.phone) await promptBiometricSetup(res.user.phone, loggedInRole);
+    // The root session guard performs the single post-login transition.
   };
 
   const handlePasswordLogin = async () => {
@@ -166,9 +164,8 @@ export default function LoginScreen() {
     }
 
     const loggedInRole = res.user?.role === "provider" ? "provider" : "customer";
-    router.replace(
-      loggedInRole === "provider" ? "/(provider)/(tabs)/dashboard" : "/(customer)/(tabs)/home"
-    );
+    if (rememberMe && res.user?.phone) await promptBiometricSetup(res.user.phone, loggedInRole);
+    // The root session guard performs the single post-login transition.
   };
 
   const handleBiometricLogin = async () => {
@@ -181,8 +178,7 @@ export default function LoginScreen() {
       return;
     }
 
-    const loggedInRole = res.user?.role === "provider" ? "provider" : "customer";
-    router.replace(loggedInRole === "provider" ? "/(provider)/(tabs)/dashboard" : "/(customer)/(tabs)/home");
+    // The root session guard performs the single post-login transition.
   };
 
   return (

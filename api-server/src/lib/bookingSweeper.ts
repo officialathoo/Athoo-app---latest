@@ -4,6 +4,7 @@ import { and, eq, isNull, isNotNull, lt, ne, sql } from "drizzle-orm";
 import { emitToUser } from "./eventBus";
 import { notifyUser } from "./notifications";
 import { logger } from "./logger";
+import { sweepInactiveAccounts } from "./inactivityLifecycle";
 
 const NO_SHOW_GRACE_MS = 30 * 60 * 1000;
 // Pending bookings (no provider has accepted) auto-cancel after 10 minutes.
@@ -477,6 +478,7 @@ async function runAllSweeps(): Promise<void> {
     sweepExpiredPremiumPlans(),
     sweepPremiumExpiryReminders(),
     sweepExpiredNegotiations(),
+    sweepInactiveAccounts(),
     ]);
     const rejected = results.filter((result) => result.status === "rejected");
     lastError = rejected.length ? `${rejected.length} sweep task(s) failed` : null;

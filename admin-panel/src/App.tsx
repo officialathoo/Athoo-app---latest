@@ -49,6 +49,8 @@ const UserActivityPage = lazy(() => import("@/pages/UserActivityPage").then((m) 
 const InvoicesPage = lazy(() => import("@/pages/InvoicesPage").then((m) => ({ default: m.InvoicesPage })));
 const LeadsPage = lazy(() => import("@/pages/LeadsPage").then((m) => ({ default: m.LeadsPage })));
 const EmailCenterPage = lazy(() => import("@/pages/EmailCenterPage").then((m) => ({ default: m.EmailCenterPage })));
+const InactiveAccountsPage = lazy(() => import("@/pages/InactiveAccountsPage").then((m) => ({ default: m.InactiveAccountsPage })));
+const PolicyGovernancePage = lazy(() => import("@/pages/PolicyGovernancePage").then((m) => ({ default: m.PolicyGovernancePage })));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30000 } },
@@ -101,12 +103,23 @@ function AppShell() {
     return <>{children}</>;
   }
 
+  function GuardAny({ perms, children }: { perms: string[]; children: React.ReactNode }) {
+    if (!perms.some(can)) return <AccessDenied />;
+    return <>{children}</>;
+  }
+
+  function SuperAdminGuard({ children }: { children: React.ReactNode }) {
+    if (admin?.adminRole !== "super_admin") return <AccessDenied />;
+    return <>{children}</>;
+  }
+
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
+      <a href="#admin-main-content" className="skip-link">Skip to main content</a>
       <Sidebar admin={admin} onLogout={logout} />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Header pathname={location} />
-        <main className="flex-1 overflow-y-auto p-6">
+        <main id="admin-main-content" tabIndex={-1} className="flex-1 overflow-y-auto p-4 sm:p-6">
           <Suspense fallback={<PageFallback />}>
             <Switch>
               <Route path="/" component={DashboardPage} />
@@ -115,6 +128,9 @@ function AppShell() {
               </Route>
               <Route path="/users/:id/activity">
                 <Guard perm="users.read"><UserActivityPage /></Guard>
+              </Route>
+              <Route path="/inactive-accounts">
+                <Guard perm="users.read"><InactiveAccountsPage /></Guard>
               </Route>
               <Route path="/providers">
                 <Guard perm="users.read"><ProvidersPage /></Guard>
@@ -175,10 +191,17 @@ function AppShell() {
               <Route path="/payment-accounts">
                 <Guard perm="finance.read"><PaymentAccountsPage /></Guard>
               </Route>
-              <Route path="/plans" component={SubscriptionPlansPage} />
-              <Route path="/admin-users" component={AdminUsersPage} />
-              <Route path="/blacklist" component={BlacklistPage} />
+              <Route path="/plans">
+                <GuardAny perms={["finance.read", "settings.read"]}><SubscriptionPlansPage /></GuardAny>
+              </Route>
+              <Route path="/admin-users">
+                <SuperAdminGuard><AdminUsersPage /></SuperAdminGuard>
+              </Route>
+              <Route path="/blacklist">
+                <SuperAdminGuard><BlacklistPage /></SuperAdminGuard>
+              </Route>
               <Route path="/settings"><Guard perm="settings.read"><SettingsPage /></Guard></Route>
+              <Route path="/policies"><Guard perm="settings.read"><PolicyGovernancePage /></Guard></Route>
               <Route path="/live-jobs">
                 <Guard perm="operations.read"><LiveJobsPage /></Guard>
               </Route>
@@ -188,7 +211,7 @@ function AppShell() {
               <Route path="/rate-requests">
                 <Guard perm="verification.write"><RateRequestsPage /></Guard>
               </Route>
-              <Route path="/emergency-contacts" component={EmergencyContactsPage} />
+              <Route path="/emergency-contacts"><Guard perm="settings.read"><EmergencyContactsPage /></Guard></Route>
               <Route path="/notification-templates"><Guard perm="settings.read"><NotificationTemplatesPage /></Guard></Route>
               <Route path="/email-center"><Guard perm="notifications.read"><EmailCenterPage /></Guard></Route>
               <Route path="/login-history">
@@ -199,6 +222,12 @@ function AppShell() {
               </Route>
               <Route path="/leads">
                 <Guard perm="users.read"><LeadsPage /></Guard>
+              </Route>
+              <Route>
+                <div className="flex min-h-[60vh] flex-col items-center justify-center text-center">
+                  <h2 className="text-lg font-semibold text-slate-700">Page not found</h2>
+                  <p className="mt-1 text-sm text-slate-400">The requested admin page does not exist or is no longer available.</p>
+                </div>
               </Route>
             </Switch>
           </Suspense>

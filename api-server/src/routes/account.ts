@@ -2,6 +2,7 @@ import { revokeAllUserSessions } from "../lib/session";
 import { normalizeEmailAddress, queuePasswordChangedEmail, sendEmailChallenge, verifyEmailChallenge } from "../lib/emailAuth";
 import { queueEmail } from "../lib/emailDelivery";
 import { notifyUser } from "../lib/notifications";
+import { emitToRole, emitToUser } from "../lib/eventBus";
 import { Router } from "express";
 import { logger } from "../lib/logger";
 import crypto from "crypto";
@@ -9,6 +10,7 @@ import * as bcrypt from "bcryptjs";
 import { db } from "@workspace/db";
 import { isOwnedUploadObjectPath, normalizeStoredObjectPath } from "../lib/storageSecurity";
 import { cleanupReplacedOwnedMedia } from "../lib/mediaLifecycle";
+import { createAdminNotification } from "../lib/adminNotifications";
 import {
   usersTable,
   accountDeletionRequestsTable,
@@ -16,7 +18,6 @@ import {
   serviceAddRequestsTable,
   serviceCategoriesTable,
   auditLogTable,
-  adminNotificationsTable,
 } from "@workspace/db/schema";
 import { and, desc, eq, gt, ne, sql } from "drizzle-orm";
 import {
@@ -256,12 +257,11 @@ router.post("/delete-request", async (req: AuthRequest, res) => {
       })
       .where(eq(usersTable.id, user.id));
     await revokeAllUserSessions(user.id, "account_deletion_requested");
-    await db.insert(adminNotificationsTable).values({
-      id: id(),
+    await createAdminNotification({
       title: "Account deletion requested",
       message: `${user.name} (${user.role}) scheduled deletion`,
-      type: "warning",
-      link: `/admin/users/${user.id}`,
+      type: "deletion",
+      link: `/admin/requests?tab=deletions&status=pending&focus=${newId}`,
     });
     if (user.email) {
       void queueEmail({
@@ -487,10 +487,11 @@ router.post("/services/request", async (req: AuthRequest, res) => {
       id: newId, providerId: provider.id, serviceCategoryId: category.id,
       serviceName: category.name, documents, note: note || null, status: "pending",
     });
-    await db.insert(adminNotificationsTable).values({
-      id: id(), title: "New service add request",
+    await createAdminNotification({
+      title: "New service add request",
       message: `${provider.name} requested to add "${category.name}"`,
-      type: "info", link: `/admin/requests`,
+      type: "service_request",
+      link: `/admin/requests?tab=services&status=pending&focus=${newId}`,
     });
     return res.status(201).json({ requestId: newId });
   } catch (e) {
@@ -563,6 +564,14 @@ adminRouter.post("/service-requests/:id/approve", requirePermission("providers.w
       return changed;
     });
     if (!approved) return res.status(409).json({ error: "Request was processed by another action" });
+    const profileUpdatePayload = {
+      resource: "providers",
+      action: "service_approved",
+      providerId: provider.id,
+      services,
+    };
+    emitToRole("customer", "admin:event", profileUpdatePayload);
+    emitToUser(provider.id, "admin:event", profileUpdatePayload);
     notifyUser({
       userId: provider.id,
       title: "Service approved",
@@ -599,6 +608,12 @@ adminRouter.post("/service-requests/:id/reject", requirePermission("providers.wr
       return changed;
     });
     if (!rejected) return res.status(409).json({ error: "Request was processed by another action" });
+    emitToUser(reqRow.providerId, "admin:event", {
+      resource: "providers",
+      action: "service_rejected",
+      providerId: reqRow.providerId,
+      requestId: reqRow.id,
+    });
     notifyUser({
       userId: reqRow.providerId,
       title: "Service request rejected",

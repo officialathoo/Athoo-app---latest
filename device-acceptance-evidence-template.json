@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "releaseVersion": "rc2-candidate",
   "releaseCommitSha": "0000000",
   "artifactSha256": "0000000000000000000000000000000000000000000000000000000000000000",
@@ -234,6 +234,51 @@
         "osVersion": "",
         "evidence": "",
         "notes": ""
+      },
+      "biometric-session-lock-and-restart": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "chat-keyboard-input-visible": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "chat-unread-badge-and-background-delivery": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "provider-rate-and-multiple-services-profile": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "policy-center-offline-and-accessibility": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
       }
     },
     "ios": {
@@ -452,6 +497,51 @@
         "osVersion": "",
         "evidence": "",
         "notes": ""
+      },
+      "biometric-session-lock-and-restart": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "chat-keyboard-input-visible": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "chat-unread-badge-and-background-delivery": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "provider-rate-and-multiple-services-profile": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "policy-center-offline-and-accessibility": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
       }
     }
   },
@@ -583,6 +673,42 @@
       "notes": ""
     },
     "media-upload-and-admin-review": {
+      "status": "pending",
+      "testedAt": "",
+      "buildId": "",
+      "device": "",
+      "osVersion": "",
+      "evidence": "",
+      "notes": ""
+    },
+    "customer-job-broadcast-provider-receipt": {
+      "status": "pending",
+      "testedAt": "",
+      "buildId": "",
+      "device": "",
+      "osVersion": "",
+      "evidence": "",
+      "notes": ""
+    },
+    "two-way-voice-call-cross-network": {
+      "status": "pending",
+      "testedAt": "",
+      "buildId": "",
+      "device": "",
+      "osVersion": "",
+      "evidence": "",
+      "notes": ""
+    },
+    "admin-notification-exact-record-destination": {
+      "status": "pending",
+      "testedAt": "",
+      "buildId": "",
+      "device": "",
+      "osVersion": "",
+      "evidence": "",
+      "notes": ""
+    },
+    "inactivity-warning-return-and-no-auto-delete": {
       "status": "pending",
       "testedAt": "",
       "buildId": "",

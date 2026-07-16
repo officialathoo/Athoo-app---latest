@@ -67,9 +67,9 @@ test("native splash and adaptive icon use configurable light and dark background
   assert.match(config, /SPLASH_BACKGROUND_DARK/);
   assert.match(config, /ADAPTIVE_ICON_BACKGROUND/);
   assert.match(config, /"expo-splash-screen"/);
-  assert.match(config, /backgroundColor: splashBackgroundLight/);
-  assert.match(config, /backgroundColor: splashBackgroundDark/);
-  assert.match(config, /backgroundColor: adaptiveIconBackground/);
-  assert.match(config, /const splashBackgroundLight = process\.env\.SPLASH_BACKGROUND_LIGHT \|\| "#FFFFFF"/);
-  assert.match(config, /const adaptiveIconBackground = process\.env\.ADAPTIVE_ICON_BACKGROUND \|\| "#FFFFFF"/);
+  assert.match(config, /backgroundColor:\s*splashBackgroundLight/);
+  assert.match(config, /backgroundColor:\s*splashBackgroundDark/);
+  assert.match(config, /backgroundColor:\s*adaptiveIconBackground/);
+  assert.match(config, /const splashBackgroundLight = readEnv\([\s\S]*"SPLASH_BACKGROUND_LIGHT"[\s\S]*"#FFFFFF"/);
+  assert.match(config, /const adaptiveIconBackground = readEnv\([\s\S]*"ADAPTIVE_ICON_BACKGROUND"/);
 });

@@ -2,18 +2,26 @@ import { db } from "@workspace/db";
 import { usersTable } from "@workspace/db/schema";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { logger } from "./logger";
+import { enqueueJob, registerJobHandler } from "./queue";
 
 const EXPO_ACCESS_TOKEN = String(process.env.EXPO_ACCESS_TOKEN || "").trim();
 const PUSH_PROVIDER = String(process.env.PUSH_PROVIDER || "expo").toLowerCase().trim();
 const PUSH_PROVIDER_ENDPOINT = String(
   process.env.PUSH_PROVIDER_ENDPOINT || "https://exp.host/--/api/v2/push/send",
 ).trim();
+const PUSH_RECEIPT_ENDPOINT = String(
+  process.env.PUSH_RECEIPT_ENDPOINT || "https://exp.host/--/api/v2/push/getReceipts",
+).trim();
 const PUSH_TIMEOUT_MS = boundedInteger(process.env.PUSH_TIMEOUT_MS, 10_000, 1_000, 60_000);
+const PUSH_RECEIPT_TIMEOUT_MS = boundedInteger(process.env.PUSH_RECEIPT_TIMEOUT_MS, 10_000, 1_000, 60_000);
+const PUSH_RECEIPT_DELAY_MS = boundedInteger(process.env.PUSH_RECEIPT_DELAY_MS, 20_000, 5_000, 300_000);
+const PUSH_RECEIPT_MAX_ATTEMPTS = boundedInteger(process.env.PUSH_RECEIPT_MAX_ATTEMPTS, 5, 1, 10);
+const PUSH_RECEIPT_JOB_NAME = "expo_push_receipts";
 const EXPO_BATCH_SIZE = boundedInteger(process.env.EXPO_PUSH_BATCH_SIZE, 100, 1, 100);
 const PUSH_MAX_ATTEMPTS = boundedInteger(process.env.PUSH_MAX_ATTEMPTS, 3, 1, 5);
 const PUSH_RETRY_BASE_MS = boundedInteger(process.env.PUSH_RETRY_BASE_MS, 500, 100, 10_000);
 const PUSH_BADGE_COUNT = boundedInteger(process.env.PUSH_BADGE_COUNT, 1, 0, 999);
-const NOTIFICATION_CHANNEL_VERSION = safeChannelVersion(process.env.NOTIFICATION_CHANNEL_VERSION || "3");
+const NOTIFICATION_CHANNEL_VERSION = safeChannelVersion(process.env.NOTIFICATION_CHANNEL_VERSION || "4");
 
 function boundedInteger(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = Number(value);
@@ -23,7 +31,7 @@ function boundedInteger(value: unknown, fallback: number, min: number, max: numb
 
 function safeChannelVersion(value: unknown): string {
   const normalized = String(value || "").trim();
-  return /^[a-z0-9._-]{1,20}$/i.test(normalized) ? normalized : "3";
+  return /^[a-z0-9._-]{1,20}$/i.test(normalized) ? normalized : "4";
 }
 
 function safeChannelId(value: unknown, fallback: string): string {
@@ -56,9 +64,16 @@ export type PushResult = {
   accepted?: number;
   failed?: number;
   invalidTokens?: string[];
+  failedTokens?: string[];
+  ticketIds?: string[];
+  receiptQueued?: boolean;
   error?: string;
   provider?: string;
 };
+
+type PushTicketToken = { id: string; token: string };
+type PushBatchResult = PushResult & { ticketTokens?: PushTicketToken[] };
+type PushReceiptJob = { tickets: PushTicketToken[] };
 
 type PushPolicy = {
   category: "job" | "message" | "general" | "call";
@@ -95,7 +110,9 @@ export function getPushConfigurationStatus() {
     provider: PUSH_PROVIDER,
     enabled: PUSH_PROVIDER !== "disabled" && PUSH_PROVIDER !== "none",
     endpointConfigured: Boolean(PUSH_PROVIDER_ENDPOINT),
+    receiptEndpointConfigured: Boolean(PUSH_RECEIPT_ENDPOINT),
     accessTokenConfigured: Boolean(EXPO_ACCESS_TOKEN),
+    receiptDelayMs: PUSH_RECEIPT_DELAY_MS,
     channelVersion: NOTIFICATION_CHANNEL_VERSION,
     policies: PUSH_POLICIES,
   };
@@ -181,7 +198,7 @@ function toExpoMessage(message: PushMessage) {
   };
 }
 
-async function sendExpoBatch(messages: PushMessage[]): Promise<PushResult> {
+async function sendExpoBatch(messages: PushMessage[]): Promise<PushBatchResult> {
   const expoMessages = messages.map(toExpoMessage);
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -212,7 +229,7 @@ async function sendExpoBatch(messages: PushMessage[]): Promise<PushResult> {
           await sleep(retryDelayMs(response, attempt));
           continue;
         }
-        return { sent: 0, accepted: 0, failed: messages.length, provider: "expo", error: lastError };
+        return { sent: 0, accepted: 0, failed: messages.length, failedTokens: messages.map((message) => message.token), provider: "expo", error: lastError };
       }
 
       let tickets: any[] = [];
@@ -220,24 +237,39 @@ async function sendExpoBatch(messages: PushMessage[]): Promise<PushResult> {
         const parsed = JSON.parse(text);
         tickets = Array.isArray(parsed?.data) ? parsed.data : [];
       } catch {
-        return { sent: 0, accepted: 0, failed: messages.length, provider: "expo", error: "invalid_expo_response" };
+        return { sent: 0, accepted: 0, failed: messages.length, failedTokens: messages.map((message) => message.token), provider: "expo", error: "invalid_expo_response" };
       }
 
       let accepted = 0;
       let failed = 0;
       const invalidTokens: string[] = [];
+      const failedTokens: string[] = [];
+      const ticketTokens: PushTicketToken[] = [];
       messages.forEach((message, index) => {
         const ticket = tickets[index];
         if (ticket?.status === "ok") {
           accepted += 1;
+          if (typeof ticket?.id === "string" && ticket.id.trim()) {
+            ticketTokens.push({ id: ticket.id.trim(), token: message.token });
+          }
           return;
         }
         failed += 1;
+        failedTokens.push(message.token);
         if (ticket?.details?.error === "DeviceNotRegistered") invalidTokens.push(message.token);
       });
 
-      logger.info({ requested: messages.length, accepted, failed, attempt }, "expo push batch processed");
-      return { sent: accepted, accepted, failed, invalidTokens, provider: "expo" };
+      logger.info({ requested: messages.length, accepted, failed, ticketCount: ticketTokens.length, attempt }, "expo push batch processed");
+      return {
+        sent: accepted,
+        accepted,
+        failed,
+        invalidTokens,
+        failedTokens,
+        ticketIds: ticketTokens.map((ticket) => ticket.id),
+        ticketTokens,
+        provider: "expo",
+      };
     } catch (error) {
       lastError = String((error as Error)?.message || error);
       logger.warn({ err: error, count: messages.length, attempt }, "expo push batch send attempt failed");
@@ -251,7 +283,91 @@ async function sendExpoBatch(messages: PushMessage[]): Promise<PushResult> {
   }
 
   logger.error({ count: messages.length, error: lastError }, "expo push batch exhausted retries");
-  return { sent: 0, accepted: 0, failed: messages.length, provider: "expo", error: lastError };
+  return { sent: 0, accepted: 0, failed: messages.length, failedTokens: messages.map((message) => message.token), provider: "expo", error: lastError };
+}
+
+async function fetchExpoReceipts(tickets: PushTicketToken[]): Promise<{ invalidTokens: string[]; missing: number; errors: number }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), PUSH_RECEIPT_TIMEOUT_MS);
+  try {
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      "Accept-encoding": "gzip, deflate",
+      "Content-Type": "application/json",
+    };
+    if (EXPO_ACCESS_TOKEN) headers.Authorization = `Bearer ${EXPO_ACCESS_TOKEN}`;
+
+    const response = await fetch(PUSH_RECEIPT_ENDPOINT, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ids: tickets.map((ticket) => ticket.id) }),
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`expo_receipt_http_${response.status}:${text.slice(0, 250)}`);
+    }
+
+    const parsed = JSON.parse(text);
+    const receipts = parsed?.data && typeof parsed.data === "object" ? parsed.data as Record<string, any> : {};
+    const invalidTokens: string[] = [];
+    let missing = 0;
+    let errors = 0;
+
+    for (const ticket of tickets) {
+      const receipt = receipts[ticket.id];
+      if (!receipt) {
+        missing += 1;
+        continue;
+      }
+      if (receipt.status === "ok") continue;
+      errors += 1;
+      if (receipt?.details?.error === "DeviceNotRegistered") invalidTokens.push(ticket.token);
+      logger.warn(
+        { ticketId: ticket.id, error: receipt?.details?.error || receipt?.message || "unknown_receipt_error" },
+        "expo push receipt reported delivery failure",
+      );
+    }
+
+    return { invalidTokens: uniqueTokens(invalidTokens), missing, errors };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+registerJobHandler<PushReceiptJob>(PUSH_RECEIPT_JOB_NAME, async (payload) => {
+  const tickets = Array.isArray(payload?.tickets)
+    ? payload.tickets
+        .map((ticket) => ({ id: String(ticket?.id || "").trim(), token: String(ticket?.token || "").trim() }))
+        .filter((ticket) => ticket.id && ticket.token)
+        .slice(0, 1000)
+    : [];
+  if (!tickets.length) return;
+
+  const result = await fetchExpoReceipts(tickets);
+  if (result.invalidTokens.length) {
+    // Clear only the exact tokens that Expo identified as unregistered.
+    for (const token of result.invalidTokens) {
+      await db.update(usersTable).set({ expoPushToken: null, updatedAt: new Date() }).where(eq(usersTable.expoPushToken, token));
+    }
+  }
+  if (result.missing > 0) throw new Error(`expo_receipts_not_ready:${result.missing}`);
+  logger.info({ checked: tickets.length, errors: result.errors, invalidTokens: result.invalidTokens.length }, "expo push receipts processed");
+});
+
+async function queueExpoReceiptCheck(tickets: PushTicketToken[]): Promise<boolean> {
+  if (!tickets.length) return false;
+  try {
+    await enqueueJob(PUSH_RECEIPT_JOB_NAME, { tickets } satisfies PushReceiptJob, {
+      attempts: PUSH_RECEIPT_MAX_ATTEMPTS,
+      delayMs: PUSH_RECEIPT_DELAY_MS,
+      dedupeKey: `expo-receipts:${tickets[0]!.id}:${tickets.length}`,
+    });
+    return true;
+  } catch (error) {
+    logger.warn({ err: error, ticketCount: tickets.length }, "expo receipt verification could not be queued");
+    return false;
+  }
 }
 
 export async function sendExpoPushMessages(messages: PushMessage[]): Promise<PushResult> {
@@ -285,6 +401,8 @@ export async function sendExpoPushMessages(messages: PushMessage[]): Promise<Pus
   let failed = 0;
   let lastError: string | undefined;
   const invalidTokens: string[] = [];
+  const failedTokens: string[] = [];
+  const ticketTokens: PushTicketToken[] = [];
 
   for (const batch of chunks(cleanMessages, EXPO_BATCH_SIZE)) {
     const result = await sendExpoBatch(batch);
@@ -292,14 +410,20 @@ export async function sendExpoPushMessages(messages: PushMessage[]): Promise<Pus
     accepted += result.accepted || 0;
     failed += result.failed || 0;
     if (result.invalidTokens?.length) invalidTokens.push(...result.invalidTokens);
+    if (result.failedTokens?.length) failedTokens.push(...result.failedTokens);
+    if (result.ticketTokens?.length) ticketTokens.push(...result.ticketTokens);
     if (result.error) lastError = result.error;
   }
 
+  const receiptQueued = await queueExpoReceiptCheck(ticketTokens);
   return {
     sent,
     accepted,
     failed,
     invalidTokens: uniqueTokens(invalidTokens),
+    failedTokens: uniqueTokens(failedTokens),
+    ticketIds: ticketTokens.map((ticket) => ticket.id),
+    receiptQueued,
     provider: PUSH_PROVIDER,
     ...(lastError ? { error: lastError } : {}),
   };

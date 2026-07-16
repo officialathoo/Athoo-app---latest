@@ -5,11 +5,13 @@ import {
   usersTable,
   serviceCategoriesTable,
   auditLogTable,
+  type User,
 } from "@workspace/db/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { requireAuth, requireAdmin, requirePermission, type AuthRequest } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 import { notifyUser } from "../lib/notifications";
+import { emitToRole, emitToUser } from "../lib/eventBus";
 import crypto from "crypto";
 
 function generateId(): string { return crypto.randomUUID(); }
@@ -29,11 +31,17 @@ providerRouter.post("/", requireAuth, async (req: AuthRequest, res: Response) =>
     const service = String(req.body?.service || "").trim();
     const requestedRate = Number(req.body?.requestedRate);
     const reason = String(req.body?.reason || "").trim();
-    if (!service || !Number.isInteger(requestedRate)) return res.status(400).json({ error: "Service and a whole-number requested rate are required" });
+    if (!service || !Number.isInteger(requestedRate)) return res.status(400).json({ error: "Rate type and a whole-number requested rate are required" });
     if (reason.length > 500) return res.status(400).json({ error: "Reason must be 500 characters or fewer" });
-    if (!(provider.services || []).includes(service)) return res.status(400).json({ error: "You can only request a rate for an approved service" });
 
-    const category = await db.query.serviceCategoriesTable.findFirst({ where: eq(serviceCategoriesTable.slug, service) });
+    const isGeneralRate = service.toLowerCase() === "general";
+    if (!isGeneralRate && !(provider.services || []).includes(service)) {
+      return res.status(400).json({ error: "You can only request a rate for an approved service" });
+    }
+
+    const category = isGeneralRate
+      ? null
+      : await db.query.serviceCategoriesTable.findFirst({ where: eq(serviceCategoriesTable.slug, service) });
     const minRate = category?.minHourlyRate ?? 100;
     const maxRate = category?.maxHourlyRate ?? 50000;
     if (requestedRate < minRate || requestedRate > maxRate) {
@@ -101,8 +109,13 @@ adminRouter.patch("/:id", requirePermission("providers.write"), async (req: Auth
         reviewedAt: new Date(), updatedAt: new Date(),
       }).where(and(eq(hourlyRateRequestsTable.id, request.id), eq(hourlyRateRequestsTable.status, "pending"))).returning();
       if (!changed) return null;
+      let updatedProvider: User | null = null;
       if (status === "approved") {
-        await tx.update(usersTable).set({ ratePerHour: request.requestedRate, updatedAt: new Date() }).where(eq(usersTable.id, request.providerId));
+        const [providerRow] = await tx.update(usersTable)
+          .set({ ratePerHour: request.requestedRate, updatedAt: new Date() })
+          .where(eq(usersTable.id, request.providerId))
+          .returning();
+        updatedProvider = providerRow || null;
       }
       await tx.insert(auditLogTable).values({
         id: generateId(), adminId: req.user!.userId, adminName: admin?.name || "Admin",
@@ -111,9 +124,20 @@ adminRouter.patch("/:id", requirePermission("providers.write"), async (req: Auth
         details: { providerId: request.providerId, previousRate: request.currentRate, requestedRate: request.requestedRate, service: request.service, reviewNote },
         ip: req.ip || null,
       });
-      return changed;
+      return { rateRequest: changed, provider: updatedProvider };
     });
     if (!updated) return res.status(409).json({ error: "Rate request was processed by another action" });
+    if (status === "approved") {
+      const profileUpdatePayload = {
+        resource: "providers",
+        action: "rate_updated",
+        providerId: request.providerId,
+        ratePerHour: request.requestedRate,
+      };
+      emitToRole("customer", "admin:event", profileUpdatePayload);
+      emitToUser(request.providerId, "admin:event", profileUpdatePayload);
+    }
+
     notifyUser({
       userId: request.providerId,
       title: status === "approved" ? "Hourly rate approved" : "Hourly rate request rejected",
@@ -125,7 +149,7 @@ adminRouter.patch("/:id", requirePermission("providers.write"), async (req: Auth
     
       email: { category: "transactional" },
     }).catch(() => undefined);
-    return res.json({ rateRequest: updated });
+    return res.json({ rateRequest: updated.rateRequest, provider: updated.provider });
   } catch (e) {
     logger.error({ err: e }, "rate-request review error");
     return res.status(500).json({ error: "Failed to review rate request" });

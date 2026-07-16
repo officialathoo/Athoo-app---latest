@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { api } from "@/lib/api";
 import { adminRealtime } from "@/lib/adminRealtime";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { resolveAdminNotificationLink } from "@/lib/adminNotificationRouting";
 
 interface AdminNotification {
   id: string;
@@ -85,9 +86,10 @@ export function NotificationBell() {
 
   function handleNotificationClick(n: AdminNotification) {
     if (!n.isRead) markReadMut.mutate(n.id);
-    if (n.link) {
+    const target = resolveAdminNotificationLink(n);
+    if (target) {
       setOpen(false);
-      navigate(n.link);
+      navigate(target);
     }
   }
 
@@ -151,7 +153,7 @@ export function NotificationBell() {
                   key={n.id}
                   onClick={() => handleNotificationClick(n)}
                   className={`flex gap-3 px-4 py-3 transition-colors ${
-                    n.link ? "cursor-pointer hover:bg-slate-50 active:bg-slate-100" : "hover:bg-slate-50"
+                    resolveAdminNotificationLink(n) ? "cursor-pointer hover:bg-slate-50 active:bg-slate-100" : "hover:bg-slate-50"
                   } ${!n.isRead ? "bg-blue-50/50" : ""}`}
                 >
                   {/* Type icon */}
@@ -168,7 +170,7 @@ export function NotificationBell() {
                       <span className="text-xs text-slate-400 whitespace-nowrap shrink-0">{timeAgo(n.createdAt)}</span>
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>
-                    {n.link && (
+                    {resolveAdminNotificationLink(n) && (
                       <p className="text-xs text-blue-500 mt-1 font-medium">Tap to view →</p>
                     )}
                   </div>

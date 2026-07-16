@@ -1,20 +1,15 @@
-import { Stack, router } from "expo-router";
-import React, { useEffect } from "react";
+import { Stack } from "expo-router";
+import React from "react";
 import { useAuth } from "@/context/AuthContext";
 import { AthooLoader } from "@/components/ui/AthooLoader";
 
 export default function CustomerLayout() {
   const { user, isLoading } = useAuth();
 
-  useEffect(() => {
-    if (isLoading) return;
-    if (!user) {
-      router.replace("/auth/welcome" as any);
-    }
-  }, [user, isLoading]);
+
 
   if (isLoading) return <AthooLoader />;
-  if (!user) return null;
+  if (!user || user.role !== "customer") return <AthooLoader />;
 
   return (
     <Stack screenOptions={{ headerShown: false, animation: "slide_from_right" }}>

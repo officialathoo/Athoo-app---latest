@@ -105,8 +105,18 @@ export default function SearchScreen() {
   useEffect(() => {
     loadServiceAreas();
     const off = realtime.on((msg) => {
-      if (msg.type === "admin:event" && (msg.payload as any)?.resource === "service-areas") {
+      const payload = (msg.payload || {}) as Record<string, unknown>;
+      if (msg.type === "admin:event" && payload.resource === "service-areas") {
         loadServiceAreas();
+      }
+      if (msg.type === "admin:event" && payload.resource === "providers" && typeof payload.providerId === "string") {
+        setAllProviders((current) => current.map((provider) => provider.id === payload.providerId
+          ? {
+              ...provider,
+              ...(typeof payload.ratePerHour === "number" ? { ratePerHour: payload.ratePerHour } : {}),
+              ...(Array.isArray(payload.services) ? { services: payload.services.map(String) } : {}),
+            }
+          : provider));
       }
     });
     const sub = AppState.addEventListener("change", (state) => {
@@ -325,7 +335,7 @@ export default function SearchScreen() {
     if (!selectedProvider) return;
     router.push({
       pathname: "/(customer)/provider-detail",
-      params: { providerId: selectedProvider.id },
+      params: { providerId: selectedProvider.id, serviceId: selectedService || undefined },
     });
   };
 
@@ -336,6 +346,7 @@ export default function SearchScreen() {
       pathname: "/(customer)/book-service",
       params: {
         providerId: selectedProvider.id,
+        serviceId: selectedService || undefined,
         pickedAddress: pickedAddress || undefined,
         pickedLat: pickedLocation?.latitude?.toString(),
         pickedLng: pickedLocation?.longitude?.toString(),
@@ -569,9 +580,10 @@ export default function SearchScreen() {
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <View style={styles.mapProviderRow}>
                   {(sorted.slice(0, 8) as any[]).map((p) => {
-                    const firstSvcId = p.services?.[0];
-                    const cat = getCategoryBySlug(firstSvcId || "");
-                    const svcLabel = cat?.name || "Service";
+                    const serviceLabels = (p.services || []).map((service: string) => getCategoryBySlug(service)?.name || service).filter(Boolean);
+                    const svcLabel = serviceLabels.length > 2
+                      ? `${serviceLabels.slice(0, 2).join(" • ")} • +${serviceLabels.length - 2}`
+                      : serviceLabels.join(" • ") || "Service";
                     const color = p.profileColor || theme.colors.primary;
                     const rating = p.rating ? (p.rating / 10).toFixed(1) : "New";
                     const rateLabel = p.ratePerHour
@@ -737,7 +749,7 @@ export default function SearchScreen() {
                     onPress={() =>
                       router.push({
                         pathname: "/(customer)/provider-detail",
-                        params: { providerId: p.id },
+                        params: { providerId: p.id, serviceId: selectedService || undefined },
                       })
                     }
                   />

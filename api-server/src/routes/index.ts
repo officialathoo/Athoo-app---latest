@@ -32,6 +32,8 @@ import { serviceAreasPublicRouter, serviceAreasAdminRouter, seedServiceAreasIfEm
 import geoRouter from "./geo";
 import { leadsPublicRouter, leadsAdminRouter } from "./leads";
 import { emailPublicRouter, emailUserRouter, emailAdminRouter } from "./email";
+import { policiesPublicRouter, policiesAdminRouter } from "./policies";
+import inactivityAdminRouter from "./inactivity";
 
 const router: IRouter = Router();
 
@@ -69,6 +71,7 @@ router.use("/invoices", invoicesRouter);
 
 // Admin sub-mounts (these inherit their own requireAdmin middleware)
 router.use("/marketing", marketingPublicRouter);
+router.use("/policies", policiesPublicRouter);
 
 // Admin sub-mounts
 router.use("/admin/marketing", marketingAdminRouter);
@@ -89,6 +92,8 @@ router.use("/geo", geoRouter);
 router.use("/leads", leadsPublicRouter);
 router.use("/admin/leads", leadsAdminRouter);
 router.use("/admin/email", emailAdminRouter);
+router.use("/admin/policies", policiesAdminRouter);
+router.use("/admin/inactivity", inactivityAdminRouter);
 
 // ─── Public settings (no auth) ───────────────────────────────────────────────
 // Cached in-process for 60s. This endpoint is hit by every cold mobile/admin

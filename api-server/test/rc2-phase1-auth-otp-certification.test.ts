@@ -82,7 +82,7 @@ test("database migration adds purpose, attempts, and delivery audit fields", () 
   assert.match(schema, /purpose: text\("purpose"\)/);
   assert.match(schema, /maxAttempts: integer\("max_attempts"\)/);
   assert.match(migration, /20260715|purpose|delivery/);
-  assert.match(latest, /20260715_portable_email_delivery_verification\.sql/);
+  assert.match(latest, /20260716_workflow_inactivity_policy_governance\.sql/);
 });
 
 test("SMTP configuration is provider-agnostic and exposes safe health status", () => {
@@ -108,6 +108,7 @@ test("deployment validation rejects development OTP disclosure and mobile keeps 
   const errorPush = validator.indexOf('errors.push("ALLOW_DEV_OTP_RESPONSE must not be true');
   const errorCheck = validator.indexOf("if (errors.length)");
   assert.ok(errorPush >= 0 && errorCheck > errorPush);
-  assert.match(appConfig, /42a7f8fe-68ea-4422-8f46-0def1f55abb9/);
-  assert.match(appConfig, /extra\.eas/);
+  assert.match(appConfig, /readEnv\(\s*"EAS_PROJECT_ID"/);
+  assert.doesNotMatch(appConfig, /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i);
+  assert.match(appConfig, /eas:\s*\{[\s\S]*projectId:\s*easProjectId/);
 });

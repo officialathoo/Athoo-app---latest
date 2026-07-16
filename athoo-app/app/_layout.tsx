@@ -7,10 +7,10 @@ import {
 } from "@expo-google-fonts/inter";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { router, Stack, usePathname, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { StyleSheet, View } from "react-native";
 import { AthooLoader } from "@/components/ui/AthooLoader";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -20,7 +20,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ResponsiveViewport } from "@/components/ResponsiveViewport";
 import { OfflineBanner } from "@/components/ui/UiState";
 import { LegalConsentGate } from "@/components/ui/LegalConsentGate";
-import { AuthProvider } from "@/context/AuthContext";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { BookingProvider } from "@/context/BookingContext";
 import { BroadcastProvider } from "@/context/BroadcastContext";
 import { CallProvider } from "@/context/CallContext";
@@ -53,10 +53,61 @@ const queryClient = new QueryClient({
   },
 });
 
+
+function SessionRouteGuard() {
+  const { user, isLoading, requiresBiometric } = useAuth();
+  const pathname = usePathname();
+  const segments = useSegments();
+  const pendingDestinationRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (isLoading) return;
+
+    const publicPath =
+      pathname.startsWith("/auth") ||
+      pathname.startsWith("/legal") ||
+      pathname.startsWith("/appearance") ||
+      pathname.startsWith("/language");
+
+    let destination: string | null = null;
+    if (requiresBiometric) {
+      if (pathname !== "/auth/welcome") destination = "/auth/welcome";
+    } else if (!user) {
+      if (!publicPath) destination = "/auth/welcome";
+    } else {
+      const home = user.role === "provider"
+        ? "/(provider)/(tabs)/dashboard"
+        : "/(customer)/(tabs)/home";
+      const rootSegment = String(segments[0] || "");
+      const wrongRolePath = user.role === "provider"
+        ? rootSegment === "(customer)"
+        : rootSegment === "(provider)";
+      if (pathname === "/" || pathname.startsWith("/auth") || wrongRolePath) {
+        destination = home;
+      }
+    }
+
+    if (!destination || destination === pathname) {
+      pendingDestinationRef.current = null;
+      return;
+    }
+    if (pendingDestinationRef.current === destination) return;
+    pendingDestinationRef.current = destination;
+    router.replace(destination as never);
+  }, [isLoading, pathname, requiresBiometric, segments, user]);
+
+  useEffect(() => {
+    pendingDestinationRef.current = null;
+  }, [pathname]);
+
+  return null;
+}
+
 function RootLayoutNav() {
   const { theme } = useTheme();
   return (
     <>
+      <SessionRouteGuard />
       <Stack
         screenOptions={{
           headerShown: false,

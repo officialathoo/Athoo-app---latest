@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { Router } from "express";
 import type { Response } from "express";
-import { and, desc, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { bookingsTable, chatsTable, messagesTable, usersTable } from "@workspace/db/schema";
 import { logger } from "../lib/logger";
@@ -29,8 +29,22 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
     const where = cursor ? and(visible, lt(chatsTable.lastMessageAt, cursor)) : visible;
     const rows = await db.select().from(chatsTable).where(where).orderBy(desc(chatsTable.lastMessageAt)).limit(limit + 1);
     const hasMore = rows.length > limit;
-    const chats = hasMore ? rows.slice(0, limit) : rows;
-    const nextCursor = hasMore && chats.length ? chats[chats.length - 1]?.lastMessageAt?.toISOString() || null : null;
+    const visibleChats = hasMore ? rows.slice(0, limit) : rows;
+    const chatIds = visibleChats.map((chat) => chat.id);
+    const unreadRows = chatIds.length
+      ? await db
+          .select({ chatId: messagesTable.chatId, unreadCount: sql<number>`count(*)::int` })
+          .from(messagesTable)
+          .where(and(
+            inArray(messagesTable.chatId, chatIds),
+            ne(messagesTable.senderId, userId),
+            eq(messagesTable.isRead, false),
+          ))
+          .groupBy(messagesTable.chatId)
+      : [];
+    const unreadByChat = new Map(unreadRows.map((row) => [row.chatId, Number(row.unreadCount) || 0]));
+    const chats = visibleChats.map((chat) => ({ ...chat, unreadCount: unreadByChat.get(chat.id) || 0 }));
+    const nextCursor = hasMore && visibleChats.length ? visibleChats[visibleChats.length - 1]?.lastMessageAt?.toISOString() || null : null;
     return res.json({ chats, hasMore, nextCursor });
   } catch (error) {
     logger.error({ err: error }, "chat list error");
@@ -161,7 +175,12 @@ router.post("/:chatId/messages", requireAuth, async (req: AuthRequest, res: Resp
       ...(chat.participant1Id === userId ? { participant1HiddenAt: null } : { participant2HiddenAt: null }),
     }).where(eq(chatsTable.id, chatId));
 
-    emitToUser(recipientId, "chat:message", { message, chatId });
+    const liveRecipientConnections = emitToUser(recipientId, "chat:message", { message, chatId });
+    if (liveRecipientConnections > 0) {
+      message.deliveryStatus = "delivered";
+      await db.update(messagesTable).set({ deliveryStatus: "delivered" }).where(eq(messagesTable.id, message.id));
+      emitToUser(userId, "chat:delivered", { chatId, messageId: message.id, clientMessageId });
+    }
     emitToUser(userId, "chat:message", { message, chatId });
     notifyUser({
       userId: recipientId,

@@ -4,6 +4,7 @@ import { db } from "@workspace/db";
 import { usersTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { hasAdminPermission } from "../lib/adminPermissions";
+import { recordUserActivity } from "../lib/inactivityLifecycle";
 
 const jwtSecret = process.env["JWT_SECRET"];
 if (!jwtSecret) throw new Error("FATAL: JWT_SECRET environment variable is required.");
@@ -19,6 +20,7 @@ export interface JwtPayload {
   purpose?: string;
   adminRole?: string;
   adminPermissions?: string[];
+  deviceId?: string;
 }
 export interface AuthRequest extends Omit<Request, "params"> {
   user?: JwtPayload;
@@ -49,17 +51,17 @@ export async function verifyActivePurposeToken(token: string, purpose: string): 
   const decoded = verifyToken(token);
   if (!decoded || decoded.tokenType !== "purpose" || decoded.purpose !== purpose || !decoded.sessionId) return null;
   const { isSessionActive } = await import("../lib/session");
-  if (!(await isSessionActive(decoded.sessionId, decoded.userId))) return null;
+  if (!(await isSessionActive(decoded.sessionId, decoded.userId, decoded.deviceId))) return null;
   const user = await loadUserFromToken(decoded);
   if (accountError(user)) return null;
   return { userId: user!.id, role: user!.role, sessionId: decoded.sessionId, tokenType: "purpose", purpose, adminRole: user!.adminRole ?? undefined, adminPermissions: Array.isArray(user!.adminPermissions) ? user!.adminPermissions as string[] : [] };
 }
 
-export async function verifyActiveAccessToken(token: string): Promise<JwtPayload | null> {
+export async function verifyActiveAccessToken(token: string, deviceId?: unknown): Promise<JwtPayload | null> {
   const decoded = verifyToken(token);
   if (!decoded || decoded.tokenType !== "access" || !decoded.sessionId) return null;
   const { isSessionActive } = await import("../lib/session");
-  if (!(await isSessionActive(decoded.sessionId, decoded.userId))) return null;
+  if (!(await isSessionActive(decoded.sessionId, decoded.userId, deviceId))) return null;
   const user = await loadUserFromToken(decoded);
   if (accountError(user)) return null;
   return {
@@ -90,11 +92,14 @@ function buildAuthMiddleware(opts: { allowDeactivated?: boolean } = {}) {
       const decoded = jwt.verify(authHeader.slice(7), JWT_SECRET, { issuer: JWT_ISSUER, audience: JWT_AUDIENCE }) as unknown as JwtPayload;
       if (decoded.tokenType !== "access" || !decoded.sessionId) return void res.status(401).json({ error: "Invalid token type" });
       const { isSessionActive } = await import("../lib/session");
-      if (!(await isSessionActive(decoded.sessionId, decoded.userId))) return void res.status(401).json({ error: "Session expired or revoked" });
+      if (!(await isSessionActive(decoded.sessionId, decoded.userId, req.headers["x-athoo-device-id"]))) {
+        return void res.status(401).json({ error: "Session expired or replaced by a newer login", code: "SESSION_REVOKED" });
+      }
       const user = await loadUserFromToken(decoded);
       const error = accountError(user, opts);
       if (error) return void res.status(error.status).json({ error: error.error });
       req.user = { userId: user!.id, role: user!.role, sessionId: decoded.sessionId, tokenType: "access", adminRole: user!.adminRole ?? undefined, adminPermissions: Array.isArray(user!.adminPermissions) ? user!.adminPermissions as string[] : [] };
+      void recordUserActivity(user!).catch(() => undefined);
       next();
     } catch { return void res.status(401).json({ error: "Invalid or expired token" }); }
   };

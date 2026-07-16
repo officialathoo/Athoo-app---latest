@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getSecureItem, removeSecureItem, setSecureItem } from "@/services/secureSessionStorage";
+import { getDeviceId } from "@/services/deviceIdentity";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
@@ -194,9 +195,10 @@ async function refreshAccessTokenOnce(): Promise<string | null> {
     const refreshToken = await getRefreshToken();
     if (!refreshToken || !API_BASE_URL) return null;
     try {
+      const deviceId = await getDeviceId();
       const response = await fetchWithTimeout(buildUrl("/api/auth/refresh"), {
         method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        headers: { Accept: "application/json", "Content-Type": "application/json", "X-Athoo-Device-Id": deviceId },
         body: JSON.stringify({ refreshToken }),
       }, DEFAULT_TIMEOUT_MS);
       if (!response.ok) return null;
@@ -226,8 +228,10 @@ async function request<T = any>(path: string, options: RequestOptions = {}): Pro
     ...rest
   } = options;
 
+  const deviceId = await getDeviceId();
   const finalHeaders: Record<string, string> = {
     Accept: "application/json",
+    "X-Athoo-Device-Id": deviceId,
     ...(headers as Record<string, string> | undefined),
   };
 
@@ -287,15 +291,17 @@ async function request<T = any>(path: string, options: RequestOptions = {}): Pro
         if (response.status === 401 && auth) {
           _unauthorizedHandler?.();
         }
+        const errorValue = typeof data === "object" && data !== null ? data?.error : null;
         const errorMessage =
-          (typeof data === "object" && (data?.error || data?.message)) ||
+          (typeof errorValue === "string" ? errorValue : errorValue?.message) ||
+          (typeof data === "object" && data !== null && typeof data?.message === "string" ? data.message : "") ||
           `Request failed (${response.status})`;
-        const responseDetails =
-          typeof data === "object" ? JSON.stringify(data) : String(data);
-
-        throw new Error(
-          `${errorMessage} [${response.status} ${response.statusText}] ${responseDetails}`
-        );
+        const errorCode =
+          (typeof errorValue === "object" && errorValue !== null && typeof errorValue.code === "string" ? errorValue.code : "") ||
+          (typeof data === "object" && data !== null && typeof data?.code === "string" ? data.code : "");
+        const safeError = new Error(String(errorMessage).slice(0, 300));
+        Object.assign(safeError, { status: response.status, code: errorCode || undefined });
+        throw safeError;
       }
 
       return data as T;
@@ -315,6 +321,25 @@ async function request<T = any>(path: string, options: RequestOptions = {}): Pro
 
   throw lastError;
 }
+
+export type PublicPolicySummary = {
+  slug: string;
+  title: string;
+  titleUr?: string | null;
+  summary?: string | null;
+  summaryUr?: string | null;
+  version: string;
+  audience: "all" | "customer" | "provider";
+  requiresAcceptance: boolean;
+  publishedAt?: string | null;
+  updatedAt?: string | null;
+};
+
+export type PublicPolicyDocument = PublicPolicySummary & {
+  bodyEn: string;
+  bodyUr?: string | null;
+  isPublished?: boolean;
+};
 
 export const api = {
   async createPurposeToken(purpose: "realtime" | "object-read") { return request<{ token: string; expiresInSeconds: number }>("/api/auth/purpose-token", { method: "POST", auth: true, body: { purpose } }); },
@@ -546,7 +571,7 @@ export const api = {
       }
       if (
         message.includes("Cannot POST /api/auth/switch-role") ||
-        message.includes("[404")
+        Number(error?.status) === 404
       ) {
         throw new Error(
           "Role switch backend is not deployed yet. Update your backend on Render, then try again."
@@ -843,18 +868,33 @@ export const api = {
     });
   },
 
-  createNegotiation(payload: {
+  async createNegotiation(payload: {
     providerId: string;
     providerName: string;
     customerName: string;
     service: string;
     customerOffer: number;
+    address?: string;
+    latitude?: number;
+    longitude?: number;
+    scheduledDate?: string;
+    scheduledTime?: string;
+    mediaUrls?: string[];
+    clientRequestId: string;
   }) {
-    return request<{ negotiation: any }>("/api/negotiations", {
-      method: "POST",
-      auth: true,
-      body: payload,
-    });
+    try {
+      return await request<{ negotiation: any; duplicate?: boolean }>("/api/negotiations", {
+        method: "POST", auth: true, body: payload,
+      });
+    } catch (error) {
+      const message = String((error as any)?.message || "").toLowerCase();
+      const retryable = message.includes("network") || message.includes("timeout") || message.includes("fetch");
+      if (!retryable) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      return request<{ negotiation: any; duplicate?: boolean }>("/api/negotiations", {
+        method: "POST", auth: true, body: payload,
+      });
+    }
   },
 
   counterBooking(bookingId: string, amount: number, message: string) {
@@ -898,6 +938,9 @@ export const api = {
   getCallConfig() {
     return request<{
       provider: string;
+      productionReady: boolean;
+      hasTurn: boolean;
+      warning: string | null;
       iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }>;
       audio: { preferredCodec: string; fallbackChunkMs: number };
     }>("/api/calls/config", { method: "GET", auth: true });
@@ -1072,11 +1115,11 @@ export const api = {
     });
   },
 
-  registerPushToken(token: string, platform: string) {
-    return request<{ success: boolean }>("/api/auth/push-token", {
-      method: "POST",
+  registerPushToken(expoPushToken: string, _platform?: string) {
+    return request<{ success: boolean; registered: boolean }>("/api/auth/push-token", {
+      method: "PATCH",
       auth: true,
-      body: { token, platform },
+      body: { expoPushToken },
     });
   },
 
@@ -1286,64 +1329,8 @@ export const api = {
    * internal /objects path after PUT upload.
    */
   async uploadVideo(localUri: string): Promise<string> {
-    const upload = await request<{
-      provider?: string;
-      method?: string;
-      uploadURL: string;
-      objectPath: string;
-      fields?: Record<string, string | number | boolean>;
-    }>("/api/storage/uploads/request-url", {
-      method: "POST",
-      auth: true,
-      body: { name: "booking-video.mp4", contentType: "video/mp4" },
-    });
-
-    if (upload.provider === "cloudinary" || upload.method === "POST") {
-      const formData = new FormData();
-      Object.entries(upload.fields || {}).forEach(([key, value]) => {
-        formData.append(key, String(value));
-      });
-      if (Platform.OS === "web") {
-        const blob = await (await fetch(localUri)).blob();
-        formData.append("file", blob as any, "booking-video.mp4");
-      } else {
-        formData.append("file", {
-          uri: localUri,
-          name: "booking-video.mp4",
-          type: "video/mp4",
-        } as any);
-      }
-      const res = await fetch(upload.uploadURL, { method: "POST", body: formData });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error((data as any).error?.message || `Video upload failed: ${res.status}`);
-      }
-      const secureUrl = (data as any).secure_url || (data as any).url;
-      if (!secureUrl) throw new Error("Video upload did not return a URL");
-      return secureUrl;
-    }
-
-    if (Platform.OS === "web") {
-      const blob = await (await fetch(localUri)).blob();
-      const res = await fetch(upload.uploadURL, {
-        method: "PUT",
-        headers: { "Content-Type": "video/mp4" },
-        body: blob,
-      });
-      if (!res.ok) throw new Error(`Video upload failed: ${res.status}`);
-      return upload.objectPath;
-    }
-
-    const FileSystem = await import("expo-file-system/legacy");
-    const result = await FileSystem.uploadAsync(upload.uploadURL, localUri, {
-      httpMethod: "PUT",
-      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-      headers: { "Content-Type": "video/mp4" },
-    });
-    if (result.status < 200 || result.status >= 300) {
-      throw new Error(`Video upload failed: ${result.status}`);
-    }
-    return upload.objectPath;
+    const { uploadPickedImage } = await import("@/services/storage");
+    return uploadPickedImage(localUri, "booking-video.mp4", "video/mp4", undefined, "shared");
   },
 
   getBroadcastRequests(params?: { status?: string; service?: string }) {
@@ -1451,6 +1438,19 @@ export const api = {
       maxCategories: number;
       maxProviders: number;
     } }>("/api/marketing/home-config", { method: "GET" });
+  },
+
+  getPolicies(audience: "customer" | "provider" | "all" = "all") {
+    return request<{ policies: PublicPolicySummary[] }>("/api/policies", {
+      method: "GET",
+      params: { audience },
+    });
+  },
+
+  getPolicy(slug: string) {
+    return request<{ policy: PublicPolicyDocument }>(`/api/policies/${encodeURIComponent(slug)}`, {
+      method: "GET",
+    });
   },
 
   getMarketingBanners(audience: "customer" | "provider" = "customer") {
@@ -1599,6 +1599,7 @@ export type RealtimeEventName =
   | "call:rejected"
   | "call:ended"
   | "notification:new"
+  | "notification:push-failed"
   | "broadcast:new"
   | "broadcast:response"
   | "broadcast:accepted"
@@ -1651,8 +1652,17 @@ async function openRealtimeSocket(): Promise<void> {
         });
       } catch {}
     };
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       realtimeSocket = null;
+      if (event.code === 4401) {
+        realtimeShouldReconnect = false;
+        if (realtimeReconnectTimer) {
+          clearTimeout(realtimeReconnectTimer);
+          realtimeReconnectTimer = null;
+        }
+        _unauthorizedHandler?.();
+        return;
+      }
       if (realtimeShouldReconnect) {
         realtimeReconnectAttempts++;
         const delay = realtimeBackoffMs();

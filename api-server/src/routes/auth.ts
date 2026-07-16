@@ -2,9 +2,9 @@ import { Router, type Response } from "express";
 import { logger } from "../lib/logger";
 import { db } from "@workspace/db";
 import { usersTable, otpsTable, loginHistoryTable, adminBlacklistTable, emailPreferencesTable } from "@workspace/db/schema";
-import { eq, and, or, desc, sql } from "drizzle-orm";
+import { eq, and, or, desc, sql, ne } from "drizzle-orm";
 import { signAccessToken, signPurposeToken, verifyToken, requireAuth, type AuthRequest } from "../middlewares/auth";
-import { createSession, rotateSession, revokeSession, revokeAllUserSessions } from "../lib/session";
+import { createSession, rotateSession, revokeSession, revokeAllUserSessions, normalizeSessionDeviceId } from "../lib/session";
 import { getPlatformSettings } from "../lib/admin";
 import { LEGAL_VERSION } from "../lib/legal";
 import { isOwnedUploadObjectPath, normalizeStoredObjectPath } from "../lib/storageSecurity";
@@ -15,8 +15,14 @@ import crypto from "crypto";
 import { accountUnavailableResponse, cleanOtpPurpose, otpHashMatches, type OtpPurpose } from "../lib/authOtpPolicy";
 import { hasSeenDevice, normalizeEmailAddress, queueNewDeviceEmail, queuePasswordChangedEmail, queueWelcomeEmail, sendEmailChallenge, verifyEmailChallenge } from "../lib/emailAuth";
 import { deliverAuthenticationOtp } from "../lib/otpDelivery";
+import { recordUserActivity } from "../lib/inactivityLifecycle";
 
 const router = Router();
+
+function firstHeaderValue(value: string | string[] | undefined): string | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
 
 function generateOtp(): string {
   return crypto.randomInt(1000, 10000).toString();
@@ -33,7 +39,11 @@ function generateId(): string {
 }
 
 async function issueSession(user: any, req: any) {
-  return createSession(user, { ipAddress: req.ip ?? null, userAgent: req.headers?.["user-agent"] ?? null });
+  return createSession(user, {
+    ipAddress: req.ip ?? null,
+    userAgent: req.headers?.["user-agent"] ?? null,
+    deviceId: req.headers?.["x-athoo-device-id"] ?? null,
+  });
 }
 
 function normalizedEmailCondition(email: string) {
@@ -76,7 +86,7 @@ function postgresErrorCode(error: unknown): string {
 
 function toSafeUser<T extends Record<string, any>>(user: T | null | undefined) {
   if (!user) return null;
-  const { password, adminFailedLoginCount, adminLockedUntil, ...safeUser } = user;
+  const { password, expoPushToken, adminFailedLoginCount, adminLockedUntil, ...safeUser } = user;
   return safeUser;
 }
 
@@ -115,7 +125,7 @@ async function invalidateOpenOtps(phone: string, purpose: OtpPurpose, reason: st
 router.post("/purpose-token", requireAuth, async (req: AuthRequest, res: Response) => {
   const purpose = String(req.body?.purpose || "");
   if (!new Set(["realtime", "object-read"]).has(purpose)) return res.status(400).json({ error: "Unsupported token purpose" });
-  const token = signPurposeToken({ userId: req.user!.userId, role: req.user!.role, sessionId: req.user!.sessionId, purpose, adminRole: req.user!.adminRole, adminPermissions: req.user!.adminPermissions }, "2m");
+  const token = signPurposeToken({ userId: req.user!.userId, role: req.user!.role, sessionId: req.user!.sessionId, purpose, deviceId: normalizeSessionDeviceId(req.headers["x-athoo-device-id"]) ?? undefined, adminRole: req.user!.adminRole, adminPermissions: req.user!.adminPermissions }, "2m");
   return res.json({ token, expiresInSeconds: 120 });
 });
 
@@ -387,7 +397,9 @@ router.post("/verify-otp", async (req, res) => {
     }
 
     const userAgent = String(req.headers["user-agent"] || "");
-    const seenDevice = await hasSeenDevice(user.id, userAgent);
+    const deviceId = String(req.headers["x-athoo-device-id"] || "").trim().toLowerCase();
+    const seenDevice = await hasSeenDevice(user.id, deviceId, userAgent);
+    await recordUserActivity(user, true);
     const session = await issueSession(user, req);
     db.insert(loginHistoryTable).values({
       id: generateId(),
@@ -399,8 +411,9 @@ router.post("/verify-otp", async (req, res) => {
       success: true,
       ipAddress: req.ip,
       userAgent: userAgent || null,
+      deviceId: deviceId || null,
     }).catch(() => {});
-    if (!seenDevice) void queueNewDeviceEmail(user, { device: userAgent, ip: req.ip }).catch(() => undefined);
+    if (!seenDevice) void queueNewDeviceEmail(user, { device: userAgent, deviceId, ip: req.ip }).catch(() => undefined);
 
     return res.json({
       success: true,
@@ -408,6 +421,8 @@ router.post("/verify-otp", async (req, res) => {
       token: session.token,
       refreshToken: session.refreshToken,
       expiresInSeconds: session.expiresInSeconds,
+      replacedSessionCount: session.replacedSessionCount,
+      singleDeviceEnforced: session.singleDeviceEnforced,
       user: toSafeUser(user),
       isNewUser: false,
     });
@@ -494,19 +509,23 @@ router.post("/email/verify-otp", async (req, res) => {
     }
 
     const userAgent = String(req.headers["user-agent"] || "");
-    const seenDevice = await hasSeenDevice(user.id, userAgent);
+    const deviceId = String(req.headers["x-athoo-device-id"] || "").trim().toLowerCase();
+    const seenDevice = await hasSeenDevice(user.id, deviceId, userAgent);
+    await recordUserActivity(user, true);
     const session = await issueSession(user, req);
     await db.insert(loginHistoryTable).values({
       id: generateId(), userId: user.id, phone: user.phone, email: user.email, role: user.role,
-      method: "email_otp", success: true, ipAddress: req.ip, userAgent: userAgent || null,
+      method: "email_otp", success: true, ipAddress: req.ip, userAgent: userAgent || null, deviceId: deviceId || null,
     });
-    if (!seenDevice) void queueNewDeviceEmail(user, { device: userAgent, ip: req.ip }).catch(() => undefined);
+    if (!seenDevice) void queueNewDeviceEmail(user, { device: userAgent, deviceId, ip: req.ip }).catch(() => undefined);
 
     return res.json({
       success: true,
       token: session.token,
       refreshToken: session.refreshToken,
       expiresInSeconds: session.expiresInSeconds,
+      replacedSessionCount: session.replacedSessionCount,
+      singleDeviceEnforced: session.singleDeviceEnforced,
       user: toSafeUser(user),
     });
   } catch (error) {
@@ -718,6 +737,8 @@ router.post("/register", async (req, res) => {
       token,
       refreshToken: session.refreshToken,
       expiresInSeconds: session.expiresInSeconds,
+      replacedSessionCount: session.replacedSessionCount,
+      singleDeviceEnforced: session.singleDeviceEnforced,
       user: toSafeUser(newUser),
       emailVerificationRequired: Boolean(normalizedEmail),
       emailVerificationSent: Boolean(emailVerification?.success),
@@ -740,12 +761,23 @@ router.patch("/push-token", requireAuth, async (req: AuthRequest, res: Response)
       return;
     }
 
-    await db.update(usersTable).set({
-      expoPushToken: expoPushToken || null,
-      updatedAt: new Date(),
-    }).where(eq(usersTable.id, req.user!.userId));
+    // An Expo token represents one installed app instance. Transfer token
+    // ownership atomically so a reused device cannot remain attached to a
+    // previous account and receive that account's private notifications.
+    await db.transaction(async (tx) => {
+      if (expoPushToken) {
+        await tx
+          .update(usersTable)
+          .set({ expoPushToken: null, updatedAt: new Date() })
+          .where(and(eq(usersTable.expoPushToken, expoPushToken), ne(usersTable.id, req.user!.userId)));
+      }
+      await tx
+        .update(usersTable)
+        .set({ expoPushToken: expoPushToken || null, updatedAt: new Date() })
+        .where(eq(usersTable.id, req.user!.userId));
+    });
 
-    res.json({ success: true });
+    res.json({ success: true, registered: Boolean(expoPushToken) });
   } catch (e) {
     logger.error({ err: e }, "save push token error");
     res.status(500).json({ error: "Failed to save push token" });
@@ -918,7 +950,7 @@ router.post("/admin-login", async (req, res) => {
     });
     const genericError = { error: "Invalid admin credentials" };
     if (!user || user.role !== "admin" || !user.password) {
-      await db.insert(loginHistoryTable).values({ id: generateId(), userId: user?.id || null, phone: normalizedPhone || null, email: normalizedEmail.includes("@") ? normalizedEmail : null, role: "admin", method: "password", success: false, failReason: "Invalid admin credentials", ipAddress: req.ip, userAgent: req.headers["user-agent"] || null }).catch(() => {});
+      await db.insert(loginHistoryTable).values({ id: generateId(), userId: user?.id || null, phone: normalizedPhone || null, email: normalizedEmail.includes("@") ? normalizedEmail : null, role: "admin", method: "password", success: false, failReason: "Invalid admin credentials", ipAddress: req.ip, userAgent: req.headers["user-agent"] || null, deviceId: String(req.headers["x-athoo-device-id"] || "").trim().toLowerCase() || null }).catch(() => {});
       return res.status(401).json(genericError);
     }
     if (user.isDeactivated || user.isBlocked || user.accountStatus === "deleted") return res.status(403).json({ error: "Admin account is unavailable" });
@@ -931,14 +963,18 @@ router.post("/admin-login", async (req, res) => {
       const failures = Number(user.adminFailedLoginCount || 0) + 1;
       const lockedUntil = failures >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null;
       await db.update(usersTable).set({ adminFailedLoginCount: lockedUntil ? 0 : failures, adminLockedUntil: lockedUntil, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
-      await db.insert(loginHistoryTable).values({ id: generateId(), userId: user.id, phone: user.phone, email: user.email, role: "admin", method: "password", success: false, failReason: lockedUntil ? "Admin account temporarily locked" : "Invalid admin credentials", ipAddress: req.ip, userAgent: req.headers["user-agent"] || null }).catch(() => {});
+      await db.insert(loginHistoryTable).values({ id: generateId(), userId: user.id, phone: user.phone, email: user.email, role: "admin", method: "password", success: false, failReason: lockedUntil ? "Admin account temporarily locked" : "Invalid admin credentials", ipAddress: req.ip, userAgent: req.headers["user-agent"] || null, deviceId: String(req.headers["x-athoo-device-id"] || "").trim().toLowerCase() || null }).catch(() => {});
       return res.status(lockedUntil ? 423 : 401).json(lockedUntil ? { error: "Admin account is temporarily locked for 15 minutes" } : genericError);
     }
 
     await db.update(usersTable).set({ adminFailedLoginCount: 0, adminLockedUntil: null, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
-    const session = await createSession(user, { ipAddress: req.ip ?? null, userAgent: req.headers["user-agent"] ?? null }, 1);
-    await db.insert(loginHistoryTable).values({ id: generateId(), userId: user.id, phone: user.phone, email: user.email, role: "admin", method: "password", success: true, ipAddress: req.ip, userAgent: req.headers["user-agent"] || null }).catch(() => {});
-    return res.json({ success: true, token: session.token, refreshToken: session.refreshToken, expiresInSeconds: session.expiresInSeconds, refreshExpiresAt: session.refreshExpiresAt, user: toSafeUser(user) });
+    const session = await createSession(user, {
+      ipAddress: req.ip ?? null,
+      userAgent: req.headers["user-agent"] ?? null,
+      deviceId: firstHeaderValue(req.headers["x-athoo-device-id"]),
+    }, 1);
+    await db.insert(loginHistoryTable).values({ id: generateId(), userId: user.id, phone: user.phone, email: user.email, role: "admin", method: "password", success: true, ipAddress: req.ip, userAgent: req.headers["user-agent"] || null, deviceId: String(req.headers["x-athoo-device-id"] || "").trim().toLowerCase() || null }).catch(() => {});
+    return res.json({ success: true, token: session.token, refreshToken: session.refreshToken, expiresInSeconds: session.expiresInSeconds, refreshExpiresAt: session.refreshExpiresAt, replacedSessionCount: session.replacedSessionCount, singleDeviceEnforced: session.singleDeviceEnforced, user: toSafeUser(user) });
   } catch (e) {
     logger.error({ err: e }, "admin-login error");
     return res.status(500).json({ error: "Admin login failed" });
@@ -1009,24 +1045,28 @@ router.post("/login", async (req, res) => {
     const valid = await bcrypt.compare(password, user.password);
 
     if (!valid) {
-      db.insert(loginHistoryTable).values({ id: generateId(), userId: user.id, phone: user.phone, email: user.email, role: user.role, method: "password", success: false, failReason: "Incorrect password", ipAddress: req.ip, userAgent: req.headers["user-agent"] || null }).catch(() => {});
+      db.insert(loginHistoryTable).values({ id: generateId(), userId: user.id, phone: user.phone, email: user.email, role: user.role, method: "password", success: false, failReason: "Incorrect password", ipAddress: req.ip, userAgent: req.headers["user-agent"] || null, deviceId: String(req.headers["x-athoo-device-id"] || "").trim().toLowerCase() || null }).catch(() => {});
       res.status(401).json({ error: "Incorrect password. Please try again." });
       return;
     }
 
     const userAgent = String(req.headers["user-agent"] || "");
-    const seenDevice = await hasSeenDevice(user.id, userAgent);
+    const deviceId = String(req.headers["x-athoo-device-id"] || "").trim().toLowerCase();
+    const seenDevice = await hasSeenDevice(user.id, deviceId, userAgent);
+    await recordUserActivity(user, true);
     const session = await issueSession(user, req);
     const token = session.token;
 
-    db.insert(loginHistoryTable).values({ id: generateId(), userId: user.id, phone: user.phone, email: user.email, role: user.role, method: "password", success: true, ipAddress: req.ip, userAgent: userAgent || null }).catch(() => {});
-    if (!seenDevice) void queueNewDeviceEmail(user, { device: userAgent, ip: req.ip }).catch(() => undefined);
+    db.insert(loginHistoryTable).values({ id: generateId(), userId: user.id, phone: user.phone, email: user.email, role: user.role, method: "password", success: true, ipAddress: req.ip, userAgent: userAgent || null, deviceId: deviceId || null }).catch(() => {});
+    if (!seenDevice) void queueNewDeviceEmail(user, { device: userAgent, deviceId, ip: req.ip }).catch(() => undefined);
 
     return res.json({
       success: true,
       token,
       refreshToken: session.refreshToken,
       expiresInSeconds: session.expiresInSeconds,
+      replacedSessionCount: session.replacedSessionCount,
+      singleDeviceEnforced: session.singleDeviceEnforced,
       user: toSafeUser(user),
     });
   } catch (e) {
@@ -1339,17 +1379,25 @@ router.post("/forgot-password/reset", async (req, res) => {
 router.post("/refresh", async (req, res) => {
   const refreshToken = String(req.body?.refreshToken || "");
   if (!refreshToken) return res.status(400).json({ error: "Refresh token required" });
-  const result = await rotateSession(refreshToken, { ipAddress: req.ip, userAgent: req.headers["user-agent"] || null });
+  const result = await rotateSession(refreshToken, {
+    ipAddress: req.ip,
+    userAgent: req.headers["user-agent"] || null,
+    deviceId: firstHeaderValue(req.headers["x-athoo-device-id"]),
+  });
   if (!result) return res.status(401).json({ error: "Refresh session is invalid or expired" });
   return res.json({ success: true, token: result.token, refreshToken: result.refreshToken, expiresInSeconds: result.expiresInSeconds, user: toSafeUser(result.user) });
 });
 
 router.post("/logout", requireAuth, async (req: AuthRequest, res: Response) => {
+  // Remove this installation's notification ownership before invalidating the
+  // session, so a signed-out phone cannot continue receiving private alerts.
+  await db.update(usersTable).set({ expoPushToken: null, updatedAt: new Date() }).where(eq(usersTable.id, req.user!.userId));
   await revokeSession(req.user!.sessionId!, "logout");
   return res.json({ success: true });
 });
 
 router.post("/logout-all", requireAuth, async (req: AuthRequest, res: Response) => {
+  await db.update(usersTable).set({ expoPushToken: null, updatedAt: new Date() }).where(eq(usersTable.id, req.user!.userId));
   await revokeAllUserSessions(req.user!.userId, "logout_all");
   return res.json({ success: true });
 });

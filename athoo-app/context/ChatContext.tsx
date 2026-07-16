@@ -34,6 +34,7 @@ export interface Chat {
   bookingId?: string;
   service?: string;
   createdAt: string;
+  unreadCount?: number;
 }
 
 interface ChatContextType {
@@ -110,7 +111,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       if (appStateRef.current === "active") void loadChats();
     }, 60_000);
     return () => { if (chatPollRef.current) clearInterval(chatPollRef.current); };
-  }, [user, loadChats]);
+  }, [user, loadChats, activeChatId]);
 
   const loadMessages = useCallback(async (chatId: string, showLoading = false) => {
     if (appStateRef.current !== "active" || messagesInFlightRef.current.has(chatId)) return;
@@ -240,10 +241,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   );
 
   const markAsRead = useCallback(async (chatId: string, _userId: string) => {
+    setChats((prev) => prev.map((chat) => chat.id === chatId ? { ...chat, unreadCount: 0 } : chat));
+    setMessages((prev) => ({
+      ...prev,
+      [chatId]: (prev[chatId] || []).map((message) =>
+        message.senderId === user?.id ? message : { ...message, isRead: true, deliveryStatus: "read" }
+      ),
+    }));
     try {
       await api.markChatRead(chatId);
-    } catch {}
-  }, []);
+    } catch {
+      void loadChats();
+    }
+  }, [user?.id, loadChats]);
 
   const deleteChat = useCallback(async (chatId: string) => {
     try {
@@ -273,6 +283,21 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user) return;
     const off = realtime.on((msg) => {
+      if (msg.type === "chat:delivered") {
+        const chatId = (msg.payload as any)?.chatId as string | undefined;
+        const messageId = (msg.payload as any)?.messageId as string | undefined;
+        const clientMessageId = (msg.payload as any)?.clientMessageId as string | undefined;
+        if (!chatId) return;
+        setMessages((prev) => ({
+          ...prev,
+          [chatId]: (prev[chatId] || []).map((message) =>
+            (message.id === messageId || (!!clientMessageId && message.clientMessageId === clientMessageId))
+              ? { ...message, deliveryStatus: "delivered" }
+              : message
+          ),
+        }));
+        return;
+      }
       if (msg.type === "chat:read") {
         const chatId = (msg.payload as any)?.chatId as string | undefined;
         const readerId = (msg.payload as any)?.readerId as string | undefined;
@@ -301,6 +326,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         return { ...prev, [chatId]: [...filtered, incoming] };
       });
 
+      if (incoming.senderId !== user.id && activeChatId === chatId) {
+        api.markChatRead(chatId).catch(() => undefined);
+        incoming.isRead = true;
+        incoming.deliveryStatus = "read";
+      }
+
       setChats((prev) => {
         const known = prev.some((chat) => chat.id === chatId);
         if (!known) {
@@ -308,13 +339,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           return prev;
         }
         return prev.map((chat) => chat.id === chatId
-          ? { ...chat, lastMessage: incoming.text, lastMessageAt: incoming.createdAt }
+          ? {
+              ...chat,
+              lastMessage: incoming.text,
+              lastMessageAt: incoming.createdAt,
+              unreadCount: incoming.senderId !== user.id && activeChatId !== chatId
+                ? (chat.unreadCount || 0) + 1
+                : chat.unreadCount || 0,
+            }
           : chat
         );
       });
     });
     return off;
-  }, [user, loadChats]);
+  }, [user, loadChats, activeChatId]);
 
 
   const getMyChats = useCallback(

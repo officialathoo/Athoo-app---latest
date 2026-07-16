@@ -4,12 +4,12 @@ import { logger } from "../lib/logger";
 import crypto from "crypto";
 import { getPlatformSettings } from "../lib/admin";
 import { notifyUser } from "../lib/notifications";
+import { createAdminNotification } from "../lib/adminNotifications";
 import { db } from "@workspace/db";
 import {
   commissionPaymentsTable,
   paymentAccountsTable,
   usersTable,
-  adminNotificationsTable,
   auditLogTable,
   financeLedgerTable,
 } from "@workspace/db/schema";
@@ -102,13 +102,17 @@ router.post("/", async (req: AuthRequest, res) => {
         id: paymentId, providerId, amount, accountId, reference, screenshotUrl, note,
         clientRequestId, status: "pending",
       }).returning();
-      await tx.insert(adminNotificationsTable).values({
-        id: id(), title: "New commission payment", message: `${provider.name} submitted a payment of Rs ${amount}`,
-        type: "info", link: `/admin/payments/${paymentId}`,
-      });
-      return { payment };
+      return { payment, providerName: provider.name };
     });
     if ("error" in result) return res.status(400).json({ error: result.error, availableToSubmit: result.available });
+    if (!("existing" in result)) {
+      await createAdminNotification({
+        title: "New commission payment",
+        message: `${result.providerName} submitted a payment of Rs ${amount}`,
+        type: "commission_payment",
+        link: `/admin/payments/${result.payment.id}`,
+      });
+    }
     return res.status("existing" in result ? 200 : 201).json({ payment: "existing" in result ? result.existing : result.payment, duplicate: "existing" in result });
   } catch (e: any) {
     if (String(e?.code) === "23505") return res.status(409).json({ error: "This transaction reference or request has already been submitted" });

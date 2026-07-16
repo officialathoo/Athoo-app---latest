@@ -125,7 +125,7 @@ export default function SubscriptionScreen() {
     try {
       const ext = (asset.uri.split(".").pop() || "jpg").toLowerCase();
       const contentType = ext === "png" ? "image/png" : "image/jpeg";
-      const objectPath = await uploadPickedImage(asset.uri, `premium-payment-screenshot.${ext}`, contentType);
+      const objectPath = await uploadPickedImage(asset.uri, `premium-payment-screenshot.${ext}`, contentType, undefined, "private");
       setScreenshot(objectPath);
     } catch (e: any) {
       showError(tr("Upload Failed"), apiErrorToMessage(e, tr("We couldn't upload the screenshot. Please try again.")));

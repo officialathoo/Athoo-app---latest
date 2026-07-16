@@ -15,7 +15,7 @@ test("mobile permissions match foreground-only tracking", () => {
   const config = read("athoo-app/app.config.js");
   assert.doesNotMatch(config, /ACCESS_BACKGROUND_LOCATION/);
   assert.doesNotMatch(config, /NSLocationAlwaysUsageDescription/);
-  assert.match(config, /isAndroidBackgroundLocationEnabled: false/);
+  assert.match(config, /isAndroidBackgroundLocationEnabled:\s*false/);
   assert.match(config, /expo-local-authentication/);
 });
 

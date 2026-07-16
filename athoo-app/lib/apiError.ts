@@ -105,8 +105,12 @@ export function apiErrorToMessage(
     return "The verification code is incorrect.";
   }
 
+  const explicitStatus =
+    typeof err === "object" && err !== null && "status" in err && Number.isInteger(Number((err as { status?: unknown }).status))
+      ? Number((err as { status?: unknown }).status)
+      : 0;
   const statusMatch = raw.match(/\[(\d{3})\b/) || raw.match(/\bstatus(?:code)?[\s:=]+(\d{3})\b/i);
-  const status = statusMatch ? Number(statusMatch[1]) : 0;
+  const status = explicitStatus || (statusMatch ? Number(statusMatch[1]) : 0);
 
   if (status === 401) return "Your session has expired. Please sign in again.";
   if (status === 403) return "You don't have permission to complete this action.";

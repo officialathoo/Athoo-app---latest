@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, currency, formatDate } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -32,6 +32,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export function WithdrawalsPage() {
+  const focusId = new URLSearchParams(window.location.search).get("focus") || "";
   const qc = useQueryClient();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
@@ -39,6 +40,7 @@ export function WithdrawalsPage() {
   const [selected, setSelected] = useState<Withdrawal | null>(null);
   const [actionNote, setActionNote] = useState("");
   const [payRef, setPayRef] = useState("");
+  const [focusOpened, setFocusOpened] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["admin", "withdrawals"],
@@ -63,6 +65,16 @@ export function WithdrawalsPage() {
   });
 
   const withdrawals = data?.withdrawals ?? [];
+  useEffect(() => {
+    if (!focusId || focusOpened || withdrawals.length === 0) return;
+    const focused = withdrawals.find((withdrawal) => withdrawal.id === focusId);
+    if (!focused) return;
+    setStatusFilter(focused.status);
+    setSelected(focused);
+    setActionNote(focused.rejectionNote || focused.note || "");
+    setPayRef(focused.paymentReference || "");
+    setFocusOpened(true);
+  }, [focusId, focusOpened, withdrawals]);
   const filtered = withdrawals.filter((w) => {
     const q = search.toLowerCase();
     const matchSearch =
@@ -157,7 +169,7 @@ export function WithdrawalsPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filtered.map((w) => (
-                  <tr key={w.id} className="hover:bg-slate-50/50 transition-colors">
+                  <tr key={w.id} data-focus-id={w.id === focusId ? w.id : undefined} className={w.id === focusId ? "bg-blue-50 ring-2 ring-inset ring-blue-400" : "hover:bg-slate-50/50 transition-colors"}>
                     <td className="px-5 py-3.5">
                       <p className="font-medium text-slate-800">{w.provider?.name || "—"}</p>
                       <p className="text-xs text-slate-500">{w.provider?.phone || "—"}</p>

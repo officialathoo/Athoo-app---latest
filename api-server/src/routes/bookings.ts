@@ -75,7 +75,7 @@ function generatePublicId(): string {
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, "0");
   const d = String(now.getDate()).padStart(2, "0");
-  const rand = Math.floor(10000 + Math.random() * 90000);
+  const rand = crypto.randomInt(10000, 100000);
   return `ATH-${y}${m}${d}-${rand}`;
 }
 

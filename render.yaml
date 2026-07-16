@@ -16,7 +16,7 @@ services:
       - key: RELEASE_SERVICE_NAME
         value: athoo-api
       - key: RELEASE_VERSION
-        value: rc2-candidate
+        sync: false
       - key: RELEASE_COMMIT_SHA
         sync: false
       - key: RELEASE_BUILD_ID
@@ -31,6 +31,24 @@ services:
         generateValue: true
       - key: OTP_HASH_SECRET
         generateValue: true
+      - key: JWT_ISSUER
+        value: athoo-api
+      - key: JWT_AUDIENCE
+        value: athoo-mobile
+      - key: TRUST_PROXY
+        value: "1"
+      - key: SERVER_REQUEST_TIMEOUT_MS
+        value: "120000"
+      - key: SERVER_HEADERS_TIMEOUT_MS
+        value: "60000"
+      - key: SERVER_KEEP_ALIVE_TIMEOUT_MS
+        value: "15000"
+      - key: WS_MAX_PAYLOAD_BYTES
+        value: "65536"
+      - key: WS_MAX_CONNECTIONS_PER_SESSION
+        value: "8"
+      - key: SHUTDOWN_TIMEOUT_MS
+        value: "10000"
       - key: CORS_ORIGIN
         sync: false
       - key: CORS_ORIGINS
@@ -65,40 +83,48 @@ services:
         value: expo
       - key: PUSH_PROVIDER_ENDPOINT
         value: https://exp.host/--/api/v2/push/send
+      - key: PUSH_RECEIPT_ENDPOINT
+        value: https://exp.host/--/api/v2/push/getReceipts
       - key: EXPO_ACCESS_TOKEN
         sync: false
       - key: PUSH_TIMEOUT_MS
         value: "10000"
+      - key: PUSH_RECEIPT_TIMEOUT_MS
+        value: "10000"
+      - key: PUSH_RECEIPT_DELAY_MS
+        value: "20000"
+      - key: PUSH_RECEIPT_MAX_ATTEMPTS
+        value: "5"
       - key: EXPO_PUSH_BATCH_SIZE
         value: "100"
       - key: PUSH_MAX_ATTEMPTS
-        value: "3"
+        value: "4"
       - key: PUSH_RETRY_BASE_MS
         value: "500"
       - key: PUSH_BADGE_COUNT
         value: "1"
       - key: NOTIFICATION_CHANNEL_VERSION
-        value: "3"
+        value: "4"
       - key: NOTIFICATION_JOB_CHANNEL_ID
-        value: jobs-v3
+        value: jobs-v4
       - key: NOTIFICATION_JOB_SOUND
         value: athoo_job.wav
       - key: NOTIFICATION_JOB_TTL_SECONDS
         value: "900"
       - key: NOTIFICATION_MESSAGE_CHANNEL_ID
-        value: messages-v3
+        value: messages-v4
       - key: NOTIFICATION_MESSAGE_SOUND
         value: athoo_message.wav
       - key: NOTIFICATION_MESSAGE_TTL_SECONDS
         value: "86400"
       - key: NOTIFICATION_GENERAL_CHANNEL_ID
-        value: general-v3
+        value: general-v4
       - key: NOTIFICATION_GENERAL_SOUND
         value: athoo_general.wav
       - key: NOTIFICATION_GENERAL_TTL_SECONDS
         value: "86400"
       - key: NOTIFICATION_CALL_CHANNEL_ID
-        value: calls-v3
+        value: calls-v4
       - key: NOTIFICATION_CALL_SOUND
         value: athoo_call.wav
       - key: NOTIFICATION_CALL_TTL_SECONDS
@@ -122,7 +148,7 @@ services:
       - key: SMTP_POOL
         value: "true"
       - key: SMTP_MAX_CONNECTIONS
-        value: "3"
+        value: "4"
       - key: SMTP_MAX_MESSAGES_PER_CONNECTION
         value: "100"
       - key: SMTP_CONNECTION_TIMEOUT_MS
@@ -225,8 +251,36 @@ services:
         value: "10000"
       - key: ALLOW_DEV_OTP_RESPONSE
         value: "false"
+      - key: CALL_PROVIDER
+        value: webrtc
+      - key: STUN_URLS
+        sync: false
+      - key: TURN_URLS
+        sync: false
+      - key: TURN_USERNAME
+        sync: false
+      - key: TURN_CREDENTIAL
+        sync: false
+      - key: CALL_FALLBACK_CHUNK_MS
+        value: "800"
+      - key: CALL_PREFERRED_CODEC
+        value: opus
       - key: SENTRY_DSN
         sync: false
+      - key: ERROR_TRACKING_DSN
+        sync: false
+      - key: INCIDENT_COMMANDER_CONTACT
+        sync: false
+      - key: SUPPORT_ESCALATION_EMAIL
+        sync: false
+      - key: STATUS_PAGE_URL
+        sync: false
+      - key: USER_ACTIVITY_WRITE_INTERVAL_MS
+        value: "600000"
+      - key: INACTIVITY_SWEEP_MIN_INTERVAL_MS
+        value: "21600000"
+      - key: BOOKING_SWEEP_INTERVAL_MS
+        value: "60000"
       - key: METRICS_TOKEN
         generateValue: true
       - key: ALLOW_PENDING_MIGRATIONS

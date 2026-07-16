@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
+import { readRepo } from "./helpers/repo.ts";
 
-const utility = fs.readFileSync("../athoo-app/utils/serviceHistory.ts", "utf8");
-const component = fs.readFileSync("../athoo-app/components/design/ServiceHistoryInsights.tsx", "utf8");
-const screen = fs.readFileSync("../athoo-app/app/(customer)/(tabs)/bookings.tsx", "utf8");
+const utility = readRepo("athoo-app/utils/serviceHistory.ts");
+const component = readRepo("athoo-app/components/design/ServiceHistoryInsights.tsx");
+const screen = readRepo("athoo-app/app/(customer)/(tabs)/bookings.tsx");
 
 test("service history uses deterministic maintenance intervals", () => {
   assert.match(utility, /SERVICE_INTERVAL_DAYS/);

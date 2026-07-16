@@ -17,9 +17,10 @@ interface NegotiationRow {
 }
 
 export function NegotiationsPage() {
+  const focusId = new URLSearchParams(window.location.search).get("focus") || "";
   const [rows, setRows] = useState<NegotiationRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(focusId);
   const [status, setStatus] = useState("all");
 
   async function load() {
@@ -58,7 +59,7 @@ export function NegotiationsPage() {
           <button onClick={load} className="border rounded-lg px-3 py-2 flex items-center gap-2"><RefreshCw size={15}/> Refresh</button>
         </div>
         {loading ? <div className="p-10 text-center text-slate-400">Loading negotiations…</div> : (
-          <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-50"><tr><th className="text-left p-3">Service</th><th className="text-left p-3">Customer</th><th className="text-left p-3">Provider</th><th className="text-left p-3">Offer</th><th className="text-left p-3">Status</th><th className="p-3"/></tr></thead><tbody className="divide-y">{rows.map((row)=><tr key={row.id}><td className="p-3"><div className="font-medium">{row.service}</div><div className="text-xs text-slate-400 font-mono">{row.id}</div></td><td className="p-3">{row.customerName}</td><td className="p-3">{row.providerName}</td><td className="p-3">Rs. {row.finalPrice ?? row.providerCounter ?? row.customerOffer}</td><td className="p-3 capitalize">{row.status.replace("_", " ")}</td><td className="p-3 text-right">{["customer_offer","provider_counter"].includes(row.status) && <button onClick={()=>closeNegotiation(row)} className="text-red-600 inline-flex items-center gap-1"><XCircle size={15}/> Close</button>}</td></tr>)}</tbody></table></div>
+          <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-50"><tr><th className="text-left p-3">Service</th><th className="text-left p-3">Customer</th><th className="text-left p-3">Provider</th><th className="text-left p-3">Offer</th><th className="text-left p-3">Status</th><th className="p-3"/></tr></thead><tbody className="divide-y">{rows.map((row)=><tr key={row.id} data-focus-id={row.id === focusId ? row.id : undefined} className={row.id === focusId ? "bg-blue-50 ring-2 ring-inset ring-blue-400" : "hover:bg-slate-50"}><td className="p-3"><div className="font-medium">{row.service}</div><div className="text-xs text-slate-400 font-mono">{row.id}</div></td><td className="p-3">{row.customerName}</td><td className="p-3">{row.providerName}</td><td className="p-3">Rs. {row.finalPrice ?? row.providerCounter ?? row.customerOffer}</td><td className="p-3 capitalize">{row.status.replace("_", " ")}</td><td className="p-3 text-right">{["customer_offer","provider_counter"].includes(row.status) && <button onClick={()=>closeNegotiation(row)} className="text-red-600 inline-flex items-center gap-1"><XCircle size={15}/> Close</button>}</td></tr>)}</tbody></table></div>
         )}
       </div>
     </div>

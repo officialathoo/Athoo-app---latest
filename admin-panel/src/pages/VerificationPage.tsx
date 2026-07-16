@@ -57,6 +57,7 @@ function getStatus(p: User): Tab {
 }
 
 export function VerificationPage() {
+  const focusId = new URLSearchParams(window.location.search).get("focus") || "";
   const { toast } = useToast();
   const { hasPermission } = usePermissions();
   const canWrite = hasPermission("verification.write");
@@ -71,6 +72,7 @@ export function VerificationPage() {
   const [imageModal, setImageModal] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [focusOpened, setFocusOpened] = useState(false);
   const [rejectionDialog, setRejectionDialog] = useState<{
     target: User;
     note: string;
@@ -111,6 +113,26 @@ export function VerificationPage() {
     if (selected) loadDocs(selected.id);
     else setDocs([]);
   }, [selected]);
+
+  useEffect(() => {
+    if (!focusId || focusOpened || loading) return;
+    const focused = providers.find((provider) => provider.id === focusId);
+    if (focused) {
+      setTab(getStatus(focused));
+      setSelected(focused);
+      setFocusOpened(true);
+      return;
+    }
+    setFocusOpened(true);
+    api<{ user: User }>(`/api/admin/users/${focusId}`)
+      .then(({ user }) => {
+        if (user.role !== "provider") throw new Error("The referenced account is not a provider");
+        setProviders((previous) => previous.some((provider) => provider.id === user.id) ? previous : [...previous, user]);
+        setTab(getStatus(user));
+        setSelected(user);
+      })
+      .catch((error) => toast({ title: "Provider could not be opened", description: error.message, variant: "destructive" }));
+  }, [focusId, focusOpened, loading, providers, toast]);
 
   async function setStatus(user: User, status: Tab, note?: string) {
     // Gate: if approving, verify all required documents are present (including police letter).

@@ -2,13 +2,13 @@ import { isOwnedUploadObjectPath, normalizeStoredObjectPath } from "../lib/stora
 import { Router } from "express";
 import { logger } from "../lib/logger";
 import { notifyUser } from "../lib/notifications";
+import { createAdminNotification } from "../lib/adminNotifications";
 import crypto from "crypto";
 import { db } from "@workspace/db";
 import {
   subscriptionPlansTable,
   userSubscriptionsTable,
   usersTable,
-  adminNotificationsTable,
   auditLogTable,
   financeLedgerTable,
 } from "@workspace/db/schema";
@@ -121,11 +121,10 @@ router.post("/subscribe", async (req: AuthRequest, res) => {
       screenshotUrl: normalizedScreenshotUrl || null,
       clientRequestId: requestId,
     });
-    await db.insert(adminNotificationsTable).values({
-      id: id(),
+    await createAdminNotification({
       title: "New subscription payment",
       message: `User submitted a ${period} payment for plan "${plan.name}"`,
-      type: "info",
+      type: "premium",
       link: `/admin/subscriptions/${newId}`,
     });
     return res.status(201).json({ subscriptionId: newId });
@@ -284,15 +283,77 @@ adminRouter.delete("/plans/:id", requirePermission("settings.write"), async (req
 
 // Subscription review
 adminRouter.get("/", requirePermission("finance.read"), async (req, res) => {
-  const status = String(req.query.status ?? "");
+  const status = String(req.query.status ?? "").trim();
+  const allowedStatuses = new Set(["pending", "active", "expired", "cancelled", "rejected", "cancellation_scheduled"]);
+  if (status && !allowedStatuses.has(status)) return res.status(400).json({ error: "Invalid subscription status" });
   const where = status ? eq(userSubscriptionsTable.status, status) : undefined;
   const rows = await db
-    .select()
+    .select({
+      id: userSubscriptionsTable.id,
+      userId: userSubscriptionsTable.userId,
+      userName: usersTable.name,
+      userPhone: usersTable.phone,
+      userEmail: usersTable.email,
+      userRole: usersTable.role,
+      planId: userSubscriptionsTable.planId,
+      planName: subscriptionPlansTable.name,
+      planAudience: subscriptionPlansTable.audience,
+      billingPeriod: userSubscriptionsTable.billingPeriod,
+      status: userSubscriptionsTable.status,
+      amount: userSubscriptionsTable.amount,
+      paymentReference: userSubscriptionsTable.paymentReference,
+      screenshotUrl: userSubscriptionsTable.screenshotUrl,
+      startedAt: userSubscriptionsTable.startedAt,
+      expiresAt: userSubscriptionsTable.expiresAt,
+      reviewedBy: userSubscriptionsTable.reviewedBy,
+      reviewedAt: userSubscriptionsTable.reviewedAt,
+      rejectionNote: userSubscriptionsTable.rejectionNote,
+      createdAt: userSubscriptionsTable.createdAt,
+      updatedAt: userSubscriptionsTable.updatedAt,
+    })
     .from(userSubscriptionsTable)
+    .leftJoin(usersTable, eq(userSubscriptionsTable.userId, usersTable.id))
+    .leftJoin(subscriptionPlansTable, eq(userSubscriptionsTable.planId, subscriptionPlansTable.id))
     .where(where as any)
     .orderBy(desc(userSubscriptionsTable.createdAt))
     .limit(200);
   return res.json({ subscriptions: rows });
+});
+
+adminRouter.get("/:id", requirePermission("finance.read"), async (req, res) => {
+  const subscriptionId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  if (!subscriptionId) return res.status(400).json({ error: "Subscription ID is required" });
+  const [subscription] = await db
+    .select({
+      id: userSubscriptionsTable.id,
+      userId: userSubscriptionsTable.userId,
+      userName: usersTable.name,
+      userPhone: usersTable.phone,
+      userEmail: usersTable.email,
+      userRole: usersTable.role,
+      planId: userSubscriptionsTable.planId,
+      planName: subscriptionPlansTable.name,
+      planAudience: subscriptionPlansTable.audience,
+      billingPeriod: userSubscriptionsTable.billingPeriod,
+      status: userSubscriptionsTable.status,
+      amount: userSubscriptionsTable.amount,
+      paymentReference: userSubscriptionsTable.paymentReference,
+      screenshotUrl: userSubscriptionsTable.screenshotUrl,
+      startedAt: userSubscriptionsTable.startedAt,
+      expiresAt: userSubscriptionsTable.expiresAt,
+      reviewedBy: userSubscriptionsTable.reviewedBy,
+      reviewedAt: userSubscriptionsTable.reviewedAt,
+      rejectionNote: userSubscriptionsTable.rejectionNote,
+      createdAt: userSubscriptionsTable.createdAt,
+      updatedAt: userSubscriptionsTable.updatedAt,
+    })
+    .from(userSubscriptionsTable)
+    .leftJoin(usersTable, eq(userSubscriptionsTable.userId, usersTable.id))
+    .leftJoin(subscriptionPlansTable, eq(userSubscriptionsTable.planId, subscriptionPlansTable.id))
+    .where(eq(userSubscriptionsTable.id, subscriptionId))
+    .limit(1);
+  if (!subscription) return res.status(404).json({ error: "Subscription not found" });
+  return res.json({ subscription });
 });
 
 adminRouter.post("/:id/approve", requirePermission("finance.write"), async (req: AuthRequest, res) => {

@@ -1,11 +1,10 @@
 import { Icon } from "@/components/ui/Icon";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useState , useMemo} from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Platform,
   Pressable,
   ScrollView,
@@ -24,7 +23,7 @@ import { useChat } from "@/context/ChatContext";
 import { useNegotiation } from "@/context/NegotiationContext";
 import { Provider } from "@/data/services";
 import { useCategories } from "@/context/CategoriesContext";
-import { api } from "@/services/api";
+import { api, realtime } from "@/services/api";
 
 interface Review {
   id: string;
@@ -50,7 +49,7 @@ function timeAgo(ts: string) {
 export default function ProviderDetailScreen() {
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const { providerId } = useLocalSearchParams<{ providerId: string }>();
+  const { providerId, serviceId } = useLocalSearchParams<{ providerId: string; serviceId?: string }>();
   const { user, toggleSaved } = useAuth();
   const { getOrCreateChat } = useChat();
   const { getMyNegotiations } = useNegotiation();
@@ -63,15 +62,65 @@ export default function ProviderDetailScreen() {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
-  const existingNegotiation = user && provider ? getMyNegotiations(user.id).find((n) => n.providerId === provider.id && n.service === (provider.services?.[0] || getCategoryBySlug((provider as any).serviceCategory || "")?.name || "General Service") && ["customer_offer", "provider_counter"].includes(n.status)) : null;
+  const [selectedServiceId, setSelectedServiceId] = useState(serviceId || "");
 
+  const loadProvider = useCallback(async (showLoader = false) => {
+    if (showLoader) setLoading(true);
+    try {
+      const response = await api.getProvider(providerId);
+      setProvider(response.provider as Provider);
+    } catch {
+      setProvider(null);
+    } finally {
+      if (showLoader) setLoading(false);
+    }
+  }, [providerId]);
 
   useEffect(() => {
-    api.getProvider(providerId)
-      .then((res) => setProvider(res.provider as Provider))
-      .catch(() => setProvider(null))
-      .finally(() => setLoading(false));
-  }, [providerId]);
+    void loadProvider(true);
+  }, [loadProvider]);
+
+  useEffect(() => {
+    return realtime.on((message) => {
+      const payload = (message.payload || {}) as Record<string, unknown>;
+      if (
+        message.type === "admin:event" &&
+        payload.resource === "providers" &&
+        payload.providerId === providerId
+      ) {
+        void loadProvider(false);
+      }
+    });
+  }, [loadProvider, providerId]);
+
+  const serviceOptions = useMemo(() => (provider?.services || []).map((slug) => {
+    const category = getCategoryBySlug(slug);
+    return { slug, category, label: category?.name || slug };
+  }), [getCategoryBySlug, provider?.services]);
+
+  useEffect(() => {
+    if (serviceOptions.length === 0) {
+      setSelectedServiceId("");
+      return;
+    }
+    setSelectedServiceId((current) => {
+      if (current && serviceOptions.some((option) => option.slug === current)) return current;
+      if (serviceId && serviceOptions.some((option) => option.slug === serviceId)) return serviceId;
+      return serviceOptions[0].slug;
+    });
+  }, [serviceId, serviceOptions]);
+
+  const selectedService = serviceOptions.find((option) => option.slug === selectedServiceId) || serviceOptions[0];
+  const serviceLabel = selectedService?.label || "General Service";
+  const existingNegotiation = useMemo(() => {
+    if (!user || !provider) return null;
+    const acceptedServiceKeys = new Set([selectedService?.slug, serviceLabel].filter(Boolean).map((value) => String(value).toLowerCase()));
+    return getMyNegotiations(user.id).find((negotiation) =>
+      negotiation.providerId === provider.id &&
+      acceptedServiceKeys.has(String(negotiation.service || "").toLowerCase()) &&
+      ["customer_offer", "provider_counter"].includes(negotiation.status)
+    ) || null;
+  }, [getMyNegotiations, provider, selectedService?.slug, serviceLabel, user]);
 
   useEffect(() => {
     setIsSaved(!!user?.savedProviders?.includes(providerId));
@@ -101,8 +150,6 @@ export default function ProviderDetailScreen() {
       return;
     }
     if (!provider) return;
-    const firstService = provider.services?.[0];
-    const serviceLabel = getCategoryBySlug(firstService || "")?.name || "General Service";
     const chat = await getOrCreateChat(user.id, user.name, provider.id, provider.name, undefined, serviceLabel);
     router.push({
       pathname: "/(customer)/chat-room",
@@ -136,9 +183,6 @@ export default function ProviderDetailScreen() {
 
   const initials = getInitials(provider.name);
   const color = provider.profileColor || theme.colors.primary;
-  const firstServiceId = provider.services?.[0];
-  const category = getCategoryBySlug(firstServiceId || "");
-  const serviceLabel = category?.name || (firstServiceId || "General Services");
   const ratingDisplay = provider.rating ? (provider.rating / 10).toFixed(1) : "New";
   const ratingNum = provider.rating ? parseFloat((provider.rating / 10).toFixed(1)) : 0;
   const rateLabel = provider.ratePerHour ? `Rs. ${provider.ratePerHour.toLocaleString()}/hr` : "Negotiable";
@@ -168,12 +212,19 @@ export default function ProviderDetailScreen() {
           </View>
           <Text style={styles.providerName}>{provider.name}</Text>
           <View style={styles.badgesRow}>
-            {category && (
-              <View style={styles.serviceTag}>
-                <Icon name={category.icon as any} size={13} color={theme.colors.onBrand} />
-                <Text style={styles.serviceTagText}>{serviceLabel}</Text>
-              </View>
-            )}
+            {serviceOptions.map((option) => (
+              <Pressable
+                key={option.slug}
+                onPress={() => setSelectedServiceId(option.slug)}
+                style={[styles.serviceTag, selectedService?.slug === option.slug && styles.serviceTagSelected]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: selectedService?.slug === option.slug }}
+                accessibilityLabel={`Select ${option.label}`}
+              >
+                <Icon name={(option.category?.icon || "tool") as any} size={13} color={theme.colors.onBrand} />
+                <Text style={styles.serviceTagText}>{option.label}</Text>
+              </Pressable>
+            ))}
             {provider.isVerified && (
               <View style={styles.serviceTag}>
                 <Icon name="check-circle" size={13} color={theme.colors.onBrand} />
@@ -182,7 +233,7 @@ export default function ProviderDetailScreen() {
             )}
             <View style={styles.serviceTag}>
               <Icon name="map-pin" size={13} color={theme.colors.onBrand} />
-              <Text style={styles.serviceTagText}>{provider.location ? provider.location : "RWP & ISB"}</Text>
+              <Text style={styles.serviceTagText}>{provider.location ? provider.location : "Pakistan"}</Text>
             </View>
           </View>
         </LinearGradient>
@@ -217,6 +268,45 @@ export default function ProviderDetailScreen() {
             </View>
           </View>
         </AnimatedCard>
+
+        {serviceOptions.length > 1 && (
+          <AnimatedCard delay={90}>
+            <View style={styles.serviceSelectorCard}>
+              <View style={styles.serviceSelectorHeader}>
+                <View style={styles.serviceSelectorIcon}>
+                  <Icon name="briefcase" size={16} color={theme.colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.serviceSelectorTitle}>Choose the required service</Text>
+                  <Text style={styles.serviceSelectorText}>Chat, negotiation, and booking will use this service.</Text>
+                </View>
+              </View>
+              <View style={styles.serviceSelectorChips}>
+                {serviceOptions.map((option) => {
+                  const selected = selectedService?.slug === option.slug;
+                  const appearance = option.category ? getCategoryAppearance(option.category, theme) : null;
+                  return (
+                    <Pressable
+                      key={option.slug}
+                      onPress={() => setSelectedServiceId(option.slug)}
+                      style={[
+                        styles.serviceSelectorChip,
+                        selected && styles.serviceSelectorChipSelected,
+                        selected && appearance ? { borderColor: appearance.accent, backgroundColor: appearance.selectedBackground } : null,
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                    >
+                      <Icon name={(option.category?.icon || "tool") as any} size={13} color={selected && appearance ? appearance.accent : theme.colors.textSecondary} />
+                      <Text style={[styles.serviceSelectorChipText, selected && { color: appearance?.accent || theme.colors.primary }]}>{option.label}</Text>
+                      {selected && <Icon name="check-circle" size={13} color={appearance?.accent || theme.colors.primary} />}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          </AnimatedCard>
+        )}
 
         <View style={styles.tabs}>
           {["about", "reviews"].map((tab) => (
@@ -255,7 +345,7 @@ export default function ProviderDetailScreen() {
                   <View style={styles.infoIconBg}>
                     <Icon name="dollar-sign" size={15} color={theme.colors.primary} />
                   </View>
-                  <Text style={styles.infoLabel}>Hourly Rate</Text>
+                  <Text style={styles.infoLabel}>General Rate</Text>
                   <Text style={[styles.infoVal, { color: theme.colors.secondary, fontWeight: "700" }]}>
                     {rateLabel}
                   </Text>
@@ -286,14 +376,25 @@ export default function ProviderDetailScreen() {
               <AnimatedCard delay={230}>
                 <Text style={styles.skillsTitle}>Services Offered</Text>
                 <View style={styles.skillsRow}>
-                  {provider.services.map((sid, i) => {
-                    const cat = getCategoryBySlug(sid);
-                    const appearance = cat ? getCategoryAppearance(cat, theme) : null;
+                  {serviceOptions.map((option) => {
+                    const appearance = option.category ? getCategoryAppearance(option.category, theme) : null;
+                    const selected = selectedService?.slug === option.slug;
                     return (
-                      <View key={i} style={[styles.skillChip, appearance ? { backgroundColor: appearance.background, borderColor: appearance.accent } : {}]}>
-                        {cat && appearance && <Icon name={cat.icon as any} size={11} color={appearance.accent} />}
-                        <Text style={[styles.skillText, appearance ? { color: appearance.accent } : {}]}>{cat?.name || sid}</Text>
-                      </View>
+                      <Pressable
+                        key={option.slug}
+                        onPress={() => setSelectedServiceId(option.slug)}
+                        style={[
+                          styles.skillChip,
+                          appearance ? { backgroundColor: appearance.background, borderColor: appearance.accent } : null,
+                          selected && styles.skillChipSelected,
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                      >
+                        {option.category && appearance && <Icon name={option.category.icon as any} size={11} color={appearance.accent} />}
+                        <Text style={[styles.skillText, appearance ? { color: appearance.accent } : null]}>{option.label}</Text>
+                        {selected && <Icon name="check-circle" size={12} color={appearance?.accent || theme.colors.primary} />}
+                      </Pressable>
                     );
                   })}
                 </View>
@@ -344,8 +445,9 @@ export default function ProviderDetailScreen() {
       <View style={[styles.footer, { paddingBottom: (Platform.OS === "web" ? 34 : insets.bottom) + 12 }]}>
         <View style={styles.footerPriceRow}>
           <View>
-            <Text style={styles.footerPriceLabel}>Hourly Rate</Text>
+            <Text style={styles.footerPriceLabel}>General hourly rate</Text>
             <Text style={styles.footerPrice}>{rateLabel}</Text>
+            <Text style={styles.footerService}>Selected: {serviceLabel}</Text>
           </View>
           <View style={[styles.availBadge, !provider.isAvailable && styles.busyBadge]}>
             <View style={[styles.availDot, !provider.isAvailable && styles.busyDot]} />
@@ -365,7 +467,7 @@ export default function ProviderDetailScreen() {
                 ? router.push({ pathname: "/(customer)/negotiate", params: { negId: existingNegotiation.id } })
                 : router.push({
                     pathname: "/(customer)/negotiate",
-                    params: { providerId: provider.id, service: serviceLabel, providerRate: provider.ratePerHour ? String(provider.ratePerHour) : undefined },
+                    params: { providerId: provider.id, service: serviceLabel, serviceId: selectedService?.slug, providerRate: provider.ratePerHour ? String(provider.ratePerHour) : undefined },
                   })
             }
           >
@@ -381,7 +483,7 @@ export default function ProviderDetailScreen() {
                   providerId: provider.id,
                   providerName: provider.name,
                   providerRate: provider.ratePerHour ? String(provider.ratePerHour) : undefined,
-                  serviceId: firstServiceId || undefined,
+                  serviceId: selectedService?.slug || undefined,
                 },
               })
             }
@@ -443,6 +545,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.2)",
   },
   serviceTagText: { fontSize: 12, fontWeight: "700", color: theme.colors.onBrand },
+  serviceTagSelected: { borderWidth: 1.5, borderColor: "rgba(255,255,255,0.9)", backgroundColor: "rgba(255,255,255,0.32)" },
   statsCard: {
     flexDirection: "row", backgroundColor: theme.colors.surface,
     marginTop: -20, marginHorizontal: 20, borderRadius: 18, padding: 16,
@@ -454,6 +557,15 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   starsRow: { flexDirection: "row", gap: 1 },
   statLbl: { fontSize: 10, color: theme.colors.textSecondary, fontWeight: "600" },
   statDiv: { width: 1, backgroundColor: theme.colors.border, marginVertical: 4 },
+  serviceSelectorCard: { marginHorizontal: 20, marginTop: 14, padding: 14, borderRadius: 16, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border, gap: 12 },
+  serviceSelectorHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
+  serviceSelectorIcon: { width: 34, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.primary + "15" },
+  serviceSelectorTitle: { fontSize: 14, fontWeight: "800", color: theme.colors.text },
+  serviceSelectorText: { marginTop: 2, fontSize: 11, lineHeight: 16, color: theme.colors.textSecondary },
+  serviceSelectorChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  serviceSelectorChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 18, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surfaceAlt },
+  serviceSelectorChipSelected: { borderWidth: 1.5 },
+  serviceSelectorChipText: { fontSize: 12, fontWeight: "700", color: theme.colors.textSecondary },
   tabs: {
     flexDirection: "row", marginHorizontal: 20, marginTop: 20,
     backgroundColor: theme.colors.surfaceAlt, borderRadius: 14, padding: 4,
@@ -484,6 +596,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     backgroundColor: theme.colors.surfaceAlt,
   },
   skillText: { fontSize: 12, color: theme.colors.text, fontWeight: "600" },
+  skillChipSelected: { borderWidth: 2 },
   emptyReviews: { alignItems: "center", paddingVertical: 60, gap: 10 },
   emptyReviewsTitle: { fontSize: 16, fontWeight: "700", color: theme.colors.text },
   emptyReviewsText: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center", lineHeight: 19 },
@@ -511,6 +624,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   footerPriceRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   footerPriceLabel: { fontSize: 11, color: theme.colors.textSecondary },
   footerPrice: { fontSize: 18, fontWeight: "800", color: theme.colors.primary },
+  footerService: { marginTop: 1, fontSize: 10, color: theme.colors.textMuted, fontWeight: "600" },
   availBadge: {
     flexDirection: "row", alignItems: "center", gap: 5,
     backgroundColor: theme.colors.success + "15", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,

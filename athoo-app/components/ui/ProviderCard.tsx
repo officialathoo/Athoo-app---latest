@@ -38,10 +38,17 @@ export function ProviderCard({ provider, onPress, distanceText, rightAction }: P
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const initials = getInitials(provider.name);
-  const cat = getCategoryBySlug(provider.services?.[0] || "");
-  const serviceLabel = cat
-    ? (isUrdu ? (cat.nameUrdu || cat.name) : cat.name)
-    : (provider.services?.length ? provider.services[0] : t.generalServices);
+  const serviceLabels = (provider.services || [])
+    .map((service) => {
+      const category = getCategoryBySlug(service);
+      return category ? (isUrdu ? (category.nameUrdu || category.name) : category.name) : service;
+    })
+    .filter(Boolean);
+  const visibleServiceLabels = serviceLabels.slice(0, 3);
+  const remainingServiceCount = Math.max(0, serviceLabels.length - visibleServiceLabels.length);
+  const serviceLabel = visibleServiceLabels.length
+    ? `${visibleServiceLabels.join(" • ")}${remainingServiceCount ? ` • +${remainingServiceCount} more` : ""}`
+    : t.generalServices;
   const rating = provider.rating ? (provider.rating / 10).toFixed(1) : null;
   const color = provider.profileColor || theme.colors.primary;
   const badges = getProviderBadges(provider, theme);
@@ -76,7 +83,13 @@ export function ProviderCard({ provider, onPress, distanceText, rightAction }: P
             </View>
           )}
         </View>
-        <Text style={[styles.service, { color: theme.colors.textSecondary }, isUrdu && styles.urduText]}>{serviceLabel}</Text>
+        <Text
+          style={[styles.service, { color: theme.colors.textSecondary }, isUrdu && styles.urduText]}
+          numberOfLines={2}
+          accessibilityLabel={`Services: ${serviceLabels.length ? serviceLabels.join(", ") : t.generalServices}`}
+        >
+          {serviceLabel}
+        </Text>
         <View style={styles.statsRow}>
           <View style={styles.stat}>
             <Icon name="star" size={12} color={theme.colors.warning} />
@@ -142,7 +155,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 4 },
   name: { fontSize: 15, fontWeight: "700", color: theme.colors.text, flex: 1 },
   verifiedBadge: { marginLeft: 2 },
-  service: { fontSize: 12, color: theme.colors.textSecondary, fontWeight: "500" },
+  service: { fontSize: 12, lineHeight: 17, color: theme.colors.textSecondary, fontWeight: "500" },
   statsRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 2, flexWrap: "wrap" },
   stat: { flexDirection: "row", alignItems: "center", gap: 3 },
   statText: { fontSize: 11, color: theme.colors.textSecondary },

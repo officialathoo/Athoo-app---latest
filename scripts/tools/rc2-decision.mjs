@@ -19,7 +19,10 @@ const requiredChecks = [
   "connectedRuntime", "releaseIdentity", "storageUpload", "mapSearchAndDirections", "otpDelivery", "emailDelivery",
   "pushDelivery", "performanceSmoke", "expoDoctor", "mobileExport", "androidPreviewBuild", "iosPreviewBuild",
   "androidDeviceAcceptance", "iosDeviceAcceptance", "crossRoleDeviceAcceptance", "darkThemeMatrix",
-  "notificationSoundMatrix", "openP0Defects", "openP1Defects",
+  "notificationSoundMatrix", "customerJobBroadcast", "chatRealtimeAndUnread", "voiceCallTwoWay",
+  "singleDeviceBiometric", "adminDeepLinks", "policyGovernance", "inactivityLifecycleSafety",
+  "legalReview", "productionSecretsRotation", "monitoringAndAlerts", "hostingCapacity",
+  "openP0Defects", "openP1Defects",
 ];
 const errors = [];
 for (const key of requiredChecks) {
@@ -61,7 +64,7 @@ if (failed.length || p0 > 0 || p1 > 0) {
 }
 
 const result = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   decision,
   releaseVersion: evidence.releaseVersion,
   releaseCommitSha: evidence.releaseCommitSha,

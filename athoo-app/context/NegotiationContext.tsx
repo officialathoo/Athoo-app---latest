@@ -388,9 +388,11 @@ export function NegotiationProvider({ children }: { children: React.ReactNode })
     }): Promise<Negotiation> => {
       if (!user) throw new Error("Not logged in");
 
+      const clientRequestId = `neg_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
       const res = await api.createNegotiation({
         ...data,
         customerName: user.name,
+        clientRequestId,
       });
 
       const neg = res.negotiation as Negotiation;

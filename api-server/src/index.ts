@@ -18,12 +18,24 @@ if (Number.isNaN(port) || port <= 0) {
 
 const server = http.createServer(app);
 
-// Production-safe timeouts. Defaults are intentionally conservative and can be
-// tuned per hosting provider. They protect the API from slowloris-style clients
-// and free resources under load.
-server.requestTimeout = Number(process.env.SERVER_REQUEST_TIMEOUT_MS || 120_000);
-server.headersTimeout = Number(process.env.SERVER_HEADERS_TIMEOUT_MS || 125_000);
-server.keepAliveTimeout = Number(process.env.SERVER_KEEP_ALIVE_TIMEOUT_MS || 30_000);
+// Production-safe timeouts. Values are validated and ordered so a client cannot
+// keep an incomplete header/request alive longer than the configured request
+// budget. Invalid deployment values fail startup instead of silently disabling
+// the protection with NaN or extreme numbers.
+function timeoutFromEnv(name: string, fallback: number, min: number, max: number): number {
+  const value = Number(process.env[name] || fallback);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`${name} must be an integer between ${min} and ${max} milliseconds`);
+  }
+  return value;
+}
+
+const requestTimeoutMs = timeoutFromEnv("SERVER_REQUEST_TIMEOUT_MS", 120_000, 5_000, 300_000);
+const headersTimeoutMs = timeoutFromEnv("SERVER_HEADERS_TIMEOUT_MS", 60_000, 5_000, requestTimeoutMs);
+const keepAliveTimeoutMs = timeoutFromEnv("SERVER_KEEP_ALIVE_TIMEOUT_MS", 15_000, 1_000, headersTimeoutMs - 1);
+server.requestTimeout = requestTimeoutMs;
+server.headersTimeout = headersTimeoutMs;
+server.keepAliveTimeout = keepAliveTimeoutMs;
 setupWebSocket(server);
 
 async function startServer(): Promise<void> {

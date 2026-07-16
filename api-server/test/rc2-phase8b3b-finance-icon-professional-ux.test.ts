@@ -114,13 +114,13 @@ test("approved app icon splash and adaptive icon are configurable and centered",
   assert.match(config, /SPLASH_IMAGE_PATH/);
   assert.match(config, /ADAPTIVE_ICON_PATH/);
   assert.match(config, /NOTIFICATION_ICON_PATH/);
-  assert.match(config, /icon: appIconPath/);
-  assert.match(config, /image: splashImagePath/);
-  assert.match(config, /foregroundImage: adaptiveIconPath/);
-  assert.match(config, /icon: notificationIconPath/);
-  assert.match(config, /backgroundColor: adaptiveIconBackground/);
-  assert.match(config, /backgroundColor: splashBackgroundLight/);
-  assert.match(config, /backgroundColor: splashBackgroundDark/);
+  assert.match(config, /icon:\s*appIconPath/);
+  assert.match(config, /image:\s*splashImagePath/);
+  assert.match(config, /foregroundImage:\s*adaptiveIconPath/);
+  assert.match(config, /icon:\s*notificationIconPath/);
+  assert.match(config, /backgroundColor:\s*adaptiveIconBackground/);
+  assert.match(config, /backgroundColor:\s*splashBackgroundLight/);
+  assert.match(config, /backgroundColor:\s*splashBackgroundDark/);
 
   assert.deepEqual(pngDimensions("athoo-app/assets/images/icon.png"), { width: 1024, height: 1024 });
   assert.deepEqual(pngDimensions("athoo-app/assets/images/adaptive-icon.png"), { width: 1024, height: 1024 });

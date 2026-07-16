@@ -273,7 +273,13 @@ router.patch("/availability", requireAuth, async (req: AuthRequest, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const provider = await db.query.usersTable.findFirst({
-      where: and(eq(usersTable.id, req.params.id), eq(usersTable.role, "provider")),
+      where: and(
+        eq(usersTable.id, req.params.id),
+        eq(usersTable.role, "provider"),
+        eq(usersTable.isDeactivated, false),
+        eq(usersTable.isBlocked, false),
+        eq(usersTable.verificationStatus, "approved"),
+      ),
     });
     if (!provider) {
       res.status(404).json({ error: "Provider not found" });

@@ -94,7 +94,8 @@ test("release governance requires real Android, iOS, cross-role, theme, and soun
 test("production configuration documents portable OTP adapters and release identity", () => {
   const env = read(".env.production.example");
   const render = read("render.yaml");
-  assert.match(env, /RELEASE_VERSION=rc2-candidate/);
+  assert.match(env, /RELEASE_VERSION=REPLACE_WITH_RELEASE_VERSION/);
+  assert.match(render, /- key: RELEASE_VERSION\n\s+sync: false/);
   assert.match(env, /OTP_DELIVERY_CHANNELS=whatsapp_cloud,email/);
   assert.match(env, /OTP_DELIVERY_MODE=first_success/);
   assert.match(env, /WHATSAPP_GRAPH_BASE_URL=https:\/\/graph\.facebook\.com/);

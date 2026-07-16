@@ -81,6 +81,13 @@ export const usersTable = pgTable("users", {
   termsAcceptedAt: timestamp("terms_accepted_at"),
   privacyAcceptedAt: timestamp("privacy_accepted_at"),
   legalVersion: text("legal_version"),
+  // Inactivity lifecycle — activity is tracked independently from manual
+  // suspension/deactivation so returning users can recover safely.
+  lastActiveAt: timestamp("last_active_at").defaultNow(),
+  inactivityState: text("inactivity_state").default("active"), // active | warning | restricted | review
+  inactivityWarningSentAt: timestamp("inactivity_warning_sent_at"),
+  inactivityRestrictedAt: timestamp("inactivity_restricted_at"),
+  inactivityReviewAt: timestamp("inactivity_review_at"),
   joinedAt: timestamp("joined_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => [
@@ -94,8 +101,13 @@ export const usersTable = pgTable("users", {
   uniqueIndex("users_verified_email_lower_uidx")
     .on(sql`lower(trim(${t.email}))`)
     .where(sql`${t.email} is not null and ${t.emailVerified} = true`),
+  uniqueIndex("users_expo_push_token_uidx")
+    .on(t.expoPushToken)
+    .where(sql`${t.expoPushToken} is not null`),
   uniqueIndex("users_cnic_number_uidx").on(t.cnicNumber),
   index("users_account_status_idx").on(t.accountStatus),
+  index("users_last_active_at_idx").on(t.lastActiveAt),
+  index("users_inactivity_state_idx").on(t.inactivityState),
   index("users_updated_at_idx").on(t.updatedAt),
 ]);
 
@@ -388,6 +400,7 @@ export const negotiationsTable = pgTable("negotiations", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => [
   index("negotiations_created_at_idx").on(t.createdAt),
+  uniqueIndex("negotiations_customer_request_uidx").on(t.customerId, t.clientRequestId),
 ]);
 
 export const chatsTable = pgTable("chats", {
@@ -458,6 +471,28 @@ export const appSettingsTable = pgTable("app_settings", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export const policyDocumentsTable = pgTable("policy_documents", {
+  id: text("id").primaryKey(),
+  slug: text("slug").notNull().unique(),
+  title: text("title").notNull(),
+  titleUr: text("title_ur"),
+  summary: text("summary"),
+  summaryUr: text("summary_ur"),
+  bodyEn: text("body_en").notNull(),
+  bodyUr: text("body_ur"),
+  version: text("version").notNull().default("1.0"),
+  audience: text("audience").notNull().default("all"), // all | customer | provider
+  requiresAcceptance: boolean("requires_acceptance").default(false),
+  isPublished: boolean("is_published").default(false),
+  publishedAt: timestamp("published_at"),
+  updatedBy: text("updated_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => [
+  index("policy_documents_audience_idx").on(t.audience),
+  index("policy_documents_published_idx").on(t.isPublished, t.audience),
+]);
+
 export const adminBroadcastsTable = pgTable("admin_broadcasts", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
@@ -491,6 +526,7 @@ export const supportTicketsTable = pgTable("support_tickets", {
   subject: text("subject").notNull(),
   message: text("message").notNull(),
   bookingId: text("booking_id"),
+  mediaUrls: jsonb("media_urls").$type<string[]>().default([]),
   status: text("status").notNull().default("open"),
   priority: text("priority").notNull().default("normal"),
   adminNotes: text("admin_notes"),
@@ -1081,6 +1117,7 @@ export const authSessionsTable = pgTable("auth_sessions", {
   refreshTokenHash: text("refresh_token_hash").notNull(),
   userAgent: text("user_agent"),
   ipAddress: text("ip_address"),
+  deviceId: text("device_id"),
   expiresAt: timestamp("expires_at").notNull(),
   lastUsedAt: timestamp("last_used_at").defaultNow(),
   revokedAt: timestamp("revoked_at"),
@@ -1089,6 +1126,8 @@ export const authSessionsTable = pgTable("auth_sessions", {
 }, (t) => [
   uniqueIndex("auth_sessions_refresh_hash_uq").on(t.refreshTokenHash),
   index("auth_sessions_user_id_idx").on(t.userId),
+  index("auth_sessions_user_device_idx").on(t.userId, t.deviceId),
+  uniqueIndex("auth_sessions_one_active_per_user_idx").on(t.userId).where(sql`${t.revokedAt} is null`),
   index("auth_sessions_expires_at_idx").on(t.expiresAt),
   index("auth_sessions_revoked_at_idx").on(t.revokedAt),
 ]);
@@ -1105,10 +1144,12 @@ export const loginHistoryTable = pgTable("login_history", {
   failReason: text("fail_reason"),
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
+  deviceId: text("device_id"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   index("login_history_created_at_idx").on(t.createdAt),
   index("login_history_user_id_idx").on(t.userId),
+  index("login_history_user_device_idx").on(t.userId, t.deviceId),
 ]);
 
 // ─── User Blocks ──────────────────────────────────────────────────────────────

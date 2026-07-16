@@ -60,6 +60,10 @@ type Form = {
   defaultServiceRadiusKm: string;
   customerCancellationFee: string;
   providerCancellationPenalty: string;
+  inactivityLifecycleEnabled: boolean;
+  inactivityWarningDays: string;
+  inactivityRestrictionDays: string;
+  inactivityReviewDays: string;
 };
 
 function Section({ title, icon: Icon, children }: { title: string; icon: any; children: React.ReactNode }) {
@@ -112,8 +116,11 @@ function Toggle({ value, onChange, onLabel = "On", offLabel = "Off" }: {
     <div className="flex items-center gap-3 mt-1">
       <button
         type="button"
+        role="switch"
+        aria-checked={value}
+        aria-label={value ? onLabel : offLabel}
         onClick={() => onChange(!value)}
-        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${value ? "bg-blue-600" : "bg-slate-300"}`}
+        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${value ? "bg-blue-600" : "bg-slate-300"}`}
       >
         <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${value ? "translate-x-6" : "translate-x-1"}`} />
       </button>
@@ -157,6 +164,10 @@ export function SettingsPage() {
     defaultServiceRadiusKm: "25",
     customerCancellationFee: "0",
     providerCancellationPenalty: "0",
+    inactivityLifecycleEnabled: true,
+    inactivityWarningDays: "60",
+    inactivityRestrictionDays: "90",
+    inactivityReviewDays: "180",
   });
 
   function set<K extends keyof Form>(k: K, v: Form[K]) {
@@ -194,6 +205,10 @@ export function SettingsPage() {
         defaultServiceRadiusKm: String(s.defaultServiceRadiusKm ?? 25),
         customerCancellationFee: String(s.customerCancellationFee ?? 0),
         providerCancellationPenalty: String(s.providerCancellationPenalty ?? 0),
+        inactivityLifecycleEnabled: s.inactivityLifecycleEnabled !== false,
+        inactivityWarningDays: String(s.inactivityWarningDays ?? 60),
+        inactivityRestrictionDays: String(s.inactivityRestrictionDays ?? 90),
+        inactivityReviewDays: String(s.inactivityReviewDays ?? 180),
       });
     } catch (e) {
       setError((e as Error).message);
@@ -210,6 +225,12 @@ export function SettingsPage() {
     const limit = Number(form.defaultCommissionLimit);
     if (!Number.isFinite(rate) || rate < 0 || rate > 100) { setError("Commission rate must be 0–100."); return; }
     if (!Number.isFinite(limit) || limit < 100) { setError("Commission limit must be at least Rs. 100."); return; }
+    const warningDays = Number(form.inactivityWarningDays);
+    const restrictionDays = Number(form.inactivityRestrictionDays);
+    const reviewDays = Number(form.inactivityReviewDays);
+    if (!Number.isInteger(warningDays) || warningDays < 7) { setError("Inactivity warning must be at least 7 days."); return; }
+    if (!Number.isInteger(restrictionDays) || restrictionDays <= warningDays) { setError("Restriction days must be greater than warning days."); return; }
+    if (!Number.isInteger(reviewDays) || reviewDays <= restrictionDays) { setError("Review days must be greater than restriction days."); return; }
     setSaving(true); setError(""); setSaved(false);
     try {
       await api("/api/admin/settings", {
@@ -239,6 +260,10 @@ export function SettingsPage() {
           defaultServiceRadiusKm: Number(form.defaultServiceRadiusKm),
           customerCancellationFee: Number(form.customerCancellationFee),
           providerCancellationPenalty: Number(form.providerCancellationPenalty),
+          inactivityLifecycleEnabled: form.inactivityLifecycleEnabled,
+          inactivityWarningDays: warningDays,
+          inactivityRestrictionDays: restrictionDays,
+          inactivityReviewDays: reviewDays,
         }),
       });
       setSaved(true);
@@ -261,8 +286,8 @@ export function SettingsPage() {
   }
 
   return (
-    <form onSubmit={handleSave} className="space-y-6 max-w-2xl">
-      <div className="flex items-center justify-between">
+    <form onSubmit={handleSave} className="space-y-6 max-w-4xl">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-slate-900">Platform Settings</h2>
           <p className="text-sm text-slate-500 mt-0.5">Configure all operational parameters for {settings?.platformName || "Athoo"}</p>
@@ -303,7 +328,7 @@ export function SettingsPage() {
         <Field label="Platform Name" hint="Shown in app headers, communications, and emails.">
           <TInput value={form.platformName} onChange={v => set("platformName", v)} placeholder="Athoo" />
         </Field>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="App Version" hint="Current production release.">
             <TInput value={form.appVersion} onChange={v => set("appVersion", v)} placeholder="1.0.0" />
           </Field>
@@ -319,7 +344,7 @@ export function SettingsPage() {
       </Section>
 
       <Section title="Commission & Finance" icon={DollarSign}>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Commission Rate" hint={`Deducted from each completed job. Currently ${settings?.commissionRate ?? 0}%.`}>
             <TInput value={form.commissionRate} onChange={v => set("commissionRate", v)} type="number" suffix="%" />
           </Field>
@@ -330,7 +355,7 @@ export function SettingsPage() {
       </Section>
 
       <Section title="Booking Rules" icon={Clock}>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Minimum Booking Notice" hint="Earliest booking a customer can place.">
             <TInput value={form.minBookingNoticeHours} onChange={v => set("minBookingNoticeHours", v)} type="number" suffix="hours" />
           </Field>
@@ -344,7 +369,7 @@ export function SettingsPage() {
       </Section>
 
       <Section title="Provider Controls" icon={Users}>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Auto-Approve New Providers" hint="Skip KYC manual review — not recommended for production.">
             <Toggle
               value={form.providerAutoApprove}
@@ -365,7 +390,7 @@ export function SettingsPage() {
       </Section>
 
       <Section title="Support Contact" icon={Phone}>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Support Phone" hint="Displayed in customer Help & FAQs screen.">
             <TInput value={form.supportPhone} onChange={v => set("supportPhone", v)} placeholder="+92 300 0000000" />
           </Field>
@@ -377,7 +402,7 @@ export function SettingsPage() {
       </Section>
 
       <Section title="Broadcast & Service Area" icon={Megaphone}>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Broadcast TTL" hint="Total minutes a broadcast request stays open before expiring.">
             <TInput value={form.broadcastTTLMinutes} onChange={v => set("broadcastTTLMinutes", v)} type="number" suffix="minutes" />
           </Field>
@@ -385,7 +410,7 @@ export function SettingsPage() {
             <TInput value={form.defaultServiceRadiusKm} onChange={v => set("defaultServiceRadiusKm", v)} type="number" suffix="km" />
           </Field>
         </div>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="Initial Broadcast Radius" hint="Providers within this distance are notified immediately.">
             <TInput value={form.broadcastInitialRadiusKm} onChange={v => set("broadcastInitialRadiusKm", v)} type="number" suffix="km" />
           </Field>
@@ -408,7 +433,7 @@ export function SettingsPage() {
         <Field label="Commission Discount for Premium Providers" hint="Percentage deducted from the commission rate for active premium providers. Set 0 to disable.">
           <TInput value={form.premiumCommissionDiscountPercent} onChange={v => set("premiumCommissionDiscountPercent", v)} type="number" suffix="%" />
         </Field>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Priority Boost in Search" hint="Premium providers appear higher in customer search results.">
             <Toggle
               value={form.premiumPriorityBoost}
@@ -428,8 +453,35 @@ export function SettingsPage() {
         </div>
       </Section>
 
+
+      <Section title="Inactive Account Lifecycle" icon={Clock}>
+        <Field label="Lifecycle Automation" hint="Warns inactive users, pauses provider matching, and creates an admin review item. Permanent deletion is never automatic.">
+          <Toggle
+            value={form.inactivityLifecycleEnabled}
+            onChange={v => set("inactivityLifecycleEnabled", v)}
+            onLabel="On — lifecycle active"
+            offLabel="Off — no automatic actions"
+          />
+        </Field>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Field label="Warning After" hint="Send an in-app and email reminder.">
+            <TInput value={form.inactivityWarningDays} onChange={v => set("inactivityWarningDays", v)} type="number" suffix="days" />
+          </Field>
+          <Field label="Restrict After" hint="Pause provider matching until they return.">
+            <TInput value={form.inactivityRestrictionDays} onChange={v => set("inactivityRestrictionDays", v)} type="number" suffix="days" />
+          </Field>
+          <Field label="Admin Review After" hint="Add the account to the review queue; do not delete it.">
+            <TInput value={form.inactivityReviewDays} onChange={v => set("inactivityReviewDays", v)} type="number" suffix="days" />
+          </Field>
+        </div>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-semibold">Deletion safeguard</p>
+          <p className="mt-1 text-xs leading-5">Inactivity alone never permanently deletes an account. Deletion remains a separate seven-day user-requested workflow or an explicitly audited administrative decision.</p>
+        </div>
+      </Section>
+
       <Section title="Cancellation Fees" icon={Slash}>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Customer Late Cancellation Fee (Rs.)" hint="Charged when a customer cancels after the free window expires. Set 0 to disable.">
             <TInput value={form.customerCancellationFee} onChange={v => set("customerCancellationFee", v)} type="number" prefix="Rs." />
           </Field>

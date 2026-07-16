@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 2,
-  "releaseVersion": "rc2-candidate",
+  "schemaVersion": 3,
+  "releaseVersion": "",
   "releaseCommitSha": "0000000",
   "artifactSha256": "0000000000000000000000000000000000000000000000000000000000000000",
   "checks": {
@@ -100,6 +100,72 @@
     "openP1Defects": {
       "status": "pending",
       "evidence": "",
+      "count": 0
+    },
+    "customerJobBroadcast": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "chatRealtimeAndUnread": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "voiceCallTwoWay": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "singleDeviceBiometric": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "adminDeepLinks": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "policyGovernance": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "inactivityLifecycleSafety": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "legalReview": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "productionSecretsRotation": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "monitoringAndAlerts": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "hostingCapacity": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
       "count": 0
     }
   },

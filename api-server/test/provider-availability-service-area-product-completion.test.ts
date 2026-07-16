@@ -22,7 +22,7 @@ test("service radius is bounded and enforced in discovery and transaction entry"
   assert.match(helper, /radius >= 1 && radius <= 100/);
   assert.match(providers, /providerWithinRadius/);
   assert.match(bookings, /outside the provider's/);
-  assert.match(broadcast, /Math\.min\(platformRadius, providerRadius\)/);
+  assert.match(broadcast, /Math\.min\(Math\.max\(1, platformRadiusKm\), providerTravelRadiusKm\(provider\)\)/);
 });
 
 test("admin availability policy is permissioned, audited and exposed in provider operations", () => {

@@ -192,9 +192,16 @@ export default function ChatScreen() {
                       </Text>
                     ) : null}
                   </View>
-                  <Text style={[styles.lastMessage, localizedText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
-                    {chat.lastMessage || tr("No messages yet")}
-                  </Text>
+                  <View style={{ flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 8 }}>
+                    <Text style={[styles.lastMessage, localizedText, { color: theme.colors.textSecondary, flex: 1 }]} numberOfLines={1}>
+                      {chat.lastMessage || tr("No messages yet")}
+                    </Text>
+                    {(chat.unreadCount || 0) > 0 ? (
+                      <View style={{ minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 5, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.danger }}>
+                        <Text style={{ color: theme.colors.onDanger, fontSize: 10, fontWeight: "800" }}>{(chat.unreadCount || 0) > 99 ? "99+" : chat.unreadCount}</Text>
+                      </View>
+                    ) : null}
+                  </View>
                   {chat.service ? (
                     <Text style={[styles.serviceTag, localizedText, { color: theme.colors.primary }]} numberOfLines={1}>
                       {chat.service}

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { api } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
 import { Search, Shield, ChevronLeft, ChevronRight, Loader2, Info, RefreshCw, Download, Filter } from "lucide-react";
+import { buildCsv } from "@/lib/csv";
 
 interface AuditEntry {
   id: string;
@@ -77,7 +78,7 @@ export function AuditLogPage() {
       e.targetId || "",
       e.ipAddress || "",
     ]);
-    const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const csv = buildCsv([headers, ...rows]);
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

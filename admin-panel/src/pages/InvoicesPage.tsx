@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { api, currency, formatDate } from "@/lib/api";
 import { Search, RefreshCw, Download, ChevronLeft, ChevronRight, X, FileText, Printer, CheckCircle } from "lucide-react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { buildCsv } from "@/lib/csv";
 
 const PAGE_SIZE = 25;
 
@@ -39,6 +40,15 @@ const STATUS_OPTIONS = [
 
 function today() {
   return new Date().toISOString().split("T")[0];
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 export function InvoicesPage() {
@@ -113,7 +123,7 @@ export function InvoicesPage() {
     [filtered]);
 
   function printInvoice(inv: Invoice) {
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${inv.invoiceNumber}</title>
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${escapeHtml(inv.invoiceNumber)}</title>
 <style>
   body{font-family:Arial,sans-serif;margin:0;padding:20px;color:#1e293b}
   h1{font-size:22px;font-weight:900;color:#1A6EE0;margin:0}
@@ -134,13 +144,13 @@ export function InvoicesPage() {
 </style></head><body>
 <div class="inv-header">
   <div><h1>ATHOO</h1><div class="sub">Admin Invoice Record</div></div>
-  <div><div class="inv-no">${inv.invoiceNumber}</div><div class="inv-date">${inv.scheduledDate} ${inv.scheduledTime}</div></div>
+  <div><div class="inv-no">${escapeHtml(inv.invoiceNumber)}</div><div class="inv-date">${escapeHtml(inv.scheduledDate)} ${escapeHtml(inv.scheduledTime)}</div></div>
 </div>
 <div class="grid">
-  <div class="cell"><div class="cell-label">Customer</div><div class="cell-val">${inv.customerName}</div></div>
-  <div class="cell"><div class="cell-label">Provider</div><div class="cell-val">${inv.providerName}</div></div>
-  <div class="cell"><div class="cell-label">Service</div><div class="cell-val">${inv.service.replace(/_/g," ")}</div></div>
-  <div class="cell"><div class="cell-label">Address</div><div class="cell-val">${inv.address || "—"}</div></div>
+  <div class="cell"><div class="cell-label">Customer</div><div class="cell-val">${escapeHtml(inv.customerName)}</div></div>
+  <div class="cell"><div class="cell-label">Provider</div><div class="cell-val">${escapeHtml(inv.providerName)}</div></div>
+  <div class="cell"><div class="cell-label">Service</div><div class="cell-val">${escapeHtml(inv.service.replace(/_/g," "))}</div></div>
+  <div class="cell"><div class="cell-label">Address</div><div class="cell-val">${escapeHtml(inv.address || "—")}</div></div>
 </div>
 <table>
   <tr><th>Description</th><th style="text-align:right">Amount</th></tr>
@@ -153,10 +163,15 @@ export function InvoicesPage() {
   <tr class="total"><td>TOTAL</td><td style="text-align:right">Rs. ${inv.totalAmount.toLocaleString()}</td></tr>
 </table>
 <div class="footer">Athoo Admin — Generated ${new Date().toLocaleString("en-PK")}</div>
-<script>window.onload=()=>window.print();</script>
 </body></html>`;
-    const w = window.open("", "_blank");
-    if (w) { w.document.write(html); w.document.close(); }
+    const w = window.open("", "_blank", "noopener,noreferrer");
+    if (w) {
+      w.opener = null;
+      w.document.write(html);
+      w.document.close();
+      w.focus();
+      w.print();
+    }
   }
 
   function exportCSV() {
@@ -168,7 +183,7 @@ export function InvoicesPage() {
         inv.status, inv.createdAt,
       ]),
     ];
-    const csv = rows.map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+    const csv = buildCsv(rows);
     const blob = new Blob([csv], { type: "text/csv" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);

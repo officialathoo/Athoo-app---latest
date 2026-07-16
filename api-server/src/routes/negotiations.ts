@@ -140,8 +140,13 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const { providerId, providerName, customerName, service, customerOffer, address, latitude, longitude, scheduledDate, scheduledTime } = req.body;
+    const { providerId, providerName, customerName, service, customerOffer, address, latitude, longitude, scheduledDate, scheduledTime, clientRequestId } = req.body;
     const amount = toAmount(customerOffer);
+    const requestId = typeof clientRequestId === "string" ? clientRequestId.trim() : "";
+    if (!requestId || requestId.length > 120 || !/^[A-Za-z0-9._:-]+$/.test(requestId)) {
+      res.status(400).json({ error: "A valid clientRequestId is required" });
+      return;
+    }
     if (!providerId || !service || !amount || amount < 100) {
       res.status(400).json({ error: "Valid provider, service, and offer are required" });
       return;
@@ -153,6 +158,17 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
     if (providerId === userId) {
       res.status(400).json({ error: "You cannot negotiate with yourself" });
+      return;
+    }
+
+    const priorRequest = await db.query.negotiationsTable.findFirst({
+      where: and(
+        eq(negotiationsTable.customerId, userId),
+        eq(negotiationsTable.clientRequestId, requestId),
+      ),
+    });
+    if (priorRequest) {
+      res.json({ negotiation: priorRequest, duplicate: true });
       return;
     }
 
@@ -236,6 +252,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
     const negotiation = {
       id: generateId(),
       customerId: userId,
+      clientRequestId: requestId,
       customerName: customerName || "Customer",
       providerId: String(providerId),
       providerName: providerName || provider.name,
@@ -255,7 +272,21 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       messages: [firstMsg],
     };
 
-    await db.insert(negotiationsTable).values(negotiation);
+    const inserted = await db.insert(negotiationsTable).values(negotiation).onConflictDoNothing().returning();
+    if (!inserted.length) {
+      const duplicate = await db.query.negotiationsTable.findFirst({
+        where: and(
+          eq(negotiationsTable.customerId, userId),
+          eq(negotiationsTable.clientRequestId, requestId),
+        ),
+      });
+      if (duplicate) {
+        res.json({ negotiation: duplicate, duplicate: true });
+        return;
+      }
+      res.status(409).json({ error: "Negotiation request could not be committed" });
+      return;
+    }
 
     emitToUser(negotiation.providerId, "negotiation:new", { negotiation });
     emitToUser(negotiation.customerId, "negotiation:updated", { negotiation });
@@ -505,7 +536,7 @@ router.patch("/:id/accept", requireAuth, async (req: AuthRequest, res: Response)
         const today = new Date();
         const mm = String(today.getMonth() + 1).padStart(2, "0");
         const dd = String(today.getDate()).padStart(2, "0");
-        const rand = String(Math.floor(10000 + Math.random() * 90000));
+        const rand = String(crypto.randomInt(10000, 100000));
         const publicId = `ATH-${today.getFullYear()}${mm}${dd}-${rand}`;
 
         const booking = {

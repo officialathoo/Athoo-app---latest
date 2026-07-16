@@ -26,8 +26,10 @@ import { Provider } from "@/data/services";
 import { api } from "@/services/api";
 import { pickFromGallery } from "@/utils/mediaPicker";
 import { uploadPickedImage } from "@/services/storage";
-import { reverseGeocode } from "@/services/maps";
+import { reverseGeocode, searchAddress } from "@/services/maps";
 import { getFastForegroundLocation } from "@/services/location";
+import { useCategories } from "@/context/CategoriesContext";
+import { apiErrorToMessage } from "@/lib/apiError";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -109,11 +111,13 @@ export default function NegotiateScreen() {
   const {
     providerId,
     service,
+    serviceId,
     negId,
     providerRate,
   } = useLocalSearchParams<{
     providerId?: string;
     service?: string;
+    serviceId?: string;
     negId?: string;
     providerRate?: string;
   }>();
@@ -121,12 +125,14 @@ export default function NegotiateScreen() {
   const { user } = useAuth();
   const { createNegotiation, getMyNegotiations, acceptOffer, rejectOffer, counterOffer } = useNegotiation();
   const { showError } = useToast();
+  const { getCategoryBySlug } = useCategories();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const isCreateMode = !!providerId;
 
   const [provider, setProvider] = useState<Provider | null>(null);
+  const [selectedServiceSlug, setSelectedServiceSlug] = useState(serviceId || "");
   const [loadingProvider, setLoadingProvider] = useState(isCreateMode);
   const [offerPrice, setOfferPrice] = useState(providerRate ? String(providerRate) : "");
   const [loading, setLoading] = useState(false);
@@ -139,6 +145,8 @@ export default function NegotiateScreen() {
   // 3-step wizard state (for create mode)
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [address, setAddress] = useState("");
+  const [addressLatitude, setAddressLatitude] = useState<number | null>(null);
+  const [addressLongitude, setAddressLongitude] = useState<number | null>(null);
   const [scheduledDate, setScheduledDate] = useState("");
   const [scheduledTime, setScheduledTime] = useState("");
   const [isGettingLocation, setIsGettingLocation] = useState(false);
@@ -156,6 +164,8 @@ export default function NegotiateScreen() {
       });
       if (!result.location) return;
       const resolved = await reverseGeocode(result.location.latitude, result.location.longitude);
+      setAddressLatitude(result.location.latitude);
+      setAddressLongitude(result.location.longitude);
       setAddress(resolved || `${result.location.latitude.toFixed(5)}, ${result.location.longitude.toFixed(5)}`);
     } catch {
       showError("Location Error", "Could not get your current location. Please type your address.");
@@ -170,6 +180,32 @@ export default function NegotiateScreen() {
     if (!negId) return null;
     return myNegotiations.find((n) => n.id === negId) || null;
   }, [myNegotiations, negId]);
+
+  const providerServiceOptions = useMemo(() => (provider?.services || []).map((slug) => {
+    const category = getCategoryBySlug(slug);
+    return { slug, label: category?.name || slug };
+  }), [getCategoryBySlug, provider?.services]);
+
+  useEffect(() => {
+    if (!providerServiceOptions.length) {
+      setSelectedServiceSlug("");
+      return;
+    }
+    setSelectedServiceSlug((current) => {
+      if (current && providerServiceOptions.some((option) => option.slug === current)) return current;
+      if (serviceId && providerServiceOptions.some((option) => option.slug === serviceId)) return serviceId;
+      if (service) {
+        const matched = providerServiceOptions.find((option) =>
+          option.slug.toLowerCase() === service.toLowerCase() || option.label.toLowerCase() === service.toLowerCase()
+        );
+        if (matched) return matched.slug;
+      }
+      return providerServiceOptions.length === 1 ? providerServiceOptions[0].slug : "";
+    });
+  }, [providerServiceOptions, service, serviceId]);
+
+  const selectedServiceOption = providerServiceOptions.find((option) => option.slug === selectedServiceSlug);
+  const resolvedServiceLabel = selectedServiceOption?.label || "";
 
   useEffect(() => {
     if (!isCreateMode || !providerId) {
@@ -193,6 +229,10 @@ export default function NegotiateScreen() {
 
   const handleNextStep = () => {
     if (step === 1) {
+      if (!resolvedServiceLabel) {
+        showError("Service Required", "Choose which provider service you need.");
+        return;
+      }
       if (!address.trim()) {
         showError("Location Required", "Please enter your service address.");
         return;
@@ -220,6 +260,12 @@ export default function NegotiateScreen() {
   const handleSubmit = async () => {
     const price = parseInt(offerPrice, 10);
 
+    if (!resolvedServiceLabel) {
+      showError("Service Required", "Choose which provider service you need.");
+      setStep(1);
+      return;
+    }
+
     if (!price || price < 100) {
       showError("Invalid Price", "Enter a valid offer (min Rs. 100)");
       return;
@@ -241,12 +287,29 @@ export default function NegotiateScreen() {
       }
       setUploadingMedia(false);
 
+      let latitude = addressLatitude;
+      let longitude = addressLongitude;
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        const matches = await searchAddress(address.trim(), null, 1);
+        const best = matches[0];
+        if (!best) {
+          throw new Error("Please select a valid service address or use your current location.");
+        }
+        latitude = best.lat;
+        longitude = best.lng;
+        setAddressLatitude(best.lat);
+        setAddressLongitude(best.lng);
+        if (best.label) setAddress(best.label);
+      }
+
       await createNegotiation({
         providerId: provider.id,
         providerName: provider.name,
-        service: service || provider.services?.[0] || "General Service",
+        service: resolvedServiceLabel,
         customerOffer: price,
         address: address.trim(),
+        latitude: latitude!,
+        longitude: longitude!,
         scheduledDate: scheduledDate.trim(),
         scheduledTime: scheduledTime.trim(),
         mediaUrls,
@@ -258,7 +321,7 @@ export default function NegotiateScreen() {
       if (raw.includes('"negotiation"') && raw.includes('active negotiation')) {
         const found = myNegotiations.find((n) =>
           n.providerId === provider.id &&
-          n.service === (service || provider.services?.[0] || "General Service") &&
+          String(n.service || "").toLowerCase() === resolvedServiceLabel.toLowerCase() &&
           ["customer_offer", "provider_counter"].includes(n.status)
         );
         if (found) {
@@ -266,7 +329,7 @@ export default function NegotiateScreen() {
           return;
         }
       }
-      showError("Failed", "Could not send offer. Try again.");
+      showError("Could not submit request", apiErrorToMessage(error, "Could not send your offer. Please review the details and try again."));
     } finally {
       setLoading(false);
     }
@@ -535,7 +598,7 @@ export default function NegotiateScreen() {
     .join("")
     .toUpperCase();
 
-  const serviceLabel = service || provider!.services?.[0] || "General Service";
+  const serviceLabel = resolvedServiceLabel;
 
   const STEPS = ["Location", "Date & Time", "Offer"];
 
@@ -557,7 +620,7 @@ export default function NegotiateScreen() {
             </View>
           )}
           <Text style={styles.providerBadgeName}>{provider!.name}</Text>
-          <Text style={styles.providerBadgeService}>{serviceLabel}</Text>
+          <Text style={styles.providerBadgeService}>{serviceLabel || "Choose a service"}</Text>
         </View>
       </LinearGradient>
 
@@ -586,6 +649,32 @@ export default function NegotiateScreen() {
         {step === 1 && (
           <AnimatedCard delay={60}>
             <View style={styles.section}>
+              {providerServiceOptions.length > 1 && (
+                <View style={styles.servicePicker}>
+                  <View style={styles.stepHeaderRow}>
+                    <Icon name="briefcase" size={20} color={theme.colors.primary} />
+                    <Text style={styles.sectionTitle}>Which service do you need?</Text>
+                  </View>
+                  <Text style={styles.stepHint}>Select one approved service before sending your offer.</Text>
+                  <View style={styles.servicePickerChips}>
+                    {providerServiceOptions.map((option) => {
+                      const selected = selectedServiceSlug === option.slug;
+                      return (
+                        <Pressable
+                          key={option.slug}
+                          style={[styles.servicePickerChip, selected && styles.servicePickerChipSelected]}
+                          onPress={() => setSelectedServiceSlug(option.slug)}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                        >
+                          <Text style={[styles.servicePickerChipText, selected && styles.servicePickerChipTextSelected]}>{option.label}</Text>
+                          {selected && <Icon name="check-circle" size={13} color={theme.colors.primary} />}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
               <View style={styles.stepHeaderRow}>
                 <Icon name="map-pin" size={20} color={theme.colors.primary} />
                 <Text style={styles.sectionTitle}>Where is the service needed?</Text>
@@ -617,14 +706,14 @@ export default function NegotiateScreen() {
               <TextInput
                 style={styles.addressInput}
                 value={address}
-                onChangeText={setAddress}
+                onChangeText={(value) => { setAddress(value); setAddressLatitude(null); setAddressLongitude(null); }}
                 placeholder="e.g. House 12, Street 4, F-7/2, Islamabad"
                 placeholderTextColor={theme.colors.textMuted}
                 multiline
                 numberOfLines={3}
                 textAlignVertical="top"
               />
-              <Pressable style={[styles.nextBtn, !address.trim() && styles.submitBtnDisabled]} onPress={handleNextStep} disabled={!address.trim()}>
+              <Pressable style={[styles.nextBtn, (!address.trim() || !resolvedServiceLabel) && styles.submitBtnDisabled]} onPress={handleNextStep} disabled={!address.trim() || !resolvedServiceLabel}>
                 <Text style={styles.nextBtnText}>Next: Date & Time</Text>
                 <Icon name="arrow-right" size={16} color={theme.colors.onBrand} />
               </Pressable>
@@ -1003,6 +1092,22 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   stepLineDone: {
     backgroundColor: theme.colors.success,
   },
+  servicePicker: {
+    gap: 10,
+    paddingBottom: 18,
+    marginBottom: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  servicePickerChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  servicePickerChip: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 12, paddingVertical: 9, borderRadius: 18,
+    borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surfaceAlt,
+  },
+  servicePickerChipSelected: { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary + "12" },
+  servicePickerChipText: { fontSize: 12, fontWeight: "700", color: theme.colors.textSecondary },
+  servicePickerChipTextSelected: { color: theme.colors.primary },
   stepHeaderRow: {
     flexDirection: "row",
     alignItems: "center",

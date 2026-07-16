@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { api, formatDate } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { api, formatDate, openAuthenticatedFile } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 import { DataTable } from "@/components/ui/DataTable";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { StatCard } from "@/components/ui/StatCard";
@@ -61,18 +62,24 @@ function timeAgo(date: string) {
 
 export function ComplaintsPage() {
   const qc = useQueryClient();
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [priorityFilter, setPriorityFilter] = useState("all");
+  const { toast } = useToast();
+  const initialParams = new URLSearchParams(window.location.search);
+  const focusId = initialParams.get("focus") || "";
+  const [search, setSearch] = useState(initialParams.get("q") || "");
+  const [statusFilter, setStatusFilter] = useState(initialParams.get("status") || "all");
+  const [priorityFilter, setPriorityFilter] = useState(initialParams.get("priority") || "all");
   const [selected, setSelected] = useState<SupportTicket | null>(null);
+  const [focusOpened, setFocusOpened] = useState(false);
   const [newNote, setNewNote] = useState("");
   const [noteInternal, setNoteInternal] = useState(false);
   const [resolutionNote, setResolutionNote] = useState("");
   const [showResolution, setShowResolution] = useState(false);
 
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ["support-tickets", statusFilter, priorityFilter],
-    queryFn: () => api<{ tickets: SupportTicket[] }>("/api/admin/support"),
+    queryKey: ["support-tickets", statusFilter, priorityFilter, search, focusId],
+    queryFn: () => api<{ tickets: SupportTicket[] }>("/api/admin/support", {
+      params: focusId ? { focus: focusId } : { q: search || undefined, status: statusFilter, priority: priorityFilter },
+    }),
     refetchInterval: 180000,
   });
 
@@ -89,36 +96,48 @@ export function ComplaintsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["ticket-notes", selected?.id] });
       setNewNote("");
+      toast({ title: noteInternal ? "Internal note added" : "Reply sent" });
     },
+    onError: (error: any) => toast({ title: "Could not add note", description: error.message, variant: "destructive" }),
   });
 
   const updateStatusMut = useMutation({
     mutationFn: ({ ticketId, status, resolutionNote }: { ticketId: string; status: string; resolutionNote?: string }) =>
       api(`/api/admin/support/${ticketId}/status`, { method: "PATCH", body: JSON.stringify({ status, resolutionNote }) }),
-    onSuccess: (_, vars) => {
+    onSuccess: (result: any) => {
       qc.invalidateQueries({ queryKey: ["support-tickets"] });
-      if (selected) setSelected(s => s ? { ...s, status: vars.status, resolutionNote: vars.resolutionNote } : null);
+      qc.invalidateQueries({ queryKey: ["sidebar-counts"] });
+      if (result?.ticket) setSelected(result.ticket);
       setShowResolution(false);
       setResolutionNote("");
+      toast({ title: "Ticket updated" });
     },
+    onError: (error: any) => toast({ title: "Could not update ticket", description: error.message, variant: "destructive" }),
   });
 
   const updatePriorityMut = useMutation({
     mutationFn: ({ ticketId, priority }: { ticketId: string; priority: string }) =>
       api(`/api/admin/support/${ticketId}/status`, { method: "PATCH", body: JSON.stringify({ priority }) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["support-tickets"] }),
+    onSuccess: (result: any) => {
+      qc.invalidateQueries({ queryKey: ["support-tickets"] });
+      if (result?.ticket) setSelected(result.ticket);
+      toast({ title: "Priority updated" });
+    },
+    onError: (error: any) => toast({ title: "Could not update priority", description: error.message, variant: "destructive" }),
   });
 
   const tickets = data?.tickets || [];
   const notes = notesData?.notes || [];
+  const filtered = tickets;
 
-  const filtered = tickets.filter(t => {
-    const q = search.toLowerCase();
-    const matchSearch = !q || t.userName.toLowerCase().includes(q) || t.subject.toLowerCase().includes(q);
-    const matchStatus = statusFilter === "all" || t.status === statusFilter;
-    const matchPriority = priorityFilter === "all" || t.priority === priorityFilter;
-    return matchSearch && matchStatus && matchPriority;
-  });
+  useEffect(() => {
+    if (!focusId || focusOpened || tickets.length === 0) return;
+    const focused = tickets.find((ticket) => ticket.id === focusId);
+    if (focused) {
+      setSelected(focused);
+      setFocusOpened(true);
+    }
+  }, [focusId, focusOpened, tickets]);
 
   const openCount = tickets.filter(t => t.status === "open").length;
   const urgentCount = tickets.filter(t => t.priority === "urgent" && t.status !== "resolved" && t.status !== "closed").length;
@@ -151,7 +170,7 @@ export function ComplaintsPage() {
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Search by name, subject..."
+              placeholder="Search by ticket, user, phone, subject, booking..."
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
@@ -283,9 +302,14 @@ export function ComplaintsPage() {
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Attached Media</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {selected.mediaUrls.map((url, i) => (
-                      <a key={url + i} href={url} target="_blank" rel="noreferrer" className="text-xs font-medium text-blue-700 bg-blue-50 border border-blue-100 rounded-xl p-3 hover:bg-blue-100">
+                      <button
+                        key={url + i}
+                        type="button"
+                        onClick={() => openAuthenticatedFile(`/api/storage/objects/${String(url).replace(/^\/objects\//, "")}`)}
+                        className="text-left text-xs font-medium text-blue-700 bg-blue-50 border border-blue-100 rounded-xl p-3 hover:bg-blue-100"
+                      >
                         Open attachment {i + 1}
-                      </a>
+                      </button>
                     ))}
                   </div>
                 </div>

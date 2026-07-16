@@ -1,6 +1,18 @@
 export const API_KEY = "athoo_admin_api";
 export const TOKEN_KEY = "athoo_admin_token";
 export const REFRESH_TOKEN_KEY = "athoo_admin_refresh_token";
+const DEVICE_ID_KEY = "athoo_admin_device_id";
+
+export function getAdminDeviceId(): string {
+  const existing = typeof localStorage !== "undefined" ? localStorage.getItem(DEVICE_ID_KEY) : null;
+  if (existing && /^[a-z0-9][a-z0-9._:-]{15,127}$/i.test(existing)) return existing.toLowerCase();
+  const generated = (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`
+  ).toLowerCase();
+  if (typeof localStorage !== "undefined") localStorage.setItem(DEVICE_ID_KEY, generated);
+  return generated;
+}
 
 /**
  * Always sanitize URL (remove trailing slash)
@@ -91,7 +103,10 @@ export async function openAuthenticatedFile(pathOrUrl: string): Promise<void> {
     : `${getApiBase()}${normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`}`;
   const response = await fetchWithTimeout(url, {
     method: "GET",
-    headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+    headers: {
+      ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+      "X-Athoo-Device-Id": getAdminDeviceId(),
+    },
   });
   if (!response.ok) throw new Error(`Unable to open protected file (${response.status})`);
   const blobUrl = URL.createObjectURL(await response.blob());
@@ -110,7 +125,7 @@ async function refreshAdminSession(): Promise<boolean> {
     try {
       const res = await fetchWithTimeout(`${getApiBase()}/api/auth/refresh`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Athoo-Device-Id": getAdminDeviceId() },
         body: JSON.stringify({ refreshToken }),
       });
       if (!res.ok) return false;
@@ -211,6 +226,7 @@ export async function api<T = unknown>(
     ...fetchOptions,
     headers: {
       "Content-Type": "application/json",
+      "X-Athoo-Device-Id": getAdminDeviceId(),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(fetchOptions.headers || {}),
     },

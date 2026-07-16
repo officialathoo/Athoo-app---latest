@@ -6,13 +6,14 @@ const ws = readFileSync(new URL("../src/ws.ts", import.meta.url), "utf8");
 const chat = readFileSync(new URL("../src/routes/chat.ts", import.meta.url), "utf8");
 
 test("websocket connections require an active database session", () => {
-  assert.match(ws, /isSessionActive\(decoded\.sessionId, decoded\.userId\)/);
+  assert.match(ws, /isSessionActive\(decoded\.sessionId, decoded\.userId, decoded\.deviceId\)/);
   assert.match(ws, /invalid_or_revoked_session/);
 });
 
 test("call websocket rooms are limited to call participants", () => {
-  assert.match(ws, /call\.callerId !== decoded\.userId && call\.receiverId !== decoded\.userId/);
-  assert.match(ws, /call_forbidden/);
+  assert.match(ws, /call\.callerId !== userId && call\.receiverId !== userId/);
+  assert.match(ws, /call_forbidden_or_inactive/);
+  assert.match(ws, /ACTIVE_CALL_STATUSES/);
 });
 
 test("chat creation derives participant names and validates booking membership", () => {

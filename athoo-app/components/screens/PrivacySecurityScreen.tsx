@@ -155,6 +155,7 @@ export function PrivacySecurityScreen({ role }: { role: Role }) {
           <AppText variant="h3">{tr("Security and policy controls")}</AppText>
           <View style={styles.links}>
             <PolicyLink icon="lock" label={tr("Change password")} onPress={() => router.push(`/${group}/change-password` as any)} />
+            <PolicyLink icon="book-open-check" label={tr("Policy center")} onPress={() => router.push("/legal" as any)} />
             <PolicyLink icon="file-text" label={tr("Privacy policy")} onPress={() => router.push("/legal/privacy" as any)} />
             <PolicyLink icon="clipboard-list" label={tr("Terms of service")} onPress={() => router.push("/legal/terms" as any)} />
             <PolicyLink icon="headphones" label={tr("Contact support")} onPress={() => router.push(`/${group}/contact-support` as any)} />

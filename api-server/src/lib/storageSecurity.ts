@@ -29,8 +29,8 @@ export function uploadScopeForName(name: string): "private" | "shared" {
   return SENSITIVE_NAME.test(name) ? "private" : "shared";
 }
 
-export function userUploadKey(userId: string, name: string, id: string, date = new Date()): string {
-  const scope = uploadScopeForName(name);
+export function userUploadKey(userId: string, name: string, id: string, date = new Date(), explicitScope?: "private" | "shared"): string {
+  const scope = explicitScope || uploadScopeForName(name);
   return `uploads/${scope}/${userId}/${date.toISOString().slice(0, 10)}/${id}-${safeUploadName(name)}`;
 }
 

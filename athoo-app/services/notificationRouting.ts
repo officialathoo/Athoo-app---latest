@@ -108,7 +108,10 @@ export function resolveNotificationTarget(
 
   if (input.broadcastRequestId) {
     return role === "provider"
-      ? "/(provider)/broadcast-jobs"
+      ? {
+          pathname: "/(provider)/broadcast-jobs",
+          params: { requestId: input.broadcastRequestId },
+        }
       : {
           pathname: "/(customer)/broadcast-status",
           params: { requestId: input.broadcastRequestId },
@@ -136,6 +139,22 @@ export function resolveNotificationTarget(
   }
 
   const link = input.link?.split("?")[0].replace(/\/$/, "") || "";
+  const chatMatch = link.match(/^\/chats?\/([^/]+)$/);
+  if (chatMatch) {
+    return {
+      pathname: role === "provider" ? "/(provider)/chat-room" : "/(customer)/chat-room",
+      params: { chatId: decodeURIComponent(chatMatch[1]) },
+    };
+  }
+
+  const broadcastMatch = link.match(/^\/broadcasts?\/([^/]+)$/);
+  if (broadcastMatch) {
+    const requestId = decodeURIComponent(broadcastMatch[1]);
+    return role === "provider"
+      ? { pathname: "/(provider)/broadcast-jobs", params: { requestId } }
+      : { pathname: "/(customer)/broadcast-status", params: { requestId } };
+  }
+
   const bookingMatch = link.match(/^\/bookings\/([^/]+)$/);
   if (bookingMatch) {
     return {

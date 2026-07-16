@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, currency, formatDate } from "@/lib/api";
 import { TrendingUp, Loader2, CheckCircle, XCircle, Clock } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
 type RateRequest = {
@@ -25,11 +25,13 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 export function RateRequestsPage() {
+  const focusId = new URLSearchParams(window.location.search).get("focus") || "";
   const { toast } = useToast();
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState("pending");
   const [selected, setSelected] = useState<RateRequest | null>(null);
   const [reviewNote, setReviewNote] = useState("");
+  const [focusOpened, setFocusOpened] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["rate-requests", statusFilter],
@@ -43,12 +45,24 @@ export function RateRequestsPage() {
     onSuccess: () => {
       toast({ title: "Rate request updated" });
       qc.invalidateQueries({ queryKey: ["rate-requests"] });
+      qc.invalidateQueries({ queryKey: ["providers"] });
+      qc.invalidateQueries({ queryKey: ["admin"] });
+      qc.invalidateQueries({ queryKey: ["sidebar-counts"] });
       setSelected(null);
     },
     onError: () => toast({ title: "Failed to update", variant: "destructive" }),
   });
 
   const allRequests = data?.requests ?? [];
+  useEffect(() => {
+    if (!focusId || focusOpened || allRequests.length === 0) return;
+    const focused = allRequests.find((request) => request.id === focusId);
+    if (!focused) return;
+    setStatusFilter(focused.status);
+    setSelected(focused);
+    setReviewNote(focused.reviewNote || "");
+    setFocusOpened(true);
+  }, [allRequests, focusId, focusOpened]);
   const requests = allRequests.filter(r => statusFilter === "all" ? true : r.status === statusFilter);
   const pendingCount = allRequests.filter(r => r.status === "pending").length;
 
@@ -112,11 +126,11 @@ export function RateRequestsPage() {
                 const diff = r.currentRate ? r.requestedRate - r.currentRate : null;
                 const diffPct = r.currentRate ? Math.round((diff! / r.currentRate) * 100) : null;
                 return (
-                  <tr key={r.id} className="hover:bg-slate-50 transition-colors">
+                  <tr key={r.id} data-focus-id={r.id === focusId ? r.id : undefined} className={r.id === focusId ? "bg-blue-50 ring-2 ring-inset ring-blue-400" : "hover:bg-slate-50 transition-colors"}>
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-800">{r.providerName}</p>
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{r.service}</td>
+                    <td className="px-4 py-3 text-slate-600">{r.service === "general" ? "General profile rate" : r.service}</td>
                     <td className="px-4 py-3 text-right text-slate-600">
                       {r.currentRate ? currency(r.currentRate) : "—"}
                     </td>
@@ -169,7 +183,7 @@ export function RateRequestsPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-slate-500">Service</span>
-                  <span className="text-sm font-medium text-slate-800">{selected.service}</span>
+                  <span className="text-sm font-medium text-slate-800">{selected.service === "general" ? "General profile rate" : selected.service}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-slate-500">Current Rate</span>

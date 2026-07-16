@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "evidenceRequired": [
     "screenshot-or-video",
     "device-and-os",
@@ -32,7 +32,12 @@
       "push-notification-tap-from-killed-state",
       "booking-and-negotiation",
       "premium-payment-proof",
-      "weak-network-retry-and-offline-state"
+      "weak-network-retry-and-offline-state",
+      "biometric-session-lock-and-restart",
+      "chat-keyboard-input-visible",
+      "chat-unread-badge-and-background-delivery",
+      "provider-rate-and-multiple-services-profile",
+      "policy-center-offline-and-accessibility"
     ],
     "ios": [
       "fresh-install-and-native-splash",
@@ -58,7 +63,12 @@
       "push-notification-tap-from-killed-state",
       "booking-and-negotiation",
       "premium-payment-proof",
-      "weak-network-retry-and-offline-state"
+      "weak-network-retry-and-offline-state",
+      "biometric-session-lock-and-restart",
+      "chat-keyboard-input-visible",
+      "chat-unread-badge-and-background-delivery",
+      "provider-rate-and-multiple-services-profile",
+      "policy-center-offline-and-accessibility"
     ]
   },
   "crossRole": [
@@ -76,6 +86,10 @@
     "password-reset-and-security-alert",
     "map-location-shared-consistency",
     "notification-deep-link-destination",
-    "media-upload-and-admin-review"
+    "media-upload-and-admin-review",
+    "customer-job-broadcast-provider-receipt",
+    "two-way-voice-call-cross-network",
+    "admin-notification-exact-record-destination",
+    "inactivity-warning-return-and-no-auto-delete"
   ]
 }

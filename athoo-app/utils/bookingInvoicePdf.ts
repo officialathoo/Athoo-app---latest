@@ -130,8 +130,9 @@ export async function shareBookingInvoice(
   try {
     opts?.onState?.(true);
     if (Platform.OS === "web") {
-      const w = window.open("", "_blank");
+      const w = window.open("", "_blank", "noopener,noreferrer");
       if (w) {
+        w.opener = null;
         w.document.write(html);
         w.document.close();
         w.focus();

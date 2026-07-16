@@ -7,7 +7,7 @@ import {
   LayoutGrid, Building2, Receipt, Inbox, RotateCcw, ArrowUpFromLine,
   Image, Bell, MapPin, HelpCircle, ChevronDown, ChevronRight,
   Briefcase, Zap, Globe, Flag, TrendingUp, Phone, History, Ban, FileText,
-  UserPlus, Mail,
+  UserPlus, Mail, BookOpenCheck,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "@/lib/api";
@@ -22,6 +22,7 @@ interface NavItem {
   icon: any;
   exact?: boolean;
   perm?: string;
+  superAdminOnly?: boolean;
 }
 
 interface NavSection {
@@ -39,16 +40,17 @@ const NAV_SECTIONS: NavSection[] = [
       { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
       { to: "/live-jobs", label: "Live Jobs", icon: Zap, perm: "operations.read" },
       { to: "/users", label: "Users", icon: Users, perm: "users.read" },
+      { to: "/inactive-accounts", label: "Inactive Accounts", icon: History, perm: "users.read" },
       { to: "/providers", label: "Providers", icon: UserCog, perm: "users.read" },
       { to: "/bookings", label: "Bookings", icon: ClipboardList, perm: "operations.read" },
       { to: "/negotiations", label: "Negotiations", icon: MessageCircle, perm: "operations.read" },
-      { to: "/verification", label: "Verification", icon: ShieldCheck, perm: "providers.write" },
+      { to: "/verification", label: "Verification", icon: ShieldCheck, perm: "verification.write" },
       { to: "/requests", label: "Requests", icon: Inbox, perm: "operations.read" },
       { to: "/complaints", label: "Complaints", icon: MessageSquareWarning, perm: "support.write" },
       { to: "/chat-moderation", label: "Chat Moderation", icon: MessageCircle, perm: "support.read" },
       { to: "/reviews", label: "Review Moderation", icon: Star, perm: "support.read" },
       { to: "/reported-issues", label: "Reported Issues", icon: Flag, perm: "support.write" },
-      { to: "/rate-requests", label: "Rate Requests", icon: TrendingUp, perm: "providers.write" },
+      { to: "/rate-requests", label: "Rate Requests", icon: TrendingUp, perm: "verification.write" },
     ],
   },
   {
@@ -62,7 +64,7 @@ const NAV_SECTIONS: NavSection[] = [
       { to: "/withdrawals", label: "Withdrawals", icon: ArrowUpFromLine, perm: "finance.write" },
       { to: "/refunds", label: "Refunds", icon: RotateCcw, perm: "finance.write" },
       { to: "/payment-accounts", label: "Payment Accounts", icon: Building2, perm: "finance.read" },
-      { to: "/plans", label: "Subscription Reviews", icon: Crown, perm: "finance.read" },
+      { to: "/plans?tab=subs&status=pending", label: "Subscription Reviews", icon: Crown, perm: "finance.read" },
     ],
   },
   {
@@ -83,10 +85,11 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: "/categories", label: "Categories", icon: LayoutGrid, perm: "marketing.read" },
       { to: "/service-areas", label: "Service Areas (Cities)", icon: MapPin, perm: "settings.read" },
-      { to: "/plans", label: "Premium Plans", icon: Crown, perm: "settings.read" },
-      { to: "/emergency-contacts", label: "Emergency Contacts", icon: Phone },
+      { to: "/plans?tab=plans", label: "Premium Plans", icon: Crown, perm: "settings.read" },
+      { to: "/emergency-contacts", label: "Emergency Contacts", icon: Phone, perm: "settings.read" },
       { to: "/notification-templates", label: "Notification Templates", icon: Bell, perm: "settings.read" },
       { to: "/email-center", label: "Email Center", icon: Mail, perm: "notifications.read" },
+      { to: "/policies", label: "Policy Center", icon: BookOpenCheck, perm: "settings.read" },
     ],
   },
   {
@@ -104,8 +107,8 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Administration",
     perm: "settings.write",
     items: [
-      { to: "/admin-users", label: "Admin Users", icon: Shield },
-      { to: "/blacklist", label: "Blacklist", icon: Ban },
+      { to: "/admin-users", label: "Admin Users", icon: Shield, superAdminOnly: true },
+      { to: "/blacklist", label: "Blacklist", icon: Ban, superAdminOnly: true },
       { to: "/settings", label: "Settings", icon: Settings, perm: "settings.read" },
     ],
   },
@@ -159,9 +162,11 @@ export function Sidebar({ admin, onLogout }: SidebarProps) {
     "/commission": sidebarCounts?.pendingCommissionPayments || 0,
     "/withdrawals": sidebarCounts?.pendingWithdrawals || 0,
     "/refunds": sidebarCounts?.pendingRefunds || 0,
-    "/requests": sidebarCounts?.openSupportTickets || 0,
+    "/requests": (sidebarCounts?.pendingServiceRequests || 0) + (sidebarCounts?.pendingDeletionRequests || 0),
+    "/complaints": sidebarCounts?.openSupportTickets || 0,
     "/rate-requests": sidebarCounts?.pendingRateRequests || 0,
-    "/plans": sidebarCounts?.pendingSubscriptions || 0,
+    "/plans?tab=subs&status=pending": sidebarCounts?.pendingSubscriptions || 0,
+    "/inactive-accounts": sidebarCounts?.inactiveAccountsForReview || 0,
   };
 
   const adminRole = admin?.adminRole;
@@ -174,14 +179,21 @@ export function Sidebar({ admin, onLogout }: SidebarProps) {
 
   function canSeeSection(section: NavSection) {
     if (!section.perm) return true;
-    return section.items.some(item => can(item.perm));
+    return section.items.some(item => (!item.superAdminOnly || isSuperAdmin) && can(item.perm));
   }
 
   function isActive(to: string, exact?: boolean) {
+    const [targetPath, targetQuery = ""] = to.split("?", 2);
     const adminBase = import.meta.env.BASE_URL.replace(/\/$/, "");
-    const fullPath = adminBase + to;
-    if (exact) return location === fullPath || location === to;
-    return location.startsWith(fullPath) || location.startsWith(to);
+    const fullPath = adminBase + targetPath;
+    const pathMatches = exact
+      ? location === fullPath || location === targetPath
+      : location.startsWith(fullPath) || location.startsWith(targetPath);
+    if (!pathMatches || !targetQuery) return pathMatches;
+    const expected = new URLSearchParams(targetQuery);
+    const current = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+    for (const [key, value] of expected.entries()) if (current.get(key) !== value) return false;
+    return true;
   }
 
   function toggleSection(id: string) {
@@ -199,6 +211,7 @@ export function Sidebar({ admin, onLogout }: SidebarProps) {
     return (
       <Link
         to={to}
+        aria-current={active ? "page" : undefined}
         onClick={() => setMobileOpen(false)}
         className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
           active
@@ -280,7 +293,7 @@ export function Sidebar({ admin, onLogout }: SidebarProps) {
         {NAV_SECTIONS.map(section => {
           if (!canSeeSection(section)) return null;
 
-          const visibleItems = section.items.filter(item => can(item.perm));
+          const visibleItems = section.items.filter(item => (!item.superAdminOnly || isSuperAdmin) && can(item.perm));
           if (visibleItems.length === 0) return null;
 
           const isCollapsed = collapsedSections.has(section.id);
@@ -288,6 +301,9 @@ export function Sidebar({ admin, onLogout }: SidebarProps) {
           return (
             <div key={section.id} className="mb-1">
               <button
+                type="button"
+                aria-expanded={!isCollapsed}
+                aria-controls={`admin-nav-section-${section.id}`}
                 onClick={() => toggleSection(section.id)}
                 className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-slate-500 uppercase tracking-wider font-semibold hover:text-slate-300 transition-colors rounded-md"
               >
@@ -298,7 +314,7 @@ export function Sidebar({ admin, onLogout }: SidebarProps) {
                 }
               </button>
               {!isCollapsed && (
-                <div className="mt-0.5 space-y-0.5">
+                <div id={`admin-nav-section-${section.id}`} className="mt-0.5 space-y-0.5">
                   {visibleItems.map(item => (
                     <NavLink key={item.to} {...item} />
                   ))}
@@ -308,15 +324,16 @@ export function Sidebar({ admin, onLogout }: SidebarProps) {
           );
         })}
 
-        {!isSuperAdmin && !NAV_SECTIONS.find(s => s.id === "admin" && canSeeSection(s)) && (
+        {!isSuperAdmin && can("settings.read") && !NAV_SECTIONS.find(s => s.id === "admin" && canSeeSection(s)) && (
           <div className="mt-2 pt-2 border-t border-slate-800">
-            <NavLink to="/settings" label="Settings" icon={Settings} />
+            <NavLink to="/settings" label="Settings" icon={Settings} perm="settings.read" />
           </div>
         )}
       </nav>
 
       <div className="px-3 pb-5 mt-auto border-t border-slate-700/60 pt-3 shrink-0">
         <button
+          type="button"
           onClick={onLogout}
           className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-red-500/20 hover:text-red-300 transition-all duration-150"
         >
@@ -329,6 +346,10 @@ export function Sidebar({ admin, onLogout }: SidebarProps) {
   return (
     <>
       <button
+        type="button"
+        aria-label={mobileOpen ? "Close admin navigation" : "Open admin navigation"}
+        aria-expanded={mobileOpen}
+        aria-controls="admin-mobile-sidebar"
         className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-slate-900 text-white rounded-lg shadow-lg"
         onClick={() => setMobileOpen(!mobileOpen)}
       >
@@ -340,6 +361,8 @@ export function Sidebar({ admin, onLogout }: SidebarProps) {
       )}
 
       <aside
+        id="admin-mobile-sidebar"
+        aria-label="Admin navigation"
         className={`fixed top-0 left-0 h-full z-40 w-60 transition-transform duration-300 lg:translate-x-0 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         } lg:static lg:h-screen`}

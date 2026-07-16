@@ -1,12 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
+import { readRepo } from "./helpers/repo.ts";
 
-const home = fs.readFileSync("../athoo-app/app/(customer)/(tabs)/home.tsx", "utf8");
-const api = fs.readFileSync("src/routes/marketing.ts", "utf8");
-const admin = fs.readFileSync("../admin-panel/src/pages/MarketingPage.tsx", "utf8");
-const schema = fs.readFileSync("../lib/db/src/schema/index.ts", "utf8");
-const migration = fs.readFileSync("../deploy/migrations/20260711_customer_home_configuration.sql", "utf8");
+const home = readRepo("athoo-app/app/(customer)/(tabs)/home.tsx");
+const api = readRepo("api-server/src/routes/marketing.ts");
+const admin = readRepo("admin-panel/src/pages/MarketingPage.tsx");
+const schema = readRepo("lib/db/src/schema/index.ts");
+const migration = readRepo("deploy/migrations/20260711_customer_home_configuration.sql");
 
 test("customer home has refresh, retry, profile location and admin-controlled visibility", () => {
   assert.match(home, /RefreshControl/);

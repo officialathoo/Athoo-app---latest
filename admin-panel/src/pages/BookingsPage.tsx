@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, currency, formatDate } from "@/lib/api";
 import { getPrivateFileAccessUrl } from "@/lib/storage";
+import { buildCsv } from "@/lib/csv";
 import type { Booking } from "@/lib/types";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BookingTimeline } from "@/components/BookingTimeline";
@@ -47,6 +48,7 @@ function PrivateVideo({ objectPath }: { objectPath: string }) {
 }
 
 export function BookingsPage() {
+  const focusId = new URLSearchParams(window.location.search).get("focus") || "";
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -62,6 +64,7 @@ export function BookingsPage() {
   const [availableProviders, setAvailableProviders] = useState<User[]>([]);
   const [replacementProviderId, setReplacementProviderId] = useState("");
   const [operationLoading, setOperationLoading] = useState(false);
+  const [focusOpened, setFocusOpened] = useState(false);
   const { hasPermission } = usePermissions();
   const canWrite = hasPermission("bookings.write");
   const canExport = hasPermission("export.read");
@@ -109,7 +112,7 @@ export function BookingsPage() {
 
   function exportCSV() {
     const rows = [["ID", "Customer", "Provider", "Service", "Date", "Time", "Status", "Payment", "Price"], ...bookings.map(b => [b.publicId || b.id, b.customerName, b.providerName, b.service, b.scheduledDate, b.scheduledTime, b.status, b.paymentStatus || "pending", b.price ?? ""])];
-    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const csv = buildCsv(rows);
     const blob = new Blob([csv], { type: "text/csv" });
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `bookings-page-${page}-${today()}.csv`; a.click(); URL.revokeObjectURL(a.href);
   }
@@ -128,6 +131,16 @@ export function BookingsPage() {
       setAvailableProviders((providers.providers || []).filter(provider => provider.id !== booking.providerId));
     } catch (error) { setLoadError((error as Error).message); }
   }
+
+  useEffect(() => {
+    if (!focusId || focusOpened || loading) return;
+    setFocusOpened(true);
+    const focused = bookings.find((booking) => booking.id === focusId || booking.publicId === focusId);
+    if (focused) { void openBooking(focused); return; }
+    api<{ booking: Booking; operations: BookingOperation[] }>(`/api/admin/bookings/${focusId}/operations`)
+      .then(({ booking, operations: history }) => { setSelected(booking); setOperations(history || []); })
+      .catch((error) => setLoadError(error.message || "Referenced booking could not be opened"));
+  }, [bookings, focusId, focusOpened, loading]);
 
   async function cancelBooking() {
     if (!selected || operationLoading) return;
@@ -260,7 +273,7 @@ export function BookingsPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {paged.map((b) => (
-                  <tr key={b.id} className="hover:bg-slate-50 transition-colors" title={b.publicId || b.id}>
+                  <tr key={b.id} data-focus-id={b.id === focusId || b.publicId === focusId ? b.id : undefined} className={b.id === focusId || b.publicId === focusId ? "bg-blue-50 ring-2 ring-inset ring-blue-400" : "hover:bg-slate-50 transition-colors"} title={b.publicId || b.id}>
                     <td className="px-5 py-3">
                       <p className="font-medium text-slate-800 capitalize">{b.service.replace(/_/g, " ")}</p>
                       <p className="text-xs text-slate-400 truncate max-w-[180px]">{b.address}</p>

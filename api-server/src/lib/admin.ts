@@ -46,6 +46,11 @@ export type PlatformSettings = {
   // Cancellation fees
   customerCancellationFee: number;
   providerCancellationPenalty: number;
+  // Inactivity lifecycle. Permanent deletion is deliberately not automatic.
+  inactivityLifecycleEnabled: boolean;
+  inactivityWarningDays: number;
+  inactivityRestrictionDays: number;
+  inactivityReviewDays: number;
 };
 
 export function generateId(): string {
@@ -77,6 +82,10 @@ export const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = {
   defaultServiceRadiusKm: 25,
   customerCancellationFee: 0,
   providerCancellationPenalty: 0,
+  inactivityLifecycleEnabled: true,
+  inactivityWarningDays: 60,
+  inactivityRestrictionDays: 90,
+  inactivityReviewDays: 180,
 };
 
 export async function getPlatformSettings(): Promise<PlatformSettings> {
@@ -137,6 +146,10 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
     defaultServiceRadiusKm: num("defaultServiceRadiusKm", DEFAULT_PLATFORM_SETTINGS.defaultServiceRadiusKm),
     customerCancellationFee: num("customerCancellationFee", DEFAULT_PLATFORM_SETTINGS.customerCancellationFee),
     providerCancellationPenalty: num("providerCancellationPenalty", DEFAULT_PLATFORM_SETTINGS.providerCancellationPenalty),
+    inactivityLifecycleEnabled: bool("inactivityLifecycleEnabled", DEFAULT_PLATFORM_SETTINGS.inactivityLifecycleEnabled),
+    inactivityWarningDays: num("inactivityWarningDays", DEFAULT_PLATFORM_SETTINGS.inactivityWarningDays),
+    inactivityRestrictionDays: num("inactivityRestrictionDays", DEFAULT_PLATFORM_SETTINGS.inactivityRestrictionDays),
+    inactivityReviewDays: num("inactivityReviewDays", DEFAULT_PLATFORM_SETTINGS.inactivityReviewDays),
   };
   _settingsCache = { value: computed, fetchedAt: Date.now() };
   return computed;
@@ -170,6 +183,15 @@ function validatePlatformSettings(settings: PlatformSettings): void {
   assertRange("defaultServiceRadiusKm", settings.defaultServiceRadiusKm, 1, 100);
   assertRange("customerCancellationFee", settings.customerCancellationFee, 0, 100_000);
   assertRange("providerCancellationPenalty", settings.providerCancellationPenalty, 0, 100_000);
+  assertRange("inactivityWarningDays", settings.inactivityWarningDays, 7, 3650);
+  assertRange("inactivityRestrictionDays", settings.inactivityRestrictionDays, 14, 3650);
+  assertRange("inactivityReviewDays", settings.inactivityReviewDays, 30, 3650);
+  if (settings.inactivityRestrictionDays <= settings.inactivityWarningDays) {
+    throw new PlatformSettingsValidationError("inactivityRestrictionDays must be greater than inactivityWarningDays");
+  }
+  if (settings.inactivityReviewDays <= settings.inactivityRestrictionDays) {
+    throw new PlatformSettingsValidationError("inactivityReviewDays must be greater than inactivityRestrictionDays");
+  }
   if (!settings.platformName.trim() || settings.platformName.length > 80) throw new PlatformSettingsValidationError("platformName must be 1-80 characters");
   if (!/^\S+@\S+\.\S+$/.test(settings.supportEmail)) throw new PlatformSettingsValidationError("supportEmail must be valid");
   if (settings.supportPhone.length > 30) throw new PlatformSettingsValidationError("supportPhone is too long");
@@ -216,6 +238,10 @@ export async function savePlatformSettings(input: Partial<PlatformSettings>): Pr
     defaultServiceRadiusKm: takeNum("defaultServiceRadiusKm"),
     customerCancellationFee: takeNum("customerCancellationFee"),
     providerCancellationPenalty: takeNum("providerCancellationPenalty"),
+    inactivityLifecycleEnabled: takeBool("inactivityLifecycleEnabled"),
+    inactivityWarningDays: takeNum("inactivityWarningDays"),
+    inactivityRestrictionDays: takeNum("inactivityRestrictionDays"),
+    inactivityReviewDays: takeNum("inactivityReviewDays"),
   };
 
   validatePlatformSettings(next);
@@ -261,7 +287,7 @@ export function toPublicProvider(user: User | null | undefined) {
 
 export function toSafeUser<T extends Record<string, any>>(user: T | null | undefined) {
   if (!user) return null;
-  const { password, ...safeUser } = user;
+  const { password, expoPushToken, adminFailedLoginCount, adminLockedUntil, ...safeUser } = user;
   return safeUser;
 }
 

@@ -61,3 +61,8 @@ device-acceptance-evidence.json
 rc2-evidence.json
 
 .env.local
+
+.env
+.env.local
+.env.production
+.env.development

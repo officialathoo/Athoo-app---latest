@@ -4,6 +4,7 @@ import { AppCard, AppText } from "@/components/design";
 import { Button } from "@/components/ui/Button";
 import { useTheme } from "@/context/ThemeContext";
 import { Feather } from "@expo/vector-icons";
+import NetInfo from "@react-native-community/netinfo";
 
 /** Branded full-screen / inline loading view. */
 export function LoadingView({ label, compact }: { label?: string; compact?: boolean }) {
@@ -100,22 +101,12 @@ export function OfflineBanner() {
         };
       }
     } else {
-      (async () => {
-        try {
-          // Optional dependency — resolved at runtime only if installed
-          const mod: any = await (Function('return import("@react-native-community/netinfo")') as () => Promise<any>)();
-          const NetInfo = mod?.default ?? mod;
-          if (!NetInfo?.addEventListener) return;
-          const sub = NetInfo.addEventListener((state: any) => {
-            if (!mounted) return;
-            const isOffline = state?.isConnected === false || state?.isInternetReachable === false;
-            setOffline(Boolean(isOffline));
-          });
-          unsub = () => sub();
-        } catch {
-          // NetInfo not installed — silently no-op
-        }
-      })();
+      const sub = NetInfo.addEventListener((state) => {
+        if (!mounted) return;
+        const isOffline = state.isConnected === false || state.isInternetReachable === false;
+        setOffline(Boolean(isOffline));
+      });
+      unsub = () => sub();
     }
 
     return () => {

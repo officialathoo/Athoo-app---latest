@@ -27,14 +27,15 @@ test("mobile fails visibly when the API URL is missing", () => {
 
 test("logout clears local state immediately and performs bounded remote cleanup", () => {
   const clearUserIndex = authContext.indexOf("setUser(null)");
-  const navigateIndex = authContext.indexOf('router.replace("/auth/welcome"');
-  const remoteCleanupIndex = authContext.indexOf("Promise.allSettled");
-  assert.ok(clearUserIndex >= 0 && navigateIndex >= 0 && remoteCleanupIndex >= 0);
-  assert.ok(clearUserIndex < remoteCleanupIndex && navigateIndex < remoteCleanupIndex);
+  const remoteCleanupIndex = authContext.indexOf("/api/auth/logout");
+  assert.ok(clearUserIndex >= 0 && remoteCleanupIndex >= 0);
+  assert.ok(clearUserIndex < remoteCleanupIndex);
+  assert.match(authContext, /queryClient\.clear\(\)/);
   assert.match(authContext, /notificationService\.resetSyncedToken\(\)/);
-  assert.match(authContext, /\/api\/auth\/push-token/);
   assert.match(authContext, /\/api\/auth\/logout/);
   assert.match(authContext, /setTimeout\(\(\) => controller\.abort\(\), 4000\)/);
+  assert.doesNotMatch(authContext, /router\.replace/);
+  assert.match(layout, /function SessionRouteGuard/);
 });
 
 test("notification navigation has one owner and supports cold starts", () => {
@@ -48,5 +49,5 @@ test("push tokens are validated and stale devices are removed", () => {
   assert.match(authRoutes, /INVALID_PUSH_TOKEN/);
   assert.match(push, /DeviceNotRegistered/);
   assert.match(push, /invalidTokens/);
-  assert.match(notifications, /set\(\{ expoPushToken: null \}\)/);
+  assert.match(notifications, /set\(\{[\s\S]*expoPushToken:\s*null[\s\S]*\}\)/);
 });

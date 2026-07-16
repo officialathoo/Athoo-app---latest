@@ -191,8 +191,8 @@ export default function InvoicesScreen() {
     try {
       setGeneratingPdf(true);
       if (Platform.OS === "web") {
-        const w = window.open("", "_blank");
-        if (w) { w.document.write(html); w.document.close(); w.print(); }
+        const w = window.open("", "_blank", "noopener,noreferrer");
+        if (w) { w.opener = null; w.document.write(html); w.document.close(); w.print(); }
         return;
       }
       const { uri } = await Print.printToFileAsync({ html, base64: false });

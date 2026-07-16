@@ -1,5 +1,6 @@
 import { queueStats } from "./queue";
 import { getMapConfigurationStatus } from "./mapConfiguration";
+import { getCallConfigurationStatus } from "./callConfiguration";
 
 export type ReadinessIssue = { area: string; severity: "critical" | "high" | "medium"; message: string; fix: string };
 
@@ -15,7 +16,8 @@ export function productionReadinessSnapshot() {
   if (process.env.NODE_ENV === "production" && ["local", "dev", "filesystem"].includes(String(process.env.STORAGE_PROVIDER || "").toLowerCase())) issues.push({ area: "storage", severity: "critical", message: "Local storage is not allowed in production", fix: "Configure Cloudflare R2 or another S3-compatible private object store." });
   if (!process.env.PUBLIC_OBJECT_SEARCH_PATHS) issues.push({ area: "storage", severity: "medium", message: "Public object prefix is using the default", fix: "Set PUBLIC_OBJECT_SEARCH_PATHS to explicit public-only prefixes." });
   if (String(process.env.QUEUE_PROVIDER || "postgres").toLowerCase() !== "postgres") issues.push({ area: "scaling", severity: "high", message: "Unsupported queue provider configured", fix: "Use QUEUE_PROVIDER=postgres for the built-in durable queue." });
-  if (!(process.env.TURN_URLS || process.env.TURN_URL)) issues.push({ area: "calls", severity: "high", message: "TURN server is not configured", fix: "Set TURN_URLS (or legacy TURN_URL), TURN_USERNAME, and TURN_CREDENTIAL for reliable calls." });
+  const callStatus = getCallConfigurationStatus();
+  if (!callStatus.productionReady) issues.push({ area: "calls", severity: "high", message: callStatus.warning || "Production voice calling is not ready", fix: "Set valid TURN_URLS (or legacy TURN_URL), TURN_USERNAME, and TURN_CREDENTIAL for reliable calls." });
   if (!process.env.SENTRY_DSN && !process.env.ERROR_TRACKING_DSN) issues.push({ area: "monitoring", severity: "medium", message: "Error tracking is not configured", fix: "Add Sentry or equivalent DSN for crash/error tracking." });
   if (process.env.NODE_ENV === "production" && !process.env.INCIDENT_COMMANDER_CONTACT) issues.push({ area: "operations", severity: "high", message: "Incident commander contact is not configured", fix: "Set INCIDENT_COMMANDER_CONTACT for production escalation." });
   if (process.env.NODE_ENV === "production" && !process.env.SUPPORT_ESCALATION_EMAIL) issues.push({ area: "operations", severity: "high", message: "Support escalation email is not configured", fix: "Set SUPPORT_ESCALATION_EMAIL for beta and production escalation." });

@@ -55,14 +55,29 @@ export function BroadcastsPage() {
 
   const sendMutation = useMutation({
     mutationFn: (payload: { title: string; message: string; audience: string; targetUserIds: string[] }) =>
-      api("/api/admin/broadcasts", { method: "POST", body: payload }),
-    onSuccess: async () => {
+      api<{
+        broadcast: Broadcast;
+        delivery: {
+          created: number;
+          withPushToken: number;
+          onlineRecipients: number;
+          pushAccepted: number;
+          pushFailed: number;
+          fallbackSignaled: number;
+          receiptQueued: boolean;
+        };
+      }>("/api/admin/broadcasts", { method: "POST", body: payload }),
+    onSuccess: async (response) => {
       await qc.invalidateQueries({ queryKey: ["admin", "broadcasts"] });
       setForm({ title: "", message: "", audience: "all", targetUserIds: "", templateId: "" });
       setUserSearch("");
       setShowTemplates(false);
       setShowForm(false);
-      toast({ title: "Broadcast sent", description: "The message was saved and delivered to the selected audience." });
+      const delivery = response.delivery;
+      toast({
+        title: "Broadcast processed",
+        description: `${delivery.created} in-app · ${delivery.pushAccepted} push accepted · ${delivery.onlineRecipients} online${delivery.pushFailed ? ` · ${delivery.pushFailed} push failed` : ""}`,
+      });
     },
     onError: (error: Error) => setFormError(error.message),
   });

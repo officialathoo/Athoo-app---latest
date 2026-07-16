@@ -55,7 +55,7 @@ userRouter.get("/mine", requireAuth, async (req: AuthRequest, res: Response) => 
 // Admin routes
 adminRouter.use(requireAuth, requireAdmin);
 
-adminRouter.get("/", async (req, res: Response) => {
+adminRouter.get("/", requirePermission("support.read"), async (req, res: Response) => {
   try {
     const status = req.query.status as string | undefined;
     const where = status ? eq(reportIssuesTable.status, status) : undefined;

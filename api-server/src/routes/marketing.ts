@@ -13,6 +13,7 @@ import { and, asc, desc, eq, gte, isNull, or } from "drizzle-orm";
 import { requireAuth, requireAdmin, requirePermission, type AuthRequest } from "../middlewares/auth";
 import { generateId } from "../lib/admin";
 import { logger } from "../lib/logger";
+import { sanitizeHttpsOrAppPath, sanitizeHttpsUrl } from "../lib/contentSecurity";
 
 const publicRouter = Router();
 const adminRouter = Router();
@@ -22,6 +23,39 @@ const LINK_TYPES = new Set(["none", "category", "url", "booking"]);
 
 function validAudience(value: unknown): value is string { return AUDIENCES.has(String(value ?? "all")); }
 function validDate(value: unknown): boolean { return !value || !Number.isNaN(new Date(String(value)).getTime()); }
+
+function sanitizeBannerTarget(linkType: unknown, linkTarget: unknown): { ok: true; value: string | null } | { ok: false } {
+  const type = String(linkType || "none");
+  const raw = String(linkTarget || "").trim();
+  if (type === "none") return { ok: true, value: null };
+  if (!raw || raw.length > 500 || /[\u0000-\u001f\u007f]/.test(raw)) return { ok: false };
+  if (type === "url") {
+    const value = sanitizeHttpsUrl(raw, 500);
+    return value ? { ok: true, value } : { ok: false };
+  }
+  if (type === "category" && /^[a-z0-9][a-z0-9-]{0,99}$/i.test(raw)) return { ok: true, value: raw };
+  if (type === "booking" && /^[A-Za-z0-9_-]{1,128}$/.test(raw)) return { ok: true, value: raw };
+  return { ok: false };
+}
+
+function publicAnnouncement<T extends { buttonLink?: string | null; imageUrl?: string | null }>(value: T): T {
+  return {
+    ...value,
+    buttonLink: sanitizeHttpsOrAppPath(value.buttonLink),
+    imageUrl: sanitizeHttpsUrl(value.imageUrl),
+  };
+}
+
+function publicBanner<T extends { linkType?: string | null; linkTarget?: string | null; imageUrl?: string | null }>(value: T) {
+  const linkType = String(value.linkType || "none");
+  const target = sanitizeBannerTarget(linkType, value.linkTarget);
+  return {
+    ...value,
+    linkType: target.ok ? linkType : "none",
+    linkTarget: target.ok ? target.value : null,
+    imageUrl: sanitizeHttpsUrl(value.imageUrl),
+  };
+}
 
 async function auditMarketing(req: AuthRequest, action: string, target: string, targetId: string, details: Record<string, unknown> = {}) {
   const admin = await db.query.usersTable.findFirst({ where: eq(usersTable.id, req.user!.userId) });
@@ -77,7 +111,7 @@ publicRouter.get("/banners", async (req, res) => {
       )
       .orderBy(asc(marketingBannersTable.sortOrder), desc(marketingBannersTable.createdAt));
 
-    return res.json({ banners });
+    return res.json({ banners: banners.map(publicBanner) });
   } catch (err) {
     logger.error({ err }, "get banners error");
     return res.status(500).json({ error: "Failed to load banners" });
@@ -109,7 +143,7 @@ publicRouter.get("/announcements", async (req, res) => {
       )
       .orderBy(desc(appAnnouncementsTable.priority), desc(appAnnouncementsTable.createdAt));
 
-    return res.json({ announcements });
+    return res.json({ announcements: announcements.map(publicAnnouncement) });
   } catch (err) {
     logger.error({ err }, "get announcements error");
     return res.status(500).json({ error: "Failed to load announcements" });
@@ -245,19 +279,22 @@ adminRouter.post("/banners", requirePermission("marketing.write"), async (req: A
     if (!validAudience(targetAudience)) return res.status(400).json({ error: "Invalid target audience" });
     if (!LINK_TYPES.has(String(linkType || "none"))) return res.status(400).json({ error: "Invalid link type" });
     if (!validDate(expiresAt)) return res.status(400).json({ error: "Invalid expiry date" });
-    if (linkType === "url" && linkTarget && !/^https:\/\//i.test(String(linkTarget))) return res.status(400).json({ error: "Banner URLs must use HTTPS" });
+    const safeBannerTarget = sanitizeBannerTarget(linkType, linkTarget);
+    if (!safeBannerTarget.ok) return res.status(400).json({ error: "Banner destination is invalid" });
+    const safeBannerImage = imageUrl ? sanitizeHttpsUrl(imageUrl) : null;
+    if (imageUrl && !safeBannerImage) return res.status(400).json({ error: "Banner images must use a valid HTTPS URL" });
 
     const id = generateId();
     const [banner] = await db.insert(marketingBannersTable).values({
       id,
       title: cleanTitle,
       subtitle: subtitle?.trim() || null,
-      imageUrl: imageUrl?.trim() || null,
+      imageUrl: safeBannerImage,
       bgColorFrom: bgColorFrom || "#1A6EE0",
       bgColorTo: bgColorTo || "#0D4BA0",
       iconName: iconName || "star",
       linkType: linkType || "none",
-      linkTarget: linkTarget?.trim() || null,
+      linkTarget: safeBannerTarget.value,
       targetAudience: targetAudience || "all",
       isActive: isActive !== false,
       sortOrder: sortOrder ?? 0,
@@ -296,16 +333,23 @@ adminRouter.patch("/banners/:id", requirePermission("marketing.write"), async (r
     if (targetAudience !== undefined && !validAudience(targetAudience)) return res.status(400).json({ error: "Invalid target audience" });
     if (linkType !== undefined && !LINK_TYPES.has(String(linkType))) return res.status(400).json({ error: "Invalid link type" });
     if (expiresAt !== undefined && !validDate(expiresAt)) return res.status(400).json({ error: "Invalid expiry date" });
-    if (linkType === "url" && linkTarget && !/^https:\/\//i.test(String(linkTarget))) return res.status(400).json({ error: "Banner URLs must use HTTPS" });
+    const currentBanner = await db.query.marketingBannersTable.findFirst({ where: eq(marketingBannersTable.id, id) });
+    if (!currentBanner) return res.status(404).json({ error: "Banner not found" });
+    const nextLinkType = linkType !== undefined ? linkType : currentBanner.linkType;
+    const nextLinkTarget = linkTarget !== undefined ? linkTarget : currentBanner.linkTarget;
+    const safeBannerTarget = sanitizeBannerTarget(nextLinkType, nextLinkTarget);
+    if (!safeBannerTarget.ok) return res.status(400).json({ error: "Banner destination is invalid" });
+    const safeBannerImage = imageUrl !== undefined ? (imageUrl ? sanitizeHttpsUrl(imageUrl) : null) : currentBanner.imageUrl;
+    if (imageUrl && !safeBannerImage) return res.status(400).json({ error: "Banner images must use a valid HTTPS URL" });
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (title !== undefined) updates.title = String(title).trim();
     if (subtitle !== undefined) updates.subtitle = subtitle?.trim() || null;
-    if (imageUrl !== undefined) updates.imageUrl = imageUrl?.trim() || null;
+    if (imageUrl !== undefined) updates.imageUrl = safeBannerImage;
     if (bgColorFrom !== undefined) updates.bgColorFrom = bgColorFrom;
     if (bgColorTo !== undefined) updates.bgColorTo = bgColorTo;
     if (iconName !== undefined) updates.iconName = iconName;
     if (linkType !== undefined) updates.linkType = linkType;
-    if (linkTarget !== undefined) updates.linkTarget = linkTarget?.trim() || null;
+    if (linkType !== undefined || linkTarget !== undefined) updates.linkTarget = safeBannerTarget.value;
     if (targetAudience !== undefined) updates.targetAudience = targetAudience;
     if (isActive !== undefined) updates.isActive = isActive;
     if (sortOrder !== undefined) updates.sortOrder = sortOrder;
@@ -392,6 +436,10 @@ adminRouter.post("/announcements", requirePermission("marketing.write"), async (
     if (cleanMessage.length < 2 || cleanMessage.length > 2000) return res.status(400).json({ error: "Message must be 2-2000 characters" });
     if (!validAudience(targetAudience)) return res.status(400).json({ error: "Invalid target audience" });
     if (!validDate(expiresAt)) return res.status(400).json({ error: "Invalid expiry date" });
+    const safeButtonLink = buttonLink ? sanitizeHttpsOrAppPath(buttonLink) : null;
+    if (buttonLink && !safeButtonLink) return res.status(400).json({ error: "Announcement action must be an HTTPS URL or a valid in-app path" });
+    const safeAnnouncementImage = imageUrl ? sanitizeHttpsUrl(imageUrl) : null;
+    if (imageUrl && !safeAnnouncementImage) return res.status(400).json({ error: "Announcement images must use a valid HTTPS URL" });
 
     const id = generateId();
     const [announcement] = await db.insert(appAnnouncementsTable).values({
@@ -399,8 +447,8 @@ adminRouter.post("/announcements", requirePermission("marketing.write"), async (
       title: cleanTitle,
       message: cleanMessage,
       buttonText: buttonText || "Got it",
-      buttonLink: buttonLink?.trim() || null,
-      imageUrl: imageUrl?.trim() || null,
+      buttonLink: safeButtonLink,
+      imageUrl: safeAnnouncementImage,
       targetAudience: targetAudience || "all",
       isActive: isActive !== false,
       showOnce: showOnce !== false,
@@ -439,12 +487,16 @@ adminRouter.patch("/announcements/:id", requirePermission("marketing.write"), as
     if (message !== undefined && (String(message).trim().length < 2 || String(message).trim().length > 2000)) return res.status(400).json({ error: "Message must be 2-2000 characters" });
     if (targetAudience !== undefined && !validAudience(targetAudience)) return res.status(400).json({ error: "Invalid target audience" });
     if (expiresAt !== undefined && !validDate(expiresAt)) return res.status(400).json({ error: "Invalid expiry date" });
+    const safeButtonLink = buttonLink !== undefined ? (buttonLink ? sanitizeHttpsOrAppPath(buttonLink) : null) : undefined;
+    if (buttonLink && !safeButtonLink) return res.status(400).json({ error: "Announcement action must be an HTTPS URL or a valid in-app path" });
+    const safeAnnouncementImage = imageUrl !== undefined ? (imageUrl ? sanitizeHttpsUrl(imageUrl) : null) : undefined;
+    if (imageUrl && !safeAnnouncementImage) return res.status(400).json({ error: "Announcement images must use a valid HTTPS URL" });
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (title !== undefined) updates.title = String(title).trim();
     if (message !== undefined) updates.message = String(message).trim();
     if (buttonText !== undefined) updates.buttonText = buttonText;
-    if (buttonLink !== undefined) updates.buttonLink = buttonLink?.trim() || null;
-    if (imageUrl !== undefined) updates.imageUrl = imageUrl?.trim() || null;
+    if (buttonLink !== undefined) updates.buttonLink = safeButtonLink;
+    if (imageUrl !== undefined) updates.imageUrl = safeAnnouncementImage;
     if (targetAudience !== undefined) updates.targetAudience = targetAudience;
     if (isActive !== undefined) updates.isActive = isActive;
     if (showOnce !== undefined) updates.showOnce = showOnce;

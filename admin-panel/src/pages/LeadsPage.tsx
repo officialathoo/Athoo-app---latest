@@ -54,6 +54,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export function LeadsPage() {
   const { toast } = useToast();
+  const focusId = new URLSearchParams(window.location.search).get("focus") || "";
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -61,6 +62,7 @@ export function LeadsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Lead | null>(null);
+  const [focusOpened, setFocusOpened] = useState(false);
   const [notesInput, setNotesInput] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -79,6 +81,16 @@ export function LeadsPage() {
   }
 
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (!focusId || focusOpened || leads.length === 0) return;
+    const focused = leads.find((lead) => lead.id === focusId);
+    if (!focused) return;
+    const index = leads.indexOf(focused);
+    setPage(Math.floor(index / PAGE_SIZE) + 1);
+    setSelected(focused);
+    setNotesInput(focused.notes || "");
+    setFocusOpened(true);
+  }, [focusId, focusOpened, leads]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -233,7 +245,8 @@ export function LeadsPage() {
                 {paginated.map(lead => (
                   <tr
                     key={lead.id}
-                    className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer"
+                    data-focus-id={lead.id === focusId ? lead.id : undefined}
+                    className={`border-b border-slate-50 cursor-pointer ${lead.id === focusId ? "bg-blue-50 ring-2 ring-inset ring-blue-400" : "hover:bg-slate-50"}`}
                     onClick={() => { setSelected(lead); setNotesInput(lead.notes || ""); }}
                   >
                     <td className="px-4 py-3">
