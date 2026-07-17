@@ -24,6 +24,9 @@ test("database migration and schema enforce one active session per account", () 
   assert.match(schema, /auth_sessions_one_active_per_user_idx/);
   assert.match(migration, /row_number\(\) OVER/);
   assert.match(migration, /CREATE UNIQUE INDEX IF NOT EXISTS auth_sessions_one_active_per_user_idx/);
+
+  assert.doesNotMatch(migration, /expires_at\s*>\s*now\(\)/);
+  assert.match(migration, /WHERE revoked_at IS NULL/);
   assert.match(migration, /WHERE revoked_at IS NULL/);
 });
 

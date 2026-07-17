@@ -86,6 +86,32 @@ type ProviderBroadcastMatch = {
 
 const BROADCAST_EXPANSION_JOB = "broadcast_expand_notifications";
 
+function broadcastDeliveryConcurrency(): number {
+  const configured = Number(process.env.BROADCAST_DELIVERY_CONCURRENCY || 10);
+  if (!Number.isFinite(configured)) return 10;
+  return Math.max(1, Math.min(50, Math.floor(configured)));
+}
+
+async function forEachWithConcurrency<T>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  if (items.length === 0) return;
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, limit), items.length);
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const index = nextIndex;
+        nextIndex += 1;
+        if (index >= items.length) return;
+        await worker(items[index]!);
+      }
+    }),
+  );
+}
+
 function normalizeServiceKey(value: unknown): string {
   return String(value || "")
     .normalize("NFKD")
@@ -184,7 +210,7 @@ async function deliverExpandedBroadcast(requestId: string): Promise<void> {
   let inAppCreated = 0;
   let pushAccepted = 0;
   let fallbackSignaled = 0;
-  await Promise.all(expandedOnly.map(async (provider) => {
+  await forEachWithConcurrency(expandedOnly, broadcastDeliveryConcurrency(), async (provider) => {
     emitToUser(provider.id, "broadcast:new" as EventName, { request, expanded: true });
     const result = await notifyUser({
       userId: provider.id,
@@ -197,7 +223,7 @@ async function deliverExpandedBroadcast(requestId: string): Promise<void> {
     if (result.created) inAppCreated += 1;
     if (result.pushSent) pushAccepted += 1;
     if (result.fallbackSignaled) fallbackSignaled += 1;
-  }));
+  });
 
   logger.info({
     broadcastRequestId: request.id,

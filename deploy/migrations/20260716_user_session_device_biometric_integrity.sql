@@ -24,7 +24,6 @@ WITH ranked_active_sessions AS (
     ) AS active_rank
   FROM auth_sessions
   WHERE revoked_at IS NULL
-    AND expires_at > now()
 )
 UPDATE auth_sessions AS sessions
 SET

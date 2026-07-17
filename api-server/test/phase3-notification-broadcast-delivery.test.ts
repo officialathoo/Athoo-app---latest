@@ -79,6 +79,9 @@ test("provider job broadcasts share strict service, account, location, and radiu
   assert.match(broadcast, /outside_service_area/);
   assert.match(broadcast, /Math\.min\(Math\.max\(1, platformRadiusKm\), providerTravelRadiusKm\(provider\)\)/);
   assert.match(broadcast, /broadcast_expand_notifications/);
+  assert.match(broadcast, /BROADCAST_DELIVERY_CONCURRENCY/);
+  assert.match(broadcast, /forEachWithConcurrency/);
+  assert.doesNotMatch(broadcast, /Promise\.all\(expandedOnly\.map/);
   assert.match(broadcast, /expansionQueued/);
   assert.match(broadcast, /BROADCAST_NOT_ELIGIBLE/);
 });
