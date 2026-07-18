@@ -5,12 +5,12 @@ import process from "node:process";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const evidencePath = path.resolve(process.argv[2] || path.join(root, "device-acceptance-evidence.json"));
-const checklistPath = path.join(root, "device-acceptance-checklist.json");
+const checklistPath = path.join(root, "docs/qa/device-acceptance-checklist.json");
 const allowedStatuses = new Set(["passed", "failed", "blocked", "pending"]);
 
 if (!fs.existsSync(evidencePath)) {
   console.error(`Device evidence file not found: ${evidencePath}`);
-  console.error("Copy device-acceptance-evidence-template.json to device-acceptance-evidence.json and complete every case.");
+  console.error("Copy docs/qa/device-acceptance-evidence-template.json to device-acceptance-evidence.json and complete every case.");
   process.exit(2);
 }
 

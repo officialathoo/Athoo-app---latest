@@ -16,9 +16,9 @@ test("earnings translation mapping does not pass Array.map index as translation 
   assert.match(source, /\.map\(\(month\) => tr\(month\)\)/);
 });
 
-test("directions wire response permits configured provider caches and normalizes them", () => {
+test("directions wire response accepts configured providers and normalizes cache suffixes", () => {
   const source = read("athoo-app/services/maps.ts");
-  assert.match(source, /source\?: "mapbox" \| "mapbox-cache" \| "osrm" \| "osrm-cache" \| "straight_line"/);
-  assert.match(source, /data\.source === "mapbox" \|\| data\.source === "mapbox-cache"/);
-  assert.match(source, /data\.source === "osrm" \|\| data\.source === "osrm-cache"/);
+  assert.match(source, /source\?: string/);
+  assert.match(source, /data\.source\.replace\(\/-cache\$\/, ""\)/);
+  assert.match(source, /source: string/);
 });

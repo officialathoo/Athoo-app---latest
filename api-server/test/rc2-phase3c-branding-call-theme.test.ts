@@ -82,6 +82,6 @@ test("Phase 3C mobile runtime has no hosting-vendor API or tile fallback", () =>
   const map = read("athoo-app/components/maps/OpenStreetMapPreview.tsx");
   assert.doesNotMatch(api + config + map, /athoo-api\.onrender\.com/);
   assert.match(api, /const DEFAULT_API_BASE_URL = ""/);
-  assert.match(map, /TILE_TEMPLATE_CONFIGURED/);
-  assert.match(map, /Map tiles are not configured for this build/);
+  assert.match(map, /tileTemplateConfigured/);
+  assert.match(map, /Map tiles are not currently available/);
 });

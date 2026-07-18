@@ -52,6 +52,6 @@ test("app ringtone stops in background so native call channel owns background au
 test("health endpoints expose safe push diagnostics", () => {
   const app = read("api-server/src/app.ts");
   const health = read("api-server/src/routes/health.ts");
-  assert.match(app, /getPushConfigurationStatus/);
-  assert.match(health, /getPushConfigurationStatus/);
+  assert.match(app, /getRuntimePushConfigurationStatus/);
+  assert.match(health, /getRuntimePushConfigurationStatus/);
 });

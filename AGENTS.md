@@ -7,6 +7,8 @@ Athoo is a real production platform. Never treat it as a disposable prototype or
 - Use permanent, production-grade fixes. Do not use temporary workarounds, fake data, bypasses, or destructive shortcuts.
 - Preserve all working customer, provider, admin, API, database, storage, notification, call, and deployment behavior.
 - Keep architecture configuration-first and vendor-agnostic. Deployment-specific settings and secrets belong in environment configuration.
+- Keep external integrations behind stable provider registries and normalized Athoo interfaces. Switching a supported provider must be a configuration change, not a mobile-app rebuild or route rewrite.
+- Keep the repository root limited to runtime source, build/deployment configuration, and primary project files. Put audits, phase reports, certification notes, and historical AI-generated material under `docs/archive/development-history/`; put maintained guidance in the appropriate `docs/` section.
 - Manual payments remain the current production policy; do not add a live payment gateway unless explicitly approved.
 - Database migrations must be repeatable, transaction-safe where practical, backward compatible, and must preserve real data.
 - Design all externally retried operations to be idempotent. Protect against duplicate requests, races, stale workers, double processing, and conflicting state transitions.

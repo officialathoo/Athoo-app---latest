@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const script = fs.readFileSync(new URL("../../scripts/tools/rc1-decision.mjs", import.meta.url), "utf8");
-const template = JSON.parse(fs.readFileSync(new URL("../../rc1-evidence-template.json", import.meta.url), "utf8"));
+const template = JSON.parse(fs.readFileSync(new URL("../../docs/qa/rc1-evidence-template.json", import.meta.url), "utf8"));
 const pkg = JSON.parse(fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
 
 test("RC1 decision gate requires all live and device evidence", () => {

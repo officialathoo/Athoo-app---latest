@@ -3,9 +3,11 @@ import { usersTable } from "@workspace/db/schema";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { logger } from "./logger";
 import { enqueueJob, registerJobHandler } from "./queue";
+import { getRuntimeCommunicationOverrides, runtimeProviderValue } from "./communicationRuntime";
+import { buildHttpHeaders, envInteger, envValue, fetchWithTimeout, parseJsonTemplate, readPath, renderJsonTemplate } from "../integrations/httpJsonAdapter";
 
 const EXPO_ACCESS_TOKEN = String(process.env.EXPO_ACCESS_TOKEN || "").trim();
-const PUSH_PROVIDER = String(process.env.PUSH_PROVIDER || "expo").toLowerCase().trim();
+const ENV_PUSH_PROVIDER = String(process.env.PUSH_PROVIDER || "expo").toLowerCase().trim();
 const PUSH_PROVIDER_ENDPOINT = String(
   process.env.PUSH_PROVIDER_ENDPOINT || "https://exp.host/--/api/v2/push/send",
 ).trim();
@@ -105,17 +107,65 @@ const PUSH_POLICIES: Record<PushPolicy["category"], Omit<PushPolicy, "category">
   },
 };
 
-export function getPushConfigurationStatus() {
+export type PushProviderKind = "expo" | "http_json" | "disabled";
+
+function configuredPushProviderName(providerOverride = ""): string {
+  const override = String(providerOverride || "").trim().toLowerCase();
+  return override && override !== "environment" ? override : ENV_PUSH_PROVIDER;
+}
+
+export function resolvePushProvider(providerOverride = ""): PushProviderKind {
+  const configured = configuredPushProviderName(providerOverride);
+  if (["disabled", "off", "none"].includes(configured)) return "disabled";
+  if (["http", "http_json", "api", "webhook"].includes(configured)) return "http_json";
+  return "expo";
+}
+
+function httpPushConfiguration() {
   return {
-    provider: PUSH_PROVIDER,
-    enabled: PUSH_PROVIDER !== "disabled" && PUSH_PROVIDER !== "none",
-    endpointConfigured: Boolean(PUSH_PROVIDER_ENDPOINT),
-    receiptEndpointConfigured: Boolean(PUSH_RECEIPT_ENDPOINT),
+    endpoint: envValue("PUSH_HTTP_ENDPOINT"),
+    method: ["POST", "PUT", "PATCH"].includes(envValue("PUSH_HTTP_METHOD", "POST").toUpperCase())
+      ? envValue("PUSH_HTTP_METHOD", "POST").toUpperCase()
+      : "POST",
+    timeoutMs: envInteger("PUSH_HTTP_TIMEOUT_MS", 10_000, 1_000, 60_000),
+    batchSize: envInteger("PUSH_HTTP_BATCH_SIZE", 100, 1, 500),
+    messageTemplate: parseJsonTemplate(envValue("PUSH_HTTP_MESSAGE_TEMPLATE_JSON")),
+    bodyTemplate: parseJsonTemplate(envValue("PUSH_HTTP_BODY_TEMPLATE_JSON")),
+    batchField: envValue("PUSH_HTTP_BATCH_FIELD", "messages"),
+    acceptedPath: envValue("PUSH_HTTP_ACCEPTED_PATH"),
+    failedPath: envValue("PUSH_HTTP_FAILED_PATH"),
+    invalidTokensPath: envValue("PUSH_HTTP_INVALID_TOKENS_PATH"),
+    ticketIdsPath: envValue("PUSH_HTTP_TICKET_IDS_PATH"),
+  };
+}
+
+export function getPushConfigurationStatus(providerOverride = "") {
+  const provider = resolvePushProvider(providerOverride);
+  const http = httpPushConfiguration();
+  const configured = provider === "disabled"
+    ? false
+    : provider === "expo"
+      ? Boolean(PUSH_PROVIDER_ENDPOINT && PUSH_RECEIPT_ENDPOINT)
+      : Boolean(http.endpoint && http.endpoint.startsWith("https://"));
+  return {
+    provider,
+    configuredProvider: configuredPushProviderName(providerOverride),
+    configured,
+    enabled: provider !== "disabled",
+    endpointConfigured: provider === "http_json" ? Boolean(http.endpoint) : Boolean(PUSH_PROVIDER_ENDPOINT),
+    receiptEndpointConfigured: provider === "expo" && Boolean(PUSH_RECEIPT_ENDPOINT),
     accessTokenConfigured: Boolean(EXPO_ACCESS_TOKEN),
+    httpAuthConfigured: Boolean(envValue("PUSH_HTTP_AUTH_VALUE")),
     receiptDelayMs: PUSH_RECEIPT_DELAY_MS,
     channelVersion: NOTIFICATION_CHANNEL_VERSION,
+    runtimeOverride: Boolean(providerOverride && providerOverride !== "environment"),
     policies: PUSH_POLICIES,
   };
+}
+
+export async function getRuntimePushConfigurationStatus() {
+  const runtime = await getRuntimeCommunicationOverrides();
+  return getPushConfigurationStatus(runtimeProviderValue(runtime.enabled, runtime.pushProvider));
 }
 
 function categoryForType(type: unknown): PushPolicy["category"] {
@@ -286,6 +336,127 @@ async function sendExpoBatch(messages: PushMessage[]): Promise<PushBatchResult> 
   return { sent: 0, accepted: 0, failed: messages.length, failedTokens: messages.map((message) => message.token), provider: "expo", error: lastError };
 }
 
+
+function toPortablePushMessage(message: PushMessage): Record<string, unknown> {
+  const policy = resolvePushPolicy(message.payload);
+  return {
+    token: message.token,
+    title: message.payload.title,
+    body: message.payload.body,
+    type: String(message.payload.type || message.payload.data?.type || "system"),
+    data: message.payload.data || {},
+    channelId: policy.channelId,
+    sound: policy.sound,
+    ttl: policy.ttl,
+    badge: PUSH_BADGE_COUNT,
+    priority: "high",
+  };
+}
+
+function portablePushPayload(message: PushMessage, template: unknown | null): unknown {
+  const portable = toPortablePushMessage(message);
+  if (!template) return portable;
+  return renderJsonTemplate(template, portable, { __ATHOO_PUSH_DATA__: portable.data });
+}
+
+function numberFromPath(value: unknown, path: string, fallback: number): number {
+  if (!path) return fallback;
+  const parsed = Number(readPath(value, path));
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.trunc(parsed) : fallback;
+}
+
+function stringArrayFromPath(value: unknown, path: string): string[] {
+  if (!path) return [];
+  const found = readPath(value, path);
+  return Array.isArray(found) ? uniqueTokens(found.map((entry) => String(entry || ""))) : [];
+}
+
+async function sendHttpPushBatch(messages: PushMessage[]): Promise<PushBatchResult> {
+  const config = httpPushConfiguration();
+  if (!config.endpoint || !config.endpoint.startsWith("https://")) {
+    return {
+      sent: 0,
+      accepted: 0,
+      failed: messages.length,
+      failedTokens: messages.map((message) => message.token),
+      provider: "http_json",
+      error: "push_http_not_configured",
+    };
+  }
+
+  const portableMessages = messages.map((message) => portablePushPayload(message, config.messageTemplate));
+  const body = config.bodyTemplate
+    ? renderJsonTemplate(config.bodyTemplate, { count: portableMessages.length }, { __ATHOO_MESSAGES__: portableMessages })
+    : { [config.batchField]: portableMessages };
+  const headers = buildHttpHeaders({
+    defaultContentType: "application/json",
+    headersJsonEnv: "PUSH_HTTP_HEADERS_JSON",
+    authHeaderEnv: "PUSH_HTTP_AUTH_HEADER",
+    authValueEnv: "PUSH_HTTP_AUTH_VALUE",
+    authPrefixEnv: "PUSH_HTTP_AUTH_PREFIX",
+  });
+
+  const maxAttempts = Math.min(5, Math.max(1, PUSH_MAX_ATTEMPTS));
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    let response: Response | null = null;
+    try {
+      response = await fetchWithTimeout(config.endpoint, {
+        method: config.method,
+        headers,
+        body: JSON.stringify(body),
+      }, config.timeoutMs);
+      const text = await response.text();
+      if (!response.ok) {
+        logger.warn({ status: response.status, attempt, provider: "http_json" }, "HTTP push provider rejected delivery");
+        if (attempt < maxAttempts && isTransientExpoStatus(response.status)) {
+          await sleep(retryDelayMs(response, attempt));
+          continue;
+        }
+        return {
+          sent: 0,
+          accepted: 0,
+          failed: messages.length,
+          failedTokens: messages.map((message) => message.token),
+          provider: "http_json",
+          error: `push_http_${response.status}`,
+        };
+      }
+
+      let parsed: unknown = null;
+      try { parsed = text ? JSON.parse(text) : null; } catch {}
+      const accepted = numberFromPath(parsed, config.acceptedPath, messages.length);
+      const failed = numberFromPath(parsed, config.failedPath, Math.max(0, messages.length - accepted));
+      const invalidTokens = stringArrayFromPath(parsed, config.invalidTokensPath);
+      const ticketIds = stringArrayFromPath(parsed, config.ticketIdsPath);
+      return {
+        sent: accepted,
+        accepted,
+        failed,
+        invalidTokens,
+        failedTokens: failed > 0 && !config.failedPath ? messages.slice(accepted).map((message) => message.token) : [],
+        ticketIds,
+        provider: "http_json",
+      };
+    } catch (error) {
+      logger.warn({ err: error, count: messages.length, attempt, provider: "http_json" }, "HTTP push send attempt failed");
+      if (attempt < maxAttempts) {
+        await sleep(retryDelayMs(response, attempt));
+        continue;
+      }
+      return {
+        sent: 0,
+        accepted: 0,
+        failed: messages.length,
+        failedTokens: messages.map((message) => message.token),
+        provider: "http_json",
+        error: "push_http_delivery_failed",
+      };
+    }
+  }
+
+  return { sent: 0, accepted: 0, failed: messages.length, provider: "http_json", error: "push_http_delivery_failed" };
+}
+
 async function fetchExpoReceipts(tickets: PushTicketToken[]): Promise<{ invalidTokens: string[]; missing: number; errors: number }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), PUSH_RECEIPT_TIMEOUT_MS);
@@ -374,25 +545,19 @@ export async function sendExpoPushMessages(messages: PushMessage[]): Promise<Pus
   const cleanMessages = messages
     .map((message) => ({ ...message, token: String(message.token || "").trim() }))
     .filter((message) => Boolean(message.token));
+  const runtime = await getRuntimeCommunicationOverrides();
+  const providerOverride = runtimeProviderValue(runtime.enabled, runtime.pushProvider);
+  const provider = resolvePushProvider(providerOverride);
+  const providerName = configuredPushProviderName(providerOverride);
 
-  if (!cleanMessages.length) return { sent: 0, accepted: 0, failed: 0, provider: PUSH_PROVIDER };
-  if (PUSH_PROVIDER === "disabled" || PUSH_PROVIDER === "none") {
+  if (!cleanMessages.length) return { sent: 0, accepted: 0, failed: 0, provider: providerName };
+  if (provider === "disabled") {
     return {
       sent: 0,
       accepted: 0,
       failed: cleanMessages.length,
-      provider: PUSH_PROVIDER,
+      provider: providerName,
       error: "push_disabled",
-    };
-  }
-  if (PUSH_PROVIDER !== "expo") {
-    logger.warn({ provider: PUSH_PROVIDER }, "unsupported PUSH_PROVIDER; push not sent");
-    return {
-      sent: 0,
-      accepted: 0,
-      failed: cleanMessages.length,
-      provider: PUSH_PROVIDER,
-      error: "unsupported_push_provider",
     };
   }
 
@@ -403,9 +568,10 @@ export async function sendExpoPushMessages(messages: PushMessage[]): Promise<Pus
   const invalidTokens: string[] = [];
   const failedTokens: string[] = [];
   const ticketTokens: PushTicketToken[] = [];
+  const batchSize = provider === "expo" ? EXPO_BATCH_SIZE : httpPushConfiguration().batchSize;
 
-  for (const batch of chunks(cleanMessages, EXPO_BATCH_SIZE)) {
-    const result = await sendExpoBatch(batch);
+  for (const batch of chunks(cleanMessages, batchSize)) {
+    const result = provider === "expo" ? await sendExpoBatch(batch) : await sendHttpPushBatch(batch);
     sent += result.sent || 0;
     accepted += result.accepted || 0;
     failed += result.failed || 0;
@@ -415,16 +581,16 @@ export async function sendExpoPushMessages(messages: PushMessage[]): Promise<Pus
     if (result.error) lastError = result.error;
   }
 
-  const receiptQueued = await queueExpoReceiptCheck(ticketTokens);
+  const receiptQueued = provider === "expo" ? await queueExpoReceiptCheck(ticketTokens) : false;
   return {
     sent,
     accepted,
     failed,
     invalidTokens: uniqueTokens(invalidTokens),
     failedTokens: uniqueTokens(failedTokens),
-    ticketIds: ticketTokens.map((ticket) => ticket.id),
+    ...(provider === "expo" ? { ticketIds: ticketTokens.map((ticket) => ticket.id) } : {}),
     receiptQueued,
-    provider: PUSH_PROVIDER,
+    provider: providerName,
     ...(lastError ? { error: lastError } : {}),
   };
 }

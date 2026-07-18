@@ -8,6 +8,9 @@ const read = (relative: string) => fs.readFileSync(path.join(root, relative), "u
 
 test("map providers are selected through deployment configuration without mobile credentials", () => {
   const configuration = read("api-server/src/lib/mapConfiguration.ts");
+  const registry = read("api-server/src/maps/providerRegistry.ts");
+  const tomtom = read("api-server/src/maps/providers/tomtom.ts");
+  const custom = read("api-server/src/maps/providers/custom.ts");
   const geo = read("api-server/src/routes/geo.ts");
   const mobile = read("athoo-app/services/maps.ts");
   const env = read(".env.production.example");
@@ -18,34 +21,33 @@ test("map providers are selected through deployment configuration without mobile
   assert.match(configuration, /MAP_SEARCH_PROVIDER/);
   assert.match(configuration, /MAP_REVERSE_PROVIDER/);
   assert.match(configuration, /MAP_DIRECTIONS_PROVIDER/);
-  assert.match(configuration, /MAPBOX_ACCESS_TOKEN/);
-  assert.match(configuration, /styles\/v1/);
-  assert.match(geo, /mapboxSearch/);
-  assert.match(geo, /mapboxReverse/);
-  const reverseBlock = geo.slice(geo.indexOf("async function mapboxReverse"), geo.indexOf("async function mapboxDirections"));
-  assert.doesNotMatch(reverseBlock, /limit:\s*"1"/);
-  assert.match(geo, /mapboxDirections/);
-  assert.match(configuration, /search\/geocode\/v6/);
-  assert.match(configuration, /directions\/v5/);
-  assert.doesNotMatch(mobile, /MAPBOX_ACCESS_TOKEN|api\.mapbox\.com/);
-  assert.match(env, /MAP_PROVIDER=mapbox/);
-  assert.match(env, /MAP_SEARCH_PROVIDER=photon/);
-  assert.match(env, /EXPO_PUBLIC_MAP_TILE_SIZE=512/);
-  assert.match(env, /MAPBOX_GEOCODING_PERMANENT=false/);
-  assert.match(render, /key: MAPBOX_ACCESS_TOKEN/);
+  assert.match(configuration, /TOMTOM_API_KEY/);
+  assert.match(registry, /tomtomProvider/);
+  assert.match(registry, /customProvider/);
+  assert.match(tomtom, /search\/2\/search/);
+  assert.match(tomtom, /reverseGeocode/);
+  assert.match(tomtom, /calculateRoute/);
+  assert.match(custom, /MAP_CUSTOM_SEARCH_URL_TEMPLATE/);
+  assert.match(geo, /getMapOperationProvider/);
+  assert.doesNotMatch(mobile, /TOMTOM_API_KEY|MAPBOX_ACCESS_TOKEN|api\.tomtom\.com|api\.mapbox\.com/);
+  assert.match(env, /MAP_PROVIDER=tomtom/);
+  assert.match(env, /MAP_SEARCH_PROVIDER=tomtom/);
+  assert.match(env, /MAP_CUSTOM_SEARCH_URL_TEMPLATE=/);
+  assert.match(render, /key: TOMTOM_API_KEY/);
   assert.match(app, /GEO_SEARCH_RATE_LIMIT_MAX/);
   assert.match(app, /GEO_DIRECTIONS_RATE_LIMIT_MAX/);
 });
 
-test("temporary Mapbox geocoding is not persisted by API or mobile cache", () => {
+test("temporary or unapproved geocoding results are not persisted by API or mobile cache", () => {
   const configuration = read("api-server/src/lib/mapConfiguration.ts");
   const geo = read("api-server/src/routes/geo.ts");
   const mobile = read("athoo-app/services/maps.ts");
 
   assert.match(configuration, /geocodingPermanent/);
-  assert.match(configuration, /geocodingCacheable/);
-  assert.match(geo, /cacheable = config\.searchProvider !== "mapbox" \|\| config\.mapbox\.geocodingPermanent/);
-  assert.match(geo, /cacheable = config\.reverseProvider !== "mapbox" \|\| config\.mapbox\.geocodingPermanent/);
+  assert.match(configuration, /customGeocodingCacheable/);
+  assert.match(configuration, /operationCacheable/);
+  assert.match(geo, /const cacheable = status\.searchCacheable/);
+  assert.match(geo, /const cacheable = status\.reverseCacheable/);
   assert.match(mobile, /data\.cacheable !== false/);
   assert.match(mobile, /reverse-geocode-cache:v2/);
 });
@@ -69,9 +71,12 @@ test("connected runtime verifier checks health, maps, authentication, and real e
 
 test("deployment validation rejects incomplete or unsafe map provider combinations", () => {
   const validation = read("scripts/tools/validate-environment.mjs");
-  assert.match(validation, /MAP_TILE_PROVIDER must be custom, mapbox, openstreetmap, or disabled/);
+  assert.match(validation, /MAP_TILE_PROVIDER must be custom, mapbox, tomtom, openstreetmap, or disabled/);
   assert.match(validation, /MAPBOX_ACCESS_TOKEN is required when any map service uses Mapbox/);
+  assert.match(validation, /TOMTOM_API_KEY is required when any map service uses TomTom/);
+  assert.match(validation, /MAP_CUSTOM_SEARCH_URL_TEMPLATE is required when custom search is selected/);
   assert.match(validation, /MAP_TILE_PROVIDER=openstreetmap is development-only/);
-  assert.match(validation, /MAPBOX_TILE_SIZE must be 256 or 512/);
-  assert.match(validation, /EXPO_PUBLIC_MAP_TILE_SIZE must match MAPBOX_TILE_SIZE/);
+  assert.match(validation, /TOMTOM_TILE_SIZE must be 256 or 512/);
+  assert.match(validation, /MAP_CUSTOM_TILE_SIZE must be 256 or 512/);
+  assert.match(validation, /EXPO_PUBLIC_MAP_TILE_SIZE must be 256 or 512/);
 });

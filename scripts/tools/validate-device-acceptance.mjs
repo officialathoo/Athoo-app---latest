@@ -10,10 +10,10 @@ const required = [
   "athoo-app/app.config.js",
   "athoo-app/context/NotificationContext.tsx",
   "athoo-app/services/NotificationService.ts",
-  "docs/DEVICE_ACCEPTANCE_RUNBOOK.md",
-  "device-acceptance-checklist.json",
-  "device-acceptance-evidence-template.json",
-  "rc2-evidence-template.json",
+  "docs/runbooks/DEVICE_ACCEPTANCE_RUNBOOK.md",
+  "docs/qa/device-acceptance-checklist.json",
+  "docs/qa/device-acceptance-evidence-template.json",
+  "docs/qa/rc2-evidence-template.json",
   "api-server/src/lib/otpDelivery.ts",
   "api-server/src/lib/releaseIdentity.ts",
   ".maestro/customer-login.yaml",
@@ -33,7 +33,7 @@ if (!config.includes("expo-location")) errors.push("expo-location config plugin 
 if (layout.includes("addNotificationResponseReceivedListener")) errors.push("Root layout must not register a second notification response listener");
 if (!notifications.includes("addNotificationResponseReceivedListener")) errors.push("NotificationContext must own notification response navigation");
 
-const checklist = JSON.parse(fs.readFileSync(path.join(root, "device-acceptance-checklist.json"), "utf8"));
+const checklist = JSON.parse(fs.readFileSync(path.join(root, "docs/qa/device-acceptance-checklist.json"), "utf8"));
 for (const platform of ["android", "ios"]) {
   if (!Array.isArray(checklist?.platforms?.[platform]) || checklist.platforms[platform].length < 10) errors.push(`${platform} checklist must contain at least 10 acceptance cases`);
 }

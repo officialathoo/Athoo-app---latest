@@ -49,8 +49,8 @@ const evidence = {
     connectedRuntime: 'pnpm rc2:connected-verify',
     deviceEvidence: 'pnpm device:evidence:validate',
     releaseDecision: 'pnpm rc2:decision',
-    rollbackRunbook: 'ROLLBACK_RUNBOOK.md',
-    incidentRunbook: 'INCIDENT_RESPONSE_RUNBOOK.md',
+    rollbackRunbook: 'docs/runbooks/ROLLBACK_RUNBOOK.md',
+    incidentRunbook: 'docs/runbooks/INCIDENT_RESPONSE_RUNBOOK.md',
   },
 };
 const outDir = path.join(root, 'release-evidence');

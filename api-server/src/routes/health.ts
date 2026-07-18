@@ -6,13 +6,14 @@ import { getMigrationHealth } from "../lib/databaseMigrations";
 import { queueStats } from "../lib/queue";
 import { bookingSweeperStats } from "../lib/bookingSweeper";
 import { runtimeMetricsSnapshot } from "../lib/runtimeMetrics";
-import { getEmailConfigurationStatus } from "../lib/email";
+import { getRuntimeEmailConfigurationStatus } from "../lib/email";
 import { getMapConfigurationStatus } from "../lib/mapConfiguration";
-import { getPushConfigurationStatus } from "../lib/push";
+import { getRuntimeMapOverrides } from "../lib/mapRuntime";
+import { getRuntimePushConfigurationStatus } from "../lib/push";
 import { getOtpDeliveryConfigurationStatus } from "../lib/otpDelivery";
 import { getStorageConfigurationStatus } from "../lib/storageProvider";
 import { getReleaseIdentity } from "../lib/releaseIdentity";
-import { getCallConfigurationStatus } from "../lib/callConfiguration";
+import { getInfrastructureProviderStatus } from "../lib/infrastructureConfiguration";
 
 const router: IRouter = Router();
 
@@ -28,6 +29,13 @@ router.get("/healthz/deep", async (_req, res) => {
     const result = await db.execute(sql`SELECT 1 AS ok`);
     const dbMs = Date.now() - startedAt;
     const migrations = await getMigrationHealth();
+    const [runtimeMapOverrides, emailStatus, pushStatus, otpDeliveryStatus] = await Promise.all([
+      getRuntimeMapOverrides(),
+      getRuntimeEmailConfigurationStatus(),
+      getRuntimePushConfigurationStatus(),
+      getOtpDeliveryConfigurationStatus(),
+    ]);
+    const infrastructure = getInfrastructureProviderStatus();
     res.status(migrations.ok ? 200 : 503).json({
       status: migrations.ok ? "ok" : "degraded",
       uptimeSeconds: Math.round(process.uptime()),
@@ -36,13 +44,14 @@ router.get("/healthz/deep", async (_req, res) => {
         database: { ok: true, latencyMs: dbMs, rows: result.rows?.length ?? 0 },
         migrations,
         queue: queueStats(),
+        cache: infrastructure.cache,
         bookingSweeper: bookingSweeperStats(),
-        email: getEmailConfigurationStatus(),
-        maps: getMapConfigurationStatus(),
-        push: getPushConfigurationStatus(),
+        email: emailStatus,
+        maps: getMapConfigurationStatus(runtimeMapOverrides),
+        push: pushStatus,
         storage: getStorageConfigurationStatus(),
-        otpDelivery: getOtpDeliveryConfigurationStatus(),
-        calls: getCallConfigurationStatus(),
+        otpDelivery: otpDeliveryStatus,
+        calls: infrastructure.calls,
       },
     });
   } catch (e) {

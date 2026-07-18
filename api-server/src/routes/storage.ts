@@ -34,10 +34,10 @@ function storageProvider() {
 
 
 // Sanitized, non-leaking error response for storage failures. Configuration
-// errors (missing R2 env vars) are surfaced as 503 with a diagnostic message
+// errors (missing provider environment variables) are surfaced as 503 with a diagnostic message
 // naming which setting is absent -- never the secret values themselves -- so
 // ops can fix the deployment without exposing anything to end users beyond
-// "storage is unavailable". Any other failure (network, R2 outage, etc.)
+// "storage is unavailable". Any other failure (network or provider outage, etc.)
 // stays a generic, already-sanitized 500 with details only in server logs.
 function respondStorageError(req: Request, res: Response, error: unknown, fallbackMessage: string): void {
   if (error instanceof StorageNotConfiguredError) {
@@ -239,7 +239,7 @@ router.get("/storage/objects/*path", async (req: Request, res: Response) => {
 
 /**
  * PUT /storage/local-upload/*
- * Development-only direct upload target for LocalStorageProvider. Production must use R2 signed URLs.
+ * Development-only direct upload target for LocalStorageProvider. Production must use a configured remote provider with signed URLs.
  */
 router.put("/storage/local-upload/*path", async (req: Request, res: Response) => {
   if (process.env.NODE_ENV === "production") {

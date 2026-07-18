@@ -94,7 +94,8 @@ test("SMTP configuration is provider-agnostic and exposes safe health status", (
   assert.match(email, /SMTP_SECURE/);
   assert.match(email, /getEmailConfigurationStatus/);
   assert.match(email, /verifyEmailTransport/);
-  assert.match(app, /email: getEmailConfigurationStatus\(\)/);
+  assert.match(app, /email: emailStatus/);
+  assert.match(app, /getRuntimeEmailConfigurationStatus/);
   assert.match(render, /EMAIL_PROVIDER[\s\S]*value:\s*"?smtp"?/);
   assert.doesNotMatch(render, /zoho_smtp/);
   assert.match(render, /SMTP_HOST[\s\S]*sync:\s*false/);

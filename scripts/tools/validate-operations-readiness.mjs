@@ -4,12 +4,12 @@ import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const requiredFiles = [
-  'INCIDENT_RESPONSE_RUNBOOK.md',
-  'DATA_RETENTION_POLICY.md',
-  'BETA_FEEDBACK_TRIAGE.md',
-  'ROLLBACK_RUNBOOK.md',
-  'STAGING_DEPLOYMENT_RUNBOOK.md',
-  'CLOSED_BETA_CHECKLIST.md',
+  'docs/runbooks/INCIDENT_RESPONSE_RUNBOOK.md',
+  'docs/policies/DATA_RETENTION_POLICY.md',
+  'docs/qa/BETA_FEEDBACK_TRIAGE.md',
+  'docs/runbooks/ROLLBACK_RUNBOOK.md',
+  'docs/runbooks/STAGING_DEPLOYMENT_RUNBOOK.md',
+  'docs/qa/CLOSED_BETA_CHECKLIST.md',
 ];
 const errors = [];
 for (const file of requiredFiles) {

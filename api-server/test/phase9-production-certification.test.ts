@@ -16,7 +16,7 @@ test("production call readiness requires valid TURN URLs and credentials", () =>
   assert.match(config, /validTurnUrls && hasTurnCredentials/);
   assert.match(config, /TURN_USERNAME/);
   assert.match(config, /TURN_CREDENTIAL/);
-  assert.match(health, /calls: getCallConfigurationStatus\(\)/);
+  assert.match(health, /calls: infrastructure\.calls/);
   assert.match(envValidator, /Production voice calling requires TURN_URLS/);
   assert.match(envValidator, /Production voice calling requires TURN_USERNAME and TURN_CREDENTIAL/);
 });
@@ -42,7 +42,7 @@ test("connected runtime verifies provider broadcast eligibility, policies, admin
 });
 
 test("device evidence explicitly covers every originally reported critical workflow", () => {
-  const checklist = json("device-acceptance-checklist.json");
+  const checklist = json("docs/qa/device-acceptance-checklist.json");
   for (const platform of ["android", "ios"]) {
     const cases = new Set(checklist.platforms[platform]);
     for (const required of [
@@ -60,7 +60,7 @@ test("device evidence explicitly covers every originally reported critical workf
 
 test("final GO decision has explicit business-critical and operational gates", () => {
   const decision = read("scripts/tools/rc2-decision.mjs");
-  const template = json("rc2-evidence-template.json");
+  const template = json("docs/qa/rc2-evidence-template.json");
   for (const key of [
     "customerJobBroadcast", "chatRealtimeAndUnread", "voiceCallTwoWay", "singleDeviceBiometric",
     "adminDeepLinks", "policyGovernance", "inactivityLifecycleSafety", "legalReview",
@@ -71,13 +71,13 @@ test("final GO decision has explicit business-critical and operational gates", (
   }
 });
 
-test("release blueprints and runbooks use the current Phase 14 baseline and latest migration", () => {
-  const final = read("FINAL_CONNECTED_DEPLOYMENT.md");
-  const launch = read("PRODUCTION_LAUNCH_RUNBOOK.md");
+test("release blueprints and runbooks use the current Phase 23 baseline and latest migration", () => {
+  const final = read("docs/runbooks/FINAL_CONNECTED_DEPLOYMENT.md");
+  const launch = read("docs/runbooks/PRODUCTION_LAUNCH_RUNBOOK.md");
   const packageJson = json("package.json");
-  assert.match(final, /ATHOO_PHASE14_MOBILE_UPLOAD_TYPECHECK_FIXED\.zip/);
+  assert.match(final, /ATHOO_PHASE23_CONNECTED_PRODUCTION_VERIFICATION_READY\.zip/);
   assert.match(final, /20260716_workflow_inactivity_policy_governance\.sql/);
-  assert.match(launch, /Phase 14 mobile-upload-typecheck-fixed candidate/);
+  assert.match(launch, /Phase 23 connected-verification-ready candidate/);
   assert.ok(packageJson.scripts["release:blueprints:validate"]);
   assert.match(packageJson.scripts["release:verify:code"], /release:blueprints:validate/);
 });

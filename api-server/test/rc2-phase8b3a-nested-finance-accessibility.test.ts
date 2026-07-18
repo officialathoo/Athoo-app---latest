@@ -96,7 +96,7 @@ test("Urdu dictionary covers phase 8B3A finance and modal states", () => {
 });
 
 test("phase audit records completed and remaining scope honestly", () => {
-  const audit = JSON.parse(read("docs/RC2_PHASE_8B3_UI_AUDIT.json"));
+  const audit = JSON.parse(read("docs/archive/development-history/RC2_PHASE_8B3_UI_AUDIT.json"));
   assert.equal(audit.scopeComplete, true);
   assert.equal(audit.fullPhase8B3Complete, false);
   assert.equal(audit.migratedFilesLegacyColorImports, 0);

@@ -152,9 +152,9 @@ const iosBundleIdentifier = readEnv(
 );
 
 /*
- * EAS_PROJECT_ID should be supplied by:
- * - athoo-app/.env.local for local development, or
- * - the selected EAS build environment/profile.
+ * EAS project identity is deployment-specific. Supply it through an ignored
+ * local environment file or the selected EAS environment; never commit it into
+ * this portable source package.
  */
 const easProjectId = readEnv(
   "EAS_PROJECT_ID",
@@ -168,6 +168,27 @@ const apiBaseUrl = normalizeBaseUrl(
   readEnv(
     "EXPO_PUBLIC_API_BASE_URL",
     readEnv("API_BASE_URL"),
+  ),
+);
+
+const releaseVersion = readEnv(
+  "EXPO_PUBLIC_RELEASE_VERSION",
+  readEnv("RELEASE_VERSION", appVersion),
+);
+
+const releaseCommitSha = readEnv(
+  "EXPO_PUBLIC_RELEASE_COMMIT_SHA",
+  readEnv(
+    "RELEASE_COMMIT_SHA",
+    readEnv("EAS_BUILD_GIT_COMMIT_HASH"),
+  ),
+);
+
+const releaseBuildId = readEnv(
+  "EXPO_PUBLIC_RELEASE_BUILD_ID",
+  readEnv(
+    "RELEASE_BUILD_ID",
+    readEnv("EAS_BUILD_ID"),
   ),
 );
 
@@ -464,6 +485,13 @@ const mapTileSize = readInteger(
 
 const extra = {
   appEnvironment,
+
+  RELEASE_IDENTITY: {
+    version: releaseVersion,
+    commitSha: releaseCommitSha || null,
+    buildId: releaseBuildId || null,
+    environment: appEnvironment,
+  },
 
   API_BASE_URL: apiBaseUrl,
 

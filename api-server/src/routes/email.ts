@@ -10,7 +10,7 @@ import {
 } from "@workspace/db/schema";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { requireAdmin, requireAuth, requirePermission, type AuthRequest, verifyToken } from "../middlewares/auth";
-import { getEmailConfigurationStatus, verifyEmailTransport } from "../lib/email";
+import { getRuntimeEmailConfigurationStatus, verifyEmailTransport } from "../lib/email";
 import { deliverEmailNow, scheduleEmailCampaign } from "../lib/emailDelivery";
 import { normalizeEmailAddress, sendEmailChallenge, verifyEmailChallenge } from "../lib/emailAuth";
 import { logger } from "../lib/logger";
@@ -205,7 +205,7 @@ userRouter.post("/verification/verify", async (req: AuthRequest, res) => {
 adminRouter.use(requireAuth, requireAdmin);
 
 adminRouter.get("/status", requirePermission("notifications.read"), async (_req, res) => {
-  const config = getEmailConfigurationStatus();
+  const config = await getRuntimeEmailConfigurationStatus();
   const counts = await pool.query<{ status: string; count: string }>("SELECT status, count(*)::text AS count FROM email_deliveries GROUP BY status").catch(() => ({ rows: [] } as any));
   const deliveryCounts = Object.fromEntries(counts.rows.map((row: { status: string; count: string }) => [row.status, Number(row.count)]));
   return res.json({ config, deliveryCounts, marketingEnabled: process.env.EMAIL_MARKETING_ENABLED === "true", marketingMaxRecipients: boundedInt(process.env.EMAIL_MARKETING_MAX_RECIPIENTS, 500, 1, 10_000) });

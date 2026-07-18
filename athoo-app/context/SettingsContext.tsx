@@ -4,6 +4,16 @@ import { api, realtime } from "@/services/api";
 import { brandConfig } from "@/config/brand";
 import { runtimeConfig } from "@/config/runtime";
 
+export interface PublicMapSettings {
+  configured: boolean;
+  productionSafe: boolean;
+  provider: string;
+  tileProvider: string;
+  tileSize: 256 | 512;
+  attribution: string;
+  tileUrl: string;
+}
+
 export interface PublicSettings {
   platformName: string;
   supportPhone: string;
@@ -20,7 +30,11 @@ export interface PublicSettings {
   providerCancellationPenalty: number;
   premiumCommissionDiscountPercent: number;
   commissionRate: number;
+  map: PublicMapSettings;
 }
+
+const fallbackTileUrl = runtimeConfig.maps.tileUrl || "";
+const fallbackTileConfigured = ["{z}", "{x}", "{y}"].every((token) => fallbackTileUrl.includes(token));
 
 const FALLBACK_SETTINGS: PublicSettings = {
   platformName: brandConfig.displayName,
@@ -38,7 +52,44 @@ const FALLBACK_SETTINGS: PublicSettings = {
   providerCancellationPenalty: 0,
   premiumCommissionDiscountPercent: 0,
   commissionRate: 10,
+  map: {
+    configured: fallbackTileConfigured,
+    productionSafe: fallbackTileConfigured,
+    provider: "deployment configuration",
+    tileProvider: "environment",
+    tileSize: runtimeConfig.maps.tileSize,
+    attribution: runtimeConfig.maps.attribution,
+    tileUrl: fallbackTileUrl,
+  },
 };
+
+function normalizedSettings(value: unknown): PublicSettings {
+  const incoming = value && typeof value === "object" ? value as Partial<PublicSettings> : {};
+  const incomingMap = incoming.map && typeof incoming.map === "object"
+    ? incoming.map as Partial<PublicMapSettings>
+    : {};
+  const tileSize: 256 | 512 = incomingMap.tileSize === 512 ? 512 : incomingMap.tileSize === 256
+    ? 256
+    : FALLBACK_SETTINGS.map.tileSize;
+
+  return {
+    ...FALLBACK_SETTINGS,
+    ...incoming,
+    map: {
+      ...FALLBACK_SETTINGS.map,
+      ...incomingMap,
+      configured: typeof incomingMap.configured === "boolean"
+        ? incomingMap.configured
+        : FALLBACK_SETTINGS.map.configured,
+      productionSafe: typeof incomingMap.productionSafe === "boolean"
+        ? incomingMap.productionSafe
+        : FALLBACK_SETTINGS.map.productionSafe,
+      tileSize,
+      attribution: String(incomingMap.attribution || FALLBACK_SETTINGS.map.attribution).trim(),
+      tileUrl: String(incomingMap.tileUrl || FALLBACK_SETTINGS.map.tileUrl).trim(),
+    },
+  };
+}
 
 interface SettingsContextValue {
   settings: PublicSettings;
@@ -62,11 +113,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     inFlightRef.current = true;
     try {
       const res = await api.getPublicSettings();
-      if (res?.settings) {
-        setSettings({ ...FALLBACK_SETTINGS, ...res.settings });
-      }
+      if (res?.settings) setSettings(normalizedSettings(res.settings));
     } catch {
-      // Non-fatal — use fallback
+      // Non-fatal: keep the last known safe settings or deployment fallback.
     } finally {
       inFlightRef.current = false;
       setLoading(false);

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { pool } from "@workspace/db";
 import { logger } from "./logger";
+import { getQueueProviderConfiguration } from "./infrastructureConfiguration";
 
 type JobHandler<T = unknown> = (payload: T) => Promise<void> | void;
 type QueueOptions = { attempts?: number; delayMs?: number; dedupeKey?: string };
@@ -29,6 +30,8 @@ export function registerJobHandler<T = unknown>(name: string, handler: JobHandle
 }
 
 export async function enqueueJob(name: string, payload: unknown, opts: QueueOptions = {}): Promise<string> {
+  const provider = getQueueProviderConfiguration();
+  if (!provider.configured) throw new Error(provider.error || "Queue provider is not configured");
   if (!accepting) throw new Error("Queue is shutting down and is not accepting new jobs");
   if (!name.trim()) throw new Error("Queue job name is required");
   const id = randomUUID();
@@ -47,9 +50,16 @@ export async function enqueueJob(name: string, payload: unknown, opts: QueueOpti
 }
 
 export function queueStats() {
+  const provider = getQueueProviderConfiguration();
   return {
-    provider: "postgres",
-    durable: true,
+    provider: provider.provider,
+    adapter: "postgres",
+    activeProvider: provider.provider,
+    requestedProvider: provider.requestedProvider,
+    configured: provider.configured,
+    productionSafe: provider.productionSafe,
+    durable: provider.durable,
+    activeDurable: provider.durable,
     accepting,
     running: workerRunning,
     activeJobs,
@@ -71,11 +81,19 @@ export async function clearFailedJobs(): Promise<number> {
 }
 
 export function startQueueWorker(): void {
+  const provider = getQueueProviderConfiguration();
+  if (!provider.configured) {
+    accepting = false;
+    workerRunning = false;
+    lastError = provider.error || "Queue provider is not configured";
+    logger.warn({ provider: provider.requestedProvider }, lastError);
+    return;
+  }
   if (workerRunning) return;
   accepting = true;
   workerRunning = true;
   schedulePoll(0);
-  logger.info({ provider: "postgres", concurrency: concurrency() }, "durable queue worker started");
+  logger.info({ provider: provider.provider, concurrency: concurrency() }, "durable queue worker started");
 }
 
 export async function shutdownQueue(timeoutMs = 10_000): Promise<boolean> {

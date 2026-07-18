@@ -23,6 +23,11 @@ function asEmail(value: unknown): string | undefined {
   return normalized;
 }
 
+function asMapTileSize(value: unknown): 256 | 512 | undefined {
+  const parsed = Number(value);
+  return parsed === 256 || parsed === 512 ? parsed : undefined;
+}
+
 const extra = (Constants.expoConfig?.extra || {}) as Record<string, unknown>;
 
 /**
@@ -52,6 +57,14 @@ export const runtimeConfig = Object.freeze({
       || asHttpsUrl(extra.APP_DOWNLOAD_URL),
   }),
   maps: Object.freeze({
+    tileUrl: asOptionalString(process.env.EXPO_PUBLIC_MAP_TILE_URL)
+      || asOptionalString(extra.MAP_TILE_URL),
+    tileSize: asMapTileSize(process.env.EXPO_PUBLIC_MAP_TILE_SIZE)
+      || asMapTileSize(extra.MAP_TILE_SIZE)
+      || 256,
+    attribution: asOptionalString(process.env.EXPO_PUBLIC_MAP_ATTRIBUTION)
+      || asOptionalString(extra.MAP_ATTRIBUTION)
+      || "© OpenStreetMap contributors",
     externalAndroidUrlTemplate: asOptionalString(process.env.EXPO_PUBLIC_MAP_EXTERNAL_ANDROID_URL_TEMPLATE)
       || asOptionalString(extra.MAP_EXTERNAL_ANDROID_URL_TEMPLATE)
       || "geo:{lat},{lng}?q={lat},{lng}({label})",

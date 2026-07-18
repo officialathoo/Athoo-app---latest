@@ -1,6 +1,8 @@
 import { Router, type IRouter } from "express";
 import { getPlatformSettings } from "../lib/admin";
 import { logger } from "../lib/logger";
+import { getMapConfigurationStatus } from "../lib/mapConfiguration";
+import { mapRuntimeOverridesFromSettings } from "../lib/mapRuntime";
 import healthRouter from "./health";
 import storageRouter from "./storage";
 import authRouter from "./auth";
@@ -96,20 +98,13 @@ router.use("/admin/policies", policiesAdminRouter);
 router.use("/admin/inactivity", inactivityAdminRouter);
 
 // ─── Public settings (no auth) ───────────────────────────────────────────────
-// Cached in-process for 60s. This endpoint is hit by every cold mobile/admin
-// session; the cache eliminates a DB round-trip per call and lets a single
-// instance comfortably absorb thousands of RPS for it.
-let _publicSettingsCache: { body: object; fetchedAt: number } | null = null;
-const PUBLIC_SETTINGS_TTL_MS = 60_000;
-
+// getPlatformSettings() already uses the selected server-side cache provider.
+// Do not add a second HTTP-response cache here: admin provider changes must be
+// visible to mobile clients immediately after the realtime settings event.
 router.get("/settings/public", async (_req, res) => {
   try {
-    const now = Date.now();
-    if (_publicSettingsCache && now - _publicSettingsCache.fetchedAt < PUBLIC_SETTINGS_TTL_MS) {
-      res.set("Cache-Control", "public, max-age=60");
-      return res.json(_publicSettingsCache.body);
-    }
     const s = await getPlatformSettings();
+    const mapStatus = getMapConfigurationStatus(mapRuntimeOverridesFromSettings(s));
     const body = {
       settings: {
         platformName: s.platformName,
@@ -126,10 +121,17 @@ router.get("/settings/public", async (_req, res) => {
         providerCancellationPenalty: s.providerCancellationPenalty,
         premiumCommissionDiscountPercent: s.premiumCommissionDiscountPercent,
         commissionRate: s.commissionRate,
+        map: {
+          configured: mapStatus.configured,
+          productionSafe: mapStatus.productionSafe,
+          provider: mapStatus.provider,
+          tileProvider: mapStatus.tileProvider,
+          tileSize: mapStatus.tileSize,
+          attribution: mapStatus.attribution,
+        },
       },
     };
-    _publicSettingsCache = { body, fetchedAt: now };
-    res.set("Cache-Control", "public, max-age=60");
+    res.set("Cache-Control", "no-cache, max-age=0, must-revalidate");
     return res.json(body);
   } catch (e) {
     logger.error({ err: e }, "public settings error");

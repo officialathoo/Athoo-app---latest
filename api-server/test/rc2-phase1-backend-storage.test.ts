@@ -6,11 +6,14 @@ import path from "node:path";
 const root = path.resolve(import.meta.dirname, "../..");
 const read = (file: string) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("R2 configuration is trimmed and strictly validated before SDK construction", () => {
+test("storage configuration is trimmed and validates provider-specific requirements before SDK construction", () => {
   const source = read("api-server/src/lib/storageProvider.ts");
   assert.match(source, /String\(process\.env\[name\] \|\| ""\)\.trim\(\)/);
-  assert.match(source, /ACCESS_KEY_ID must be exactly 32 characters/);
-  assert.match(source, /validateR2Configuration\(\{ accountId, endpoint, accessKeyId, secretAccessKey, bucket: this\.bucket \}\)/);
+  assert.match(source, /getS3CompatibleConfiguration/);
+  assert.match(source, /CLOUDFLARE_R2_ACCOUNT_ID must be a 32-character account identifier/);
+  assert.match(source, /storage endpoint must use HTTPS in production/);
+  assert.match(source, /STORAGE_S3_ACCESS_KEY_ID/);
+  assert.doesNotMatch(source, /ACCESS_KEY_ID must be exactly 32 characters/);
 });
 
 test("mobile uploads never expose raw XML or credential diagnostics", () => {

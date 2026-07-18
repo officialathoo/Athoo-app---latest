@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { db } from "@workspace/db";
 import { appSettingsTable, usersTable, type User } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
+import { isInProcessCacheEnabled } from "./infrastructureConfiguration";
 
 const SETTINGS_KEY = "platform";
 
@@ -51,6 +52,21 @@ export type PlatformSettings = {
   inactivityWarningDays: number;
   inactivityRestrictionDays: number;
   inactivityReviewDays: number;
+  // Runtime map provider control. Secrets remain in deployment environment.
+  mapRuntimeConfigurationEnabled: boolean;
+  mapPrimaryProvider: string;
+  mapTileProvider: string;
+  mapSearchProvider: string;
+  mapReverseProvider: string;
+  mapDirectionsProvider: string;
+  mapProviderFallbackEnabled: boolean;
+  mapSearchFallbackProvider: string;
+  mapReverseFallbackProvider: string;
+  mapDirectionsFallbackProvider: string;
+  // Runtime communication provider control. Credentials remain in deployment environment.
+  communicationRuntimeConfigurationEnabled: boolean;
+  emailProvider: string;
+  pushProvider: string;
 };
 
 export function generateId(): string {
@@ -86,11 +102,24 @@ export const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = {
   inactivityWarningDays: 60,
   inactivityRestrictionDays: 90,
   inactivityReviewDays: 180,
+  mapRuntimeConfigurationEnabled: false,
+  mapPrimaryProvider: "environment",
+  mapTileProvider: "environment",
+  mapSearchProvider: "environment",
+  mapReverseProvider: "environment",
+  mapDirectionsProvider: "environment",
+  mapProviderFallbackEnabled: false,
+  mapSearchFallbackProvider: "environment",
+  mapReverseFallbackProvider: "environment",
+  mapDirectionsFallbackProvider: "environment",
+  communicationRuntimeConfigurationEnabled: false,
+  emailProvider: "environment",
+  pushProvider: "environment",
 };
 
 export async function getPlatformSettings(): Promise<PlatformSettings> {
   // Return cached value if fresh
-  if (_settingsCache && Date.now() - _settingsCache.fetchedAt < SETTINGS_CACHE_TTL_MS) {
+  if (isInProcessCacheEnabled() && _settingsCache && Date.now() - _settingsCache.fetchedAt < SETTINGS_CACHE_TTL_MS) {
     return _settingsCache.value;
   }
 
@@ -104,7 +133,9 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
       value: DEFAULT_PLATFORM_SETTINGS,
       updatedAt: new Date(),
     }).onConflictDoNothing();
-    _settingsCache = { value: DEFAULT_PLATFORM_SETTINGS, fetchedAt: Date.now() };
+    if (isInProcessCacheEnabled()) {
+      _settingsCache = { value: DEFAULT_PLATFORM_SETTINGS, fetchedAt: Date.now() };
+    }
     return DEFAULT_PLATFORM_SETTINGS;
   }
 
@@ -150,8 +181,23 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
     inactivityWarningDays: num("inactivityWarningDays", DEFAULT_PLATFORM_SETTINGS.inactivityWarningDays),
     inactivityRestrictionDays: num("inactivityRestrictionDays", DEFAULT_PLATFORM_SETTINGS.inactivityRestrictionDays),
     inactivityReviewDays: num("inactivityReviewDays", DEFAULT_PLATFORM_SETTINGS.inactivityReviewDays),
+    mapRuntimeConfigurationEnabled: bool("mapRuntimeConfigurationEnabled", DEFAULT_PLATFORM_SETTINGS.mapRuntimeConfigurationEnabled),
+    mapPrimaryProvider: str("mapPrimaryProvider", DEFAULT_PLATFORM_SETTINGS.mapPrimaryProvider),
+    mapTileProvider: str("mapTileProvider", DEFAULT_PLATFORM_SETTINGS.mapTileProvider),
+    mapSearchProvider: str("mapSearchProvider", DEFAULT_PLATFORM_SETTINGS.mapSearchProvider),
+    mapReverseProvider: str("mapReverseProvider", DEFAULT_PLATFORM_SETTINGS.mapReverseProvider),
+    mapDirectionsProvider: str("mapDirectionsProvider", DEFAULT_PLATFORM_SETTINGS.mapDirectionsProvider),
+    mapProviderFallbackEnabled: bool("mapProviderFallbackEnabled", DEFAULT_PLATFORM_SETTINGS.mapProviderFallbackEnabled),
+    mapSearchFallbackProvider: str("mapSearchFallbackProvider", DEFAULT_PLATFORM_SETTINGS.mapSearchFallbackProvider),
+    mapReverseFallbackProvider: str("mapReverseFallbackProvider", DEFAULT_PLATFORM_SETTINGS.mapReverseFallbackProvider),
+    mapDirectionsFallbackProvider: str("mapDirectionsFallbackProvider", DEFAULT_PLATFORM_SETTINGS.mapDirectionsFallbackProvider),
+    communicationRuntimeConfigurationEnabled: bool("communicationRuntimeConfigurationEnabled", DEFAULT_PLATFORM_SETTINGS.communicationRuntimeConfigurationEnabled),
+    emailProvider: str("emailProvider", DEFAULT_PLATFORM_SETTINGS.emailProvider),
+    pushProvider: str("pushProvider", DEFAULT_PLATFORM_SETTINGS.pushProvider),
   };
-  _settingsCache = { value: computed, fetchedAt: Date.now() };
+  if (isInProcessCacheEnabled()) {
+    _settingsCache = { value: computed, fetchedAt: Date.now() };
+  }
   return computed;
 }
 
@@ -161,6 +207,13 @@ export class PlatformSettingsValidationError extends Error {}
 function assertRange(name: string, value: number, min: number, max: number): void {
   if (!Number.isFinite(value) || value < min || value > max) {
     throw new PlatformSettingsValidationError(`${name} must be between ${min} and ${max}`);
+  }
+}
+
+function assertChoice(name: string, value: string, allowed: readonly string[]): void {
+  const normalizedValue = String(value || "").trim().toLowerCase();
+  if (!allowed.includes(normalizedValue)) {
+    throw new PlatformSettingsValidationError(`${name} must be one of: ${allowed.join(", ")}`);
   }
 }
 
@@ -196,6 +249,17 @@ function validatePlatformSettings(settings: PlatformSettings): void {
   if (!/^\S+@\S+\.\S+$/.test(settings.supportEmail)) throw new PlatformSettingsValidationError("supportEmail must be valid");
   if (settings.supportPhone.length > 30) throw new PlatformSettingsValidationError("supportPhone is too long");
   if (!/^\d+\.\d+\.\d+([+-][A-Za-z0-9.-]+)?$/.test(settings.appVersion)) throw new PlatformSettingsValidationError("appVersion must be a semantic version such as 1.0.0");
+
+  assertChoice("mapPrimaryProvider", settings.mapPrimaryProvider, ["environment", "open", "openstreetmap", "osm", "tomtom", "mapbox", "custom", "disabled"]);
+  assertChoice("mapTileProvider", settings.mapTileProvider, ["environment", "custom", "mapbox", "tomtom", "openstreetmap", "disabled"]);
+  assertChoice("mapSearchProvider", settings.mapSearchProvider, ["environment", "photon", "nominatim", "mapbox", "tomtom", "custom", "disabled"]);
+  assertChoice("mapReverseProvider", settings.mapReverseProvider, ["environment", "photon", "nominatim", "mapbox", "tomtom", "custom", "disabled"]);
+  assertChoice("mapDirectionsProvider", settings.mapDirectionsProvider, ["environment", "osrm", "mapbox", "tomtom", "custom", "disabled"]);
+  assertChoice("mapSearchFallbackProvider", settings.mapSearchFallbackProvider, ["environment", "photon", "nominatim", "mapbox", "tomtom", "custom", "disabled"]);
+  assertChoice("mapReverseFallbackProvider", settings.mapReverseFallbackProvider, ["environment", "photon", "nominatim", "mapbox", "tomtom", "custom", "disabled"]);
+  assertChoice("mapDirectionsFallbackProvider", settings.mapDirectionsFallbackProvider, ["environment", "osrm", "mapbox", "tomtom", "custom", "disabled"]);
+  assertChoice("emailProvider", settings.emailProvider, ["environment", "smtp", "http_json", "disabled"]);
+  assertChoice("pushProvider", settings.pushProvider, ["environment", "expo", "http_json", "disabled"]);
 }
 
 export async function savePlatformSettings(input: Partial<PlatformSettings>): Promise<PlatformSettings> {
@@ -242,6 +306,19 @@ export async function savePlatformSettings(input: Partial<PlatformSettings>): Pr
     inactivityWarningDays: takeNum("inactivityWarningDays"),
     inactivityRestrictionDays: takeNum("inactivityRestrictionDays"),
     inactivityReviewDays: takeNum("inactivityReviewDays"),
+    mapRuntimeConfigurationEnabled: takeBool("mapRuntimeConfigurationEnabled"),
+    mapPrimaryProvider: takeStr("mapPrimaryProvider").trim().toLowerCase(),
+    mapTileProvider: takeStr("mapTileProvider").trim().toLowerCase(),
+    mapSearchProvider: takeStr("mapSearchProvider").trim().toLowerCase(),
+    mapReverseProvider: takeStr("mapReverseProvider").trim().toLowerCase(),
+    mapDirectionsProvider: takeStr("mapDirectionsProvider").trim().toLowerCase(),
+    mapProviderFallbackEnabled: takeBool("mapProviderFallbackEnabled"),
+    mapSearchFallbackProvider: takeStr("mapSearchFallbackProvider").trim().toLowerCase(),
+    mapReverseFallbackProvider: takeStr("mapReverseFallbackProvider").trim().toLowerCase(),
+    mapDirectionsFallbackProvider: takeStr("mapDirectionsFallbackProvider").trim().toLowerCase(),
+    communicationRuntimeConfigurationEnabled: takeBool("communicationRuntimeConfigurationEnabled"),
+    emailProvider: takeStr("emailProvider").trim().toLowerCase(),
+    pushProvider: takeStr("pushProvider").trim().toLowerCase(),
   };
 
   validatePlatformSettings(next);
@@ -255,8 +332,10 @@ export async function savePlatformSettings(input: Partial<PlatformSettings>): Pr
     set: { value: next, updatedAt: new Date() },
   });
 
-  // Immediately populate cache with new value so the next read doesn't hit DB.
-  _settingsCache = { value: next, fetchedAt: Date.now() };
+  // Immediately populate the selected in-process cache when enabled.
+  _settingsCache = isInProcessCacheEnabled()
+    ? { value: next, fetchedAt: Date.now() }
+    : null;
   return next;
 }
 

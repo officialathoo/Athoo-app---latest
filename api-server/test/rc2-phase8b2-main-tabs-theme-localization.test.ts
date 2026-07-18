@@ -76,7 +76,7 @@ test("incremental Urdu dictionary covers the new main-tab states", () => {
 });
 
 test("phase audit explicitly records remaining nested-card migration", () => {
-  const audit = JSON.parse(read("docs/RC2_PHASE_8B2_UI_AUDIT.json"));
+  const audit = JSON.parse(read("docs/archive/development-history/RC2_PHASE_8B2_UI_AUDIT.json"));
   assert.equal(audit.routesAudited, 10);
   assert.equal(audit.allUseTheme, true);
   assert.equal(audit.allUseLanguage, true);

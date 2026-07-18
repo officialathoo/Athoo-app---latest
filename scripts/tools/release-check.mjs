@@ -13,8 +13,8 @@ const required = [
   "athoo-app/app.config.js",
   "api-server/src/lib/releaseIdentity.ts",
   "api-server/src/lib/otpDelivery.ts",
-  "device-acceptance-evidence-template.json",
-  "rc2-evidence-template.json",
+  "docs/qa/device-acceptance-evidence-template.json",
+  "docs/qa/rc2-evidence-template.json",
   ".github/workflows/connected-runtime.yml",
 ];
 for (const file of required) if (!fs.existsSync(path.join(root, file))) errors.push(`Missing release file: ${file}`);

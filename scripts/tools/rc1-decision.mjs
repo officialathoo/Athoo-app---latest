@@ -7,7 +7,7 @@ const root = path.resolve(import.meta.dirname, '../..');
 const file = path.resolve(process.argv[2] || path.join(root, 'rc1-evidence.json'));
 if (!fs.existsSync(file)) {
   console.error(`RC1 evidence file not found: ${file}`);
-  console.error('Copy rc1-evidence-template.json to rc1-evidence.json and attach evidence for every check.');
+  console.error('Copy docs/qa/rc1-evidence-template.json to rc1-evidence.json and attach evidence for every check.');
   process.exit(2);
 }
 const evidence = JSON.parse(fs.readFileSync(file, 'utf8'));

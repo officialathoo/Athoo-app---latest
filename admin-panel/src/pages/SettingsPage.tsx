@@ -5,7 +5,8 @@ import type { PlatformSettings } from "@/lib/types";
 import {
   Save, Loader2, CheckCircle, AlertCircle, Globe,
   Phone, DollarSign, Users, Clock, Shield, AlertTriangle,
-  Megaphone, MessageSquare, Crown, Slash, Mail,
+  Megaphone, MessageSquare, Crown, Slash, Mail, MapPinned, Route,
+  RadioTower, HardDrive, BellRing, RefreshCw,
 } from "lucide-react";
 
 function TestEmailButton() {
@@ -64,7 +65,125 @@ type Form = {
   inactivityWarningDays: string;
   inactivityRestrictionDays: string;
   inactivityReviewDays: string;
+  mapRuntimeConfigurationEnabled: boolean;
+  mapPrimaryProvider: string;
+  mapTileProvider: string;
+  mapSearchProvider: string;
+  mapReverseProvider: string;
+  mapDirectionsProvider: string;
+  mapProviderFallbackEnabled: boolean;
+  mapSearchFallbackProvider: string;
+  mapReverseFallbackProvider: string;
+  mapDirectionsFallbackProvider: string;
+  communicationRuntimeConfigurationEnabled: boolean;
+  emailProvider: string;
+  pushProvider: string;
 };
+
+type MapStatusResponse = {
+  runtimeConfigurationEnabled: boolean;
+  configuration: {
+    primaryProvider: string;
+    tileProvider: string;
+    searchProvider: string;
+    reverseProvider: string;
+    directionsProvider: string;
+    fallbackEnabled: boolean;
+    searchFallbackProvider: string;
+    reverseFallbackProvider: string;
+    directionsFallbackProvider: string;
+  };
+  credentials: {
+    tomtomConfigured: boolean;
+    mapboxConfigured: boolean;
+    customTileConfigured: boolean;
+    customSearchConfigured: boolean;
+    customReverseConfigured: boolean;
+    customDirectionsConfigured: boolean;
+  };
+  status: { configured: boolean; productionSafe: boolean; provider: string; error?: string };
+};
+
+type IntegrationStatusItem = {
+  provider: string;
+  adapter?: string;
+  configured: boolean;
+  productionSafe?: boolean;
+  runtimeSwitchable: boolean;
+  restartRequired: boolean;
+  migrationRequired?: boolean;
+  adapterImplemented?: boolean;
+  sharedAcrossInstances?: boolean;
+  horizontalScaleSafe?: boolean;
+  error?: string;
+};
+
+type IntegrationStatusResponse = {
+  runtimeConfigurationEnabled: boolean;
+  integrations: {
+    maps: IntegrationStatusItem;
+    email: IntegrationStatusItem;
+    push: IntegrationStatusItem;
+    otp: IntegrationStatusItem & { configuredChannels?: string[] };
+    storage: IntegrationStatusItem;
+    calls: IntegrationStatusItem;
+    queue: IntegrationStatusItem;
+    cache: IntegrationStatusItem;
+  };
+  notes: { runtimeSwitching: string; restartRequired: string; cacheScaling?: string };
+};
+
+const PRIMARY_MAP_PROVIDER_OPTIONS = [
+  { value: "environment", label: "Use deployment environment" },
+  { value: "tomtom", label: "TomTom" },
+  { value: "mapbox", label: "Mapbox" },
+  { value: "open", label: "Open stack (OSM + Photon + OSRM)" },
+  { value: "custom", label: "Custom HTTP adapter" },
+  { value: "disabled", label: "Disabled" },
+];
+
+const TILE_PROVIDER_OPTIONS = [
+  { value: "environment", label: "Use deployment environment" },
+  { value: "tomtom", label: "TomTom" },
+  { value: "mapbox", label: "Mapbox" },
+  { value: "custom", label: "Custom HTTP tiles" },
+  { value: "openstreetmap", label: "OpenStreetMap (development only)" },
+  { value: "disabled", label: "Disabled" },
+];
+
+const SEARCH_PROVIDER_OPTIONS = [
+  { value: "environment", label: "Use deployment environment" },
+  { value: "tomtom", label: "TomTom" },
+  { value: "mapbox", label: "Mapbox" },
+  { value: "photon", label: "Photon" },
+  { value: "nominatim", label: "Nominatim" },
+  { value: "custom", label: "Custom HTTP search" },
+  { value: "disabled", label: "Disabled" },
+];
+
+const DIRECTIONS_PROVIDER_OPTIONS = [
+  { value: "environment", label: "Use deployment environment" },
+  { value: "tomtom", label: "TomTom" },
+  { value: "mapbox", label: "Mapbox" },
+  { value: "osrm", label: "OSRM" },
+  { value: "custom", label: "Custom HTTP routing" },
+  { value: "disabled", label: "Disabled" },
+];
+
+
+const EMAIL_PROVIDER_OPTIONS = [
+  { value: "environment", label: "Use deployment environment" },
+  { value: "smtp", label: "SMTP-compatible provider" },
+  { value: "http_json", label: "Custom HTTP JSON adapter" },
+  { value: "disabled", label: "Disabled" },
+];
+
+const PUSH_PROVIDER_OPTIONS = [
+  { value: "environment", label: "Use deployment environment" },
+  { value: "expo", label: "Expo Push Service" },
+  { value: "http_json", label: "Custom HTTP JSON adapter" },
+  { value: "disabled", label: "Disabled" },
+];
 
 function Section({ title, icon: Icon, children }: { title: string; icon: any; children: React.ReactNode }) {
   return (
@@ -90,6 +209,35 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
+
+function IntegrationCard({ label, item, icon: Icon }: { label: string; item?: IntegrationStatusItem; icon: any }) {
+  if (!item) return null;
+  const healthy = item.configured && item.productionSafe !== false;
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex items-start gap-3">
+        <div className="w-9 h-9 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0">
+          <Icon size={16} className="text-slate-600" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-slate-800">{label}</p>
+            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${healthy ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+              {healthy ? "Ready" : "Needs setup"}
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 mt-1 break-all">{item.provider}{item.adapter && item.adapter !== item.provider ? ` · ${item.adapter}` : ""}</p>
+          <p className="text-[11px] text-slate-400 mt-2">{item.runtimeSwitchable ? "Runtime switchable" : item.restartRequired ? `Deployment restart required${item.migrationRequired ? " · migration check required" : ""}` : "Configuration managed"}</p>
+          {item.horizontalScaleSafe === false && item.provider === "memory" && (
+            <p className="text-[11px] text-amber-700 mt-1">Single API instance only</p>
+          )}
+          {item.error && <p className="text-[11px] text-amber-700 mt-1">{item.error}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TInput({ value, onChange, placeholder, prefix, suffix, type = "text" }: {
   value: string; onChange: (v: string) => void; placeholder?: string;
   prefix?: string; suffix?: string; type?: string;
@@ -106,6 +254,24 @@ function TInput({ value, onChange, placeholder, prefix, suffix, type = "text" }:
       />
       {suffix && <span className="absolute right-3 text-sm text-slate-400 pointer-events-none select-none">{suffix}</span>}
     </div>
+  );
+}
+
+function TSelect({ value, onChange, options, disabled = false }: {
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+  disabled?: boolean;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={event => onChange(event.target.value)}
+      disabled={disabled}
+      className="w-full py-2.5 px-3 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-slate-100 disabled:text-slate-400"
+    >
+      {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+    </select>
   );
 }
 
@@ -138,6 +304,12 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [mapStatus, setMapStatus] = useState<MapStatusResponse | null>(null);
+  const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatusResponse | null>(null);
+  const [mapTesting, setMapTesting] = useState(false);
+  const [mapTestMessage, setMapTestMessage] = useState("");
+  const [storageTesting, setStorageTesting] = useState(false);
+  const [storageTestMessage, setStorageTestMessage] = useState("");
 
   const [form, setForm] = useState<Form>({
     commissionRate: "10",
@@ -168,6 +340,19 @@ export function SettingsPage() {
     inactivityWarningDays: "60",
     inactivityRestrictionDays: "90",
     inactivityReviewDays: "180",
+    mapRuntimeConfigurationEnabled: false,
+    mapPrimaryProvider: "environment",
+    mapTileProvider: "environment",
+    mapSearchProvider: "environment",
+    mapReverseProvider: "environment",
+    mapDirectionsProvider: "environment",
+    mapProviderFallbackEnabled: false,
+    mapSearchFallbackProvider: "environment",
+    mapReverseFallbackProvider: "environment",
+    mapDirectionsFallbackProvider: "environment",
+    communicationRuntimeConfigurationEnabled: false,
+    emailProvider: "environment",
+    pushProvider: "environment",
   });
 
   function set<K extends keyof Form>(k: K, v: Form[K]) {
@@ -180,6 +365,16 @@ export function SettingsPage() {
       const res = await api<{ settings: PlatformSettings }>("/api/admin/settings");
       const s = res.settings;
       setSettings(s);
+      try {
+        setMapStatus(await api<MapStatusResponse>("/api/admin/settings/maps/status"));
+      } catch {
+        setMapStatus(null);
+      }
+      try {
+        setIntegrationStatus(await api<IntegrationStatusResponse>("/api/admin/settings/integrations/status"));
+      } catch {
+        setIntegrationStatus(null);
+      }
       setForm({
         commissionRate: String(s.commissionRate),
         defaultCommissionLimit: String(s.defaultCommissionLimit),
@@ -209,6 +404,19 @@ export function SettingsPage() {
         inactivityWarningDays: String(s.inactivityWarningDays ?? 60),
         inactivityRestrictionDays: String(s.inactivityRestrictionDays ?? 90),
         inactivityReviewDays: String(s.inactivityReviewDays ?? 180),
+        mapRuntimeConfigurationEnabled: Boolean(s.mapRuntimeConfigurationEnabled),
+        mapPrimaryProvider: s.mapPrimaryProvider || "environment",
+        mapTileProvider: s.mapTileProvider || "environment",
+        mapSearchProvider: s.mapSearchProvider || "environment",
+        mapReverseProvider: s.mapReverseProvider || "environment",
+        mapDirectionsProvider: s.mapDirectionsProvider || "environment",
+        mapProviderFallbackEnabled: Boolean(s.mapProviderFallbackEnabled),
+        mapSearchFallbackProvider: s.mapSearchFallbackProvider || "environment",
+        mapReverseFallbackProvider: s.mapReverseFallbackProvider || "environment",
+        mapDirectionsFallbackProvider: s.mapDirectionsFallbackProvider || "environment",
+        communicationRuntimeConfigurationEnabled: Boolean(s.communicationRuntimeConfigurationEnabled),
+        emailProvider: s.emailProvider || "environment",
+        pushProvider: s.pushProvider || "environment",
       });
     } catch (e) {
       setError((e as Error).message);
@@ -264,6 +472,19 @@ export function SettingsPage() {
           inactivityWarningDays: warningDays,
           inactivityRestrictionDays: restrictionDays,
           inactivityReviewDays: reviewDays,
+          mapRuntimeConfigurationEnabled: form.mapRuntimeConfigurationEnabled,
+          mapPrimaryProvider: form.mapPrimaryProvider,
+          mapTileProvider: form.mapTileProvider,
+          mapSearchProvider: form.mapSearchProvider,
+          mapReverseProvider: form.mapReverseProvider,
+          mapDirectionsProvider: form.mapDirectionsProvider,
+          mapProviderFallbackEnabled: form.mapProviderFallbackEnabled,
+          mapSearchFallbackProvider: form.mapSearchFallbackProvider,
+          mapReverseFallbackProvider: form.mapReverseFallbackProvider,
+          mapDirectionsFallbackProvider: form.mapDirectionsFallbackProvider,
+          communicationRuntimeConfigurationEnabled: form.communicationRuntimeConfigurationEnabled,
+          emailProvider: form.emailProvider,
+          pushProvider: form.pushProvider,
         }),
       });
       setSaved(true);
@@ -273,6 +494,63 @@ export function SettingsPage() {
       setError((e as Error).message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function testMapConfiguration() {
+    setMapTesting(true);
+    setMapTestMessage("");
+    try {
+      const response = await api<{ tests: Record<string, any> }>("/api/admin/settings/maps/test", { method: "POST" });
+      const tests = response.tests || {};
+      const operations = ["tile", "search", "reverse", "directions"];
+      const passed = operations.filter(operation => tests[operation]?.ok).length;
+      const skipped = operations.filter(operation => tests[operation]?.skipped).length;
+      setMapTestMessage(`${passed} map operations passed${skipped ? `; ${skipped} skipped` : ""}.`);
+      try {
+        setMapStatus(await api<MapStatusResponse>("/api/admin/settings/maps/status"));
+      } catch {
+        // The test response is still useful when status refresh fails.
+      }
+    } catch (e) {
+      setMapTestMessage((e as Error).message || "Map provider test failed");
+    } finally {
+      setMapTesting(false);
+    }
+  }
+
+
+  async function refreshIntegrationStatus() {
+    try {
+      setIntegrationStatus(await api<IntegrationStatusResponse>("/api/admin/settings/integrations/status"));
+    } catch (e) {
+      setError((e as Error).message || "Failed to refresh integration status");
+    }
+  }
+
+  async function testStorageConfiguration() {
+    setStorageTesting(true);
+    setStorageTestMessage("");
+    try {
+      const result = await api<{
+        ok: boolean;
+        provider: string;
+        adapter: string;
+        latencyMs: number;
+        writeVerified: boolean;
+        statVerified: boolean;
+        deleteVerified: boolean;
+      }>("/api/admin/settings/integrations/storage/test", { method: "POST" });
+      setStorageTestMessage(
+        result.ok
+          ? `${result.provider} storage passed write, verify, and cleanup checks in ${result.latencyMs} ms.`
+          : `${result.provider || "Storage"} connectivity test failed.`,
+      );
+      await refreshIntegrationStatus();
+    } catch (e) {
+      setStorageTestMessage((e as Error).message || "Storage provider test failed");
+    } finally {
+      setStorageTesting(false);
     }
   }
 
@@ -341,6 +619,150 @@ export function SettingsPage() {
             />
           </Field>
         </div>
+      </Section>
+
+      <Section title="Maps & Location Providers" icon={MapPinned}>
+        <Field label="Runtime Provider Control" hint="Switch configured map services from the admin panel without editing code or rebuilding the mobile app.">
+          <Toggle
+            value={form.mapRuntimeConfigurationEnabled}
+            onChange={value => set("mapRuntimeConfigurationEnabled", value)}
+            onLabel="On — admin selection active"
+            offLabel="Off — deployment environment active"
+          />
+        </Field>
+
+        <div className={`rounded-xl border p-4 ${mapStatus?.status.configured ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
+          <div className="flex items-start gap-3">
+            {mapStatus?.status.configured ? <CheckCircle size={18} className="text-emerald-600 mt-0.5" /> : <AlertTriangle size={18} className="text-amber-600 mt-0.5" />}
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-800">
+                {mapStatus?.status.configured ? `Active map provider: ${mapStatus.status.provider}` : "Map provider needs configuration"}
+              </p>
+              {mapStatus?.configuration && (
+                <p className="text-xs text-slate-600 mt-1">
+                  Tiles: {mapStatus.configuration.tileProvider} · Search: {mapStatus.configuration.searchProvider} · Reverse: {mapStatus.configuration.reverseProvider} · Directions: {mapStatus.configuration.directionsProvider}
+                </p>
+              )}
+              {mapStatus?.status.error && <p className="text-xs text-amber-800 mt-1">{mapStatus.status.error}</p>}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="Primary Provider" hint="Sets provider defaults; individual operations below may override it.">
+            <TSelect value={form.mapPrimaryProvider} onChange={value => set("mapPrimaryProvider", value)} options={PRIMARY_MAP_PROVIDER_OPTIONS} disabled={!form.mapRuntimeConfigurationEnabled} />
+          </Field>
+          <Field label="Tile Provider" hint="Map imagery shown in the app.">
+            <TSelect value={form.mapTileProvider} onChange={value => set("mapTileProvider", value)} options={TILE_PROVIDER_OPTIONS} disabled={!form.mapRuntimeConfigurationEnabled} />
+          </Field>
+          <Field label="Address Search Provider">
+            <TSelect value={form.mapSearchProvider} onChange={value => set("mapSearchProvider", value)} options={SEARCH_PROVIDER_OPTIONS} disabled={!form.mapRuntimeConfigurationEnabled} />
+          </Field>
+          <Field label="Reverse Geocoding Provider">
+            <TSelect value={form.mapReverseProvider} onChange={value => set("mapReverseProvider", value)} options={SEARCH_PROVIDER_OPTIONS} disabled={!form.mapRuntimeConfigurationEnabled} />
+          </Field>
+          <Field label="Directions Provider">
+            <TSelect value={form.mapDirectionsProvider} onChange={value => set("mapDirectionsProvider", value)} options={DIRECTIONS_PROVIDER_OPTIONS} disabled={!form.mapRuntimeConfigurationEnabled} />
+          </Field>
+          <Field label="Provider Fallback" hint="Uses secondary providers only when the selected primary operation fails.">
+            <Toggle
+              value={form.mapProviderFallbackEnabled}
+              onChange={value => set("mapProviderFallbackEnabled", value)}
+              onLabel="On — fallback enabled"
+              offLabel="Off — primary only"
+            />
+          </Field>
+        </div>
+
+        {form.mapProviderFallbackEnabled && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Field label="Search Fallback">
+              <TSelect value={form.mapSearchFallbackProvider} onChange={value => set("mapSearchFallbackProvider", value)} options={SEARCH_PROVIDER_OPTIONS} disabled={!form.mapRuntimeConfigurationEnabled} />
+            </Field>
+            <Field label="Reverse Fallback">
+              <TSelect value={form.mapReverseFallbackProvider} onChange={value => set("mapReverseFallbackProvider", value)} options={SEARCH_PROVIDER_OPTIONS} disabled={!form.mapRuntimeConfigurationEnabled} />
+            </Field>
+            <Field label="Directions Fallback">
+              <TSelect value={form.mapDirectionsFallbackProvider} onChange={value => set("mapDirectionsFallbackProvider", value)} options={DIRECTIONS_PROVIDER_OPTIONS} disabled={!form.mapRuntimeConfigurationEnabled} />
+            </Field>
+          </div>
+        )}
+
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl bg-slate-50 border border-slate-200 p-4">
+          <button
+            type="button"
+            onClick={testMapConfiguration}
+            disabled={mapTesting || !canWrite}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-50 text-sm font-medium text-slate-700"
+          >
+            {mapTesting ? <Loader2 size={15} className="animate-spin" /> : <Route size={15} />}
+            {mapTesting ? "Testing providers…" : "Test Active Providers"}
+          </button>
+          {mapTestMessage && <p className="text-xs text-slate-600">{mapTestMessage}</p>}
+          <p className="text-xs text-slate-500 sm:ml-auto">API keys remain protected in Render environment variables and are never returned to the browser.</p>
+        </div>
+      </Section>
+
+      <Section title="Communication & External Providers" icon={RadioTower}>
+        <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800">
+          Provider credentials stay in Render or your deployment secret manager. This screen only chooses among configured adapters, so secrets are never stored in the database or sent to the browser.
+        </div>
+
+        <Field label="Runtime Provider Control" hint="Switch email and push adapters without changing code or rebuilding the mobile app.">
+          <Toggle
+            value={form.communicationRuntimeConfigurationEnabled}
+            onChange={value => set("communicationRuntimeConfigurationEnabled", value)}
+            onLabel="On — admin selections active"
+            offLabel="Off — deployment environment active"
+          />
+        </Field>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="Email Provider" hint="SMTP works with Zoho, SES SMTP, Postmark SMTP, Mailgun SMTP and other standards-compatible services.">
+            <TSelect value={form.emailProvider} onChange={value => set("emailProvider", value)} options={EMAIL_PROVIDER_OPTIONS} disabled={!form.communicationRuntimeConfigurationEnabled} />
+          </Field>
+          <Field label="Push Provider" hint="Use Expo or a configured vendor-neutral JSON-over-HTTPS gateway.">
+            <TSelect value={form.pushProvider} onChange={value => set("pushProvider", value)} options={PUSH_PROVIDER_OPTIONS} disabled={!form.communicationRuntimeConfigurationEnabled} />
+          </Field>
+        </div>
+
+        {integrationStatus && (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+            <IntegrationCard label="Email" item={integrationStatus.integrations.email} icon={Mail} />
+            <IntegrationCard label="Push" item={integrationStatus.integrations.push} icon={BellRing} />
+            <IntegrationCard label="Storage" item={integrationStatus.integrations.storage} icon={HardDrive} />
+            <IntegrationCard label="Calls" item={integrationStatus.integrations.calls} icon={Phone} />
+            <IntegrationCard label="Maps" item={integrationStatus.integrations.maps} icon={MapPinned} />
+            <IntegrationCard label="OTP" item={integrationStatus.integrations.otp} icon={Shield} />
+            <IntegrationCard label="Queue" item={integrationStatus.integrations.queue} icon={Route} />
+            <IntegrationCard label="Cache" item={integrationStatus.integrations.cache} icon={Globe} />
+          </div>
+        )}
+
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl bg-slate-50 border border-slate-200 p-4">
+          <button
+            type="button"
+            onClick={refreshIntegrationStatus}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-sm font-medium text-slate-700"
+          >
+            <RefreshCw size={15} />
+            Refresh Provider Status
+          </button>
+          <button
+            type="button"
+            onClick={testStorageConfiguration}
+            disabled={storageTesting || !canWrite}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-50 text-sm font-medium text-slate-700"
+          >
+            {storageTesting ? <Loader2 size={15} className="animate-spin" /> : <HardDrive size={15} />}
+            {storageTesting ? "Testing storage…" : "Test Storage"}
+          </button>
+          {canTestEmail && <TestEmailButton />}
+          <p className="text-xs text-slate-500 sm:ml-auto">Storage vendors switch without source changes through deployment configuration; migrate and verify objects before restarting on a new provider. Memory cache is certified for one API instance; Redis remains fail-closed until its shared adapter is implemented.</p>
+        </div>
+        {storageTestMessage && (
+          <p className={`text-xs ${storageTestMessage.includes("passed") ? "text-emerald-700" : "text-amber-700"}`}>{storageTestMessage}</p>
+        )}
       </Section>
 
       <Section title="Commission & Finance" icon={DollarSign}>

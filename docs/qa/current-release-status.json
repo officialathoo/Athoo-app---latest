@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 2,
+  "candidate": "ATHOO_PHASE23_CONNECTED_PRODUCTION_VERIFICATION_READY.zip",
+  "baseline": "ATHOO_PHASE22_INTEGRATED_RELEASE_CANDIDATE_CLEAN.zip",
+  "status": "CONNECTED-VERIFICATION-READY",
+  "sourceVerification": {
+    "phase22IntegratedAudit": "passed",
+    "adminReleaseManifest": "implemented",
+    "mobileReleaseProvenance": "implemented",
+    "apiDeepHealthQueueAndCache": "implemented",
+    "strictConnectedVerifier": "implemented",
+    "connectedGitHubWorkflow": "implemented",
+    "runtimeMapClientConfiguration": "implemented",
+    "projectValidation": "passed-36-json-files",
+    "apiSourceTests": "passed-491-of-491",
+    "typescriptSyntaxTranspilation": "passed-523-of-523",
+    "javascriptSyntaxChecks": "passed-43-of-43",
+    "releaseAndOperationsValidators": "passed",
+    "securityScan": "passed",
+    "mobileAndDevicePreparationValidators": "passed",
+    "sanitizedProductionEnvironmentValidation": "passed-with-expected-warnings",
+    "dependencyBackedTypecheck": "pending-connected-environment",
+    "dependencyBackedBuild": "pending-connected-environment",
+    "metroDependencyResolution": "pending-connected-environment"
+  },
+  "externalVerification": {
+    "databaseConnected": "pending",
+    "renderDeployment": "pending",
+    "vercelDeployment": "pending",
+    "apiAdminReleaseIdentityMatch": "pending",
+    "connectedRuntime": "pending",
+    "providerConnectivity": "pending",
+    "androidDevice": "pending",
+    "iosDevice": "pending",
+    "loadAndSecurity": "pending"
+  },
+  "launchDecision": "NO-GO-PENDING-CONNECTED-DEVICE-LOAD-SECURITY-EVIDENCE"
+}

@@ -128,7 +128,7 @@ test("approved app icon splash and adaptive icon are configurable and centered",
   assert.deepEqual(pngDimensions("athoo-app/assets/images/favicon.png"), { width: 196, height: 196 });
   assert.deepEqual(pngDimensions("athoo-app/assets/images/notification-icon.png"), { width: 192, height: 192 });
 
-  const audit = JSON.parse(read("docs/RC2_PHASE_8B3B_UI_AUDIT.json"));
+  const audit = JSON.parse(read("docs/archive/development-history/RC2_PHASE_8B3B_UI_AUDIT.json"));
   for (const name of ["icon.png", "adaptive-icon.png", "splash.png", "favicon.png", "notification-icon.png"]) {
     const [x, y] = audit.assetAudit[name].centerOffset;
     assert.ok(Math.abs(x) <= 1, `${name} horizontal offset must be <= 1px`);
@@ -148,7 +148,7 @@ test("Urdu dictionary covers finance payment accounts and professional states", 
 });
 
 test("phase audit records completed scope and remaining work honestly", () => {
-  const audit = JSON.parse(read("docs/RC2_PHASE_8B3B_UI_AUDIT.json"));
+  const audit = JSON.parse(read("docs/archive/development-history/RC2_PHASE_8B3B_UI_AUDIT.json"));
   assert.equal(audit.scopeComplete, true);
   assert.equal(audit.fullApplicationUiCertificationComplete, false);
   assert.equal(audit.financeRoutesMigrated.length, 7);

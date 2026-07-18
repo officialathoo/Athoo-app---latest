@@ -59,8 +59,10 @@ test("portable email migration and schema preserve provider-neutral durable stat
 
 test("email provider is a portable SMTP adapter with safe operational status", () => {
   const email = read(paths.email);
-  assert.match(email, /type EmailProviderKind = "smtp" \| "console" \| "disabled"/);
-  assert.match(email, /Any SMTP-compatible vendor name/);
+  assert.match(email, /type EmailProviderKind = "smtp" \| "http_json" \| "console" \| "disabled"/);
+  assert.match(email, /Any SMTP-compatible vendor label/);
+  assert.match(email, /EMAIL_HTTP_ENDPOINT/);
+  assert.match(email, /EMAIL_HTTP_BODY_TEMPLATE_JSON/);
   assert.match(email, /configuredProvider/);
   assert.match(email, /SMTP_TLS_REJECT_UNAUTHORIZED/);
   assert.match(email, /SMTP_CONNECTION_TIMEOUT_MS/);

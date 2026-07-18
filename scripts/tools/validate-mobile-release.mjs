@@ -24,10 +24,21 @@ for (const file of requiredFiles) {
 const apiUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL || process.env.API_BASE_URL || "").trim();
 const environment = String(process.env.APP_ENV || "development").toLowerCase();
 const isRelease = environment === "staging" || environment === "production";
+const releaseVersion = String(process.env.EXPO_PUBLIC_RELEASE_VERSION || process.env.RELEASE_VERSION || "").trim();
+const releaseCommit = String(
+  process.env.EXPO_PUBLIC_RELEASE_COMMIT_SHA ||
+  process.env.RELEASE_COMMIT_SHA ||
+  process.env.EAS_BUILD_GIT_COMMIT_HASH ||
+  "",
+).trim().toLowerCase();
 
 if (isRelease && !apiUrl) errors.push("EXPO_PUBLIC_API_BASE_URL is required for staging and production mobile builds");
 if (isRelease && apiUrl && !apiUrl.startsWith("https://")) errors.push("Release mobile API URL must use HTTPS");
 if (/localhost|127\.0\.0\.1|10\.0\.2\.2/i.test(apiUrl) && isRelease) errors.push("Release mobile API URL cannot point to a local development host");
+if (isRelease && !releaseVersion) errors.push("EXPO_PUBLIC_RELEASE_VERSION or RELEASE_VERSION is required for staging and production builds");
+if (isRelease && /REPLACE_WITH|CHANGE_ME|example/i.test(releaseVersion)) errors.push("Mobile release version must be replaced with the actual release identity");
+if (releaseCommit && !/^[a-f0-9]{7,64}$/.test(releaseCommit)) errors.push("Mobile release commit must contain 7 to 64 hexadecimal characters");
+if (isRelease && !releaseCommit) warnings.push("Mobile Git commit provenance is missing locally; EAS_BUILD_GIT_COMMIT_HASH must be present in the actual EAS build");
 
 for (const key of ["EXPO_PUBLIC_TURN_URLS", "EXPO_PUBLIC_TURN_USERNAME", "EXPO_PUBLIC_TURN_CREDENTIAL"]) {
   if (process.env[key]) errors.push(`${key} must not be embedded in a public mobile bundle; TURN credentials are issued by the authenticated API`);

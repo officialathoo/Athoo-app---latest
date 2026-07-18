@@ -20,7 +20,7 @@ test("mobile permissions match foreground-only tracking", () => {
 });
 
 test("device acceptance package includes both platforms and cross-role evidence", () => {
-  const checklist = JSON.parse(read("device-acceptance-checklist.json"));
+  const checklist = JSON.parse(read("docs/qa/device-acceptance-checklist.json"));
   assert.ok(checklist.platforms.android.length >= 10);
   assert.ok(checklist.platforms.ios.length >= 10);
   assert.ok(checklist.crossRole.length >= 8);

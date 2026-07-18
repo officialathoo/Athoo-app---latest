@@ -11,6 +11,7 @@ test("mobile build profiles remain deployment and vendor configurable", () => {
   const appConfig = readRepo("athoo-app/app.config.js");
   assert.match(appConfig, /readEnv\(\s*"EAS_PROJECT_ID"/);
   assert.doesNotMatch(appConfig, /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i);
+  assert.match(appConfig, /projectId:\s*easProjectId/);
 });
 
 test("storage verifies actual objects and callers declare private evidence scope", () => {

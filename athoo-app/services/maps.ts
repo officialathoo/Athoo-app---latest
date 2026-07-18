@@ -23,7 +23,7 @@ export interface PlaceSuggestion {
   province?: string;
   postcode?: string;
   precision: AddressPrecision;
-  source: "photon" | "nominatim" | "mapbox";
+  source: string;
   distanceKm?: number;
 }
 
@@ -134,11 +134,11 @@ export interface DirectionsResult {
   polyline: { latitude: number; longitude: number }[];
   distanceKm: number | null;
   durationMin: number | null;
-  source: "mapbox" | "osrm" | "straight_line";
+  source: string;
 }
 
 type DirectionsApiResponse = Omit<DirectionsResult, "source"> & {
-  source?: "mapbox" | "mapbox-cache" | "osrm" | "osrm-cache" | "straight_line";
+  source?: string;
 };
 
 export async function getDirections(
@@ -159,11 +159,9 @@ export async function getDirections(
       distanceKm: data.distanceKm ?? null,
       durationMin: data.durationMin ?? null,
       source:
-        data.source === "mapbox" || data.source === "mapbox-cache"
-          ? "mapbox"
-          : data.source === "osrm" || data.source === "osrm-cache"
-            ? "osrm"
-            : "straight_line",
+        typeof data.source === "string" && data.source.trim()
+          ? data.source.replace(/-cache$/, "")
+          : "straight_line",
     };
   } catch {
     return {

@@ -1,5 +1,5 @@
 import { deliverEmailNow } from "./emailDelivery";
-import { getEmailConfigurationStatus } from "./email";
+import { getRuntimeEmailConfigurationStatus } from "./email";
 import { logger } from "./logger";
 
 export type OtpDeliveryChannel = "whatsapp_cloud" | "email" | "http_sms";
@@ -139,10 +139,10 @@ function smsConfigured(): boolean {
   return config.provider === "http_json" && Boolean(config.endpoint);
 }
 
-export function getOtpDeliveryConfigurationStatus(): OtpDeliveryConfigurationStatus {
+export async function getOtpDeliveryConfigurationStatus(): Promise<OtpDeliveryConfigurationStatus> {
   const whatsapp = whatsappConfiguration();
   const sms = smsConfiguration();
-  const email = getEmailConfigurationStatus();
+  const email = await getRuntimeEmailConfigurationStatus();
   const requestedChannels = getOtpDeliveryChannels();
   const configuredChannels = requestedChannels.filter((channel) => {
     if (channel === "whatsapp_cloud") return whatsappConfigured();
@@ -229,7 +229,7 @@ async function sendWhatsApp(args: AuthenticationOtpDeliveryArgs): Promise<OtpCha
 }
 
 async function sendEmailOtp(args: AuthenticationOtpDeliveryArgs): Promise<OtpChannelResult> {
-  const status = getEmailConfigurationStatus();
+  const status = await getRuntimeEmailConfigurationStatus();
   if (!status.configured || !args.email) {
     return {
       channel: "email",

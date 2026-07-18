@@ -10,12 +10,14 @@ test("Athoo uses an interactive OpenStreetMap tile preview without Google config
   const preview = read("athoo-app/components/maps/OpenStreetMapPreview.tsx");
   const fallback = read("athoo-app/components/maps/AthooMapFallback.tsx");
   const config = read("athoo-app/app.config.js");
+  const runtime = read("athoo-app/config/runtime.ts");
   const pkg = read("athoo-app/package.json");
 
-  assert.match(preview, /EXPO_PUBLIC_MAP_TILE_URL/);
-  assert.match(preview, /TILE_TEMPLATE_CONFIGURED/);
+  assert.match(runtime, /EXPO_PUBLIC_MAP_TILE_URL/);
+  assert.match(preview, /tileTemplateConfigured/);
+  assert.match(preview, /useSettings/);
   assert.doesNotMatch(preview, /athoo-api\.onrender\.com/);
-  assert.match(preview, /tileUrl\(resolvedZoom, normalizedX, tileY, refreshKey\)/);
+  assert.match(preview, /tileUrl\(tileTemplate, resolvedZoom, normalizedX, tileY, refreshKey\)/);
   assert.match(preview, /onCoordinateChange/);
   assert.match(preview, /SvgPolyline/);
   assert.match(fallback, /OpenStreetMapPreview/);
@@ -23,14 +25,18 @@ test("Athoo uses an interactive OpenStreetMap tile preview without Google config
   assert.doesNotMatch(pkg, /react-native-maps/);
 });
 
-test("geo API uses bounded OpenStreetMap services with cache and safe fallbacks", () => {
+test("geo API uses bounded provider adapters with cache and safe fallbacks", () => {
   const geo = read("api-server/src/routes/geo.ts");
+  const utils = read("api-server/src/maps/utils.ts");
+  const photon = read("api-server/src/maps/providers/photon.ts");
+  const nominatim = read("api-server/src/maps/providers/nominatim.ts");
+  const osrm = read("api-server/src/maps/providers/osrm.ts");
   const readiness = read("api-server/src/lib/productionReadiness.ts");
 
-  assert.match(geo, /photon\.komoot\.io/);
-  assert.match(geo, /nominatim\.openstreetmap\.org/);
-  assert.match(geo, /router\.project-osrm\.org/);
-  assert.match(geo, /AbortController/);
+  assert.match(photon, /photon\.komoot\.io/);
+  assert.match(nominatim, /nominatim\.openstreetmap\.org/);
+  assert.match(osrm, /router\.project-osrm\.org/);
+  assert.match(utils, /AbortController/);
   assert.match(geo, /geoCache/);
   assert.match(geo, /source: "straight_line"/);
   assert.doesNotMatch(geo, /maps\.googleapis\.com|GOOGLE_KEY/);

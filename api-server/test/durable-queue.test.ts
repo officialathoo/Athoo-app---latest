@@ -8,8 +8,9 @@ const index = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
 
 test("background queue persists jobs in PostgreSQL", () => {
   assert.match(queue, /INSERT INTO background_jobs/);
-  assert.match(queue, /provider: "postgres"/);
-  assert.match(queue, /durable: true/);
+  assert.match(queue, /provider: provider\.provider/);
+  assert.match(queue, /adapter: "postgres"/);
+  assert.match(queue, /durable: provider\.durable/);
 });
 
 test("workers claim jobs safely across replicas", () => {

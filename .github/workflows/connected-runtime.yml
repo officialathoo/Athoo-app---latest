@@ -1,4 +1,4 @@
-name: Athoo Connected Runtime Verification
+name: Athoo Connected Production Verification
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       admin_origin:
-        description: Deployed admin origin for CORS verification
+        description: Deployed Athoo admin origin
         required: true
         type: string
       release_version:
@@ -16,15 +16,25 @@ on:
         required: true
         type: string
       commit_sha:
-        description: Expected deployed commit SHA (leave empty to use selected workflow commit)
+        description: Expected deployed Git commit SHA (leave empty to use selected workflow commit)
         required: false
+        type: string
+      expected_api_instances:
+        description: Number of concurrently serving API instances
+        required: true
+        default: "1"
+        type: string
+      max_failed_queue_jobs:
+        description: Maximum failed durable queue jobs allowed by this verification
+        required: true
+        default: "0"
         type: string
 
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    environment: staging
+    timeout-minutes: 40
+    environment: production-verification
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -35,14 +45,26 @@ jobs:
         uses: pnpm/action-setup@v6
         with:
           version: 10.33.2
-      - name: Install dependencies
+      - name: Install exact dependencies
         run: pnpm install --frozen-lockfile
-      - name: Verify connected deployment
+      - name: Verify exact source commit
+        run: pnpm release:verify:code
+      - name: Verify connected Neon database
+        env:
+          DATABASE_URL: ${{ secrets.CONNECTED_DATABASE_URL }}
+        run: |
+          test -n "$DATABASE_URL" || { echo "CONNECTED_DATABASE_URL is required"; exit 1; }
+          pnpm db:status
+          pnpm db:verify
+          pnpm db:integrity
+      - name: Verify connected API, admin and providers
         env:
           CONNECTED_API_BASE_URL: ${{ inputs.api_base_url }}
           CONNECTED_ADMIN_ORIGIN: ${{ inputs.admin_origin }}
           CONNECTED_EXPECTED_RELEASE_VERSION: ${{ inputs.release_version }}
           CONNECTED_EXPECTED_COMMIT_SHA: ${{ inputs.commit_sha || github.sha }}
+          CONNECTED_EXPECTED_API_INSTANCES: ${{ inputs.expected_api_instances }}
+          CONNECTED_MAX_FAILED_QUEUE_JOBS: ${{ inputs.max_failed_queue_jobs }}
           CONNECTED_CUSTOMER_IDENTIFIER: ${{ secrets.CONNECTED_CUSTOMER_IDENTIFIER }}
           CONNECTED_CUSTOMER_PASSWORD: ${{ secrets.CONNECTED_CUSTOMER_PASSWORD }}
           CONNECTED_CUSTOMER_ROLE: customer
@@ -53,13 +75,16 @@ jobs:
           CONNECTED_EMAIL_TEST_TO: ${{ secrets.CONNECTED_EMAIL_TEST_TO }}
           CONNECTED_OTP_TEST_PHONE: ${{ secrets.CONNECTED_OTP_TEST_PHONE }}
           CONNECTED_OTP_TEST_ROLE: customer
+          CONNECTED_VERIFY_STORAGE: "true"
+          CONNECTED_VERIFY_MAP_PROVIDERS: "true"
+          CONNECTED_VERIFY_EMAIL_TRANSPORT: "true"
           CONNECTED_STRICT: "true"
         run: pnpm runtime:verify:connected
       - name: Upload redacted release evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: connected-runtime-evidence
+          name: phase23-connected-production-evidence
           path: release-evidence/
           if-no-files-found: warn
-          retention-days: 30
+          retention-days: 90

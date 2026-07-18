@@ -10,12 +10,14 @@ import { logger } from "./lib/logger";
 import { getPlatformSettings } from "./lib/admin";
 import { queueStats } from "./lib/queue";
 import { beginRequest, recordRequest } from "./lib/runtimeMetrics";
-import { getEmailConfigurationStatus } from "./lib/email";
+import { getRuntimeEmailConfigurationStatus } from "./lib/email";
 import { getMapConfigurationStatus } from "./lib/mapConfiguration";
-import { getPushConfigurationStatus } from "./lib/push";
+import { getRuntimeMapOverrides } from "./lib/mapRuntime";
+import { getRuntimePushConfigurationStatus } from "./lib/push";
 import { getOtpDeliveryConfigurationStatus } from "./lib/otpDelivery";
 import { getStorageConfigurationStatus } from "./lib/storageProvider";
 import { getReleaseIdentity } from "./lib/releaseIdentity";
+import { isInProcessCacheEnabled } from "./lib/infrastructureConfiguration";
 
 const app: Express = express();
 // Disable weak ETag 304s on dynamic mobile/admin API data; Athoo uses realtime events and explicit client caching instead.
@@ -443,7 +445,13 @@ app.get("/api", (_req, res) => {
   });
 });
 
-app.get("/api/health", (_req, res) => {
+app.get("/api/health", async (_req, res) => {
+  const [runtimeMapOverrides, emailStatus, pushStatus, otpDeliveryStatus] = await Promise.all([
+    getRuntimeMapOverrides(),
+    getRuntimeEmailConfigurationStatus(),
+    getRuntimePushConfigurationStatus(),
+    getOtpDeliveryConfigurationStatus(),
+  ]);
   res.json({
     status: "ok",
     service: "athoo-api",
@@ -455,12 +463,12 @@ app.get("/api/health", (_req, res) => {
       turnConfigured: Boolean(process.env.TURN_URLS || process.env.TURN_URL),
       redisConfigured: Boolean(process.env.REDIS_URL),
       storageProvider: process.env.STORAGE_PROVIDER || "local/object-storage-adapter",
-      push: getPushConfigurationStatus(),
-      email: getEmailConfigurationStatus(),
-      maps: getMapConfigurationStatus(),
+      push: pushStatus,
+      email: emailStatus,
+      maps: getMapConfigurationStatus(runtimeMapOverrides),
       storage: getStorageConfigurationStatus(),
       otpDelivery: {
-        ...getOtpDeliveryConfigurationStatus(),
+        ...otpDeliveryStatus,
         developmentResponseEnabled: process.env.NODE_ENV === "development" && process.env.ALLOW_DEV_OTP_RESPONSE === "true",
       },
     },
@@ -488,6 +496,7 @@ const MICRO_CACHE_PATHS = [
 ];
 
 function isMicroCacheable(req: Request): boolean {
+  if (!isInProcessCacheEnabled()) return false;
   if (req.method !== "GET") return false;
   if (MICRO_CACHE_TTL_MS <= 0) return false;
   const path = req.path || "";
@@ -531,7 +540,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // cache is deliberately short-lived, so a full clear is cheaper and safer than
 // maintaining route-specific dependency graphs.
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
+  if (isInProcessCacheEnabled() && ["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
     res.once("finish", () => {
       if (res.statusCode >= 200 && res.statusCode < 400) microCache.clear();
     });

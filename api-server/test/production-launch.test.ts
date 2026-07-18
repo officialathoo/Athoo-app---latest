@@ -23,7 +23,7 @@ test('root commands and production launch runbook are present', () => {
   const pkg = JSON.parse(read('package.json'));
   assert.equal(pkg.scripts['launch:preflight'], 'node ./scripts/tools/launch-preflight.mjs');
   assert.equal(pkg.scripts['launch:postdeploy'], 'node ./scripts/tools/postdeploy-verify.mjs');
-  const runbook = read('PRODUCTION_LAUNCH_RUNBOOK.md');
+  const runbook = read('docs/runbooks/PRODUCTION_LAUNCH_RUNBOOK.md');
   assert.match(runbook, /pnpm launch:preflight/);
   assert.match(runbook, /pnpm launch:postdeploy/);
   assert.match(runbook, /ROLLBACK_RUNBOOK\.md/);

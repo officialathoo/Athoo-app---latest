@@ -53,9 +53,20 @@ import { createAdminNotification } from "../lib/adminNotifications";
 import { sendEmail, renderVerificationEmail } from "../lib/email";
 import { ADMIN_ROLES, validateAdminPermissions, hasAdminPermission } from "../lib/adminPermissions";
 import { revokeAllUserSessions } from "../lib/session";
-import { emitToUser } from "../lib/eventBus";
+import { emitToRole, emitToUser } from "../lib/eventBus";
 import { getProviderActiveWorkBlock } from "../lib/businessRules";
 import { getProviderSchedule, saveProviderSchedule, validateProviderSchedule, validateTravelRadius, providerScheduleAllows, providerWithinRadius } from "../lib/providerAvailability";
+import { buildMapTileUpstreamUrl, getMapConfigurationStatus, getMapProviderConfiguration } from "../lib/mapConfiguration";
+import { getRuntimeMapOverrides } from "../lib/mapRuntime";
+import { getMapOperationProvider, registeredMapProviders } from "../maps/providerRegistry.ts";
+import { fetchWithTimeout } from "../maps/utils.ts";
+import { getRuntimeCommunicationOverrides, runtimeProviderValue } from "../lib/communicationRuntime";
+import { getEmailConfigurationStatus } from "../lib/email";
+import { getPushConfigurationStatus } from "../lib/push";
+import { getOtpDeliveryConfigurationStatus } from "../lib/otpDelivery";
+import { getStorageConfigurationStatus, testConfiguredStorageProvider } from "../lib/storageProvider";
+import { getInfrastructureProviderStatus } from "../lib/infrastructureConfiguration";
+import { queueStats } from "../lib/queue";
 
 
 function isStrongAdminPassword(value: string): boolean {
@@ -682,6 +693,9 @@ router.patch("/settings", requirePermission("settings.write"), async (req: AuthR
   try {
     const settings = await savePlatformSettings(req.body || {});
     await logAdminAction(req, "platform_settings_updated", "settings", undefined, req.body as Record<string, unknown>);
+    const updateEvent = { resource: "settings", action: "updated" };
+    emitToRole("customer", "admin:event", updateEvent);
+    emitToRole("provider", "admin:event", updateEvent);
     return res.json({ settings });
   } catch (error) {
     if (error instanceof PlatformSettingsValidationError) {
@@ -689,6 +703,287 @@ router.patch("/settings", requirePermission("settings.write"), async (req: AuthR
     }
     logger.error({ err: error }, "admin settings update error");
     return res.status(500).json({ error: "Failed to update settings" });
+  }
+});
+
+router.get("/settings/maps/status", requirePermission("settings.read"), async (_req, res) => {
+  try {
+    const runtimeOverrides = await getRuntimeMapOverrides();
+    const configuration = getMapProviderConfiguration(runtimeOverrides);
+    const status = getMapConfigurationStatus(runtimeOverrides);
+    return res.json({
+      runtimeConfigurationEnabled: runtimeOverrides.enabled === true,
+      configuration: {
+        primaryProvider: configuration.primaryProvider,
+        tileProvider: configuration.tileProvider,
+        searchProvider: configuration.searchProvider,
+        reverseProvider: configuration.reverseProvider,
+        directionsProvider: configuration.directionsProvider,
+        fallbackEnabled: configuration.fallbackEnabled,
+        searchFallbackProvider: configuration.searchFallbackProvider,
+        reverseFallbackProvider: configuration.reverseFallbackProvider,
+        directionsFallbackProvider: configuration.directionsFallbackProvider,
+      },
+      credentials: {
+        tomtomConfigured: configuration.tomtom.apiKeyConfigured,
+        mapboxConfigured: configuration.mapbox.tokenConfigured,
+        customTileConfigured: configuration.custom.tileConfigured,
+        customSearchConfigured: configuration.custom.searchConfigured,
+        customReverseConfigured: configuration.custom.reverseConfigured,
+        customDirectionsConfigured: configuration.custom.directionsConfigured,
+      },
+      status,
+      providers: {
+        registered: registeredMapProviders(),
+        tile: ["tomtom", "mapbox", "custom", "openstreetmap", "disabled"],
+        search: ["tomtom", "mapbox", "photon", "nominatim", "custom", "disabled"],
+        reverse: ["tomtom", "mapbox", "photon", "nominatim", "custom", "disabled"],
+        directions: ["tomtom", "mapbox", "osrm", "custom", "disabled"],
+      },
+    });
+  } catch (error) {
+    logger.error({ err: error }, "admin map configuration status error");
+    return res.status(500).json({ error: "Failed to load map configuration status" });
+  }
+});
+
+router.get("/settings/integrations/status", requirePermission("settings.read"), async (_req, res) => {
+  try {
+    const [communicationOverrides, runtimeMapOverrides, otpDelivery] = await Promise.all([
+      getRuntimeCommunicationOverrides(),
+      getRuntimeMapOverrides(),
+      getOtpDeliveryConfigurationStatus(),
+    ]);
+    const emailOverride = runtimeProviderValue(communicationOverrides.enabled, communicationOverrides.emailProvider);
+    const pushOverride = runtimeProviderValue(communicationOverrides.enabled, communicationOverrides.pushProvider);
+    const email = getEmailConfigurationStatus(emailOverride);
+    const push = getPushConfigurationStatus(pushOverride);
+    const storage = getStorageConfigurationStatus();
+    const infrastructure = getInfrastructureProviderStatus();
+    const calls = infrastructure.calls;
+    const maps = getMapConfigurationStatus(runtimeMapOverrides);
+    const queue = queueStats();
+    const cache = infrastructure.cache;
+
+    return res.json({
+      runtimeConfigurationEnabled: communicationOverrides.enabled === true,
+      integrations: {
+        maps: {
+          provider: maps.provider,
+          configured: maps.configured,
+          productionSafe: maps.productionSafe,
+          runtimeSwitchable: true,
+          restartRequired: false,
+        },
+        email: {
+          provider: email.configuredProvider,
+          adapter: email.provider,
+          configured: email.configured,
+          runtimeSwitchable: true,
+          restartRequired: false,
+          credentials: {
+            smtpHostConfigured: email.hostConfigured,
+            smtpUserConfigured: email.userConfigured,
+            smtpPasswordConfigured: email.passwordConfigured,
+            httpEndpointConfigured: email.endpointConfigured,
+            httpAuthConfigured: email.authConfigured,
+            fromConfigured: email.fromConfigured,
+          },
+        },
+        push: {
+          provider: push.configuredProvider,
+          adapter: push.provider,
+          configured: push.configured,
+          runtimeSwitchable: true,
+          restartRequired: false,
+          credentials: {
+            endpointConfigured: push.endpointConfigured,
+            expoAccessTokenConfigured: push.accessTokenConfigured,
+            httpAuthConfigured: push.httpAuthConfigured,
+          },
+        },
+        otp: {
+          provider: otpDelivery.requestedChannels.join(","),
+          configured: otpDelivery.configured,
+          runtimeSwitchable: false,
+          restartRequired: true,
+          configuredChannels: otpDelivery.configuredChannels,
+        },
+        storage: {
+          provider: storage.provider,
+          adapter: storage.adapter,
+          configured: storage.configured,
+          productionSafe: storage.productionSafe,
+          runtimeSwitchable: storage.runtimeSwitchable,
+          restartRequired: storage.restartRequired,
+          migrationRequired: storage.migrationRequired,
+          credentials: {
+            endpointConfigured: storage.endpointConfigured,
+            accessKeyConfigured: storage.accessKeyConfigured,
+            secretConfigured: storage.secretConfigured,
+            bucketConfigured: storage.bucketConfigured,
+            projectConfigured: storage.projectConfigured,
+            credentialsConfigured: storage.credentialsConfigured,
+          },
+          error: storage.error,
+        },
+        calls: {
+          provider: calls.provider,
+          configured: calls.productionReady,
+          productionSafe: calls.productionReady,
+          runtimeSwitchable: false,
+          restartRequired: true,
+        },
+        queue: {
+          provider: queue.activeProvider,
+          requestedProvider: queue.requestedProvider,
+          configured: queue.configured === true && queue.accepting === true,
+          productionSafe: queue.productionSafe,
+          durable: queue.durable,
+          runtimeSwitchable: false,
+          restartRequired: true,
+          drainRequired: true,
+          error: queue.lastError,
+        },
+        cache: {
+          provider: cache.provider,
+          requestedProvider: cache.requestedProvider,
+          configured: cache.configured,
+          productionSafe: cache.productionSafe,
+          adapterImplemented: cache.adapterImplemented,
+          sharedAcrossInstances: cache.sharedAcrossInstances,
+          horizontalScaleSafe: cache.horizontalScaleSafe,
+          runtimeSwitchable: false,
+          restartRequired: true,
+          drainRequired: false,
+          error: cache.error,
+        },
+      },
+      providers: {
+        email: ["smtp", "http_json", "disabled"],
+        push: ["expo", "http_json", "disabled"],
+        storage: ["r2", "s3", "minio", "wasabi", "backblaze_b2", "digitalocean_spaces", "custom_s3", "gcs", "local-development"],
+        otp: ["whatsapp_cloud", "email", "http_sms"],
+        calls: ["webrtc", "webrtc-turn", "webrtc-stun", "audio-fallback"],
+        queue: ["postgres"],
+        cache: ["memory", "disabled"],
+        reservedCacheAdapters: ["redis"],
+      },
+      notes: {
+        runtimeSwitching: "Email and push may be switched at runtime after their credentials are configured in the deployment secret manager.",
+        restartRequired: "Storage, queue, cache, OTP channel order, and call infrastructure remain deployment settings because changing them can affect durable state or active sessions. Storage changes use standard adapters and require a restart plus migration verification, not source-code changes.",
+        cacheScaling: "Memory cache is supported for one API instance. Redis is reserved but intentionally fails closed until a shared adapter is implemented and every cache consumer is migrated.",
+      },
+    });
+  } catch (error) {
+    logger.error({ err: error }, "admin integration configuration status error");
+    return res.status(500).json({ error: "Failed to load integration configuration status" });
+  }
+});
+
+router.post("/settings/integrations/storage/test", requirePermission("settings.write"), async (req: AuthRequest, res) => {
+  try {
+    const result = await testConfiguredStorageProvider();
+    await logAdminAction(req, "storage_provider_connectivity_tested", "settings", undefined, {
+      provider: result.provider,
+      adapter: result.adapter,
+      ok: result.ok,
+      latencyMs: result.latencyMs,
+    });
+    return res.status(result.ok ? 200 : 502).json(result);
+  } catch (error) {
+    logger.warn({ err: error }, "admin storage provider connectivity test failed");
+    return res.status(502).json({
+      ok: false,
+      error: error instanceof Error ? error.message : "Storage provider test failed",
+    });
+  }
+});
+
+router.post("/settings/maps/test", requirePermission("settings.write"), async (req: AuthRequest, res) => {
+  try {
+    const runtimeOverrides = await getRuntimeMapOverrides();
+    const configuration = getMapProviderConfiguration(runtimeOverrides);
+    const status = getMapConfigurationStatus(runtimeOverrides);
+    const result: Record<string, unknown> = {
+      configuration: {
+        tileProvider: configuration.tileProvider,
+        searchProvider: configuration.searchProvider,
+        reverseProvider: configuration.reverseProvider,
+        directionsProvider: configuration.directionsProvider,
+      },
+      tile: { ok: false, skipped: true },
+      search: { ok: false, skipped: true },
+      reverse: { ok: false, skipped: true },
+      directions: { ok: false, skipped: true },
+    };
+
+    if (status.configured) {
+      const startedAt = Date.now();
+      try {
+        const upstream = await fetchWithTimeout(
+          buildMapTileUpstreamUrl(10, 720, 410, runtimeOverrides),
+          { headers: { Accept: "image/png,image/webp,image/jpeg,*/*" } },
+          8_000,
+        );
+        const contentType = String(upstream.headers.get("content-type") || "").toLowerCase();
+        result.tile = {
+          ok: upstream.ok && contentType.startsWith("image/"),
+          skipped: false,
+          upstreamStatus: upstream.status,
+          contentType,
+          latencyMs: Date.now() - startedAt,
+        };
+      } catch (error) {
+        result.tile = { ok: false, skipped: false, latencyMs: Date.now() - startedAt, error: error instanceof Error ? error.name : "request_failed" };
+      }
+    }
+
+    const searchProvider = getMapOperationProvider(configuration.searchProvider);
+    if (searchProvider?.search) {
+      const startedAt = Date.now();
+      const results = await searchProvider.search({
+        query: "Faisal Mosque Islamabad",
+        limit: 3,
+        bias: { lat: 33.7295, lng: 73.0372 },
+      });
+      result.search = { ok: results.length > 0, skipped: false, resultCount: results.length, latencyMs: Date.now() - startedAt };
+    }
+
+    const reverseProvider = getMapOperationProvider(configuration.reverseProvider);
+    if (reverseProvider?.reverse) {
+      const startedAt = Date.now();
+      const address = await reverseProvider.reverse({ lat: 33.7295, lng: 73.0372 });
+      result.reverse = { ok: Boolean(address), skipped: false, latencyMs: Date.now() - startedAt };
+    }
+
+    const directionsProvider = getMapOperationProvider(configuration.directionsProvider);
+    if (directionsProvider?.directions) {
+      const startedAt = Date.now();
+      const route = await directionsProvider.directions({
+        originLat: 33.6844,
+        originLng: 73.0479,
+        destLat: 33.7295,
+        destLng: 73.0372,
+      });
+      result.directions = {
+        ok: Boolean(route && route.polyline.length >= 2),
+        skipped: false,
+        pointCount: route?.polyline.length || 0,
+        latencyMs: Date.now() - startedAt,
+      };
+    }
+
+    await logAdminAction(req, "map_provider_runtime_tested", "settings", undefined, {
+      tileProvider: configuration.tileProvider,
+      searchProvider: configuration.searchProvider,
+      reverseProvider: configuration.reverseProvider,
+      directionsProvider: configuration.directionsProvider,
+    });
+    return res.json({ status, tests: result });
+  } catch (error) {
+    logger.warn({ err: error }, "admin map provider runtime test failed");
+    return res.status(502).json({ error: "Map provider test failed" });
   }
 });
 

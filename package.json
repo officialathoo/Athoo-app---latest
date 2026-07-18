@@ -59,7 +59,9 @@
     "mobile:repair-toolchain": "node ./scripts/tools/repair-expo-toolchain.mjs",
     "mobile:workspace:validate": "node ./scripts/tools/validate-expo-workspace.mjs",
     "mobile:metro:validate": "node ./scripts/tools/validate-metro-config.mjs",
-    "release:blueprints:validate": "node ./scripts/tools/validate-release-blueprints.mjs"
+    "release:blueprints:validate": "node ./scripts/tools/validate-release-blueprints.mjs",
+    "storage:migrate": "node ./api-server/scripts/storage-migrate.mjs",
+    "storage:verify": "node ./api-server/scripts/storage-migrate.mjs --verify-only"
   },
   "private": true,
   "devDependencies": {

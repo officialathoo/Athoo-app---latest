@@ -165,6 +165,19 @@ export interface PlatformSettings {
   inactivityWarningDays?: number;
   inactivityRestrictionDays?: number;
   inactivityReviewDays?: number;
+  mapRuntimeConfigurationEnabled?: boolean;
+  mapPrimaryProvider?: string;
+  mapTileProvider?: string;
+  mapSearchProvider?: string;
+  mapReverseProvider?: string;
+  mapDirectionsProvider?: string;
+  mapProviderFallbackEnabled?: boolean;
+  mapSearchFallbackProvider?: string;
+  mapReverseFallbackProvider?: string;
+  mapDirectionsFallbackProvider?: string;
+  communicationRuntimeConfigurationEnabled?: boolean;
+  emailProvider?: string;
+  pushProvider?: string;
 }
 
 export interface AdminBlacklist {

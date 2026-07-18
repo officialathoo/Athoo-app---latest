@@ -58,12 +58,13 @@ test("connected verification proves release identity, storage, OTP, maps, email,
   assert.match(verifier, /phoneRegistrationConfigured/);
   assert.match(verifier, /CONNECTED_OTP_TEST_PHONE/);
   assert.match(verifier, /Production OTP response exposed the verification code/);
-  assert.match(verifier, /release: redact\(release\)/);
+  assert.match(verifier, /api: redact\(apiRelease\)/);
+  assert.match(verifier, /admin: redact\(adminRelease\)/);
 });
 
 test("release governance requires real Android, iOS, cross-role, theme, and sound evidence", () => {
   const packageJson = JSON.parse(read("package.json"));
-  const checklist = JSON.parse(read("device-acceptance-checklist.json"));
+  const checklist = JSON.parse(read("docs/qa/device-acceptance-checklist.json"));
   const deviceValidator = read("scripts/tools/validate-device-evidence.mjs");
   const decision = read("scripts/tools/rc2-decision.mjs");
   const ci = read(".github/workflows/ci.yml");

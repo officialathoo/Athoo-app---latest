@@ -20,6 +20,22 @@ const KEYS = [
   "MAPBOX_TILE_SIZE",
   "MAPBOX_TILE_SCALE",
   "MAPBOX_GEOCODING_PERMANENT",
+  "TOMTOM_API_KEY",
+  "TOMTOM_BASE_URL",
+  "TOMTOM_COUNTRY_SET",
+  "TOMTOM_MAP_LANGUAGE",
+  "TOMTOM_MAP_LAYER",
+  "TOMTOM_MAP_STYLE",
+  "TOMTOM_MAP_VIEW",
+  "TOMTOM_TILE_SIZE",
+  "MAP_CUSTOM_PROVIDER_ID",
+  "MAP_CUSTOM_TILE_SIZE",
+  "MAP_CUSTOM_API_KEY",
+  "MAP_CUSTOM_TILE_URL_TEMPLATE",
+  "MAP_CUSTOM_SEARCH_URL_TEMPLATE",
+  "MAP_CUSTOM_REVERSE_URL_TEMPLATE",
+  "MAP_CUSTOM_DIRECTIONS_URL_TEMPLATE",
+  "MAP_CUSTOM_GEOCODING_CACHEABLE",
 ] as const;
 
 function withEnvironment(values: Partial<Record<(typeof KEYS)[number], string | undefined>>, run: () => void): void {
@@ -103,6 +119,7 @@ test("Mapbox can be selected entirely through deployment configuration", () => {
     assert.equal(provider.directionsProvider, "mapbox");
     assert.equal(status.configured, true);
     assert.equal(status.provider, "Mapbox");
+    assert.equal(status.tileSize, 512);
     assert.equal(status.geocodingCacheable, false);
     assert.equal(
       buildMapTileUpstreamUrl(6, 44, 26),
@@ -116,5 +133,120 @@ test("Mapbox services fail closed when the token is missing", () => {
     const status = getMapConfigurationStatus();
     assert.equal(status.configured, false);
     assert.match(status.error || "", /MAPBOX_ACCESS_TOKEN/);
+  });
+});
+
+
+test("TomTom can provide tiles, search, reverse geocoding, and directions through configuration", () => {
+  withEnvironment({
+    NODE_ENV: "production",
+    MAP_PROVIDER: "tomtom",
+    TOMTOM_API_KEY: "tomtom-test-key",
+    TOMTOM_BASE_URL: "https://api.tomtom.com",
+    TOMTOM_MAP_LAYER: "basic",
+    TOMTOM_MAP_STYLE: "main",
+    TOMTOM_MAP_VIEW: "Unified",
+    TOMTOM_TILE_SIZE: "256",
+  }, () => {
+    const provider = getMapProviderConfiguration();
+    const status = getMapConfigurationStatus();
+    assert.equal(provider.tileProvider, "tomtom");
+    assert.equal(provider.searchProvider, "tomtom");
+    assert.equal(provider.reverseProvider, "tomtom");
+    assert.equal(provider.directionsProvider, "tomtom");
+    assert.equal(status.configured, true);
+    assert.equal(status.provider, "TomTom");
+    assert.equal(status.tileSize, 256);
+    assert.equal(status.tomtomConfigured, true);
+    assert.equal(
+      buildMapTileUpstreamUrl(10, 720, 410),
+      "https://api.tomtom.com/map/1/tile/basic/main/10/720/410.png?tileSize=256&view=Unified&key=tomtom-test-key",
+    );
+  });
+});
+
+test("TomTom fails closed when its server-side key is missing", () => {
+  withEnvironment({ NODE_ENV: "production", MAP_PROVIDER: "tomtom" }, () => {
+    const status = getMapConfigurationStatus();
+    assert.equal(status.configured, false);
+    assert.match(status.error || "", /TOMTOM_API_KEY/);
+  });
+});
+
+test("an unfamiliar provider name selects the declarative custom adapter", () => {
+  withEnvironment({
+    NODE_ENV: "production",
+    MAP_PROVIDER: "futuremaps",
+    MAP_CUSTOM_PROVIDER_ID: "futuremaps",
+    MAP_CUSTOM_TILE_SIZE: "512",
+    MAP_CUSTOM_API_KEY: "custom-key",
+    MAP_CUSTOM_TILE_URL_TEMPLATE: "https://tiles.futuremaps.test/{z}/{x}/{y}.png?key={apiKey}",
+    MAP_CUSTOM_SEARCH_URL_TEMPLATE: "https://api.futuremaps.test/search?q={query}",
+    MAP_CUSTOM_REVERSE_URL_TEMPLATE: "https://api.futuremaps.test/reverse?lat={lat}&lng={lng}",
+    MAP_CUSTOM_DIRECTIONS_URL_TEMPLATE: "https://api.futuremaps.test/route?from={originLat},{originLng}&to={destLat},{destLng}",
+    MAP_CUSTOM_GEOCODING_CACHEABLE: "true",
+  }, () => {
+    const provider = getMapProviderConfiguration();
+    const status = getMapConfigurationStatus();
+    assert.equal(provider.tileProvider, "custom");
+    assert.equal(provider.searchProvider, "custom");
+    assert.equal(provider.reverseProvider, "custom");
+    assert.equal(provider.directionsProvider, "custom");
+    assert.equal(status.configured, true);
+    assert.equal(status.provider, "futuremaps");
+    assert.equal(status.tileSize, 512);
+    assert.equal(status.geocodingCacheable, true);
+    assert.equal(
+      buildMapTileUpstreamUrl(4, 9, 7),
+      "https://tiles.futuremaps.test/4/9/7.png?key=custom-key",
+    );
+  });
+});
+
+test("runtime admin overrides switch providers without changing deployment variables", () => {
+  withEnvironment({
+    NODE_ENV: "production",
+    MAP_PROVIDER: "mapbox",
+    MAPBOX_ACCESS_TOKEN: "pk.environment-token",
+    TOMTOM_API_KEY: "tomtom-runtime-key",
+  }, () => {
+    const overrides = {
+      enabled: true,
+      primaryProvider: "tomtom",
+      tileProvider: "tomtom",
+      searchProvider: "tomtom",
+      reverseProvider: "tomtom",
+      directionsProvider: "tomtom",
+      fallbackEnabled: true,
+      searchFallbackProvider: "photon",
+      reverseFallbackProvider: "nominatim",
+      directionsFallbackProvider: "osrm",
+    };
+    const provider = getMapProviderConfiguration(overrides);
+    const status = getMapConfigurationStatus(overrides);
+    assert.equal(provider.primaryProvider, "tomtom");
+    assert.equal(provider.tileProvider, "tomtom");
+    assert.equal(provider.searchFallbackProvider, "photon");
+    assert.equal(provider.reverseFallbackProvider, "nominatim");
+    assert.equal(provider.directionsFallbackProvider, "osrm");
+    assert.equal(status.configured, true);
+    assert.equal(status.provider, "TomTom");
+    assert.match(buildMapTileUpstreamUrl(10, 720, 410, overrides), /key=tomtom-runtime-key$/);
+  });
+});
+
+test("disabled runtime overrides preserve deployment configuration", () => {
+  withEnvironment({
+    NODE_ENV: "production",
+    MAP_PROVIDER: "tomtom",
+    TOMTOM_API_KEY: "tomtom-environment-key",
+  }, () => {
+    const provider = getMapProviderConfiguration({
+      enabled: false,
+      primaryProvider: "mapbox",
+      tileProvider: "mapbox",
+    });
+    assert.equal(provider.primaryProvider, "tomtom");
+    assert.equal(provider.tileProvider, "tomtom");
   });
 });

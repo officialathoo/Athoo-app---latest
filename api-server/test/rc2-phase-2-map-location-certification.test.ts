@@ -9,11 +9,13 @@ const read = (relative: string) => fs.readFileSync(path.join(root, relative), "u
 test("mobile map tiles are served through the Athoo API instead of direct volunteer OSM tiles", () => {
   const preview = read("athoo-app/components/maps/OpenStreetMapPreview.tsx");
   const config = read("athoo-app/app.config.js");
+  const runtime = read("athoo-app/config/runtime.ts");
   const backendConfig = read("api-server/src/lib/mapConfiguration.ts");
   const geo = read("api-server/src/routes/geo.ts");
 
-  assert.match(preview, /EXPO_PUBLIC_MAP_TILE_URL/);
-  assert.match(preview, /TILE_TEMPLATE_CONFIGURED/);
+  assert.match(runtime, /EXPO_PUBLIC_MAP_TILE_URL/);
+  assert.match(preview, /tileTemplateConfigured/);
+  assert.match(preview, /useSettings/);
   assert.doesNotMatch(preview, /DEFAULT_TILE_TEMPLATE = "https:\/\/tile\.openstreetmap\.org/);
   assert.match(config, /api\/geo\/tiles\/\{z\}\/\{x\}\/\{y\}\.png/);
   assert.match(backendConfig, /MAP_TILE_UPSTREAM_URL/);
@@ -26,16 +28,21 @@ test("mobile map tiles are served through the Athoo API instead of direct volunt
 
 test("location search returns structured, biased Pakistan results without fake zero coordinates", () => {
   const geo = read("api-server/src/routes/geo.ts");
+  const registry = read("api-server/src/maps/providerRegistry.ts");
+  const types = read("api-server/src/maps/types.ts");
+  const photon = read("api-server/src/maps/providers/photon.ts");
+  const tomtom = read("api-server/src/maps/providers/tomtom.ts");
   const maps = read("athoo-app/services/maps.ts");
 
-  assert.match(geo, /countrycodes=pk/);
+  assert.match(photon, /countrycodes/);
+  assert.match(tomtom, /countrySet/);
   assert.match(geo, /biasLat/);
   assert.match(geo, /distanceKm/);
-  assert.match(geo, /primary:/);
-  assert.match(geo, /secondary:/);
-  assert.match(geo, /config\.searchProvider === "mapbox"/);
-  assert.match(geo, /config\.searchProvider === "photon"/);
-  assert.match(geo, /config\.searchProvider === "nominatim"/);
+  assert.match(types, /primary: string/);
+  assert.match(types, /secondary: string/);
+  assert.match(geo, /getMapOperationProvider\(config\.searchProvider\)/);
+  assert.match(registry, /tomtomProvider/);
+  assert.match(registry, /customProvider/);
   assert.doesNotMatch(geo, /useAsTyped|lat:\s*0,\s*lng:\s*0/);
   assert.match(maps, /PlaceSuggestion/);
   assert.match(maps, /params:\s*\{[\s\S]*lat: bias\.latitude/);
@@ -78,8 +85,10 @@ test("map readiness and provider configuration are visible in health and deploym
   const render = read("render.yaml");
   const env = read(".env.production.example");
 
-  assert.match(app, /maps: getMapConfigurationStatus\(\)/);
-  assert.match(health, /maps: getMapConfigurationStatus\(\)/);
+  assert.match(app, /maps: getMapConfigurationStatus\(runtimeMapOverrides\)/);
+  assert.match(health, /maps: getMapConfigurationStatus\(runtimeMapOverrides\)/);
+  assert.match(app, /getRuntimeMapOverrides/);
+  assert.match(health, /getRuntimeMapOverrides/);
   assert.match(readiness, /area: "maps"/);
   assert.match(render, /MAP_TILE_UPSTREAM_URL/);
   assert.match(render, /MAP_TILE_API_KEY/);

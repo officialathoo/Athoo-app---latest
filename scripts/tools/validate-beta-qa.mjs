@@ -5,8 +5,8 @@ const root = process.cwd();
 const requiredFiles = [
   '.maestro/customer-login.yaml',
   '.maestro/provider-login.yaml',
-  'CLOSED_BETA_CHECKLIST.md',
-  'MOBILE_BETA_RELEASE_RUNBOOK.md',
+  'docs/qa/CLOSED_BETA_CHECKLIST.md',
+  'docs/runbooks/MOBILE_BETA_RELEASE_RUNBOOK.md',
 ];
 const requiredMarkers = {
   'athoo-app/app/auth/welcome.tsx': ['welcome-screen','welcome-customer-sign-in','welcome-provider-sign-in'],

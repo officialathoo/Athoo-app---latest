@@ -1,9 +1,19 @@
 import nodemailer from "nodemailer";
 import SMTPPool from "nodemailer/lib/smtp-pool";
 import SMTPTransport from "nodemailer/lib/smtp-transport";
+import { getRuntimeCommunicationOverrides, runtimeProviderValue } from "./communicationRuntime";
+import {
+  buildHttpHeaders,
+  envInteger,
+  envValue,
+  fetchWithTimeout,
+  parseJsonTemplate,
+  readPath,
+  renderJsonTemplate,
+} from "../integrations/httpJsonAdapter";
 import { logger } from "./logger";
 
-export type EmailProviderKind = "smtp" | "console" | "disabled";
+export type EmailProviderKind = "smtp" | "http_json" | "console" | "disabled";
 
 export interface EmailProviderStatus {
   provider: EmailProviderKind;
@@ -13,10 +23,13 @@ export interface EmailProviderStatus {
   userConfigured: boolean;
   passwordConfigured: boolean;
   fromConfigured: boolean;
+  endpointConfigured: boolean;
+  authConfigured: boolean;
   port: number;
   secure: boolean;
   requireTls: boolean;
   pooled: boolean;
+  runtimeOverride: boolean;
 }
 
 export interface SendEmailArgs {
@@ -55,12 +68,18 @@ function envInt(name: string, fallback: number, min: number, max: number): numbe
   return Number.isFinite(parsed) ? Math.max(min, Math.min(max, Math.trunc(parsed))) : fallback;
 }
 
-function resolveProvider(): EmailProviderKind {
-  const configured = env("EMAIL_PROVIDER", "smtp").toLowerCase();
+function configuredProviderName(providerOverride = ""): string {
+  const override = String(providerOverride || "").trim().toLowerCase();
+  return override && override !== "environment" ? override : env("EMAIL_PROVIDER", "smtp").toLowerCase();
+}
+
+export function resolveEmailProvider(providerOverride = ""): EmailProviderKind {
+  const configured = configuredProviderName(providerOverride);
   if (["disabled", "off", "none"].includes(configured)) return "disabled";
   if (configured === "console") return "console";
-  // Any SMTP-compatible vendor name (zoho_smtp, ses_smtp, postmark_smtp, etc.)
-  // intentionally resolves to the provider-neutral SMTP adapter.
+  if (["http", "http_json", "api", "webhook"].includes(configured)) return "http_json";
+  // Any SMTP-compatible vendor label (zoho_smtp, ses_smtp, postmark_smtp,
+  // mailgun_smtp, etc.) resolves to the standards-based SMTP adapter.
   return "smtp";
 }
 
@@ -96,29 +115,59 @@ function getSmtpConfig() {
   };
 }
 
-export function getEmailConfigurationStatus(): EmailProviderStatus {
-  const provider = resolveProvider();
+function getHttpEmailConfig() {
+  const endpoint = envValue("EMAIL_HTTP_ENDPOINT");
+  const method = envValue("EMAIL_HTTP_METHOD", "POST").toUpperCase();
+  const fromName = envValue("EMAIL_FROM_NAME", "Athoo");
+  const fromEmail = envValue("EMAIL_FROM_ADDRESS", envValue("EMAIL_FROM"));
+  const replyTo = envValue("EMAIL_REPLY_TO");
+  return {
+    endpoint,
+    method: ["POST", "PUT", "PATCH"].includes(method) ? method : "POST",
+    fromName,
+    fromEmail,
+    replyTo,
+    timeoutMs: envInteger("EMAIL_HTTP_TIMEOUT_MS", 10_000, 1_000, 120_000),
+    healthcheckUrl: envValue("EMAIL_HTTP_HEALTHCHECK_URL"),
+    bodyTemplate: parseJsonTemplate(envValue("EMAIL_HTTP_BODY_TEMPLATE_JSON")),
+    messageIdPath: envValue("EMAIL_HTTP_MESSAGE_ID_PATH", "id"),
+  };
+}
+
+export function getEmailConfigurationStatus(providerOverride = ""): EmailProviderStatus {
+  const provider = resolveEmailProvider(providerOverride);
+  const configuredProvider = configuredProviderName(providerOverride);
   const smtp = getSmtpConfig();
+  const http = getHttpEmailConfig();
   const smtpConfigured = Boolean(smtp.host && smtp.port && smtp.user && smtp.pass && smtp.fromEmail);
+  const httpConfigured = Boolean(http.endpoint && http.endpoint.startsWith("https://") && http.fromEmail);
   return {
     provider,
-    configuredProvider: env("EMAIL_PROVIDER", "smtp"),
-    configured: provider === "console" || (provider === "smtp" && smtpConfigured),
+    configuredProvider,
+    configured: provider === "console" || (provider === "smtp" && smtpConfigured) || (provider === "http_json" && httpConfigured),
     hostConfigured: Boolean(smtp.host),
     userConfigured: Boolean(smtp.user),
     passwordConfigured: Boolean(smtp.pass),
-    fromConfigured: Boolean(smtp.fromEmail),
+    fromConfigured: Boolean(provider === "http_json" ? http.fromEmail : smtp.fromEmail),
+    endpointConfigured: Boolean(http.endpoint),
+    authConfigured: Boolean(envValue("EMAIL_HTTP_AUTH_VALUE")),
     port: smtp.port,
     secure: smtp.secure,
     requireTls: smtp.requireTLS,
     pooled: smtp.pool,
+    runtimeOverride: Boolean(providerOverride && providerOverride !== "environment"),
   };
 }
 
-function getTransport(): nodemailer.Transporter | null {
-  if (resolveProvider() !== "smtp") return null;
+export async function getRuntimeEmailConfigurationStatus(): Promise<EmailProviderStatus> {
+  const runtime = await getRuntimeCommunicationOverrides();
+  return getEmailConfigurationStatus(runtimeProviderValue(runtime.enabled, runtime.emailProvider));
+}
+
+function getTransport(providerOverride = ""): nodemailer.Transporter | null {
+  if (resolveEmailProvider(providerOverride) !== "smtp") return null;
   const smtp = getSmtpConfig();
-  const status = getEmailConfigurationStatus();
+  const status = getEmailConfigurationStatus(providerOverride);
   if (!status.configured) {
     if (!missingConfigurationLogged) {
       missingConfigurationLogged = true;
@@ -166,11 +215,99 @@ function getTransport(): nodemailer.Transporter | null {
   return transporter;
 }
 
+async function sendHttpJsonEmail(args: SendEmailArgs): Promise<SendEmailResult> {
+  const config = getHttpEmailConfig();
+  if (!config.endpoint || !config.endpoint.startsWith("https://") || !config.fromEmail) {
+    return { ok: false, channel: "http_json", provider: configuredProviderName("http_json"), errorCode: "EMAIL_HTTP_NOT_CONFIGURED" };
+  }
+
+  const headers = buildHttpHeaders({
+    defaultContentType: "application/json",
+    headersJsonEnv: "EMAIL_HTTP_HEADERS_JSON",
+    authHeaderEnv: "EMAIL_HTTP_AUTH_HEADER",
+    authValueEnv: "EMAIL_HTTP_AUTH_VALUE",
+    authPrefixEnv: "EMAIL_HTTP_AUTH_PREFIX",
+  });
+  const stringTokens = {
+    to: args.to,
+    subject: args.subject,
+    html: args.html,
+    text: args.text || "",
+    from: config.fromEmail,
+    fromName: config.fromName,
+    replyTo: config.replyTo,
+  };
+  const defaultPayload = {
+    [envValue("EMAIL_HTTP_TO_FIELD", "to")]: args.to,
+    [envValue("EMAIL_HTTP_SUBJECT_FIELD", "subject")]: args.subject,
+    [envValue("EMAIL_HTTP_HTML_FIELD", "html")]: args.html,
+    [envValue("EMAIL_HTTP_TEXT_FIELD", "text")]: args.text || "",
+    [envValue("EMAIL_HTTP_FROM_FIELD", "from")]: config.fromEmail,
+    [envValue("EMAIL_HTTP_FROM_NAME_FIELD", "fromName")]: config.fromName,
+    [envValue("EMAIL_HTTP_REPLY_TO_FIELD", "replyTo")]: config.replyTo,
+    headers: args.headers || {},
+  };
+  const payload = config.bodyTemplate
+    ? renderJsonTemplate(config.bodyTemplate, stringTokens, { __ATHOO_EMAIL_HEADERS__: args.headers || {} })
+    : defaultPayload;
+
+  try {
+    const response = await fetchWithTimeout(config.endpoint, {
+      method: config.method,
+      headers,
+      body: JSON.stringify(payload),
+    }, config.timeoutMs);
+    const text = await response.text();
+    if (!response.ok) {
+      logger.warn({ status: response.status, provider: "http_json", to: args.to }, "HTTP email provider rejected delivery");
+      return { ok: false, channel: "http_json", provider: configuredProviderName("http_json"), errorCode: `EMAIL_HTTP_${response.status}` };
+    }
+    let parsed: unknown = null;
+    try { parsed = text ? JSON.parse(text) : null; } catch {}
+    const messageId = String(readPath(parsed, config.messageIdPath) || response.headers.get("x-message-id") || "").trim();
+    return {
+      ok: true,
+      channel: "http_json",
+      provider: configuredProviderName("http_json"),
+      ...(messageId ? { messageId } : {}),
+      response: text.slice(0, 500),
+    };
+  } catch (error) {
+    logger.error({ err: error, to: args.to, provider: "http_json" }, "HTTP email send failed");
+    return { ok: false, channel: "http_json", provider: configuredProviderName("http_json"), errorCode: "EMAIL_HTTP_SEND_FAILED" };
+  }
+}
+
 export async function verifyEmailTransport(): Promise<{ ok: boolean; configured: boolean; provider: EmailProviderKind; error?: string }> {
-  const provider = resolveProvider();
+  const runtime = await getRuntimeCommunicationOverrides();
+  const providerOverride = runtimeProviderValue(runtime.enabled, runtime.emailProvider);
+  const provider = resolveEmailProvider(providerOverride);
   if (provider === "disabled") return { ok: false, configured: false, provider, error: "Email delivery is disabled" };
   if (provider === "console") return { ok: true, configured: true, provider };
-  const transport = getTransport();
+  if (provider === "http_json") {
+    const status = getEmailConfigurationStatus(providerOverride);
+    if (!status.configured) return { ok: false, configured: false, provider, error: "HTTP email adapter is not configured" };
+    const config = getHttpEmailConfig();
+    if (!config.healthcheckUrl) return { ok: true, configured: true, provider };
+    try {
+      const response = await fetchWithTimeout(config.healthcheckUrl, {
+        method: "GET",
+        headers: buildHttpHeaders({
+          headersJsonEnv: "EMAIL_HTTP_HEADERS_JSON",
+          authHeaderEnv: "EMAIL_HTTP_AUTH_HEADER",
+          authValueEnv: "EMAIL_HTTP_AUTH_VALUE",
+          authPrefixEnv: "EMAIL_HTTP_AUTH_PREFIX",
+        }),
+      }, config.timeoutMs);
+      return response.ok
+        ? { ok: true, configured: true, provider }
+        : { ok: false, configured: true, provider, error: `HTTP email healthcheck returned ${response.status}` };
+    } catch (error) {
+      logger.error({ err: error }, "HTTP email transport verification failed");
+      return { ok: false, configured: true, provider, error: "HTTP email healthcheck failed" };
+    }
+  }
+  const transport = getTransport(providerOverride);
   if (!transport) return { ok: false, configured: false, provider, error: "SMTP is not configured" };
   try {
     await transport.verify();
@@ -182,21 +319,25 @@ export async function verifyEmailTransport(): Promise<{ ok: boolean; configured:
 }
 
 export async function sendEmail(args: SendEmailArgs): Promise<SendEmailResult> {
-  const provider = resolveProvider();
+  const runtime = await getRuntimeCommunicationOverrides();
+  const providerOverride = runtimeProviderValue(runtime.enabled, runtime.emailProvider);
+  const provider = resolveEmailProvider(providerOverride);
+  const providerName = configuredProviderName(providerOverride);
   if (provider === "disabled") {
-    return { ok: false, channel: provider, provider, errorCode: "EMAIL_DISABLED" };
+    return { ok: false, channel: provider, provider: providerName, errorCode: "EMAIL_DISABLED" };
   }
   if (provider === "console") {
     if (process.env.NODE_ENV === "production") {
-      return { ok: false, channel: provider, provider, errorCode: "CONSOLE_EMAIL_FORBIDDEN_IN_PRODUCTION" };
+      return { ok: false, channel: provider, provider: providerName, errorCode: "CONSOLE_EMAIL_FORBIDDEN_IN_PRODUCTION" };
     }
     logger.debug({ to: args.to, subject: args.subject, body: args.text || args.html }, "[email:console] development delivery");
-    return { ok: true, channel: provider, provider, messageId: `console-${Date.now()}` };
+    return { ok: true, channel: provider, provider: providerName, messageId: `console-${Date.now()}` };
   }
+  if (provider === "http_json") return sendHttpJsonEmail(args);
 
-  const transport = getTransport();
+  const transport = getTransport(providerOverride);
   if (!transport) {
-    return { ok: false, channel: "smtp", provider: env("EMAIL_PROVIDER", "smtp"), errorCode: "SMTP_NOT_CONFIGURED" };
+    return { ok: false, channel: "smtp", provider: providerName, errorCode: "SMTP_NOT_CONFIGURED" };
   }
   const smtp = getSmtpConfig();
   const fromAddress = smtp.fromEmail.includes("<") ? smtp.fromEmail : `"${smtp.fromName}" <${smtp.fromEmail}>`;
@@ -213,13 +354,13 @@ export async function sendEmail(args: SendEmailArgs): Promise<SendEmailResult> {
     return {
       ok: true,
       channel: "smtp",
-      provider: env("EMAIL_PROVIDER", "smtp"),
+      provider: providerName,
       messageId: String(info.messageId || ""),
       response: String(info.response || ""),
     };
   } catch (error) {
-    logger.error({ err: error, to: args.to, provider: env("EMAIL_PROVIDER", "smtp") }, "email send failed");
-    return { ok: false, channel: "smtp", provider: env("EMAIL_PROVIDER", "smtp"), errorCode: "SMTP_SEND_FAILED" };
+    logger.error({ err: error, to: args.to, provider: providerName }, "email send failed");
+    return { ok: false, channel: "smtp", provider: providerName, errorCode: "SMTP_SEND_FAILED" };
   }
 }
 
