@@ -18,7 +18,15 @@ if (sourceUrl && databaseFingerprint(sourceUrl) === databaseFingerprint(targetUr
 
 const verified = await verifyBackupSet(fileArg);
 await run("pg_restore", [
-  "--exit-on-error", "--single-transaction", "--clean", "--if-exists",
-  "--no-owner", "--no-privileges", "--dbname", targetUrl, verified.file,
+  "--verbose",
+  "--exit-on-error",
+  "--single-transaction",
+  "--clean",
+  "--if-exists",
+  "--no-owner",
+  "--no-privileges",
+  "--dbname",
+  targetUrl,
+  verified.file,
 ]);
 console.log(JSON.stringify({ restored: verified.file, target: databaseFingerprint(targetUrl), sha256: verified.sha256, latestMigration: verified.manifest.latestMigration }, null, 2));
