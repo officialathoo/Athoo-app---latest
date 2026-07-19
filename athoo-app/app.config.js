@@ -510,9 +510,13 @@ const extra = {
 
   RELEASE_IDENTITY: {
     version: releaseVersion,
-    commitSha: releaseCommitSha || null,
-    buildId: releaseBuildId || null,
     environment: appEnvironment,
+    ...(typeof releaseCommitSha === "string" && releaseCommitSha.trim()
+      ? { commitSha: releaseCommitSha.trim() }
+      : {}),
+    ...(typeof releaseBuildId === "string" && releaseBuildId.trim()
+      ? { buildId: releaseBuildId.trim() }
+      : {}),
   },
 
   API_BASE_URL: apiBaseUrl,
