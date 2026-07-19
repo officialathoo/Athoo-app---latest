@@ -16,20 +16,29 @@ export default function ServiceRadiusScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const { user, updateUser } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [selected, setSelected] = useState<number>((user as any)?.maxTravelDistanceKm || 15);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const dist = (user as any)?.maxTravelDistanceKm;
-    if (dist) setSelected(dist);
+    let mounted = true;
+    const localDistance = Number((user as any)?.maxTravelDistanceKm);
+    if (Number.isFinite(localDistance) && localDistance > 0) setSelected(localDistance);
+
+    void api.getServiceRadius().then((response) => {
+      const persisted = Number(response.maxTravelDistanceKm);
+      if (mounted && Number.isFinite(persisted) && persisted > 0) setSelected(persisted);
+    }).catch(() => undefined);
+    return () => { mounted = false; };
   }, [user]);
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await updateUser({ maxTravelDistanceKm: selected } as any);
-      Alert.alert("Saved", `Your service radius is set to ${selected} km.`);
+      const response = await api.updateServiceRadius(selected);
+      setSelected(response.maxTravelDistanceKm);
+      await refreshUser();
+      Alert.alert("Saved", `Your service radius is set to ${response.maxTravelDistanceKm} km.`);
       router.back();
     } catch {
       Alert.alert("Error", "Could not save your service radius. Please try again.");

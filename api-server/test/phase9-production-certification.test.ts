@@ -71,13 +71,13 @@ test("final GO decision has explicit business-critical and operational gates", (
   }
 });
 
-test("release blueprints and runbooks use the current Phase 23 baseline and latest migration", () => {
+test("release blueprints and runbooks use the current source-audited baseline and latest migration", () => {
   const final = read("docs/runbooks/FINAL_CONNECTED_DEPLOYMENT.md");
   const launch = read("docs/runbooks/PRODUCTION_LAUNCH_RUNBOOK.md");
   const packageJson = json("package.json");
-  assert.match(final, /ATHOO_PHASE23_CONNECTED_PRODUCTION_VERIFICATION_READY\.zip/);
-  assert.match(final, /20260716_workflow_inactivity_policy_governance\.sql/);
-  assert.match(launch, /Phase 23 connected-verification-ready candidate/);
+  assert.match(final, /ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY\.zip/);
+  assert.match(final, /20260719_broadcast_delivery_configuration_integrity\.sql/);
+  assert.match(launch, /Phase 24\.8 strict device-acceptance-integrity candidate/);
   assert.ok(packageJson.scripts["release:blueprints:validate"]);
   assert.match(packageJson.scripts["release:verify:code"], /release:blueprints:validate/);
 });

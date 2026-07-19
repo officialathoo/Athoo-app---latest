@@ -23,6 +23,13 @@ function asEmail(value: unknown): string | undefined {
   return normalized;
 }
 
+
+function asBoundedInteger(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(parsed)));
+}
+
 function asMapTileSize(value: unknown): 256 | 512 | undefined {
   const parsed = Number(value);
   return parsed === 256 || parsed === 512 ? parsed : undefined;
@@ -55,6 +62,24 @@ export const runtimeConfig = Object.freeze({
   app: Object.freeze({
     downloadUrl: asHttpsUrl(process.env.EXPO_PUBLIC_APP_DOWNLOAD_URL)
       || asHttpsUrl(extra.APP_DOWNLOAD_URL),
+  }),
+  location: Object.freeze({
+    providerForegroundSyncIntervalMs: asBoundedInteger(
+      process.env.EXPO_PUBLIC_PROVIDER_LOCATION_SYNC_INTERVAL_MS
+        || extra.PROVIDER_LOCATION_SYNC_INTERVAL_MS,
+      120_000,
+      60_000,
+      10 * 60_000,
+    ),
+  }),
+  notifications: Object.freeze({
+    pushTokenSyncIntervalMs: asBoundedInteger(
+      process.env.EXPO_PUBLIC_PUSH_TOKEN_SYNC_INTERVAL_MS
+        || extra.PUSH_TOKEN_SYNC_INTERVAL_MS,
+      15 * 60_000,
+      5 * 60_000,
+      6 * 60 * 60_000,
+    ),
   }),
   maps: Object.freeze({
     tileUrl: asOptionalString(process.env.EXPO_PUBLIC_MAP_TILE_URL)

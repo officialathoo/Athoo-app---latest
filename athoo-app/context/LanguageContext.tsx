@@ -719,7 +719,6 @@ const UR_MESSAGES: Record<string, string> = {
   "Subtotal": "ذیلی مجموعہ",
   "TOTAL PAID": "کل ادا شدہ",
   "Take a new photo or choose one from your gallery.": "نئی تصویر لیں یا گیلری سے منتخب کریں۔",
-  "Tax (0%)": "ٹیکس (0٪)",
   "Thank you for using Athoo!": "Athoo استعمال کرنے کا شکریہ!",
   "Transaction / Reference ID": "ٹرانزیکشن / حوالہ آئی ڈی",
   "Unable to cancel subscription": "سبسکرپشن منسوخ نہیں ہو سکی",

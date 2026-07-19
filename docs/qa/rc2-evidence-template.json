@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "releaseVersion": "",
   "releaseCommitSha": "0000000",
   "artifactSha256": "0000000000000000000000000000000000000000000000000000000000000000",
@@ -92,16 +92,6 @@
       "status": "pending",
       "evidence": ""
     },
-    "openP0Defects": {
-      "status": "pending",
-      "evidence": "",
-      "count": 0
-    },
-    "openP1Defects": {
-      "status": "pending",
-      "evidence": "",
-      "count": 0
-    },
     "customerJobBroadcast": {
       "status": "pending",
       "evidence": "",
@@ -167,6 +157,76 @@
       "evidence": "",
       "reason": "",
       "count": 0
+    },
+    "mapTileRendering": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "providerLiveLocation": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "providerRadiusPersistence": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "bottomNavigationSafeArea": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "availabilityTimePicker": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "biometricEnableLogin": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "invoiceNoTax": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "broadcastRadiusDelivery": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "singleDeviceImmediateRevocation": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "callCrashFreeTwoWayAudio": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "openP0Defects": {
+      "status": "pending",
+      "evidence": "",
+      "count": 0
+    },
+    "openP1Defects": {
+      "status": "pending",
+      "evidence": "",
+      "count": 0
     }
   },
   "approvals": {
@@ -174,5 +234,7 @@
     "qa": "",
     "product": "",
     "operations": ""
-  }
+  },
+  "candidateArtifactName": "ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip",
+  "deviceEvidenceSummary": ""
 }

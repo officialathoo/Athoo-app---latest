@@ -87,7 +87,11 @@ export const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = {
   allowGuestBrowsing: true,
   providerAutoApprove: false,
   bookingCancellationWindowHours: 1,
-  broadcastTTLMinutes: 3,
+  // Keep broadcasts open long enough for background push delivery and the
+  // configured expansion pass. This must stay aligned with the admin/mobile
+  // defaults; the former 3-minute API fallback expired requests before the
+  // default 5-minute expansion job could ever run.
+  broadcastTTLMinutes: 30,
   broadcastInitialRadiusKm: 30,
   broadcastExpansionRadiusKm: 50,
   broadcastExpandAfterMinutes: 5,
@@ -195,6 +199,19 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
     emailProvider: str("emailProvider", DEFAULT_PLATFORM_SETTINGS.emailProvider),
     pushProvider: str("pushProvider", DEFAULT_PLATFORM_SETTINGS.pushProvider),
   };
+
+  // Older production rows may contain the historical API fallback
+  // broadcastTTLMinutes=3 together with broadcastExpandAfterMinutes=5. That
+  // combination makes expansion impossible because the request is already
+  // expired when the queue job runs. Normalize any invalid persisted pair at
+  // read time so deployment is safe even before an administrator opens and
+  // resaves the settings page. The companion migration persists the repair.
+  if (computed.broadcastExpandAfterMinutes >= computed.broadcastTTLMinutes) {
+    computed.broadcastTTLMinutes = DEFAULT_PLATFORM_SETTINGS.broadcastTTLMinutes;
+    if (computed.broadcastExpandAfterMinutes >= computed.broadcastTTLMinutes) {
+      computed.broadcastExpandAfterMinutes = DEFAULT_PLATFORM_SETTINGS.broadcastExpandAfterMinutes;
+    }
+  }
   if (isInProcessCacheEnabled()) {
     _settingsCache = { value: computed, fetchedAt: Date.now() };
   }
@@ -230,7 +247,10 @@ function validatePlatformSettings(settings: PlatformSettings): void {
   if (settings.broadcastExpansionRadiusKm < settings.broadcastInitialRadiusKm) {
     throw new PlatformSettingsValidationError("broadcastExpansionRadiusKm cannot be smaller than broadcastInitialRadiusKm");
   }
-  assertRange("broadcastExpandAfterMinutes", settings.broadcastExpandAfterMinutes, 1, 60);
+  assertRange("broadcastExpandAfterMinutes", settings.broadcastExpandAfterMinutes, 1, 59);
+  if (settings.broadcastExpandAfterMinutes >= settings.broadcastTTLMinutes) {
+    throw new PlatformSettingsValidationError("broadcastExpandAfterMinutes must be smaller than broadcastTTLMinutes");
+  }
   assertRange("maxNegotiationRounds", settings.maxNegotiationRounds, 1, 10);
   assertRange("premiumCommissionDiscountPercent", settings.premiumCommissionDiscountPercent, 0, 100);
   assertRange("defaultServiceRadiusKm", settings.defaultServiceRadiusKm, 1, 100);

@@ -22,8 +22,11 @@ export default function CustomerTabLayout() {
   const { unreadCount } = useNotifications();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const tabHeight = Platform.OS === "web" ? 84 : 56 + insets.bottom;
-  const tabPadBottom = Platform.OS === "web" ? 20 : insets.bottom + 4;
+  const safeBottom = Platform.OS === "web"
+    ? 20
+    : Math.max(insets.bottom, Platform.OS === "android" ? 8 : 6);
+  const tabHeight = Platform.OS === "web" ? 84 : 64 + safeBottom;
+  const tabPadBottom = safeBottom;
   const activeTabStyle = {
     backgroundColor: theme.colors.infoSoft,
     borderRadius: theme.radius.sm,
@@ -42,8 +45,12 @@ export default function CustomerTabLayout() {
           borderTopColor: theme.colors.divider,
           height: tabHeight,
           paddingBottom: tabPadBottom,
-          paddingTop: theme.spacing.sm,
+          paddingTop: 6,
           ...theme.shadows.sm,
+        },
+        tabBarItemStyle: {
+          minHeight: 54,
+          paddingVertical: 2,
         },
         tabBarLabelStyle: {
           fontSize: 10,

@@ -197,6 +197,10 @@ export default function BookServiceScreen() {
   const directBookingRequestIdRef = useRef<string | null>(null);
   const broadcastRequestIdRef = useRef<string | null>(null);
   const [broadcastId, setBroadcastId] = useState<string | null>(null);
+  const [broadcastDelivery, setBroadcastDelivery] = useState<{
+    matchedCount: number;
+    expansionQueued: boolean;
+  } | null>(null);
 
   const applyLocationSelection = (selection: LocationSelection) => {
     setAddress(selection.address);
@@ -539,7 +543,11 @@ export default function BookServiceScreen() {
         }
         const res = await api.createBroadcastRequest({
           clientRequestId: broadcastRequestIdRef.current,
-          service: selectedCategory.id,
+          // Provider profiles store approved category slugs. Sending the
+          // category UUID here made matching depend on the display label and
+          // could silently exclude providers when a custom slug differed from
+          // the category name.
+          service: (selectedCategory as any).slug || selectedCategory.id,
           serviceLabel: selectedCategory.name,
           serviceIcon: selectedCategory.icon,
           description: description.trim() || undefined,
@@ -553,6 +561,12 @@ export default function BookServiceScreen() {
           travellingCharge: parsedTravelCharge,
         });
         broadcastRequestIdRef.current = null;
+        setBroadcastDelivery(res.delivery
+          ? {
+              matchedCount: Number(res.delivery.matchedCount || 0),
+              expansionQueued: Boolean(res.delivery.expansionQueued),
+            }
+          : null);
         setBroadcastId(res.request.id);
       }
     } catch (e: any) {
@@ -571,7 +585,11 @@ export default function BookServiceScreen() {
         </View>
         <Text style={styles.successTitle}>Request Broadcast!</Text>
         <Text style={styles.successSub}>
-          Your {selectedCategory?.name} request has been sent to nearby providers. Responses will arrive shortly.
+          {broadcastDelivery?.matchedCount === 0
+            ? broadcastDelivery.expansionQueued
+              ? `Your ${selectedCategory?.name} request is open. No provider matched the first radius yet, so Athoo will automatically try the expanded radius.`
+              : `Your ${selectedCategory?.name} request is open, but no currently available provider matched the service, location, and radius requirements.`
+            : `Your ${selectedCategory?.name} request has been sent to nearby providers. Responses will arrive shortly.`}
         </Text>
         <Pressable
           style={styles.viewResponsesBtn}

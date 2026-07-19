@@ -63,6 +63,15 @@ const FALLBACK_SETTINGS: PublicSettings = {
   },
 };
 
+
+function resolveTileUrl(value: unknown): string {
+  const candidate = String(value || "").trim();
+  if (!candidate) return FALLBACK_SETTINGS.map.tileUrl;
+  if (/^https:\/\//i.test(candidate)) return candidate;
+  if (candidate.startsWith("/") && api.baseUrl) return `${api.baseUrl}${candidate}`;
+  return FALLBACK_SETTINGS.map.tileUrl;
+}
+
 function normalizedSettings(value: unknown): PublicSettings {
   const incoming = value && typeof value === "object" ? value as Partial<PublicSettings> : {};
   const incomingMap = incoming.map && typeof incoming.map === "object"
@@ -86,7 +95,7 @@ function normalizedSettings(value: unknown): PublicSettings {
         : FALLBACK_SETTINGS.map.productionSafe,
       tileSize,
       attribution: String(incomingMap.attribution || FALLBACK_SETTINGS.map.attribution).trim(),
-      tileUrl: String(incomingMap.tileUrl || FALLBACK_SETTINGS.map.tileUrl).trim(),
+      tileUrl: resolveTileUrl(incomingMap.tileUrl),
     },
   };
 }

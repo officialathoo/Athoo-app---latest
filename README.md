@@ -1,4 +1,4 @@
-# Athoo Phase 23 Connected Production Verification Candidate
+# Athoo Phase 24.8 Device Acceptance Integrity Candidate
 
 This cumulative package contains the Athoo mobile application, API, admin panel, shared libraries, database migrations and release-engineering controls.
 
@@ -33,12 +33,15 @@ pnpm mobile:export
 
 ## Connected certification
 
-Phase 23 adds verifiable API/admin/mobile build provenance and strict connected checks for Neon, Render, Vercel, maps, storage, email, OTP, queue, cache and TURN.
-It also completes runtime map switching in the mobile renderer: active tile size and attribution now follow Admin/provider configuration while all credentials remain behind the stable Athoo API proxy.
+Phase 24.8 carries forward all Phase 24.7 broadcast lifecycle, session, map, biometric, UI, call-transport, fresh-location and notification self-healing fixes. It hardens release acceptance so the exact ZIP, Git commit, Android build and iOS build are bound to one evidence set. Every originally reported defect now has an explicit Android, iOS or cross-role acceptance case, and the final RC2 decision cannot return GO without a passed strict device-evidence summary.
 
 Follow:
 
-- `docs/archive/development-history/ATHOO_PHASE23_CONNECTED_PRODUCTION_VERIFICATION.md`
+- `docs/archive/development-history/ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY.md`
+- `docs/archive/development-history/ATHOO_PHASE24_7_BROADCAST_LIFECYCLE_INTEGRITY.md`
+- `docs/archive/development-history/ATHOO_PHASE24_6_LOCATION_NOTIFICATION_SELF_HEALING.md`
+- `docs/archive/development-history/ATHOO_PHASE24_5_CALL_TRANSPORT_GATING.md`
+- `docs/archive/development-history/ATHOO_PHASE24_4_FINAL_SOURCE_AUDIT.md`
 - `docs/runbooks/FINAL_CONNECTED_DEPLOYMENT.md`
 - `docs/runbooks/MOBILE_BETA_RELEASE_RUNBOOK.md`
 - `docs/qa/device-acceptance-checklist.json`

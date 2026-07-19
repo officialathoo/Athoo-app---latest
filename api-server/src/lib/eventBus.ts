@@ -38,6 +38,7 @@ export type EventName =
   | "notification:push-failed"
   | "account:inactivity-cleared"
   | "provider:availability"
+  | "provider:location"
   | "admin:metric"
   | "admin:event"
   | "broadcast:new"

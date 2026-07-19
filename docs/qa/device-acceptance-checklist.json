@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "evidenceRequired": [
     "screenshot-or-video",
     "device-and-os",
@@ -37,7 +37,15 @@
       "chat-keyboard-input-visible",
       "chat-unread-badge-and-background-delivery",
       "provider-rate-and-multiple-services-profile",
-      "policy-center-offline-and-accessibility"
+      "policy-center-offline-and-accessibility",
+      "map-renders-full-tiles-not-white",
+      "provider-location-refresh-on-open-and-foreground",
+      "provider-radius-persists-after-restart",
+      "bottom-navigation-safe-area",
+      "availability-time-picker-no-overlap",
+      "availability-toggle-animation-and-server-state",
+      "biometric-enable-unlock-disable",
+      "invoice-has-no-tax"
     ],
     "ios": [
       "fresh-install-and-native-splash",
@@ -68,7 +76,15 @@
       "chat-keyboard-input-visible",
       "chat-unread-badge-and-background-delivery",
       "provider-rate-and-multiple-services-profile",
-      "policy-center-offline-and-accessibility"
+      "policy-center-offline-and-accessibility",
+      "map-renders-full-tiles-not-white",
+      "provider-location-refresh-on-open-and-foreground",
+      "provider-radius-persists-after-restart",
+      "bottom-navigation-safe-area",
+      "availability-time-picker-no-overlap",
+      "availability-toggle-animation-and-server-state",
+      "biometric-enable-unlock-disable",
+      "invoice-has-no-tax"
     ]
   },
   "crossRole": [
@@ -90,6 +106,11 @@
     "customer-job-broadcast-provider-receipt",
     "two-way-voice-call-cross-network",
     "admin-notification-exact-record-destination",
-    "inactivity-warning-return-and-no-auto-delete"
+    "inactivity-warning-return-and-no-auto-delete",
+    "live-provider-radius-matching-after-app-open",
+    "broadcast-delivery-after-location-radius-change",
+    "single-device-revocation-immediate-old-device",
+    "call-no-crash-two-way-audio-with-turn-or-fallback",
+    "invoice-no-tax-customer-provider-admin-consistency"
   ]
 }

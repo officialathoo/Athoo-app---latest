@@ -50,6 +50,7 @@
     "rc1:decision": "node ./scripts/tools/rc1-decision.mjs",
     "runtime:verify:connected": "node ./scripts/tools/connected-runtime-verify.mjs",
     "release:verify:connected": "pnpm run release:verify:code && pnpm run db:verify && pnpm run runtime:verify:connected",
+    "device:evidence:init": "node ./scripts/tools/init-device-evidence.mjs",
     "device:evidence:validate": "node ./scripts/tools/validate-device-evidence.mjs",
     "rc2:source-verify": "pnpm run release:verify:code && pnpm run mobile:validate && pnpm run beta:validate && pnpm run device:validate",
     "rc2:connected-verify": "pnpm run release:verify:connected",

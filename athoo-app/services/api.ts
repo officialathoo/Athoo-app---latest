@@ -538,6 +538,14 @@ export const api = {
     });
   },
 
+  setBiometricPreference(payload: { enabled: boolean; password?: string }) {
+    return request<{ success: boolean; user: any }>("/api/auth/biometric-preference", {
+      method: "POST",
+      auth: true,
+      body: payload,
+    });
+  },
+
   getDocuments() {
     return request<{ documents: any[] }>("/api/me/documents", { method: "GET", auth: true });
   },
@@ -642,6 +650,30 @@ export const api = {
       method: "PATCH",
       auth: true,
       body: { isAvailable },
+    });
+  },
+
+  updateProviderLocation(data: { latitude: number; longitude: number; accuracy?: number | null }) {
+    return request<{ success: boolean; user: any }>("/api/providers/location", {
+      method: "PATCH",
+      auth: true,
+      body: data,
+      timeoutMs: 10_000,
+    });
+  },
+
+  getServiceRadius() {
+    return request<{ maxTravelDistanceKm: number }>("/api/providers/service-radius", {
+      method: "GET",
+      auth: true,
+    });
+  },
+
+  updateServiceRadius(maxTravelDistanceKm: number) {
+    return request<{ maxTravelDistanceKm: number; user: any }>("/api/providers/service-radius", {
+      method: "PATCH",
+      auth: true,
+      body: { maxTravelDistanceKm },
     });
   },
 
@@ -1316,7 +1348,20 @@ export const api = {
     travellingCharge?: number;
     clientRequestId: string;
   }) {
-    return request<{ request: any }>("/api/broadcast", {
+    return request<{
+      request: any;
+      duplicate?: boolean;
+      delivery?: {
+        candidateCount: number;
+        matchedCount: number;
+        inAppCreated: number;
+        pushTokenCount: number;
+        pushAccepted: number;
+        pushFailed: number;
+        expansionQueued: boolean;
+        skippedByReason: Record<string, number>;
+      };
+    }>("/api/broadcast", {
       method: "POST",
       auth: true,
       body: payload,
@@ -1647,6 +1692,18 @@ async function openRealtimeSocket(): Promise<void> {
           payload: raw?.payload,
         };
         if (!parsed || !parsed.type) return;
+        // React Native WebSocket implementations do not always preserve custom
+        // close codes. The server sends auth:error before closing, so react to
+        // that event immediately to guarantee replaced devices are logged out.
+        if (parsed.type === "auth:error") {
+          const reason = String(parsed.payload?.reason || "").toLowerCase();
+          if (reason.includes("session") || reason.includes("auth") || reason.includes("token")) {
+            realtimeShouldReconnect = false;
+            _unauthorizedHandler?.();
+            try { ws.close(); } catch {}
+            return;
+          }
+        }
         realtimeListeners.forEach((fn) => {
           try { fn(parsed); } catch {}
         });

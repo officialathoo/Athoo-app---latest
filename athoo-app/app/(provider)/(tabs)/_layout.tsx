@@ -88,8 +88,11 @@ export default function ProviderTabLayout() {
   const { bookings } = useBookings();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const tabHeight = Platform.OS === "web" ? 84 : 56 + insets.bottom;
-  const tabPadBottom = Platform.OS === "web" ? 20 : insets.bottom + 4;
+  const safeBottom = Platform.OS === "web"
+    ? 20
+    : Math.max(insets.bottom, Platform.OS === "android" ? 8 : 6);
+  const tabHeight = Platform.OS === "web" ? 84 : 64 + safeBottom;
+  const tabPadBottom = safeBottom;
 
   return (
     <>
@@ -100,14 +103,19 @@ export default function ProviderTabLayout() {
           tabBarActiveTintColor: theme.colors.secondary,
           tabBarInactiveTintColor: theme.colors.textMuted,
           headerShown: false,
+          tabBarHideOnKeyboard: true,
           tabBarStyle: {
             backgroundColor: theme.colors.surface,
             borderTopWidth: 1,
             borderTopColor: theme.colors.divider,
             height: tabHeight,
             paddingBottom: tabPadBottom,
-            paddingTop: theme.spacing.sm,
+            paddingTop: 6,
             ...theme.shadows.sm,
+          },
+          tabBarItemStyle: {
+            minHeight: 54,
+            paddingVertical: 2,
           },
           tabBarLabelStyle: {
             fontSize: 10,

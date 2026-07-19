@@ -79,8 +79,8 @@ requireText(".github/workflows/connected-runtime.yml", /pnpm db:status[\s\S]*pnp
 requireText(".github/workflows/connected-runtime.yml", /CONNECTED_ADMIN_ORIGIN/, "deployed admin verification is not wired");
 requireText("scripts/tools/connected-runtime-verify.mjs", /admin release manifest/, "connected verification does not compare admin release identity");
 requireText("scripts/tools/connected-runtime-verify.mjs", /storage provider connectivity/, "connected verification does not test object storage");
-requireText("docs/runbooks/FINAL_CONNECTED_DEPLOYMENT.md", /ATHOO_PHASE23_CONNECTED_PRODUCTION_VERIFICATION_READY\.zip/, "current baseline is not documented");
-requireText("docs/runbooks/FINAL_CONNECTED_DEPLOYMENT.md", /20260716_workflow_inactivity_policy_governance\.sql/, "latest migration is not documented");
+requireText("docs/runbooks/FINAL_CONNECTED_DEPLOYMENT.md", /ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY\.zip/, "current baseline is not documented");
+requireText("docs/runbooks/FINAL_CONNECTED_DEPLOYMENT.md", /20260719_broadcast_delivery_configuration_integrity\.sql/, "latest migration is not documented");
 requireText("docs/runbooks/PRODUCTION_LAUNCH_RUNBOOK.md", /calls\.productionReady=true|TURN/, "TURN production gate is not documented");
 
 if (errors.length) {

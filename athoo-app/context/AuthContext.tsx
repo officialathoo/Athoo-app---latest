@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
-import { api, setToken, setRefreshToken, clearToken, getToken, realtime, setUnauthorizedHandler } from "@/services/api";
+import { api, setToken, setRefreshToken, clearToken, getToken, getRefreshToken, realtime, setUnauthorizedHandler } from "@/services/api";
 import { notificationService } from "@/services/NotificationService";
 import {
   authenticateWithBiometric,
@@ -17,6 +17,8 @@ import {
 import { apiErrorToMessage } from "@/lib/apiError";
 import { getDeviceId } from "@/services/deviceIdentity";
 import { getSecureItem, removeSecureItem, setSecureItem } from "@/services/secureSessionStorage";
+import { getFastForegroundLocation } from "@/services/location";
+import { runtimeConfig } from "@/config/runtime";
 
 export type UserRole = "customer" | "provider" | "admin";
 export type AppUserRole = "customer" | "provider";
@@ -39,6 +41,10 @@ export interface User {
   verificationStatus?: "pending" | "in_process" | "approved" | "rejected";
   verificationNote?: string | null;
   isAvailable?: boolean;
+  maxTravelDistanceKm?: number | null;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
+  biometricEnabled?: boolean;
   bio?: string;
   experience?: string;
   joinedAt?: string;
@@ -96,8 +102,9 @@ interface AuthContextType {
   toggleSaved: (providerId: string) => Promise<void>;
   completeBiometricLogin: () => Promise<{ success: boolean; user?: User | null; error?: string }>;
   promptBiometricSetup: (phone: string, role?: AppUserRole) => Promise<void>;
+  configureBiometricLogin: (enabled: boolean, password?: string) => Promise<{ success: boolean; error?: string }>;
   switchRole: (targetRole?: AppUserRole) => Promise<void>;
-  refreshUser: () => Promise<void>;
+  refreshUser: () => Promise<boolean>;
   acceptCurrentLegal: () => Promise<{ success: boolean; error?: string }>;
 }
 
@@ -147,6 +154,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const sessionClearPromiseRef = useRef<Promise<void> | null>(null);
   const logoutPromiseRef = useRef<Promise<void> | null>(null);
   const backgroundedAtRef = useRef<number | null>(null);
+  const lastProviderLocationSyncAtRef = useRef(0);
+  const providerLocationSyncPromiseRef = useRef<Promise<void> | null>(null);
 
   const attachSavedProviders = useCallback(async (u: User | null) => {
     if (!u) return null;
@@ -254,6 +263,95 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => { realtime.stop(); };
   }, []);
 
+  const refreshUser = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await api.getMe();
+      const rawUser = (res?.user as any) || null;
+      if (!rawUser) return false;
+      const hydrated = await attachSavedProviders(sanitizeUser(rawUser));
+      setUser(hydrated);
+      return true;
+    } catch (error) {
+      if (!isUnauthorizedError(error) && !isTransientNetworkError(error)) {
+        appLogger.warn("auth", "Failed to refresh user profile", error);
+      }
+      // The shared API unauthorized handler performs complete idempotent
+      // cleanup. Returning false also prevents this foreground cycle from
+      // registering push tokens or syncing provider location with a revoked
+      // access token while that cleanup completes asynchronously.
+      return false;
+    }
+  }, [attachSavedProviders]);
+
+  const syncProviderLocation = useCallback(async (force = false) => {
+    if (!user?.id || user.role !== "provider" || requiresBiometric) return;
+    if (providerLocationSyncPromiseRef.current) return providerLocationSyncPromiseRef.current;
+    const now = Date.now();
+    if (!force && now - lastProviderLocationSyncAtRef.current < runtimeConfig.location.providerForegroundSyncIntervalMs) return;
+
+    const task = (async () => {
+      const result = await getFastForegroundLocation({
+        timeoutMs: 12_000,
+        maxCacheAgeMs: runtimeConfig.location.providerForegroundSyncIntervalMs,
+        requiredAccuracy: 100,
+        freshAccuracy: "high",
+        requestPermission: true,
+        rationaleTitle: "Allow precise location",
+        rationaleBody: "Athoo uses your current location while the app is open so nearby customers can send you suitable jobs.",
+        preferFresh: force,
+      });
+      if (result.permission !== "granted" || !result.location) return;
+
+      const response = await api.updateProviderLocation({
+        latitude: result.location.latitude,
+        longitude: result.location.longitude,
+        accuracy: result.location.accuracy,
+      });
+      lastProviderLocationSyncAtRef.current = Date.now();
+      if (response.user) {
+        setUser((current) => current?.id === response.user.id
+          ? { ...current, ...sanitizeUser(response.user), savedProviders: current.savedProviders }
+          : current);
+      }
+    })().catch((error) => {
+      if (!isTransientNetworkError(error) && !isUnauthorizedError(error)) {
+        appLogger.warn("location", "Provider foreground location sync failed", error);
+      }
+    }).finally(() => {
+      providerLocationSyncPromiseRef.current = null;
+    });
+
+    providerLocationSyncPromiseRef.current = task;
+    return task;
+  }, [requiresBiometric, user?.id, user?.role]);
+
+  useEffect(() => {
+    if (user?.role === "provider" && user.isAvailable !== false && !requiresBiometric) {
+      void syncProviderLocation(true);
+    }
+  }, [requiresBiometric, syncProviderLocation, user?.id, user?.isAvailable, user?.role]);
+
+  useEffect(() => {
+    if (user?.role !== "provider" || user.isAvailable === false || requiresBiometric) return;
+    const timer = setInterval(() => {
+      if (AppState.currentState === "active") void syncProviderLocation(false);
+    }, runtimeConfig.location.providerForegroundSyncIntervalMs);
+    return () => clearInterval(timer);
+  }, [requiresBiometric, syncProviderLocation, user?.id, user?.isAvailable, user?.role]);
+
+  useEffect(() => {
+    if (!user?.id || requiresBiometric) return;
+    const timer = setInterval(() => {
+      if (AppState.currentState !== "active") return;
+      void (async () => {
+        const token = await getToken();
+        if (!token) return;
+        await notificationService.syncPushToken(api.baseUrl, token, { force: true });
+      })();
+    }, runtimeConfig.notifications.pushTokenSyncIntervalMs);
+    return () => clearInterval(timer);
+  }, [requiresBiometric, user?.id]);
+
   useEffect(() => {
     if (!user) return;
     const subscription = AppState.addEventListener("change", (state) => {
@@ -266,8 +364,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const backgroundedAt = backgroundedAtRef.current;
       backgroundedAtRef.current = null;
       void (async () => {
+        const sessionValid = await refreshUser();
+        if (!sessionValid) return;
         const token = await getToken();
-        if (token) await notificationService.syncPushToken(api.baseUrl, token);
+        if (!token) return;
+        await notificationService.syncPushToken(api.baseUrl, token, { force: true });
+        if (user.role === "provider" && user.isAvailable !== false) await syncProviderLocation(true);
 
         if (
           backgroundedAt &&
@@ -280,23 +382,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })();
     });
     return () => subscription.remove();
-  }, [user]);
-
-  const refreshUser = useCallback(async () => {
-    try {
-      const res = await api.getMe();
-      const rawUser = (res?.user as any) || null;
-      if (!rawUser) return;
-      const hydrated = await attachSavedProviders(sanitizeUser(rawUser));
-      setUser(hydrated);
-    } catch (error) {
-      if (isUnauthorizedError(error)) {
-        // The shared API unauthorized handler performs the complete,
-        // idempotent session cleanup.
-        return;
-      }
-    }
-  }, [attachSavedProviders]);
+  }, [refreshUser, syncProviderLocation, user?.id, user?.isAvailable, user?.role]);
 
   const sendOtp = useCallback(async (
     phone: string,
@@ -591,6 +677,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await clearLocalSession(true);
         return { success: false, error: "Session expired. Please login again." };
       }
+      if (rawUser.biometricEnabled !== true) {
+        await disableBiometric();
+        setRequiresBiometric(false);
+        return { success: false, error: "Biometric login must be enabled again from Security settings." };
+      }
       const hydrated = await attachSavedProviders(sanitizeUser(rawUser));
       setUser(hydrated);
       setRequiresBiometric(false);
@@ -606,27 +697,88 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const promptBiometricSetup = useCallback(async (phone: string, role?: AppUserRole) => {
     try {
-      const remember = (await AsyncStorage.getItem(REMEMBER_KEY)) === "true";
-      if (!remember) return;
-
+      // Biometric login is enabled only from the explicit Security setting,
+      // where password and device biometric verification are both completed.
+      if (!(await isBiometricEnabled())) return;
       const normalizedRole = role || "customer";
-      const [enabled, savedPhone, savedRole] = await Promise.all([
-        isBiometricEnabled(),
+      const [savedPhone, savedRole] = await Promise.all([
         getBiometricPhone(),
         getBiometricRole(),
       ]);
-      if (enabled && savedPhone === phone && savedRole === normalizedRole) return;
-
-      const available = await isBiometricAvailable();
-      if (!available) {
+      if (savedPhone !== phone || savedRole !== normalizedRole) {
         await disableBiometric();
-        return;
       }
-      const result = await authenticateWithBiometric("Enable biometric login for faster sign in");
-      if (!result.success) return;
-      await enableBiometric(phone, normalizedRole);
     } catch {}
   }, []);
+
+  const configureBiometricLogin = useCallback(async (enabled: boolean, password?: string) => {
+    if (!user?.id || !user.phone) {
+      return { success: false, error: "A signed-in account is required." };
+    }
+
+    try {
+      if (!enabled) {
+        const response = await api.setBiometricPreference({ enabled: false });
+        await disableBiometric();
+        setUser((current) => current ? {
+          ...current,
+          ...sanitizeUser(response.user as any),
+          savedProviders: current.savedProviders,
+        } : current);
+        setRequiresBiometric(false);
+        return { success: true };
+      }
+
+      if (!(await isBiometricAvailable())) {
+        return { success: false, error: "Set up Face ID, Touch ID, Fingerprint, or Iris in your phone settings first." };
+      }
+
+      const verification = await authenticateWithBiometric("Confirm biometric login for Athoo");
+      if (!verification.success) {
+        return { success: false, error: verification.error || "Biometric verification failed." };
+      }
+
+      const response = await api.setBiometricPreference({
+        enabled: true,
+        password: String(password || ""),
+      });
+
+      const [token, refreshToken] = await Promise.all([
+        getToken(),
+        getRefreshToken(),
+      ]);
+      if (!token || !refreshToken) {
+        await api.setBiometricPreference({ enabled: false }).catch(() => undefined);
+        return { success: false, error: "Your session cannot be remembered securely. Sign in again and retry." };
+      }
+
+      try {
+        await setToken(token, true);
+        await setRefreshToken(refreshToken, true);
+        await enableBiometric(user.phone, user.role);
+      } catch (storageError) {
+        await api.setBiometricPreference({ enabled: false }).catch(() => undefined);
+        await disableBiometric().catch(() => undefined);
+        throw storageError;
+      }
+
+      setUser((current) => current ? {
+        ...current,
+        ...sanitizeUser(response.user as any),
+        savedProviders: current.savedProviders,
+      } : current);
+      setRequiresBiometric(false);
+      return { success: true };
+    } catch (error: unknown) {
+      return {
+        success: false,
+        error: apiErrorToMessage(error, enabled
+          ? "Biometric login could not be enabled. Check your password and try again."
+          : "Biometric login could not be disabled. Please try again."),
+      };
+    }
+  }, [user?.id, user?.phone, user?.role]);
+
 
   const acceptCurrentLegal = useCallback(async () => {
     try {
@@ -645,7 +797,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [attachSavedProviders, user]);
 
-  return <AuthContext.Provider value={{ user, isLoading, requiresBiometric, sendOtp, verifyOtpAndLogin, sendEmailOtp, verifyEmailOtpAndLogin, loginWithPassword, register, logout, updateUser, toggleSaved, completeBiometricLogin, promptBiometricSetup, switchRole, refreshUser, acceptCurrentLegal }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, isLoading, requiresBiometric, sendOtp, verifyOtpAndLogin, sendEmailOtp, verifyEmailOtpAndLogin, loginWithPassword, register, logout, updateUser, toggleSaved, completeBiometricLogin, promptBiometricSetup, configureBiometricLogin, switchRole, refreshUser, acceptCurrentLegal }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

@@ -48,6 +48,7 @@ export type NotificationDiagnostics = {
   permissionGranted: boolean;
   channelsCreated: boolean;
   projectIdConfigured: boolean;
+  lastTokenSyncAt: number | null;
   policies: typeof notificationPolicies;
 };
 
@@ -56,6 +57,9 @@ class NotificationService {
   private permissionGranted = false;
   private initPromise: Promise<void> | null = null;
   private syncedToken: string | null = null;
+  private lastSyncedAt = 0;
+  private tokenSyncPromise: Promise<void> | null = null;
+  private tokenSyncSessionKey: string | null = null;
   private blockedAlertShown = false;
   private fallbackScheduleByNotificationId = new Map<string, string>();
 
@@ -101,8 +105,20 @@ class NotificationService {
         );
       }
     } catch (error) {
+      this.channelsCreated = false;
       appLogger.debug("notifications", "Notification initialization failed:", error);
+      throw error;
     }
+  }
+
+  private async refreshPermissionState(N: typeof import("expo-notifications")): Promise<boolean> {
+    try {
+      const permission = await N.getPermissionsAsync();
+      this.permissionGranted = permission.status === "granted";
+    } catch {
+      this.permissionGranted = false;
+    }
+    return this.permissionGranted;
   }
 
   private async ensureAndroidChannels(N: typeof import("expo-notifications")): Promise<void> {
@@ -153,10 +169,15 @@ class NotificationService {
 
   resetSyncedToken(): void {
     this.syncedToken = null;
+    this.lastSyncedAt = 0;
   }
 
   async getDiagnostics(): Promise<NotificationDiagnostics> {
     await this.init().catch(() => undefined);
+    if (Platform.OS !== "web" && !isExpoGoRuntime()) {
+      const N = await loadNotifications();
+      if (N) await this.refreshPermissionState(N);
+    }
     return {
       supported: Platform.OS !== "web" && !isExpoGoRuntime(),
       expoGo: isExpoGoRuntime(),
@@ -165,15 +186,20 @@ class NotificationService {
       projectIdConfigured: Boolean(
         Constants?.expoConfig?.extra?.eas?.projectId || Constants?.easConfig?.projectId,
       ),
+      lastTokenSyncAt: this.lastSyncedAt || null,
       policies: notificationPolicies,
     };
   }
 
   async getExpoPushToken(): Promise<string | null> {
     if (Platform.OS === "web" || isExpoGoRuntime()) return null;
-    await this.init();
+    try {
+      await this.init();
+    } catch {
+      return null;
+    }
     const N = await loadNotifications();
-    if (!N || !this.permissionGranted) return null;
+    if (!N || !(await this.refreshPermissionState(N))) return null;
 
     try {
       const projectId =
@@ -193,28 +219,48 @@ class NotificationService {
     }
   }
 
-  async syncPushToken(apiBaseUrl: string, authToken: string): Promise<void> {
+  async syncPushToken(
+    apiBaseUrl: string,
+    authToken: string,
+    options: { force?: boolean } = {},
+  ): Promise<void> {
     if (!apiBaseUrl || !authToken) return;
-
-    const expoPushToken = await this.getExpoPushToken();
-    if (!expoPushToken || this.syncedToken === expoPushToken) return;
-
-    try {
-      const deviceId = await getDeviceId();
-      const response = await fetch(`${normalizeApiBaseUrl(apiBaseUrl)}/api/auth/push-token`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${authToken}`,
-          "X-Athoo-Device-Id": deviceId,
-        },
-        body: JSON.stringify({ expoPushToken }),
-      });
-      if (!response.ok) throw new Error(`Push token sync failed (${response.status})`);
-      this.syncedToken = expoPushToken;
-    } catch (error) {
-      appLogger.debug("notifications", "syncPushToken failed:", error);
+    const syncSessionKey = `${normalizeApiBaseUrl(apiBaseUrl)}\u0000${authToken}`;
+    if (this.tokenSyncPromise) {
+      if (this.tokenSyncSessionKey === syncSessionKey) return this.tokenSyncPromise;
+      await this.tokenSyncPromise;
+      return this.syncPushToken(apiBaseUrl, authToken, options);
     }
+
+    this.tokenSyncSessionKey = syncSessionKey;
+    const syncTask = (async () => {
+      const expoPushToken = await this.getExpoPushToken();
+      if (!expoPushToken || (!options.force && this.syncedToken === expoPushToken)) return;
+
+      try {
+        const deviceId = await getDeviceId();
+        const response = await fetch(`${normalizeApiBaseUrl(apiBaseUrl)}/api/auth/push-token`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`,
+            "X-Athoo-Device-Id": deviceId,
+          },
+          body: JSON.stringify({ expoPushToken }),
+        });
+        if (!response.ok) throw new Error(`Push token sync failed (${response.status})`);
+        this.syncedToken = expoPushToken;
+        this.lastSyncedAt = Date.now();
+      } catch (error) {
+        appLogger.debug("notifications", "syncPushToken failed:", error);
+      }
+    })().finally(() => {
+      this.tokenSyncPromise = null;
+      this.tokenSyncSessionKey = null;
+    });
+
+    this.tokenSyncPromise = syncTask;
+    return syncTask;
   }
 
   /**

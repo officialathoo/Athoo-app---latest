@@ -436,6 +436,14 @@ export function SettingsPage() {
     const warningDays = Number(form.inactivityWarningDays);
     const restrictionDays = Number(form.inactivityRestrictionDays);
     const reviewDays = Number(form.inactivityReviewDays);
+    const broadcastTTLMinutes = Number(form.broadcastTTLMinutes);
+    const broadcastExpandAfterMinutes = Number(form.broadcastExpandAfterMinutes);
+    const broadcastInitialRadiusKm = Number(form.broadcastInitialRadiusKm);
+    const broadcastExpansionRadiusKm = Number(form.broadcastExpansionRadiusKm);
+    if (!Number.isInteger(broadcastTTLMinutes) || broadcastTTLMinutes < 1 || broadcastTTLMinutes > 60) { setError("Broadcast TTL must be between 1 and 60 minutes."); return; }
+    if (!Number.isInteger(broadcastExpandAfterMinutes) || broadcastExpandAfterMinutes < 1 || broadcastExpandAfterMinutes >= broadcastTTLMinutes) { setError("Broadcast expansion must run at least 1 minute before the broadcast expires."); return; }
+    if (!Number.isFinite(broadcastInitialRadiusKm) || broadcastInitialRadiusKm < 1 || broadcastInitialRadiusKm > 100) { setError("Initial broadcast radius must be between 1 and 100 km."); return; }
+    if (!Number.isFinite(broadcastExpansionRadiusKm) || broadcastExpansionRadiusKm < broadcastInitialRadiusKm || broadcastExpansionRadiusKm > 200) { setError("Expanded broadcast radius must be at least the initial radius and no more than 200 km."); return; }
     if (!Number.isInteger(warningDays) || warningDays < 7) { setError("Inactivity warning must be at least 7 days."); return; }
     if (!Number.isInteger(restrictionDays) || restrictionDays <= warningDays) { setError("Restriction days must be greater than warning days."); return; }
     if (!Number.isInteger(reviewDays) || reviewDays <= restrictionDays) { setError("Review days must be greater than restriction days."); return; }
@@ -457,10 +465,10 @@ export function SettingsPage() {
           allowGuestBrowsing: form.allowGuestBrowsing,
           providerAutoApprove: form.providerAutoApprove,
           bookingCancellationWindowHours: Number(form.bookingCancellationWindowHours),
-          broadcastTTLMinutes: Number(form.broadcastTTLMinutes),
-          broadcastInitialRadiusKm: Number(form.broadcastInitialRadiusKm),
-          broadcastExpansionRadiusKm: Number(form.broadcastExpansionRadiusKm),
-          broadcastExpandAfterMinutes: Number(form.broadcastExpandAfterMinutes),
+          broadcastTTLMinutes,
+          broadcastInitialRadiusKm,
+          broadcastExpansionRadiusKm,
+          broadcastExpandAfterMinutes,
           maxNegotiationRounds: Number(form.maxNegotiationRounds),
           premiumCommissionDiscountPercent: Number(form.premiumCommissionDiscountPercent),
           premiumPriorityBoost: form.premiumPriorityBoost,

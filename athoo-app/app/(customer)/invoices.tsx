@@ -179,7 +179,6 @@ export default function InvoicesScreen() {
       ${visitCharge > 0 ? `<tr><td>${escapeHtml(tr("Travel Charges"))}<br><small style="color:${printColors.textSecondary}">${escapeHtml(tr("Separate from hourly rate"))}</small></td><td class="amount">${escapeHtml(formatCurrency(visitCharge))}</td></tr>` : ""}
       <tr><td style="color:${printColors.textSecondary}">${escapeHtml(tr("Subtotal"))}</td><td class="amount" style="color:${printColors.textSecondary}">${escapeHtml(formatCurrency(subtotal))}</td></tr>
       ${discount > 0 ? `<tr><td style="color:${printColors.success}">${escapeHtml(tr("Discount Applied"))}</td><td class="amount" style="color:${printColors.success}">−${escapeHtml(formatCurrency(discount))}</td></tr>` : ""}
-      <tr><td style="color:${printColors.textMuted}">${escapeHtml(tr("Tax (0%)"))}</td><td class="amount" style="color:${printColors.textMuted}">${escapeHtml(formatCurrency(0))}</td></tr>
       <tr class="total-row"><td>${escapeHtml(tr("TOTAL PAID"))}</td><td class="amount">${escapeHtml(formatCurrency(total))}</td></tr>
     </table>
     <div class="note">${escapeHtml(tr("Payment was made directly to the service provider. Athoo does not handle funds. This is an electronic receipt only."))}</div>
@@ -302,11 +301,6 @@ export default function InvoicesScreen() {
                   <Text style={[styles.tableRowAmount, { color: theme.colors.success }]}>−{formatCurrency(match.discountAmount)}</Text>
                 </View>
               )}
-
-              <View style={styles.tableRow}>
-                <Text style={[styles.tableRowLabel, { flex: 2, color: theme.colors.textSecondary }]}>{tr("Tax (0%)")}</Text>
-                <Text style={[styles.tableRowAmount, { color: theme.colors.textSecondary }]}>Rs. 0</Text>
-              </View>
 
               <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.totalRow}>
                 <Text style={styles.totalLabel}>{tr("TOTAL PAID")}</Text>

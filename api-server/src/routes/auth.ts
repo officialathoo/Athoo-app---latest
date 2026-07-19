@@ -802,6 +802,48 @@ router.get("/me", requireAuth, async (req: AuthRequest, res: Response) => {
   }
 });
 
+router.post("/biometric-preference", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const enabled = req.body?.enabled;
+    if (typeof enabled !== "boolean") {
+      res.status(400).json({ error: "enabled must be true or false", code: "INVALID_BIOMETRIC_PREFERENCE" });
+      return;
+    }
+
+    const user = await db.query.usersTable.findFirst({
+      where: eq(usersTable.id, req.user!.userId),
+    });
+    if (!user) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    if (enabled && user.password) {
+      const password = String(req.body?.password || "");
+      if (!password) {
+        res.status(400).json({ error: "Current password is required", code: "PASSWORD_REQUIRED" });
+        return;
+      }
+      const valid = await bcrypt.compare(password, user.password);
+      if (!valid) {
+        res.status(401).json({ error: "Current password is incorrect", code: "PASSWORD_INCORRECT" });
+        return;
+      }
+    }
+
+    const [updated] = await db
+      .update(usersTable)
+      .set({ biometricEnabled: enabled, updatedAt: new Date() })
+      .where(eq(usersTable.id, user.id))
+      .returning();
+
+    res.json({ success: true, user: toSafeUser(updated) });
+  } catch (e) {
+    logger.error({ err: e }, "biometric preference error");
+    res.status(500).json({ error: "Failed to update biometric login" });
+  }
+});
+
 router.patch("/me", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const user = await db.query.usersTable.findFirst({
@@ -1117,7 +1159,7 @@ router.post("/set-password", requireAuth, async (req: AuthRequest, res: Response
 
     await db
       .update(usersTable)
-      .set({ password: hashed, updatedAt: new Date() })
+      .set({ password: hashed, biometricEnabled: false, updatedAt: new Date() })
       .where(eq(usersTable.id, req.user!.userId));
     await revokeAllUserSessions(req.user!.userId, "password_changed");
     void queuePasswordChangedEmail(user, "changed").catch((error) =>
@@ -1360,7 +1402,7 @@ router.post("/forgot-password/reset", async (req, res) => {
 
     await db
       .update(usersTable)
-      .set({ password: hashed, updatedAt: new Date() })
+      .set({ password: hashed, biometricEnabled: false, updatedAt: new Date() })
       .where(eq(usersTable.id, user.id));
     await revokeAllUserSessions(user.id, "password_reset");
     void queuePasswordChangedEmail(user, "reset").catch((error) =>
@@ -1391,13 +1433,13 @@ router.post("/refresh", async (req, res) => {
 router.post("/logout", requireAuth, async (req: AuthRequest, res: Response) => {
   // Remove this installation's notification ownership before invalidating the
   // session, so a signed-out phone cannot continue receiving private alerts.
-  await db.update(usersTable).set({ expoPushToken: null, updatedAt: new Date() }).where(eq(usersTable.id, req.user!.userId));
+  await db.update(usersTable).set({ expoPushToken: null, biometricEnabled: false, updatedAt: new Date() }).where(eq(usersTable.id, req.user!.userId));
   await revokeSession(req.user!.sessionId!, "logout");
   return res.json({ success: true });
 });
 
 router.post("/logout-all", requireAuth, async (req: AuthRequest, res: Response) => {
-  await db.update(usersTable).set({ expoPushToken: null, updatedAt: new Date() }).where(eq(usersTable.id, req.user!.userId));
+  await db.update(usersTable).set({ expoPushToken: null, biometricEnabled: false, updatedAt: new Date() }).where(eq(usersTable.id, req.user!.userId));
   await revokeAllUserSessions(req.user!.userId, "logout_all");
   return res.json({ success: true });
 });

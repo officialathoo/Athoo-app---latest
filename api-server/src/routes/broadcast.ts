@@ -6,6 +6,7 @@ import {
   broadcastRequestsTable,
   broadcastResponsesTable,
   bookingsTable,
+  serviceCategoriesTable,
   usersTable,
 } from "@workspace/db/schema";
 import { and, eq, ne, desc, sql, or, inArray } from "drizzle-orm";
@@ -156,6 +157,7 @@ function matchProviderToBroadcast(
 ): ProviderBroadcastMatch {
   if (provider.isBlocked) return { eligible: false, reason: "blocked" };
   if (provider.isDeactivated) return { eligible: false, reason: "deactivated" };
+  if (!provider.isAvailable) return { eligible: false, reason: "unavailable" };
   if (!provider.isVerified || provider.verificationStatus !== "approved") {
     return { eligible: false, reason: "not_approved" };
   }
@@ -304,6 +306,18 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       return;
     }
 
+    const rawService = String(service).trim();
+    const category = await db.query.serviceCategoriesTable.findFirst({
+      where: or(
+        eq(serviceCategoriesTable.id, rawService),
+        eq(serviceCategoriesTable.slug, rawService),
+      ),
+    });
+    if (category && category.isActive === false) {
+      res.status(400).json({ error: "This service category is currently unavailable" });
+      return;
+    }
+
     const parsedLat = toCoord(latitude);
     const parsedLng = toCoord(longitude);
     const parsedOffer = toNumber(customerOffer);
@@ -320,9 +334,9 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       customerId: userId,
       clientRequestId: String(clientRequestId),
       customerName: customer.name,
-      service: String(service).trim(),
-      serviceLabel: String(serviceLabel).trim(),
-      serviceIcon: serviceIcon || "tool",
+      service: category?.slug || rawService,
+      serviceLabel: category?.name || String(serviceLabel).trim(),
+      serviceIcon: category?.icon || serviceIcon || "tool",
       description: description || null,
       videoUrl: videoUrl || null,
       address: String(address).trim(),
@@ -413,13 +427,13 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       let pushFailureCount = 0;
       let fallbackSignaledCount = 0;
 
-      // Every MATCHED provider gets a DB notification + push attempt REGARDLESS of
-      // availability so the broadcast reliably surfaces in their notification list
-      // and broadcast list even if they were offline. Live socket emit is sent to
-      // every matched provider with an open websocket; provider availability can be
-      // stale and must not block urgent broadcast delivery.
-      await Promise.all(
-        matchedProviders.map(async (provider) => {
+      // Every eligible, currently available provider gets a durable in-app
+      // notification plus a push attempt. Network/offline state never excludes a
+      // provider; the explicit "Available for jobs" preference does.
+      await forEachWithConcurrency(
+        matchedProviders,
+        broadcastDeliveryConcurrency(),
+        async (provider) => {
           const sent = emitToUser(provider.id, "broadcast:new" as EventName, { request });
           if (sent > 0) socketEmitCount += 1;
           if (provider.expoPushToken) pushTokenCount += 1;
@@ -428,7 +442,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
             const result = await notifyUser({
               userId: provider.id,
               title: "New Job Request",
-              body: `${customer.name} needs ${serviceLabel} — ${priceText}`,
+              body: `${customer.name} needs ${request.serviceLabel} — ${priceText}`,
               type: "broadcast",
               link: `/broadcasts/${request.id}`,
               data: { broadcastRequestId: request.id, role: "provider", type: "broadcast" },
@@ -445,7 +459,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
             pushFailureCount += 1;
             req.log?.warn?.({ err: notifyError, providerId: provider.id, broadcastRequestId: request.id }, "broadcast provider notification failed");
           }
-        })
+        },
       );
 
       deliverySummary.inAppCreated = dbNotificationCount;
@@ -571,6 +585,8 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
         ? "blocked"
         : provider.isDeactivated
           ? "deactivated"
+          : !provider.isAvailable
+            ? "unavailable"
           : (!provider.isVerified || provider.verificationStatus !== "approved")
             ? "not_approved"
             : !(provider.services || []).map(normalizeServiceKey).filter(Boolean).length

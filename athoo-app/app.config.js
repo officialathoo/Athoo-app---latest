@@ -479,6 +479,28 @@ const mapTileSize = readInteger(
   [256, 512],
 );
 
+const providerLocationSyncIntervalMs = Math.min(
+  10 * 60 * 1000,
+  Math.max(
+    60 * 1000,
+    readInteger(
+      "EXPO_PUBLIC_PROVIDER_LOCATION_SYNC_INTERVAL_MS",
+      120 * 1000,
+    ),
+  ),
+);
+
+const pushTokenSyncIntervalMs = Math.min(
+  6 * 60 * 60 * 1000,
+  Math.max(
+    5 * 60 * 1000,
+    readInteger(
+      "EXPO_PUBLIC_PUSH_TOKEN_SYNC_INTERVAL_MS",
+      15 * 60 * 1000,
+    ),
+  ),
+);
+
 /* -------------------------------------------------------------------------- */
 /* Runtime values exposed through Expo Constants                               */
 /* -------------------------------------------------------------------------- */
@@ -498,6 +520,8 @@ const extra = {
   MAP_TILE_URL: mapTileUrl,
   MAP_ATTRIBUTION: mapAttribution,
   MAP_TILE_SIZE: mapTileSize,
+  PROVIDER_LOCATION_SYNC_INTERVAL_MS: providerLocationSyncIntervalMs,
+  PUSH_TOKEN_SYNC_INTERVAL_MS: pushTokenSyncIntervalMs,
 
   SUPPORT_WHATSAPP_URL: readEnv(
     "EXPO_PUBLIC_SUPPORT_WHATSAPP_URL",

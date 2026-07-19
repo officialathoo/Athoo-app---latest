@@ -214,6 +214,7 @@ function ActiveCallBanner({ call, duration, onEnd }: {
 export function CallProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const iceConfigurationRef = useRef<{ iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }> }>({ iceServers: [] });
+  const rtcProductionReadyRef = useRef(false);
   const fallbackChunkMsRef = useRef(DEFAULT_FALLBACK_CHUNK_MS);
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [callDuration, setCallDuration] = useState(0);
@@ -317,7 +318,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         void soundService.setCallSpeakerMode(isSpeaker);
         // WebRTC owns the microphone when available. Start the authenticated
         // HTTP fallback only when RTC is unavailable or fails to connect.
-        if (!WebRTCAvailable || !pcRef.current) {
+        if (!canUseWebRtc() || !pcRef.current) {
           startVoiceStreaming(callId);
         } else {
           if (rtcFallbackTimerRef.current) clearTimeout(rtcFallbackTimerRef.current);
@@ -359,8 +360,18 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
   }, [activeCall?.state]);
 
+  function canUseWebRtc(): boolean {
+    return Boolean(
+      WebRTCAvailable &&
+      rtcProductionReadyRef.current &&
+      typeof _RTCPeerConnection === "function" &&
+      iceConfigurationRef.current.iceServers.length > 0
+    );
+  }
+
   useEffect(() => {
     if (!user) {
+      rtcProductionReadyRef.current = false;
       iceConfigurationRef.current = { iceServers: [] };
       fallbackChunkMsRef.current = DEFAULT_FALLBACK_CHUNK_MS;
       return;
@@ -374,11 +385,21 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
           return urls.some((url) => typeof url === "string" && /^(stun|turn|turns):/i.test(url));
         });
-        iceConfigurationRef.current = { iceServers };
+        // STUN-only calling frequently produces one-way or silent audio behind
+        // carrier-grade NAT. Until authenticated TURN is configured, skip the
+        // doomed WebRTC attempt and use the authenticated HTTP audio transport.
+        // This avoids call-screen crashes and long silent waits while keeping
+        // TURN as the production path once deployment credentials are present.
+        rtcProductionReadyRef.current = Boolean(configuration.productionReady && iceServers.length > 0);
+        iceConfigurationRef.current = rtcProductionReadyRef.current ? { iceServers } : { iceServers: [] };
         fallbackChunkMsRef.current = normalizeFallbackChunkMs(configuration.audio?.fallbackChunkMs);
+        if (!rtcProductionReadyRef.current) {
+          appLogger.warn("calls", "[CallContext] TURN is not production-ready; using authenticated audio fallback", configuration.warning);
+        }
       })
       .catch((error) => {
         appLogger.warn("calls", "[CallContext] Unable to load ICE configuration; using authenticated audio fallback", error);
+        rtcProductionReadyRef.current = false;
         iceConfigurationRef.current = { iceServers: [] };
         fallbackChunkMsRef.current = DEFAULT_FALLBACK_CHUNK_MS;
       });
@@ -412,7 +433,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function createPeerConnection(callId: string | null, role: "caller" | "callee") {
-    if (!WebRTCAvailable) return null;
+    if (!canUseWebRtc()) return null;
     signalingCallIdRef.current = callId;
     pendingLocalCandidatesRef.current = [];
     rtcConnectedRef.current = false;
@@ -766,18 +787,24 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const receiverInitials = receiverName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 
     let offerSdp: string | undefined;
-    if (WebRTCAvailable) {
+    if (canUseWebRtc()) {
       try {
         const pc = await createPeerConnection(null, "caller");
         if (pc) {
           await soundService.setCallSpeakerMode(isSpeaker);
           const stream = await (require("react-native-webrtc").mediaDevices.getUserMedia)({ audio: true, video: false });
-          if (stream) { localStreamRef.current = stream; stream.getTracks().forEach((t: any) => pc.addTrack(t, stream)); }
+          if (!stream) throw new Error("Microphone stream was not created");
+          localStreamRef.current = stream;
+          stream.getTracks().forEach((track: any) => pc.addTrack(track, stream));
           const offer = await pc.createOffer({ offerToReceiveAudio: true });
           await pc.setLocalDescription(offer);
           offerSdp = JSON.stringify(offer);
         }
-      } catch {}
+      } catch (error) {
+        appLogger.warn("calls", "[CallContext] WebRTC setup failed before dialing; using authenticated audio fallback", error);
+        closePeerConnection();
+        offerSdp = undefined;
+      }
     }
 
     try {
@@ -790,7 +817,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         offer: offerSdp,
       });
       const call = res.call as any;
-      if (pcRef.current && WebRTCAvailable) await flushPendingLocalCandidates(call.id, "caller");
+      if (pcRef.current && canUseWebRtc()) await flushPendingLocalCandidates(call.id, "caller");
 
       setActiveCall({
         callId: call.id,
@@ -826,7 +853,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           const callData = statusRes.call as any;
           const status = callData?.status;
 
-          if (!answerApplied && callData?.answer && pcRef.current && WebRTCAvailable) {
+          if (!answerApplied && callData?.answer && pcRef.current && canUseWebRtc()) {
             try {
               await pcRef.current.setRemoteDescription(new _RTCSessionDescription(JSON.parse(callData.answer)));
               answerApplied = true;
@@ -862,21 +889,27 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (!current) return;
 
     let answerSdp: string | undefined;
-    if (WebRTCAvailable && current.offer) {
+    if (canUseWebRtc() && current.offer) {
       try {
         const pc = await createPeerConnection(current.callId, "callee");
         if (pc) {
           await pc.setRemoteDescription(new _RTCSessionDescription(JSON.parse(current.offer)));
           await soundService.setCallSpeakerMode(isSpeaker);
           const stream = await (require("react-native-webrtc").mediaDevices.getUserMedia)({ audio: true, video: false });
-          if (stream) { localStreamRef.current = stream; stream.getTracks().forEach((t: any) => pc.addTrack(t, stream)); }
+          if (!stream) throw new Error("Microphone stream was not created");
+          localStreamRef.current = stream;
+          stream.getTracks().forEach((track: any) => pc.addTrack(track, stream));
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           answerSdp = JSON.stringify(answer);
           await flushPendingLocalCandidates(current.callId, "callee");
           startCandidatePolling(current.callId, "callee");
         }
-      } catch {}
+      } catch (error) {
+        appLogger.warn("calls", "[CallContext] WebRTC setup failed while answering; using authenticated audio fallback", error);
+        closePeerConnection();
+        answerSdp = undefined;
+      }
     }
 
     try {

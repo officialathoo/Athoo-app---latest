@@ -15,19 +15,11 @@ import {
   ScrollView,
   Share,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
 } from "react-native";
-import {
-  isBiometricAvailable,
-  isBiometricEnabled,
-  enableBiometric,
-  disableBiometric,
-  authenticateWithBiometric,
-  getBiometricLabel,
-} from "@/services/biometric";
+import { BiometricLoginSetting } from "@/components/security/BiometricLoginSetting";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnimatedCard } from "@/components/ui/AnimatedCard";
 import { useAuth } from "@/context/AuthContext";
@@ -102,53 +94,10 @@ export default function ProfileScreen() {
   const [saving, setSaving] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
-  const [biometricAvail, setBiometricAvail] = useState(false);
-  const [biometricOn, setBiometricOn] = useState(false);
-  const [biometricLabel, setBiometricLabel] = useState("Biometric Login");
-
   const [uploadingPhoto, setUploadingPhoto] = React.useState(false);
-  useEffect(() => {
-    isBiometricAvailable().then(setBiometricAvail);
-    isBiometricEnabled().then(setBiometricOn);
-    getBiometricLabel().then(setBiometricLabel);
-  }, []);
-
   useEffect(() => {
     setName(user?.name || "");
   }, [user?.name]);
-
-  const toggleBiometric = async () => {
-    if (biometricOn) {
-      Alert.alert("Disable Biometric Login", "You will need to use OTP or your password to sign in next time.", [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Disable",
-          style: "destructive",
-          onPress: async () => {
-            await disableBiometric();
-            setBiometricOn(false);
-          },
-        },
-      ]);
-    } else {
-      const available = await isBiometricAvailable();
-      if (!available) {
-        Alert.alert(
-          "No Biometrics Enrolled",
-          "This device has no Face ID / Fingerprint enrolled. Please set up biometrics in your device settings, then try again."
-        );
-        return;
-      }
-      const result = await authenticateWithBiometric("Enable biometric login for Athoo");
-      if (result.success && user) {
-        await enableBiometric(user.phone, user.role);
-        setBiometricOn(true);
-        Alert.alert("Quick Login Enabled", `You can now log in with ${biometricLabel}.`);
-      } else if (!result.success) {
-        Alert.alert("Authentication Failed", apiErrorToMessage(result.error, "Could not verify your identity. Please try again."));
-      }
-    }
-  };
 
   const pickImage = async (useCamera: boolean) => {
     setShowAvatarModal(false);
@@ -452,30 +401,14 @@ export default function ProfileScreen() {
         </AnimatedCard>
       ))}
 
-      {biometricAvail && (
-        <AnimatedCard delay={300}>
-          <View style={styles.menuSection}>
-            <Text style={styles.sectionTitle}>{t.security}</Text>
-            <View style={styles.menuCard}>
-              <View style={styles.menuItem}>
-                <View style={[styles.menuIconBox, { backgroundColor: theme.colors.accentSoft }]}>
-                  <Icon name="fingerprint" size={17} color={theme.colors.accent} />
-                </View>
-                <View style={styles.menuTextCol}>
-                  <Text style={styles.menuLabel}>{biometricLabel}</Text>
-                  <Text style={styles.menuSub}>Use your device security to log in</Text>
-                </View>
-                <Switch
-                  value={biometricOn}
-                  onValueChange={toggleBiometric}
-                  trackColor={{ false: theme.colors.border, true: theme.colors.accentSoft }}
-                  thumbColor={biometricOn ? theme.colors.accent : theme.colors.textMuted}
-                />
-              </View>
-            </View>
+      <AnimatedCard delay={300}>
+        <View style={styles.menuSection}>
+          <Text style={styles.sectionTitle}>{t.security}</Text>
+          <View style={styles.menuCard}>
+            <BiometricLoginSetting />
           </View>
-        </AnimatedCard>
-      )}
+        </View>
+      </AnimatedCard>
 
       {socialLinks.length > 0 ? (
         <AnimatedCard delay={360}>

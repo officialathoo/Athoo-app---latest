@@ -1,6 +1,6 @@
 # Athoo Final Connected Deployment
 
-Use `ATHOO_PHASE23_CONNECTED_PRODUCTION_VERIFICATION_READY.zip` as the only release baseline. Do not merge files from older ZIPs.
+Use `ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip` as the only release baseline. Do not merge files from older ZIPs.
 
 ## 1. Certify the exact source
 
@@ -24,10 +24,10 @@ Commit the exact source and record the complete Git SHA and ZIP checksum:
 ```powershell
 git status --short
 git add .
-git commit -m "Athoo Phase 23 connected production verification"
+git commit -m "Athoo Phase 24.8 device acceptance integrity"
 git push origin main
 $Commit = git rev-parse HEAD
-Get-FileHash .\ATHOO_PHASE23_CONNECTED_PRODUCTION_VERIFICATION_READY.zip -Algorithm SHA256
+Get-FileHash .\ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip -Algorithm SHA256
 ```
 
 Use one release version and the same `$Commit` for Render, Vercel and EAS.
@@ -80,7 +80,7 @@ QUEUE_PROVIDER=postgres
 CACHE_PROVIDER=memory
 ```
 
-Do not scale to multiple API instances while using memory cache. Phase 23 verification rejects horizontal scaling unless the active cache reports `horizontalScaleSafe=true`.
+Do not scale to multiple API instances while using memory cache. Phase 24.8 verification rejects horizontal scaling unless the active cache reports `horizontalScaleSafe=true`.
 
 ## 4. Verify Neon before API rollout
 
@@ -95,7 +95,7 @@ pnpm db:integrity
 The expected latest migration is:
 
 ```text
-20260716_workflow_inactivity_policy_governance.sql
+20260719_broadcast_delivery_configuration_integrity.sql
 ```
 
 Do not start the updated API when migration verification or integrity checks fail.
@@ -172,22 +172,34 @@ Fresh native builds are mandatory for notification sounds, Android channels, bio
 
 ## 8. Complete physical-device evidence
 
-Use the exact Android and iOS builds:
+Use the exact Phase 24.8 ZIP and the same release commit used by Render, Vercel and EAS:
 
 ```powershell
-Copy-Item docs/qa/device-acceptance-evidence-template.json device-acceptance-evidence.json
-pnpm device:evidence:validate
+pnpm device:evidence:init -- --artifact .\ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip --release-version <release-version> --commit <full-git-sha>
 ```
+
+Complete both build records and every case in `device-acceptance-evidence.json`, then validate:
+
+```powershell
+pnpm device:evidence:validate -- .\device-acceptance-evidence.json .\ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip
+```
+
+The validator binds the evidence to the active candidate name, real non-zero ZIP checksum, exact Git commit, both native build IDs and both physical devices. Cross-role cases must identify the Android and iPhone used. It rejects generic evidence such as “OK” or “Passed”, stale timestamps, missing cases, unknown cases and build/commit mismatches.
+
+The physical matrix explicitly covers full map-tile rendering, fresh provider location on open/foreground, radius persistence and matching, broadcast receipt after radius change, immediate old-device revocation, biometric enable/unlock/disable, call crash resistance and two-way audio, time-picker layout, bottom safe area, availability state animation, notification delivery and invoices with no tax.
 
 HTTP verification does not prove actual Expo receipt, sound playback, killed-state deep links or two-way audio. Those remain mandatory physical-device checks.
 
 ## 9. Final decision
 
-Complete the production evidence file:
+Complete the production evidence file and reference the passed device summary produced above:
 
 ```powershell
 Copy-Item docs/qa/rc2-evidence-template.json rc2-evidence.json
-pnpm rc2:decision
+# Set deviceEvidenceSummary to the relative path under release-evidence/.
+pnpm rc2:decision .\rc2-evidence.json
 ```
+
+The RC2 gate verifies that the device summary is schema v4, has status `passed`, and matches the same candidate ZIP, release version, Git commit and SHA-256.
 
 Launch is prohibited unless the result is `GO`, every non-waivable gate passes, legal review is recorded, production credentials have been rotated, monitoring is active, and open P0/P1 defects are both zero.

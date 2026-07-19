@@ -8,7 +8,7 @@ import { toPublicProvider, toSafeUser } from "../lib/admin";
 import { getProviderActiveWorkBlock, activeWorkHttpPayload } from "../lib/businessRules";
 import { ReviewSubmissionError, submitBookingReview } from "../domain/reviews";
 import { emitToUser } from "../lib/eventBus";
-import { providerWithinRadius } from "../lib/providerAvailability";
+import { providerWithinRadius, validateTravelRadius } from "../lib/providerAvailability";
 
 const router = Router();
 
@@ -201,6 +201,80 @@ router.get("/dashboard", requireAuth, async (req: AuthRequest, res) => {
   } catch (error) {
     logger.error({ err: error }, "provider dashboard error");
     res.status(500).json({ error: "Failed to load provider dashboard" });
+  }
+});
+
+router.patch("/location", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const latitude = Number(req.body?.latitude);
+    const longitude = Number(req.body?.longitude);
+    const accuracy = req.body?.accuracy == null ? null : Number(req.body.accuracy);
+
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+        !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+      res.status(400).json({ error: "Valid latitude and longitude are required" });
+      return;
+    }
+    if (accuracy !== null && (!Number.isFinite(accuracy) || accuracy < 0 || accuracy > 100_000)) {
+      res.status(400).json({ error: "Invalid location accuracy" });
+      return;
+    }
+
+    const provider = await db.query.usersTable.findFirst({ where: eq(usersTable.id, req.user!.userId) });
+    if (!provider) { res.status(404).json({ error: "User not found" }); return; }
+    if (provider.role !== "provider") { res.status(403).json({ error: "Provider account required" }); return; }
+
+    const [updated] = await db.update(usersTable).set({
+      latitude: String(latitude),
+      longitude: String(longitude),
+      updatedAt: new Date(),
+    }).where(eq(usersTable.id, provider.id)).returning();
+
+    emitToUser(provider.id, "provider:location", {
+      latitude,
+      longitude,
+      accuracy,
+      updatedAt: updated.updatedAt,
+    });
+    res.json({ success: true, user: toSafeUser(updated) });
+  } catch (error) {
+    logger.error({ err: error, userId: req.user?.userId }, "provider location update error");
+    res.status(500).json({ error: "Failed to update provider location" });
+  }
+});
+
+router.get("/service-radius", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const provider = await db.query.usersTable.findFirst({ where: eq(usersTable.id, req.user!.userId) });
+    if (!provider) { res.status(404).json({ error: "User not found" }); return; }
+    if (provider.role !== "provider") { res.status(403).json({ error: "Provider account required" }); return; }
+    res.json({ maxTravelDistanceKm: validateTravelRadius(provider.maxTravelDistanceKm) || 15 });
+  } catch (error) {
+    logger.error({ err: error, userId: req.user?.userId }, "provider service radius load error");
+    res.status(500).json({ error: "Failed to load service radius" });
+  }
+});
+
+router.patch("/service-radius", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const radius = validateTravelRadius(req.body?.maxTravelDistanceKm);
+    if (radius === null) {
+      res.status(400).json({ error: "Service radius must be between 1 and 100 km" });
+      return;
+    }
+    const provider = await db.query.usersTable.findFirst({ where: eq(usersTable.id, req.user!.userId) });
+    if (!provider) { res.status(404).json({ error: "User not found" }); return; }
+    if (provider.role !== "provider") { res.status(403).json({ error: "Provider account required" }); return; }
+
+    const [updated] = await db.update(usersTable).set({
+      maxTravelDistanceKm: radius,
+      updatedAt: new Date(),
+    }).where(eq(usersTable.id, provider.id)).returning();
+    emitToUser(provider.id, "provider:availability", { isAvailable: updated.isAvailable, reason: "service_radius_updated" });
+    res.json({ maxTravelDistanceKm: radius, user: toSafeUser(updated) });
+  } catch (error) {
+    logger.error({ err: error, userId: req.user?.userId }, "provider service radius update error");
+    res.status(500).json({ error: "Failed to update service radius" });
   }
 });
 

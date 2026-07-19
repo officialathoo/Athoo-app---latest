@@ -5,4 +5,4 @@
  * operational integrity tooling cannot drift independently.
  */
 export const LATEST_DATABASE_MIGRATION =
-  "20260716_workflow_inactivity_policy_governance.sql" as const;
+  "20260719_broadcast_delivery_configuration_integrity.sql" as const;

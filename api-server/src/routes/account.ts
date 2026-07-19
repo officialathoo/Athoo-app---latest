@@ -147,8 +147,7 @@ router.patch("/profile", async (req: AuthRequest, res) => {
       patch.profileColor = color || null;
     }
     if (body.language === "en" || body.language === "ur") patch.language = body.language;
-    if (typeof body.biometricEnabled === "boolean") patch.biometricEnabled = body.biometricEnabled;
-    const forbidden = ["fatherName", "cnicNumber", "email", "phone", "role", "services", "ratePerHour", "isAvailable", "maxTravelDistanceKm", "verificationStatus", "isVerified"];
+    const forbidden = ["fatherName", "cnicNumber", "email", "phone", "role", "services", "ratePerHour", "isAvailable", "maxTravelDistanceKm", "verificationStatus", "isVerified", "biometricEnabled"];
     const attempted = forbidden.filter((field) => body[field] !== undefined);
     if (attempted.length) return res.status(403).json({ error: `Profile field changes require the approved workflow: ${attempted.join(", ")}` });
     if (Object.keys(patch).length === 1) return res.status(400).json({ error: "No valid fields to update" });
@@ -176,7 +175,7 @@ router.post("/password", async (req: AuthRequest, res) => {
       if (!ok) return res.status(401).json({ error: "Old password is incorrect" });
     }
     const hashed = await bcrypt.hash(String(newPassword), 10);
-    await db.update(usersTable).set({ password: hashed, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+    await db.update(usersTable).set({ password: hashed, biometricEnabled: false, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
     await revokeAllUserSessions(user.id, "password_changed");
     void queuePasswordChangedEmail(user, "changed").catch(() => undefined);
     return res.json({ success: true });

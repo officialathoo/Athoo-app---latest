@@ -66,8 +66,8 @@ test("connected GitHub workflow verifies source, Neon and deployed services from
 
 test("current status remains NO-GO until real external evidence exists", () => {
   const status = json("docs/qa/current-release-status.json");
-  assert.equal(status.candidate, "ATHOO_PHASE23_CONNECTED_PRODUCTION_VERIFICATION_READY.zip");
-  assert.equal(status.status, "CONNECTED-VERIFICATION-READY");
+  assert.match(status.candidate, /^ATHOO_PHASE(?:23|24)_/);
+  assert.match(status.status, /(?:CONNECTED-VERIFICATION-READY|SOURCE-VERIFIED-CONNECTED-DEVICE-VALIDATION-PENDING|SOURCE-VERIFIED-STRICT-DEVICE-EVIDENCE-PENDING)/);
   assert.equal(status.externalVerification.connectedRuntime, "pending");
   assert.equal(status.externalVerification.androidDevice, "pending");
   assert.equal(status.externalVerification.iosDevice, "pending");

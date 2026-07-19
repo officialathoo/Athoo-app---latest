@@ -3,10 +3,11 @@ import * as ImagePicker from "expo-image-picker";
 import { pickFromCamera, pickFromGallery } from "@/utils/mediaPicker";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useEffect, useState , useMemo} from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   InteractionManager,
   Linking,
   Modal,
@@ -18,14 +19,7 @@ import {
   Text,
   View,
 } from "react-native";
-import {
-  isBiometricAvailable,
-  isBiometricEnabled,
-  enableBiometric,
-  disableBiometric,
-  authenticateWithBiometric,
-  getBiometricLabel,
-} from "@/services/biometric";
+import { BiometricLoginSetting } from "@/components/security/BiometricLoginSetting";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useBookings } from "@/context/BookingContext";
@@ -61,14 +55,14 @@ export default function ProviderProfileScreen() {
 
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
-  const [biometricAvail, setBiometricAvail] = useState(false);
-  const [biometricOn, setBiometricOn] = useState(false);
-  const [biometricLabel, setBiometricLabel] = useState("Biometric Login");
   const [isAvailable, setIsAvailable] = useState<boolean>(!!user?.isAvailable);
   const [togglingAvail, setTogglingAvail] = useState(false);
+  const availabilityProgress = useRef(new Animated.Value(user?.isAvailable ? 1 : 0)).current;
   const [uploadingPhoto, setUploadingPhoto] = React.useState(false);
 
   const toggleAvailability = async (val: boolean) => {
+    const previous = isAvailable;
+    setIsAvailable(val);
     setTogglingAvail(true);
     try {
       const res: any = await api.updateAvailability(val);
@@ -76,48 +70,30 @@ export default function ProviderProfileScreen() {
       setIsAvailable(next);
       await updateUser({ isAvailable: next });
     } catch (e: any) {
-      setIsAvailable(!!user?.isAvailable);
+      setIsAvailable(previous);
       Alert.alert("Availability", apiErrorToMessage(e, "You cannot turn available while busy on an active job."));
     } finally {
       setTogglingAvail(false);
     }
   };
 
-  useEffect(() => {
-    isBiometricAvailable().then(setBiometricAvail);
-    isBiometricEnabled().then(setBiometricOn);
-    getBiometricLabel().then(setBiometricLabel);
-  }, []);
-
   useFocusEffect(useCallback(() => {
     refreshUser().catch(() => {});
   }, []));
 
-  const toggleBiometric = async () => {
-    if (biometricOn) {
-      Alert.alert("Disable Biometric Login", "You will need to use OTP or your password to sign in next time.", [
-        { text: "Cancel", style: "cancel" },
-        { text: "Disable", style: "destructive", onPress: async () => { await disableBiometric(); setBiometricOn(false); } },
-      ]);
-    } else {
-      const available = await isBiometricAvailable();
-      if (!available) {
-        Alert.alert(
-          "No Biometrics Enrolled",
-          "This device has no Face ID / Fingerprint enrolled. Please set up biometrics in your device settings, then try again."
-        );
-        return;
-      }
-      const result = await authenticateWithBiometric("Enable biometric login for Athoo");
-      if (result.success && user) {
-        await enableBiometric(user.phone, "provider");
-        setBiometricOn(true);
-        Alert.alert("Quick Login Enabled", `You can now log in with ${biometricLabel}.`);
-      } else if (!result.success) {
-        Alert.alert("Authentication Failed", apiErrorToMessage(result.error, "Could not verify your identity. Please try again."));
-      }
-    }
-  };
+  useEffect(() => {
+    setIsAvailable(!!user?.isAvailable);
+  }, [user?.isAvailable]);
+
+  useEffect(() => {
+    Animated.spring(availabilityProgress, {
+      toValue: isAvailable ? 1 : 0,
+      damping: 15,
+      stiffness: 180,
+      mass: 0.8,
+      useNativeDriver: true,
+    }).start();
+  }, [availabilityProgress, isAvailable]);
 
   const pickImage = async (useCamera: boolean) => {
     setShowAvatarModal(false);
@@ -361,7 +337,25 @@ export default function ProviderProfileScreen() {
       <View style={styles.availCard}>
         <View style={styles.availLeft}>
           <View style={[styles.availDotIcon, { backgroundColor: isAvailable ? theme.colors.successSoft : theme.colors.dangerSoft }]}>
-            <View style={[styles.availDotInner, { backgroundColor: isAvailable ? theme.colors.success : theme.colors.danger }]} />
+            <Animated.View
+              style={[
+                styles.availPulse,
+                {
+                  backgroundColor: theme.colors.success,
+                  opacity: availabilityProgress.interpolate({ inputRange: [0, 1], outputRange: [0, 0.2] }),
+                  transform: [{ scale: availabilityProgress.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1.5] }) }],
+                },
+              ]}
+            />
+            <Animated.View
+              style={[
+                styles.availDotInner,
+                {
+                  backgroundColor: isAvailable ? theme.colors.success : theme.colors.danger,
+                  transform: [{ scale: availabilityProgress.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.08] }) }],
+                },
+              ]}
+            />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.availTitle, localizedText]}>{t.availableForJobs}</Text>
@@ -370,13 +364,17 @@ export default function ProviderProfileScreen() {
             </Text>
           </View>
         </View>
-        <Switch
-          value={isAvailable}
-          onValueChange={toggleAvailability}
-          disabled={togglingAvail}
-          trackColor={{ false: theme.colors.border, true: theme.colors.successSoft }}
-          thumbColor={isAvailable ? theme.colors.success : theme.colors.textMuted}
-        />
+        {togglingAvail ? (
+          <ActivityIndicator size="small" color={isAvailable ? theme.colors.success : theme.colors.textMuted} />
+        ) : (
+          <Switch
+            value={isAvailable}
+            onValueChange={toggleAvailability}
+            trackColor={{ false: theme.colors.border, true: theme.colors.successSoft }}
+            thumbColor={isAvailable ? theme.colors.success : theme.colors.textMuted}
+            accessibilityLabel={`${isAvailable ? "Turn off" : "Turn on"} availability for jobs`}
+          />
+        )}
       </View>
 
       {socialLinks.length > 0 ? (
@@ -422,28 +420,12 @@ export default function ProviderProfileScreen() {
         </View>
       ))}
 
-      {biometricAvail && (
-        <View style={styles.menuSection}>
-          <Text style={styles.sectionTitle}>Security</Text>
-          <View style={styles.menuCard}>
-            <View style={[styles.menuItem, { paddingRight: 16 }]}>
-              <View style={[styles.menuIcon, { backgroundColor: theme.colors.accentSoft }]}>
-                <Icon name="fingerprint" size={18} color={theme.colors.accent} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontWeight: "600", color: theme.colors.text }}>{biometricLabel}</Text>
-                <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>Use your device security to log in</Text>
-              </View>
-              <Switch
-                value={biometricOn}
-                onValueChange={toggleBiometric}
-                trackColor={{ false: theme.colors.border, true: theme.colors.accentSoft }}
-                thumbColor={biometricOn ? theme.colors.accent : theme.colors.textMuted}
-              />
-            </View>
-          </View>
+      <View style={styles.menuSection}>
+        <Text style={styles.sectionTitle}>Security</Text>
+        <View style={styles.menuCard}>
+          <BiometricLoginSetting />
         </View>
-      )}
+      </View>
 
       <Pressable style={styles.logoutBtn} onPress={handleLogout}>
         <Icon name="log-out" size={16} color={theme.colors.danger} />
@@ -600,7 +582,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderWidth: 1, borderColor: theme.colors.border,
   },
   availLeft: { flex: 1, flexDirection: "row", alignItems: "center", gap: 12 },
-  availDotIcon: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  availDotIcon: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center", position: "relative" },
+  availPulse: { position: "absolute", width: 20, height: 20, borderRadius: 10 },
   availDotInner: { width: 12, height: 12, borderRadius: 6 },
   availTitle: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
   availSub: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 },

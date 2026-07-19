@@ -24,6 +24,8 @@ type Options = {
   requestPermission?: boolean;
   rationaleTitle?: string;
   rationaleBody?: string;
+  /** Skip the early cached-location return and actively request a new GPS fix. */
+  preferFresh?: boolean;
 };
 
 function isValidCoordinate(latitude: number, longitude: number): boolean {
@@ -82,6 +84,25 @@ function betterLocation(a: AthooLocation | null, b: AthooLocation | null): Athoo
   const accuracyB = b.accuracy ?? Number.MAX_SAFE_INTEGER;
   if (accuracyA !== accuracyB) return accuracyA < accuracyB ? a : b;
   return a.timestamp >= b.timestamp ? a : b;
+}
+
+/**
+ * A current GPS fix must not be replaced by an older cached point merely
+ * because the cached point reported a slightly smaller accuracy radius. That
+ * behaviour kept providers pinned to a previous street after moving. A fresh
+ * fix wins whenever it is usable for the requested flow; cache remains a safe
+ * fallback for timeouts and very poor fixes.
+ */
+function preferUsableFreshLocation(
+  fresh: AthooLocation | null,
+  cached: AthooLocation | null,
+  requiredAccuracy: number,
+): AthooLocation | null {
+  if (!fresh) return cached;
+  if (!cached) return fresh;
+  const usableFreshAccuracy = Math.max(500, requiredAccuracy * 5);
+  if (fresh.accuracy == null || fresh.accuracy <= usableFreshAccuracy) return fresh;
+  return betterLocation(fresh, cached);
 }
 
 async function watchForBetterLocation(
@@ -172,7 +193,7 @@ export async function getFastForegroundLocation(options: Options = {}): Promise<
 
   // Use cached coordinates only when they satisfy this flow's accuracy requirement.
   const cachedAccuracyThreshold = Math.min(250, Math.max(25, requiredAccuracy));
-  if (bestCached && (bestCached.accuracy == null || bestCached.accuracy <= cachedAccuracyThreshold)) {
+  if (!options.preferFresh && bestCached?.accuracy != null && bestCached.accuracy <= cachedAccuracyThreshold) {
     void writeAppCache(bestCached);
     return { permission, location: bestCached, stale: false };
   }
@@ -205,7 +226,7 @@ export async function getFastForegroundLocation(options: Options = {}): Promise<
     );
   }
 
-  const best = betterLocation(fresh, bestCached);
+  const best = preferUsableFreshLocation(fresh, bestCached, requiredAccuracy);
   if (best) {
     await writeAppCache(best);
     return {

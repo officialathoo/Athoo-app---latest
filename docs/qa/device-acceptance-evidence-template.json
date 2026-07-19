@@ -1,6 +1,7 @@
 {
-  "schemaVersion": 3,
-  "releaseVersion": "rc2-candidate",
+  "schemaVersion": 4,
+  "candidateArtifactName": "ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip",
+  "releaseVersion": "phase24.8-candidate",
   "releaseCommitSha": "0000000",
   "artifactSha256": "0000000000000000000000000000000000000000000000000000000000000000",
   "builds": {
@@ -279,6 +280,78 @@
         "osVersion": "",
         "evidence": "",
         "notes": ""
+      },
+      "map-renders-full-tiles-not-white": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "provider-location-refresh-on-open-and-foreground": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "provider-radius-persists-after-restart": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "bottom-navigation-safe-area": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "availability-time-picker-no-overlap": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "availability-toggle-animation-and-server-state": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "biometric-enable-unlock-disable": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "invoice-has-no-tax": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
       }
     },
     "ios": {
@@ -542,6 +615,78 @@
         "osVersion": "",
         "evidence": "",
         "notes": ""
+      },
+      "map-renders-full-tiles-not-white": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "provider-location-refresh-on-open-and-foreground": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "provider-radius-persists-after-restart": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "bottom-navigation-safe-area": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "availability-time-picker-no-overlap": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "availability-toggle-animation-and-server-state": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "biometric-enable-unlock-disable": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "invoice-has-no-tax": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
       }
     }
   },
@@ -549,173 +694,434 @@
     "customer-provider-direct-booking": {
       "status": "pending",
       "testedAt": "",
-      "buildId": "",
-      "device": "",
-      "osVersion": "",
       "evidence": "",
-      "notes": ""
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
     },
     "customer-provider-negotiation": {
       "status": "pending",
       "testedAt": "",
-      "buildId": "",
-      "device": "",
-      "osVersion": "",
       "evidence": "",
-      "notes": ""
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
     },
     "broadcast-provider-response": {
       "status": "pending",
       "testedAt": "",
-      "buildId": "",
-      "device": "",
-      "osVersion": "",
       "evidence": "",
-      "notes": ""
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
     },
     "chat-and-read-receipts": {
       "status": "pending",
       "testedAt": "",
-      "buildId": "",
-      "device": "",
-      "osVersion": "",
       "evidence": "",
-      "notes": ""
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
     },
     "incoming-and-outgoing-call": {
       "status": "pending",
       "testedAt": "",
-      "buildId": "",
-      "device": "",
-      "osVersion": "",
       "evidence": "",
-      "notes": ""
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
     },
     "provider-arrival-and-pin-start": {
       "status": "pending",
       "testedAt": "",
-      "buildId": "",
-      "device": "",
-      "osVersion": "",
       "evidence": "",
-      "notes": ""
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
     },
     "job-completion-and-review": {
       "status": "pending",
       "testedAt": "",
-      "buildId": "",
-      "device": "",
-      "osVersion": "",
       "evidence": "",
-      "notes": ""
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
     },
     "admin-approval-and-notification": {
       "status": "pending",
       "testedAt": "",
-      "buildId": "",
-      "device": "",
-      "osVersion": "",
       "evidence": "",
-      "notes": ""
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
     },
     "premium-approval-and-cancellation": {
       "status": "pending",
       "testedAt": "",
-      "buildId": "",
-      "device": "",
-      "osVersion": "",
       "evidence": "",
-      "notes": ""
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
     },
     "complaint-ticket-admin-response": {
       "status": "pending",
       "testedAt": "",
-      "buildId": "",
-      "device": "",
-      "osVersion": "",
       "evidence": "",
-      "notes": ""
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
     },
     "email-verification-and-welcome": {
       "status": "pending",
       "testedAt": "",
-      "buildId": "",
-      "device": "",
-      "osVersion": "",
       "evidence": "",
-      "notes": ""
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
     },
     "password-reset-and-security-alert": {
       "status": "pending",
       "testedAt": "",
-      "buildId": "",
-      "device": "",
-      "osVersion": "",
       "evidence": "",
-      "notes": ""
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
     },
     "map-location-shared-consistency": {
       "status": "pending",
       "testedAt": "",
-      "buildId": "",
-      "device": "",
-      "osVersion": "",
       "evidence": "",
-      "notes": ""
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
     },
     "notification-deep-link-destination": {
       "status": "pending",
       "testedAt": "",
-      "buildId": "",
-      "device": "",
-      "osVersion": "",
       "evidence": "",
-      "notes": ""
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
     },
     "media-upload-and-admin-review": {
       "status": "pending",
       "testedAt": "",
-      "buildId": "",
-      "device": "",
-      "osVersion": "",
       "evidence": "",
-      "notes": ""
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
     },
     "customer-job-broadcast-provider-receipt": {
       "status": "pending",
       "testedAt": "",
-      "buildId": "",
-      "device": "",
-      "osVersion": "",
       "evidence": "",
-      "notes": ""
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
     },
     "two-way-voice-call-cross-network": {
       "status": "pending",
       "testedAt": "",
-      "buildId": "",
-      "device": "",
-      "osVersion": "",
       "evidence": "",
-      "notes": ""
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
     },
     "admin-notification-exact-record-destination": {
       "status": "pending",
       "testedAt": "",
-      "buildId": "",
-      "device": "",
-      "osVersion": "",
       "evidence": "",
-      "notes": ""
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
     },
     "inactivity-warning-return-and-no-auto-delete": {
       "status": "pending",
       "testedAt": "",
-      "buildId": "",
-      "device": "",
-      "osVersion": "",
       "evidence": "",
-      "notes": ""
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
+    },
+    "live-provider-radius-matching-after-app-open": {
+      "status": "pending",
+      "testedAt": "",
+      "evidence": "",
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
+    },
+    "broadcast-delivery-after-location-radius-change": {
+      "status": "pending",
+      "testedAt": "",
+      "evidence": "",
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
+    },
+    "single-device-revocation-immediate-old-device": {
+      "status": "pending",
+      "testedAt": "",
+      "evidence": "",
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
+    },
+    "call-no-crash-two-way-audio-with-turn-or-fallback": {
+      "status": "pending",
+      "testedAt": "",
+      "evidence": "",
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
+    },
+    "invoice-no-tax-customer-provider-admin-consistency": {
+      "status": "pending",
+      "testedAt": "",
+      "evidence": "",
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
     }
   }
 }

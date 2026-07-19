@@ -12,7 +12,7 @@ test("caller buffers ICE candidates until the real call id exists", () => {
 
 test("WebRTC and fallback audio do not record simultaneously", () => {
   const calls = read("athoo-app/context/CallContext.tsx");
-  assert.match(calls, /if \(!WebRTCAvailable \|\| !pcRef\.current\)/);
+  assert.match(calls, /if \(!canUseWebRtc\(\) \|\| !pcRef\.current\)/);
   assert.match(calls, /WebRTC connection timed out; activating audio fallback/);
   assert.match(calls, /if \(isStreamingRef\.current\) stopVoiceStreaming\(\)/);
 });

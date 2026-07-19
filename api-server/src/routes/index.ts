@@ -128,6 +128,9 @@ router.get("/settings/public", async (_req, res) => {
           tileProvider: mapStatus.tileProvider,
           tileSize: mapStatus.tileSize,
           attribution: mapStatus.attribution,
+          // The mobile app renders tiles through Athoo's credential-free proxy.
+          // This relative path is safe to expose and is resolved against the configured API base URL.
+          tileUrl: mapStatus.configured ? "/api/geo/tiles/{z}/{x}/{y}.png" : "",
         },
       },
     };
