@@ -13,6 +13,7 @@ import { Loader2, Lock } from "lucide-react";
 // Code-split every route, including the chart-heavy dashboard.
 // A session downloads only the pages it actually opens.
 const DashboardPage = lazy(() => import("@/pages/DashboardPage").then((m) => ({ default: m.DashboardPage })));
+const OperationsInboxPage = lazy(() => import("@/pages/OperationsInboxPage").then((m) => ({ default: m.OperationsInboxPage })));
 const UsersPage = lazy(() => import("@/pages/UsersPage").then((m) => ({ default: m.UsersPage })));
 const ProvidersPage = lazy(() => import("@/pages/ProvidersPage").then((m) => ({ default: m.ProvidersPage })));
 const NegotiationsPage = lazy(() => import("@/pages/NegotiationsPage").then((m) => ({ default: m.NegotiationsPage })));
@@ -124,6 +125,9 @@ function AppShell() {
           <Suspense fallback={<PageFallback />}>
             <Switch>
               <Route path="/" component={DashboardPage} />
+              <Route path="/operations-inbox">
+                <Guard perm="dashboard.read"><OperationsInboxPage /></Guard>
+              </Route>
               <Route path="/users">
                 <Guard perm="users.read"><UsersPage /></Guard>
               </Route>

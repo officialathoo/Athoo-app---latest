@@ -17,6 +17,7 @@ import { hasSeenDevice, normalizeEmailAddress, queueNewDeviceEmail, queuePasswor
 import { deliverAuthenticationOtp } from "../lib/otpDelivery";
 import { recordUserActivity } from "../lib/inactivityLifecycle";
 import { dateOnly, validateDocumentValidity } from "../lib/documentValidity";
+import { publicUserId } from "../lib/publicIds";
 
 const router = Router();
 
@@ -725,8 +726,10 @@ router.post("/register", async (req, res) => {
       }
     }
 
+    const newUserId = generateId();
     const newUser = {
-      id: generateId(),
+      id: newUserId,
+      publicId: publicUserId(normalizedRole, newUserId),
       name: name.trim(),
       phone: normalizedPhone,
       role: normalizedRole,

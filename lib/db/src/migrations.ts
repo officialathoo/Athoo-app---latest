@@ -5,4 +5,4 @@
  * operational integrity tooling cannot drift independently.
  */
 export const LATEST_DATABASE_MIGRATION =
-  "20260720_provider_document_expiry_lifecycle.sql" as const;
+  "20260720_release_phase28_professional_workflow_integrity.sql" as const;

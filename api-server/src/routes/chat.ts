@@ -8,6 +8,7 @@ import { logger } from "../lib/logger";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { emitToUser } from "../lib/eventBus";
 import { notifyUser } from "../lib/notifications";
+import { chatPairKey } from "../lib/publicIds";
 
 const router = Router();
 const generateId = () => crypto.randomUUID();
@@ -78,27 +79,33 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       service = booking.service || service;
     }
 
-    const pairCondition = or(
-      and(eq(chatsTable.participant1Id, userId), eq(chatsTable.participant2Id, otherUserId)),
-      and(eq(chatsTable.participant1Id, otherUserId), eq(chatsTable.participant2Id, userId)),
-    );
-    const existing = await db.query.chatsTable.findFirst({
-      where: bookingId ? and(pairCondition, eq(chatsTable.bookingId, bookingId)) : pairCondition,
-    });
+    const pairKey = chatPairKey(userId, otherUserId);
+    const existing = await db.query.chatsTable.findFirst({ where: eq(chatsTable.pairKey, pairKey) });
     if (existing) {
-      await db.update(chatsTable).set(existing.participant1Id === userId
-        ? { participant1HiddenAt: null, updatedAt: new Date() }
-        : { participant2HiddenAt: null, updatedAt: new Date() }
-      ).where(eq(chatsTable.id, existing.id));
-      return res.json({ chat: { ...existing, participant1HiddenAt: existing.participant1Id === userId ? null : existing.participant1HiddenAt, participant2HiddenAt: existing.participant2Id === userId ? null : existing.participant2HiddenAt } });
+      const update = {
+        ...(existing.participant1Id === userId ? { participant1HiddenAt: null } : { participant2HiddenAt: null }),
+        // Preserve the first meaningful booking/service context, but never fork
+        // a second conversation for another booking between the same people.
+        ...(!existing.bookingId && bookingId ? { bookingId } : {}),
+        ...(!existing.service && service ? { service } : {}),
+        updatedAt: new Date(),
+      };
+      const [updated] = await db.update(chatsTable).set(update).where(eq(chatsTable.id, existing.id)).returning();
+      return res.json({ chat: updated || { ...existing, ...update } });
     }
 
     const chat = {
-      id: generateId(), participant1Id: userId, participant2Id: otherUserId,
+      id: generateId(), pairKey, participant1Id: userId, participant2Id: otherUserId,
       participant1Name: me.name, participant2Name: other.name, bookingId, service,
     };
-    await db.insert(chatsTable).values(chat);
-    return res.status(201).json({ chat });
+    const inserted = await db.insert(chatsTable).values(chat).onConflictDoNothing({ target: chatsTable.pairKey }).returning();
+    if (inserted[0]) return res.status(201).json({ chat: inserted[0] });
+
+    // A concurrent profile/booking open may win the unique-pair race. Return
+    // that canonical chat instead of exposing a transient conflict to mobile.
+    const canonical = await db.query.chatsTable.findFirst({ where: eq(chatsTable.pairKey, pairKey) });
+    if (canonical) return res.json({ chat: canonical });
+    return res.status(409).json({ error: "Conversation could not be created" });
   } catch (error) {
     logger.error({ err: error }, "chat create error");
     return res.status(500).json({ error: "Failed to create chat" });

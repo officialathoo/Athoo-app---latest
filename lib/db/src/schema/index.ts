@@ -14,6 +14,7 @@ import { createInsertSchema } from "drizzle-zod";
 
 export const usersTable = pgTable("users", {
   id: text("id").primaryKey(),
+  publicId: text("public_id").notNull().unique(),
   name: text("name").notNull(),
   phone: text("phone").notNull().unique(),
   role: text("role").notNull(),
@@ -104,6 +105,7 @@ export const usersTable = pgTable("users", {
   joinedAt: timestamp("joined_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => [
+  uniqueIndex("users_public_id_uidx").on(t.publicId),
   index("users_role_idx").on(t.role),
   index("users_phone_idx").on(t.phone),
   index("users_verification_status_idx").on(t.verificationStatus),
@@ -121,11 +123,14 @@ export const usersTable = pgTable("users", {
   index("users_account_status_idx").on(t.accountStatus),
   index("users_last_active_at_idx").on(t.lastActiveAt),
   index("users_inactivity_state_idx").on(t.inactivityState),
+  index("users_inactivity_review_queue_idx").on(t.inactivityState, t.inactivityReviewAt),
+  index("users_provider_verification_queue_idx").on(t.role, t.verificationStatus, t.joinedAt),
   index("users_document_compliance_status_idx").on(t.documentComplianceStatus),
   index("users_document_grace_ends_at_idx").on(t.documentGraceEndsAt),
   index("users_document_suspended_at_idx")
     .on(t.documentSuspendedAt)
     .where(sql`${t.documentSuspendedAt} is not null`),
+  index("users_joined_at_idx").on(t.joinedAt),
   index("users_updated_at_idx").on(t.updatedAt),
 ]);
 
@@ -192,6 +197,7 @@ export const commissionPaymentsTable = pgTable("commission_payments", {
   index("commission_payments_provider_id_idx").on(t.providerId),
   index("commission_payments_created_at_idx").on(t.createdAt),
   index("commission_payments_status_idx").on(t.status),
+  index("commission_payments_status_created_idx").on(t.status, t.createdAt),
   uniqueIndex("commission_payments_provider_request_uidx").on(t.providerId, t.clientRequestId),
 ]);
 
@@ -209,7 +215,9 @@ export const serviceAddRequestsTable = pgTable("service_add_requests", {
   rejectionNote: text("rejection_note"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => [
+  index("service_add_requests_status_created_idx").on(t.status, t.createdAt),
+]);
 
 // Premium subscription plans (admin-managed)
 export const subscriptionPlansTable = pgTable("subscription_plans", {
@@ -247,6 +255,7 @@ export const userSubscriptionsTable = pgTable("user_subscriptions", {
 }, (t) => [
   index("user_subscriptions_user_id_idx").on(t.userId),
   index("user_subscriptions_status_idx").on(t.status),
+  index("user_subscriptions_status_created_idx").on(t.status, t.createdAt),
   uniqueIndex("user_subscriptions_user_request_uidx").on(t.userId, t.clientRequestId),
 ]);
 
@@ -262,7 +271,9 @@ export const accountDeletionRequestsTable = pgTable("account_deletion_requests",
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => [
+  index("account_deletion_requests_status_created_idx").on(t.status, t.createdAt),
+]);
 
 // Email change requests — verified via OTP to the new email
 export const emailChangeRequestsTable = pgTable("email_change_requests", {
@@ -419,11 +430,13 @@ export const negotiationsTable = pgTable("negotiations", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => [
   index("negotiations_created_at_idx").on(t.createdAt),
+  index("negotiations_status_expires_idx").on(t.status, t.expiresAt),
   uniqueIndex("negotiations_customer_request_uidx").on(t.customerId, t.clientRequestId),
 ]);
 
 export const chatsTable = pgTable("chats", {
   id: text("id").primaryKey(),
+  pairKey: text("pair_key").notNull().unique(),
   participant1Id: text("participant1_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   participant2Id: text("participant2_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   participant1Name: text("participant1_name").notNull(),
@@ -440,7 +453,10 @@ export const chatsTable = pgTable("chats", {
   lastMessageAt: timestamp("last_message_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => [
+  uniqueIndex("chats_pair_key_uidx").on(t.pairKey),
+  index("chats_last_message_at_idx").on(t.lastMessageAt),
+]);
 
 export const messagesTable = pgTable("messages", {
   id: text("id").primaryKey(),
@@ -559,6 +575,7 @@ export const supportTicketsTable = pgTable("support_tickets", {
   index("support_tickets_user_id_idx").on(t.userId),
   index("support_tickets_status_idx").on(t.status),
   index("support_tickets_created_at_idx").on(t.createdAt),
+  index("support_tickets_status_priority_created_idx").on(t.status, t.priority, t.createdAt),
 ]);
 
 // Audit log — every admin action
@@ -590,9 +607,21 @@ export const adminNotificationsTable = pgTable("admin_notifications", {
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   index("admin_notifications_created_at_idx").on(t.createdAt),
+  index("admin_notifications_target_created_idx").on(t.targetAdminId, t.createdAt),
 ]);
 
 // Ticket notes — admin internal notes on support tickets
+export const adminWorkItemViewsTable = pgTable("admin_work_item_views", {
+  id: text("id").primaryKey(),
+  adminId: text("admin_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  resourceType: text("resource_type").notNull(),
+  resourceId: text("resource_id").notNull(),
+  seenAt: timestamp("seen_at").notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("admin_work_item_views_admin_resource_uidx").on(t.adminId, t.resourceType, t.resourceId),
+  index("admin_work_item_views_admin_seen_idx").on(t.adminId, t.seenAt),
+]);
+
 export const ticketNotesTable = pgTable("ticket_notes", {
   id: text("id").primaryKey(),
   ticketId: text("ticket_id").notNull().references(() => supportTicketsTable.id),
@@ -726,6 +755,7 @@ export const refundRequestsTable = pgTable("refund_requests", {
   index("refund_requests_created_at_idx").on(t.createdAt),
   index("refund_requests_customer_id_idx").on(t.customerId),
   index("refund_requests_provider_id_idx").on(t.providerId),
+  index("refund_requests_status_created_idx").on(t.status, t.createdAt),
   uniqueIndex("refund_requests_customer_request_uidx").on(t.customerId, t.clientRequestId),
 ]);
 
@@ -751,6 +781,7 @@ export const withdrawalRequestsTable = pgTable("withdrawal_requests", {
 }, (t) => [
   index("withdrawal_requests_created_at_idx").on(t.createdAt),
   index("withdrawal_requests_provider_id_idx").on(t.providerId),
+  index("withdrawal_requests_status_created_idx").on(t.status, t.createdAt),
   uniqueIndex("withdrawal_requests_provider_request_uidx").on(t.providerId, t.clientRequestId),
 ]);
 
@@ -1051,7 +1082,9 @@ export const reportIssuesTable = pgTable("report_issues", {
   resolvedAt: timestamp("resolved_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => [
+  index("report_issues_status_created_idx").on(t.status, t.createdAt),
+]);
 
 // ─── Hourly Rate Change Requests ──────────────────────────────────────────────
 export const hourlyRateRequestsTable = pgTable("hourly_rate_requests", {
@@ -1068,7 +1101,9 @@ export const hourlyRateRequestsTable = pgTable("hourly_rate_requests", {
   reviewedAt: timestamp("reviewed_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => [
+  index("hourly_rate_requests_status_created_idx").on(t.status, t.createdAt),
+]);
 
 // ─── Notification Templates ───────────────────────────────────────────────────
 export const notificationTemplatesTable = pgTable("notification_templates", {

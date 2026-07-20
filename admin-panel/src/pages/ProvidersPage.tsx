@@ -40,6 +40,8 @@ export function ProvidersPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [selectedProvider, setSelectedProvider] = useState<User | null>(null);
   const [focusOpened, setFocusOpened] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -58,7 +60,7 @@ export function ProvidersPage() {
     setLoadError(null);
     try {
       const res = await api<{ providers: User[]; total: number }>("/api/admin/providers", {
-        params: { search: search.trim() || undefined, status: filter, limit: 200 },
+        params: { search: search.trim() || undefined, status: filter, from: from || undefined, to: to || undefined, limit: 200 },
       });
       setProviders(res.providers || []);
       setTotal(Number(res.total || 0));
@@ -67,14 +69,14 @@ export function ProvidersPage() {
     } finally {
       setLoading(false);
     }
-  }, [filter, search]);
+  }, [filter, from, search, to]);
 
   useEffect(() => {
     const timer = window.setTimeout(load, 250);
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  useEffect(() => { setSelectedIds(new Set()); }, [filter, search]);
+  useEffect(() => { setSelectedIds(new Set()); }, [filter, from, search, to]);
   useEffect(() => {
     if (!focusId || focusOpened) return;
     setFocusOpened(true);
@@ -284,7 +286,7 @@ export function ProvidersPage() {
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Search by provider, phone, email, or CNIC..."
+              placeholder="Search by Athoo ID, provider, phone, email, or CNIC..."
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
@@ -298,6 +300,8 @@ export function ProvidersPage() {
             <option value="offline">Offline</option>
             <option value="deactivated">Deactivated</option>
           </select>
+          <input aria-label="Providers joined from" type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white" />
+          <input aria-label="Providers joined to" type="date" value={to} onChange={(event) => setTo(event.target.value)} className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white" />
           <button onClick={load} className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50" aria-label="Refresh providers">
             <RefreshCw size={16} />
           </button>
@@ -322,7 +326,7 @@ export function ProvidersPage() {
           emptyMessage="No providers found."
           columns={[
             ...(canManage ? [{ header: "Select", width: "w-16", render: (item: User) => <input type="checkbox" aria-label={`Select ${item.name}`} checked={selectedIds.has(item.id)} onChange={() => setSelectedIds((current) => { const next = new Set(current); next.has(item.id) ? next.delete(item.id) : next.add(item.id); return next; })} /> }] : []),
-            { header: "Provider", render: (item) => <div><p className="font-medium text-slate-800">{item.name}</p><p className="text-xs text-slate-400">{item.phone}</p></div> },
+            { header: "Provider", render: (item) => <div><p className="font-medium text-slate-800">{item.name}</p><p className="font-mono text-[11px] font-semibold text-slate-500">{item.publicId || "ID pending"}</p><p className="text-xs text-slate-400">{item.phone}</p></div> },
             { header: "Status", render: (item) => <div className="flex flex-col gap-1">{item.isVerified ? <StatusBadge status="verified" /> : <StatusBadge status="unverified" />}{item.isBlocked && <StatusBadge status="blocked" />}<span className="text-xs text-slate-500">{item.isDeactivated ? "Deactivated" : item.isAvailable ? "Online" : "Offline"}</span></div> },
             { header: "Rating", render: (item) => <span className="text-sm">{item.ratingCount ? `${item.rating}/5 (${item.ratingCount})` : "—"}</span> },
             { header: "Jobs", key: "totalJobs" },
@@ -339,6 +343,7 @@ export function ProvidersPage() {
             <div className="p-6 border-b border-slate-100 flex items-start justify-between">
               <div>
                 <div className="flex items-center gap-2"><h3 className="text-base font-semibold text-slate-800">{provider.name}</h3>{provider.isVerified ? <StatusBadge status="verified" /> : <StatusBadge status="unverified" />}</div>
+                <p className="font-mono text-xs font-semibold text-slate-600">{provider.publicId || "Athoo ID pending"}</p>
                 <p className="text-xs text-slate-400">{provider.phone} · {provider.verificationStatus || "pending"}</p>
               </div>
               <button onClick={() => setSelectedProvider(null)} className="text-slate-400" aria-label="Close provider details"><X size={18} /></button>

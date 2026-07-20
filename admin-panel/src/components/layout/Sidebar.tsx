@@ -38,6 +38,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Operations",
     items: [
       { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
+      { to: "/operations-inbox", label: "Operations Inbox", icon: Inbox, perm: "dashboard.read" },
       { to: "/live-jobs", label: "Live Jobs", icon: Zap, perm: "operations.read" },
       { to: "/users", label: "Users", icon: Users, perm: "users.read" },
       { to: "/inactive-accounts", label: "Inactive Accounts", icon: History, perm: "users.read" },
@@ -159,6 +160,7 @@ export function Sidebar({ admin, onLogout }: SidebarProps) {
   }, [fetchCounts]);
 
   const countMap: Record<string, number> = {
+    "/operations-inbox": (sidebarCounts?.pendingVerifications || 0) + (sidebarCounts?.pendingDocumentRenewals || 0) + (sidebarCounts?.pendingCommissionPayments || 0) + (sidebarCounts?.pendingWithdrawals || 0) + (sidebarCounts?.pendingRefunds || 0) + (sidebarCounts?.openSupportTickets || 0) + (sidebarCounts?.pendingRateRequests || 0) + (sidebarCounts?.pendingSubscriptions || 0) + (sidebarCounts?.pendingServiceRequests || 0) + (sidebarCounts?.pendingDeletionRequests || 0) + (sidebarCounts?.inactiveAccountsForReview || 0) + (sidebarCounts?.openReportedIssues || 0) + (sidebarCounts?.overdueNegotiations || 0) + (sidebarCounts?.unreadNotifications || 0),
     "/verification": sidebarCounts?.pendingVerifications || 0,
     "/document-renewals": sidebarCounts?.pendingDocumentRenewals || 0,
     "/commission": sidebarCounts?.pendingCommissionPayments || 0,
@@ -169,6 +171,8 @@ export function Sidebar({ admin, onLogout }: SidebarProps) {
     "/rate-requests": sidebarCounts?.pendingRateRequests || 0,
     "/plans?tab=subs&status=pending": sidebarCounts?.pendingSubscriptions || 0,
     "/inactive-accounts": sidebarCounts?.inactiveAccountsForReview || 0,
+    "/reported-issues": sidebarCounts?.openReportedIssues || 0,
+    "/negotiations": sidebarCounts?.overdueNegotiations || 0,
   };
 
   const adminRole = admin?.adminRole;

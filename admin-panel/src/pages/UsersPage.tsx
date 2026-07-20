@@ -22,6 +22,8 @@ export function UsersPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [status, setStatus] = useState("all");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [sort, setSort] = useState<SortKey>("joinedAt");
   const [direction, setDirection] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
@@ -48,6 +50,8 @@ export function UsersPage() {
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(limit), status, sort, direction });
       if (debouncedSearch) params.set("search", debouncedSearch);
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
       const res = await api<{ customers: User[]; total: number }>(`/api/admin/customers?${params.toString()}`);
       setCustomers(res.customers || []);
       setTotal(Number(res.total || 0));
@@ -58,8 +62,8 @@ export function UsersPage() {
     }
   }
 
-  useEffect(() => { load(); }, [page, status, sort, direction, debouncedSearch]);
-  useEffect(() => { setPage(1); setSelectedIds(new Set()); }, [status, sort, direction, debouncedSearch]);
+  useEffect(() => { load(); }, [page, status, sort, direction, debouncedSearch, from, to]);
+  useEffect(() => { setPage(1); setSelectedIds(new Set()); }, [status, sort, direction, debouncedSearch, from, to]);
   useEffect(() => {
     if (!focusId || focusOpened) return;
     setFocusOpened(true);
@@ -175,11 +179,13 @@ export function UsersPage() {
         <div className="p-5 border-b border-slate-100 flex flex-col lg:flex-row gap-3">
           <div className="relative flex-1">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Search customers by name, phone, or email" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <input className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Search by Athoo ID, name, phone, or email" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
           <select className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="all">All customers</option><option value="active">Active</option><option value="deactivated">Deactivated</option>
           </select>
+          <input aria-label="Customers joined from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white" />
+          <input aria-label="Customers joined to" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white" />
           <select className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white" value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
             <option value="joinedAt">Joined date</option><option value="name">Name</option><option value="totalJobs">Bookings</option>
           </select>
@@ -201,7 +207,7 @@ export function UsersPage() {
 
         <DataTable data={customers} loading={loading} keyExtractor={(u) => u.id} emptyMessage="No customers found." columns={[
           ...(canWrite ? [{ header: "Select", width: "w-16", render: (u: User) => <input type="checkbox" aria-label={`Select ${u.name}`} checked={selectedIds.has(u.id)} onChange={() => setSelectedIds((current) => { const next = new Set(current); next.has(u.id) ? next.delete(u.id) : next.add(u.id); return next; })} /> }] : []),
-          { header: "Customer", render: (u) => <div><p className="font-medium text-slate-800">{u.name}</p><p className="text-xs text-slate-400">{u.phone} · {u.email || "No email"}</p></div> },
+          { header: "Customer", render: (u) => <div><p className="font-medium text-slate-800">{u.name}</p><p className="font-mono text-[11px] font-semibold text-slate-500">{u.publicId || "ID pending"}</p><p className="text-xs text-slate-400">{u.phone} · {u.email || "No email"}</p></div> },
           { header: "Status", render: (u) => <StatusBadge status={u.isDeactivated ? "deactivated" : "active"} /> },
           { header: "Bookings", key: "totalJobs" },
           { header: "Joined", render: (u) => <span className="text-xs text-slate-500">{formatDate(u.joinedAt)}</span> },
@@ -221,7 +227,7 @@ export function UsersPage() {
       {selected && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[92vh] overflow-y-auto">
-            <div className="p-6 border-b flex justify-between"><div><h3 className="font-semibold text-slate-900">{selected.name}</h3><p className="text-xs text-slate-400">{selected.phone} · {selected.email || "No email"}</p></div><button onClick={() => setSelected(null)}><X size={18} /></button></div>
+            <div className="p-6 border-b flex justify-between"><div><h3 className="font-semibold text-slate-900">{selected.name}</h3><p className="font-mono text-xs font-semibold text-slate-600">{selected.publicId || "Athoo ID pending"}</p><p className="text-xs text-slate-400">{selected.phone} · {selected.email || "No email"}</p></div><button onClick={() => setSelected(null)}><X size={18} /></button></div>
             <div className="p-6 space-y-5">
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="bg-slate-50 rounded-lg p-3"><p className="text-xs text-slate-500">Status</p><p className="font-medium">{selected.isDeactivated ? "Deactivated" : "Active"}</p></div>

@@ -20,8 +20,8 @@ interface Refund {
   paymentReference?: string | null;
   createdAt: string;
   updatedAt: string;
-  booking?: { id: string; service: string; price: number };
-  customer?: { id: string; name: string; phone: string };
+  booking?: { id: string; publicId?: string | null; service: string; price: number };
+  customer?: { id: string; publicId?: string | null; name: string; phone: string };
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -36,15 +36,27 @@ export function RefundsPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [selected, setSelected] = useState<Refund | null>(null);
   const [resolutionNote, setResolutionNote] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
   const [focusOpened, setFocusOpened] = useState(false);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ["admin", "refunds"],
-    queryFn: () => api<{ refunds: Refund[] }>("/api/admin/refunds"),
+    queryKey: ["admin", "refunds", focusId, debouncedSearch, statusFilter, from, to],
+    queryFn: () => api<{ refunds: Refund[] }>("/api/admin/refunds", {
+      params: focusId
+        ? { focus: focusId }
+        : { search: debouncedSearch || undefined, status: statusFilter, from: from || undefined, to: to || undefined },
+    }),
     refetchInterval: 180000,
   });
 
@@ -75,17 +87,7 @@ export function RefundsPage() {
     setPaymentReference(focused.paymentReference || "");
     setFocusOpened(true);
   }, [focusId, focusOpened, refunds]);
-  const filtered = refunds.filter((r) => {
-    const q = search.toLowerCase();
-    const matchSearch =
-      !q ||
-      (r.customer?.name || "").toLowerCase().includes(q) ||
-      (r.customer?.phone || "").includes(q) ||
-      (r.booking?.service || "").toLowerCase().includes(q) ||
-      r.reason.toLowerCase().includes(q);
-    const matchStatus = statusFilter === "all" || r.status === statusFilter;
-    return matchSearch && matchStatus;
-  });
+  const filtered = refunds;
 
   const pending = refunds.filter((r) => r.status === "pending").length;
   const totalPaid = refunds.filter((r) => r.status === "paid").reduce((sum, r) => sum + r.amountRequested, 0);
@@ -118,7 +120,7 @@ export function RefundsPage() {
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Search by customer, service, reason..."
+              placeholder="Search by Athoo ID, customer, service, reason..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -134,6 +136,8 @@ export function RefundsPage() {
             <option value="rejected">Rejected</option>
             <option value="paid">Paid</option>
           </select>
+          <input aria-label="Refunds from date" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white" />
+          <input aria-label="Refunds to date" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white" />
           <button
             onClick={() => qc.invalidateQueries({ queryKey: ["admin", "refunds"] })}
             className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"
@@ -172,10 +176,12 @@ export function RefundsPage() {
                   <tr key={r.id} data-focus-id={r.id === focusId ? r.id : undefined} className={r.id === focusId ? "bg-blue-50 ring-2 ring-inset ring-blue-400" : "hover:bg-slate-50/50 transition-colors"}>
                     <td className="px-5 py-3.5">
                       <p className="font-medium text-slate-800">{r.customer?.name || "—"}</p>
+                      {r.customer?.publicId ? <p className="font-mono text-[11px] font-semibold text-slate-600">{r.customer.publicId}</p> : null}
                       <p className="text-xs text-slate-500">{r.customer?.phone || "—"}</p>
                     </td>
                     <td className="px-5 py-3.5">
                       <p className="font-medium text-slate-700">{r.booking?.service || "—"}</p>
+                      {r.booking?.publicId ? <p className="font-mono text-[11px] text-slate-500">{r.booking.publicId}</p> : null}
                       <p className="text-xs text-slate-400">Booking price: {currency(r.booking?.price || 0)}</p>
                     </td>
                     <td className="px-5 py-3.5 font-semibold text-slate-800">{currency(r.amountRequested)}</td>
@@ -227,6 +233,7 @@ export function RefundsPage() {
                 <div>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Customer</p>
                   <p className="font-medium text-slate-800 mt-1">{selected.customer?.name || "—"}</p>
+                  {selected.customer?.publicId ? <p className="font-mono text-xs font-semibold text-slate-600">{selected.customer.publicId}</p> : null}
                   <p className="text-sm text-slate-500">{selected.customer?.phone || "—"}</p>
                 </div>
                 <div>

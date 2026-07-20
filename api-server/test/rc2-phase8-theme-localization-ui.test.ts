@@ -56,8 +56,11 @@ test("welcome experience is localized, theme-driven and keeps acceptance markers
   assert.match(welcome, /useTheme/);
   assert.match(welcome, /t\.welcomeTagline/);
   assert.match(welcome, /testID="welcome-screen"/);
-  assert.match(welcome, /testID="welcome-customer-sign-in"/);
-  assert.match(welcome, /testID="welcome-provider-sign-in"/);
+  assert.match(welcome, /testID="welcome-sign-in"/);
+  assert.match(welcome, /testID="welcome-sign-up"/);
+  const roleChooser = read("athoo-app/app/auth/choose-role.tsx");
+  assert.match(roleChooser, /testID={`auth-\${mode}-customer`}/);
+  assert.match(roleChooser, /testID={`auth-\${mode}-provider`}/);
   assert.doesNotMatch(welcome, /@\/constants\/colors/);
 });
 

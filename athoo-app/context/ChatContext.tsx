@@ -183,8 +183,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       });
       const chat = res.chat as Chat;
       setChats((prev) => {
-        const exists = prev.find((c) => c.id === chat.id);
-        return exists ? prev.map((c) => c.id === chat.id ? chat : c) : [...prev, chat];
+        const participantIds = new Set([chat.participant1Id, chat.participant2Id]);
+        const withoutDuplicatePair = prev.filter((candidate) => {
+          if (candidate.id === chat.id) return false;
+          return !(participantIds.has(candidate.participant1Id) && participantIds.has(candidate.participant2Id));
+        });
+        return [chat, ...withoutDuplicatePair];
       });
       await loadMessages(chat.id);
       setActiveChatId(chat.id);

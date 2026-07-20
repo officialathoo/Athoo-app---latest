@@ -59,13 +59,15 @@ async function main(): Promise<void> {
     if (duplicate.rowCount) throw new Error("The bootstrap phone or email is already registered.");
 
     const passwordHash = await bcrypt.hash(password, 12);
+    const adminId = crypto.randomUUID();
+    const publicId = `ADM-${crypto.createHash("sha256").update(`admin:${adminId}`).digest("hex").slice(0, 16).toUpperCase()}`;
     await client.query(
       `INSERT INTO users (
-        id, name, phone, email, role, password, admin_role, admin_permissions,
+        id, public_id, name, phone, email, role, password, admin_role, admin_permissions,
         is_verified, verification_status, account_status, joined_at, updated_at
-      ) VALUES ($1, $2, $3, $4, 'admin', $5, 'super_admin', $6::jsonb,
+      ) VALUES ($1, $2, $3, $4, $5, 'admin', $6, 'super_admin', $7::jsonb,
         TRUE, 'approved', 'active', NOW(), NOW())`,
-      [crypto.randomUUID(), name, phone, email, passwordHash, JSON.stringify(["*"])],
+      [adminId, publicId, name, phone, email, passwordHash, JSON.stringify(["*"])],
     );
 
     await client.query("COMMIT");

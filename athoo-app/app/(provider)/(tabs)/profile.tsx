@@ -216,6 +216,7 @@ export default function ProviderProfileScreen() {
     {
       title: t.account,
       items: [
+        { icon: "file-check", label: tr("Verification documents & validity"), color: theme.colors.success, onPress: () => router.push("/(provider)/verification-documents") },
         { icon: "bell", label: t.notifications, color: theme.colors.accent, onPress: () => router.push("/(provider)/notifications") },
         { icon: "mail", label: "Email & communication", color: theme.colors.primary, onPress: () => router.push("/email-preferences" as any) },
         { icon: "sun", label: t.appearance, color: theme.colors.accent, onPress: () => router.push("/appearance" as any) },
@@ -280,6 +281,7 @@ export default function ProviderProfileScreen() {
               )}
             </View>
             <Text style={styles.userPhone}>{user?.phone}</Text>
+            {user?.publicId ? <Text style={styles.userPublicId}>{tr("Athoo ID")}: {user.publicId}</Text> : null}
           </View>
         </View>
 
@@ -555,6 +557,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   verifiedText: { fontSize: 10, fontWeight: "700", color: theme.colors.secondary },
   userPhone: { fontSize: 12, color: "rgba(255,255,255,0.65)" },
+  userPublicId: { fontSize: 11, fontWeight: "700", color: "rgba(255,255,255,0.78)", letterSpacing: 0.4 },
   statsRow: {
     flexDirection: "row", backgroundColor: "rgba(255,255,255,0.15)",
     borderRadius: 18, padding: 14, alignItems: "center",

@@ -180,6 +180,9 @@ export function resolveNotificationTarget(
   }
   if (link === "/provider/dashboard") return "/(provider)/(tabs)/dashboard";
   if (link === "/provider/availability") return "/(provider)/availability";
+  if (link === "/provider/verification-documents" || link === "/verification-documents" || link === "/provider/documents") {
+    return role === "provider" ? "/(provider)/verification-documents" : roleHome(role);
+  }
   if (link === "/provider/pay-commission" || link === "/commission" || link === "/payments") return role === "provider" ? "/(provider)/pay-commission" : roleHome(role);
   if (link === "/premium") return role === "provider" ? "/(provider)/subscription" : "/(customer)/subscription";
   if (link === "/refunds") return role === "provider" ? "/(provider)/(tabs)/earnings" : "/(customer)/refund-requests";

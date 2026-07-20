@@ -288,6 +288,7 @@ export default function ProfileScreen() {
             )}
 
             <Text style={styles.profilePhone}>{user?.phone}</Text>
+            {user?.publicId ? <Text style={styles.profilePublicId}>{tr("Athoo ID")}: {user.publicId}</Text> : null}
 
             <View style={styles.verifiedBadge}>
               <Icon name="shield" size={10} color={theme.colors.onBrand} />
@@ -653,6 +654,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     paddingBottom: 2,
   },
 
+  profilePublicId: { fontSize: 11, fontWeight: "700", color: "rgba(255,255,255,0.76)", letterSpacing: 0.4, marginTop: 2 },
   profilePhone: { fontSize: 13, color: "rgba(255,255,255,0.75)" },
 
   verifiedBadge: {

@@ -7,7 +7,9 @@ const read = (file: string) => fs.readFileSync(new URL(`../../${file}`, import.m
 test('mobile login screens expose stable closed-beta automation identifiers', () => {
   const welcome = read('athoo-app/app/auth/welcome.tsx');
   const login = read('athoo-app/app/auth/login.tsx');
-  for (const marker of ['welcome-screen','welcome-customer-sign-in','welcome-provider-sign-in']) assert.match(welcome, new RegExp(marker));
+  for (const marker of ['welcome-screen','welcome-sign-in','welcome-sign-up']) assert.match(welcome, new RegExp(marker));
+  const roleChooser = read('athoo-app/app/auth/choose-role.tsx');
+  for (const marker of ['auth-${mode}-customer','auth-${mode}-provider']) assert.match(roleChooser, new RegExp(marker.replace(/[${}]/g, '\\$&')));
   for (const marker of ['login-password-tab','login-identifier','login-password','login-submit']) assert.match(login, new RegExp(marker));
 });
 

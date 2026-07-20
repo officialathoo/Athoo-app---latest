@@ -25,6 +25,7 @@ export type AppUserRole = "customer" | "provider";
 
 export interface User {
   id: string;
+  publicId?: string;
   name: string;
   phone: string;
   role: AppUserRole;

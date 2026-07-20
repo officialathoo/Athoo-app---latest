@@ -4,6 +4,7 @@ import { Icon } from "@/components/ui/Icon";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   AppState,
   Image,
@@ -502,16 +503,21 @@ export default function BookingDetailScreen() {
 
   const handleChat = async () => {
     if (!user) return;
-    router.push({
-      pathname: "/(customer)/chat-room",
-      params: {
-        otherUserId: booking.providerId,
-        otherUserName: providerName,
-        otherUserImage: booking.providerProfileImage || undefined,
-        otherUserColor: booking.providerProfileColor || undefined,
-      },
-    });
-    getOrCreateChat(user.id, user.name, booking.providerId, providerName, booking.id, booking.service).catch(() => {});
+    try {
+      const chat = await getOrCreateChat(user.id, user.name, booking.providerId, providerName, booking.id, booking.service);
+      router.push({
+        pathname: "/(customer)/chat-room",
+        params: {
+          chatId: chat.id,
+          otherUserId: booking.providerId,
+          otherUserName: providerName,
+          otherUserImage: booking.providerProfileImage || undefined,
+          otherUserColor: booking.providerProfileColor || undefined,
+        },
+      });
+    } catch (error) {
+      Alert.alert("Chat unavailable", apiErrorToMessage(error, "We couldn't open this conversation. Please try again."));
+    }
   };
 
   const handleCall = async () => {

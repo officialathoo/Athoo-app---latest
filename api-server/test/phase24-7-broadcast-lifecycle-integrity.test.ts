@@ -26,7 +26,7 @@ test("existing invalid platform settings are repaired by an idempotent migration
   assert.match(migration, /broadcastExpandAfterMinutes/);
   assert.match(migration, /base_expand >= base_ttl/);
   assert.match(migration, /IS DISTINCT FROM/);
-  assert.match(latest, /20260720_provider_document_expiry_lifecycle\.sql/);
+  assert.match(latest, /20260720_release_phase28_professional_workflow_integrity\.sql/);
 });
 
 test("broadcast creation and matching use canonical service slugs", () => {

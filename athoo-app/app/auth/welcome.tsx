@@ -155,73 +155,50 @@ export default function WelcomeScreen() {
 
         {!requiresBiometric ? (
           <View style={styles.actions}>
-            <AppText variant="label" tone="inverse" align="center" style={styles.mutedInverse}>{t.joinAs}</AppText>
-            <View style={styles.roleButtons}>
-              <Pressable
-                accessibilityRole="button"
-                style={({ pressed }) => [
-                  styles.roleButton,
-                  { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
-                  pressed && styles.pressed,
-                ]}
-                onPress={() => router.push("/auth/register?role=customer")}
-              >
-                <Icon name="user" size={27} color={theme.colors.primary} />
-                <AppText variant="bodyStrong" align="center">{t.customer}</AppText>
-                <AppText variant="caption" tone="secondary" align="center">{t.customerRoleHint}</AppText>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                style={({ pressed }) => [
-                  styles.roleButton,
-                  { backgroundColor: theme.colors.surface, borderColor: theme.colors.secondary },
-                  pressed && styles.pressed,
-                ]}
-                onPress={() => router.push("/auth/provider-register")}
-              >
-                <Icon name="briefcase" size={27} color={theme.colors.secondary} />
-                <AppText variant="bodyStrong" align="center">{t.provider}</AppText>
-                <AppText variant="caption" tone="secondary" align="center">{t.providerRoleHint}</AppText>
-                <View style={[styles.verifiedTag, { backgroundColor: theme.colors.secondary }]}> 
-                  <Icon name="shield" size={11} color={theme.colors.white} />
-                  <AppText variant="caption" tone="inverse">{t.verifiedPro}</AppText>
-                </View>
-              </Pressable>
-            </View>
-
-            <View style={styles.signInSection}>
-              <AppText variant="caption" tone="inverse" align="center" style={styles.mutedInverse}>{t.alreadyRegistered}</AppText>
-              <View style={styles.signInButtons}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t.customerSignIn}
-                  style={({ pressed }) => [
-                    styles.signInButton,
-                    { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
-                    pressed && styles.pressed,
-                  ]}
-                  testID="welcome-customer-sign-in"
-                  onPress={() => router.push("/auth/login?role=customer")}
-                >
-                  <Icon name="user" size={16} color={theme.colors.primary} />
-                  <AppText variant="label" style={{ color: theme.colors.primary }} align="center">{t.customerSignIn}</AppText>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t.providerSignIn}
-                  style={({ pressed }) => [
-                    styles.signInButton,
-                    { backgroundColor: theme.colors.surface, borderColor: theme.colors.secondary },
-                    pressed && styles.pressed,
-                  ]}
-                  testID="welcome-provider-sign-in"
-                  onPress={() => router.push("/auth/login?role=provider")}
-                >
-                  <Icon name="briefcase" size={16} color={theme.colors.secondary} />
-                  <AppText variant="label" style={{ color: theme.colors.secondary }} align="center">{t.providerSignIn}</AppText>
-                </Pressable>
+            <AppText variant="h2" tone="inverse" align="center">Welcome to Athoo</AppText>
+            <AppText variant="caption" tone="inverse" align="center" style={styles.mutedInverse}>
+              Choose what you want to do. You will select Customer or Provider on the next screen.
+            </AppText>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Sign in"
+              testID="welcome-sign-in"
+              style={({ pressed }) => [
+                styles.primaryAction,
+                { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
+                pressed && styles.pressed,
+              ]}
+              onPress={() => router.push("/auth/choose-role?mode=signin" as never)}
+            >
+              <View style={[styles.primaryActionIcon, { backgroundColor: theme.colors.infoSoft }]}>
+                <Icon name="log-in" size={24} color={theme.colors.primary} />
               </View>
-            </View>
+              <View style={styles.primaryActionCopy}>
+                <AppText variant="bodyStrong">Sign in</AppText>
+                <AppText variant="caption" tone="secondary">I already have an Athoo account</AppText>
+              </View>
+              <Icon name="chevron-right" size={20} color={theme.colors.textMuted} />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Create account"
+              testID="welcome-sign-up"
+              style={({ pressed }) => [
+                styles.primaryAction,
+                { backgroundColor: theme.colors.surface, borderColor: theme.colors.secondary },
+                pressed && styles.pressed,
+              ]}
+              onPress={() => router.push("/auth/choose-role?mode=signup" as never)}
+            >
+              <View style={[styles.primaryActionIcon, { backgroundColor: theme.colors.successSoft }]}>
+                <Icon name="user-plus" size={24} color={theme.colors.secondary} />
+              </View>
+              <View style={styles.primaryActionCopy}>
+                <AppText variant="bodyStrong">Create account</AppText>
+                <AppText variant="caption" tone="secondary">I am new to Athoo</AppText>
+              </View>
+              <Icon name="chevron-right" size={20} color={theme.colors.textMuted} />
+            </Pressable>
           </View>
         ) : null}
       </ScrollView>
@@ -256,7 +233,10 @@ const styles = StyleSheet.create({
   featureRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   featureIcon: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   featureText: { flex: 1 },
-  actions: { gap: 14 },
+  actions: { gap: 12 },
+  primaryAction: { minHeight: 78, borderRadius: 18, borderWidth: 1.5, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 },
+  primaryActionIcon: { width: 48, height: 48, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  primaryActionCopy: { flex: 1, gap: 2 },
   mutedInverse: { opacity: 0.8 },
   roleButtons: { flexDirection: "row", gap: 12 },
   roleButton: { flex: 1, minHeight: 148, borderRadius: 18, borderWidth: 1, padding: 14, alignItems: "center", justifyContent: "center", gap: 6 },

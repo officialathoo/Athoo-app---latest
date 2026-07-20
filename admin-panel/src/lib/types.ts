@@ -1,5 +1,6 @@
 export interface AdminUser {
   id: string;
+  publicId?: string;
   name: string;
   phone: string;
   email?: string | null;
@@ -12,6 +13,7 @@ export interface AdminUser {
 
 export interface User {
   id: string;
+  publicId?: string;
   name: string;
   phone: string;
   email?: string | null;
@@ -237,6 +239,8 @@ export interface SidebarCounts {
   pendingServiceRequests: number;
   pendingDeletionRequests: number;
   inactiveAccountsForReview: number;
+  openReportedIssues: number;
+  overdueNegotiations: number;
   unreadNotifications: number;
 }
 

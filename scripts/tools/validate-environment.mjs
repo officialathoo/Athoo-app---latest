@@ -273,7 +273,10 @@ if (values.get("NODE_ENV") === "production" && !staticTurnReady && !cloudflareTu
 validateBoundedInteger("CLOUDFLARE_TURN_TTL_SECONDS", 7200, 300, 172800);
 validateBoundedInteger("CLOUDFLARE_TURN_TIMEOUT_MS", 6000, 1000, 20000);
 validateBoundedInteger("CLOUDFLARE_TURN_CACHE_MAX_USERS", 2000, 100, 20000);
-validateBoundedInteger("CALL_FALLBACK_CHUNK_MS", 400, 250, 2000);
+const callIceTransportPolicy = (values.get("CALL_ICE_TRANSPORT_POLICY") || "relay").trim().toLowerCase();
+if (!new Set(["all", "relay"]).has(callIceTransportPolicy)) errors.push("CALL_ICE_TRANSPORT_POLICY must be all or relay");
+validateBoundedInteger("CALL_FALLBACK_CHUNK_MS", 800, 400, 2000);
+validateBoundedInteger("CALL_FALLBACK_ACTIVATION_MS", 3000, 3000, 15000);
 validateBoundedInteger("INACTIVITY_SWEEP_MIN_INTERVAL_MS", 21600000, 900000, 86400000);
 validateBoundedInteger("USER_ACTIVITY_WRITE_INTERVAL_MS", 600000, 60000, 86400000);
 validateBoundedInteger("BOOKING_SWEEP_INTERVAL_MS", 60000, 10000, 3600000);

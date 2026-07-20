@@ -1016,8 +1016,9 @@ export const api = {
       credentialMode: "static" | "short-lived" | "none";
       expiresAt?: string;
       ttlSeconds?: number;
+      iceTransportPolicy?: "all" | "relay";
       iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }>;
-      audio: { preferredCodec: string; fallbackChunkMs: number };
+      audio: { preferredCodec: string; fallbackChunkMs: number; fallbackActivationMs: number };
     }>("/api/calls/config", { method: "GET", auth: true });
   },
 

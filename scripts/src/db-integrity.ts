@@ -27,6 +27,11 @@ async function main(): Promise<void> {
       ["multiple_pending_refunds", `SELECT count(*)::int AS count FROM (SELECT booking_id FROM refund_requests WHERE status='pending' GROUP BY booking_id HAVING count(*) > 1) d`],
       ["invalid_finance_ledger_types", `SELECT count(*)::int AS count FROM finance_ledger WHERE entry_type NOT IN ('commission_received','provider_withdrawal','customer_refund','subscription_received')`],
       ["stale_processing_jobs", `SELECT count(*)::int AS count FROM background_jobs WHERE status='processing' AND locked_at < now() - interval '15 minutes'`],
+      ["missing_user_public_ids", `SELECT count(*)::int AS count FROM users WHERE public_id IS NULL OR btrim(public_id) = ''`],
+      ["duplicate_user_public_ids", `SELECT count(*)::int AS count FROM (SELECT public_id FROM users GROUP BY public_id HAVING count(*) > 1) d`],
+      ["missing_chat_pair_keys", `SELECT count(*)::int AS count FROM chats WHERE pair_key IS NULL OR btrim(pair_key) = ''`],
+      ["noncanonical_chat_pair_keys", `SELECT count(*)::int AS count FROM chats WHERE pair_key <> LEAST(participant1_id, participant2_id) || ':' || GREATEST(participant1_id, participant2_id)`],
+      ["duplicate_chat_pairs", `SELECT count(*)::int AS count FROM (SELECT pair_key FROM chats GROUP BY pair_key HAVING count(*) > 1) d`],
     ];
     for (const [name, sql] of scalarChecks) {
       const result = await client.query<{ count: number }>(sql);

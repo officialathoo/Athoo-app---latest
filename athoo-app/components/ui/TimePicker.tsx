@@ -57,7 +57,7 @@ function DrumCol({ data, selectedIndex, onChange, flex = 1, fontSize = 22 }: Dru
       <View pointerEvents="none" style={styles.selectionFrame} />
       <ScrollView
         ref={ref}
-        style={{ height: ITEM_H * VISIBLE }}
+        style={styles.scrollLayer}
         contentContainerStyle={{ paddingVertical: COL_PAD }}
         snapToInterval={ITEM_H}
         decelerationRate={Platform.OS === "ios" ? "fast" : 0.85}
@@ -247,12 +247,13 @@ function createDrumStyles(theme: AthooTheme) {
       right: 4,
       height: ITEM_H,
       borderRadius: 12,
-      backgroundColor: theme.colors.infoSoft,
+      backgroundColor: "transparent",
       borderWidth: 1.5,
       borderColor: theme.colors.primary,
-      zIndex: 1,
+      zIndex: 0,
     },
-    item: { height: ITEM_H, justifyContent: "center", alignItems: "center", paddingHorizontal: 4 },
+    scrollLayer: { height: ITEM_H * VISIBLE, zIndex: 1 },
+    item: { height: ITEM_H, justifyContent: "center", alignItems: "center", paddingHorizontal: 4, zIndex: 2 },
     itemText: { fontWeight: "600", color: theme.colors.textMuted },
     itemTextSelected: { color: theme.colors.primary, fontWeight: "800" },
   });

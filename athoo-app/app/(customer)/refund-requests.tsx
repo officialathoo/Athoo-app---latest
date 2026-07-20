@@ -8,6 +8,7 @@ import { apiErrorToMessage } from "@/lib/apiError";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import { pickImageWithSourceChoice } from "@/utils/mediaPicker";
+import { uploadPickedImage } from "@/services/storage";
 import React, { useCallback, useEffect, useState, useMemo } from "react";
 import {
   ActivityIndicator,
@@ -64,6 +65,8 @@ export default function RefundRequestsScreen() {
   const [amount, setAmount] = useState("");
 
   const [evidencePhoto, setEvidencePhoto] = useState<string | null>(null);
+  const [evidenceMimeType, setEvidenceMimeType] = useState("image/jpeg");
+  const [evidenceFileName, setEvidenceFileName] = useState("refund-evidence.jpg");
 
   const [bookings, setBookings] = useState<any[]>([]);
   const [loadingBookings, setLoadingBookings] = useState(false);
@@ -89,7 +92,9 @@ export default function RefundRequestsScreen() {
     try {
       const res = await api.getBookings();
       const eligible = (res.bookings || []).filter(
-        (b: any) => b.status === "completed" || b.status === "cancelled"
+        (b: any) => ["completed", "cancelled"].includes(b.status)
+          && ["paid", "received"].includes(b.paymentStatus)
+          && Number(b.price || 0) + Number(b.visitCharge || 0) > 0
       );
       setBookings(eligible);
     } catch {
@@ -112,17 +117,16 @@ export default function RefundRequestsScreen() {
 
   async function pickEvidencePhoto() {
     const result = await pickImageWithSourceChoice(
-      { mediaTypes: "images" as const, quality: 0.7, base64: true, allowsEditing: false, aspect: [4, 3] },
+      { mediaTypes: "images" as const, quality: 0.7, base64: false, allowsEditing: false, aspect: [4, 3] },
       { title: tr("Add photo evidence"), message: tr("Take a new photo or choose one from your gallery."), camera: tr("Camera"), gallery: tr("Gallery"), cancel: tr("Cancel") },
     );
     if (!result || result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
-    if (!asset.base64) {
-      showError(tr("Photo unavailable"), tr("We couldn't read that photo. Please choose another one."));
-      return;
-    }
     const mimeType = asset.mimeType || "image/jpeg";
-    setEvidencePhoto(`data:${mimeType};base64,${asset.base64}`);
+    const extension = mimeType === "image/png" ? "png" : mimeType === "image/webp" ? "webp" : "jpg";
+    setEvidencePhoto(asset.uri);
+    setEvidenceMimeType(mimeType);
+    setEvidenceFileName(asset.fileName || `refund-evidence-${Date.now()}.${extension}`);
   }
 
   async function handleSubmit() {
@@ -143,13 +147,23 @@ export default function RefundRequestsScreen() {
     try {
       const requestId = refundRequestId || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       if (!refundRequestId) setRefundRequestId(requestId);
-      await api.requestRefund({ bookingId, reason: reason.trim(), amountRequested: amt, evidenceUrl: evidencePhoto || undefined, clientRequestId: requestId });
+      const refundableTotal = Number(selectedBooking?.price || 0) + Number(selectedBooking?.visitCharge || 0);
+      if (refundableTotal > 0 && amt > refundableTotal) {
+        showError(tr("Invalid Amount"), tr(`The refund amount cannot exceed ${formatCurrency(refundableTotal)}.`));
+        return;
+      }
+      const evidenceUrl = evidencePhoto
+        ? await uploadPickedImage(evidencePhoto, evidenceFileName, evidenceMimeType, undefined, "private")
+        : undefined;
+      await api.requestRefund({ bookingId, reason: reason.trim(), amountRequested: amt, evidenceUrl, clientRequestId: requestId });
       showSuccess(tr("Refund Submitted"), tr("Our team will review your request within 24-48 hours."));
       setShowForm(false);
       setBookingId("");
       setReason("");
       setAmount("");
       setEvidencePhoto(null);
+      setEvidenceMimeType("image/jpeg");
+      setEvidenceFileName("refund-evidence.jpg");
       setSelectedBooking(null);
       setRefundRequestId(null);
       load();
@@ -208,7 +222,7 @@ export default function RefundRequestsScreen() {
                   onPress={() => setShowBookingPicker(!showBookingPicker)}
                 >
                   <Text style={selectedBooking ? styles.inputText : styles.inputPlaceholder}>
-                    {selectedBooking ? `${selectedBooking.service} — ${formatCurrency(selectedBooking.price)}` : "Tap to select booking"}
+                    {selectedBooking ? `${selectedBooking.service} — ${formatCurrency(Number(selectedBooking.price || 0) + Number(selectedBooking.visitCharge || 0))}` : tr("Tap to select booking")}
                   </Text>
                   <Icon name={showBookingPicker ? "chevron-up" : "chevron-down"} size={16} color={theme.colors.textSecondary} />
                 </Pressable>
@@ -232,12 +246,12 @@ export default function RefundRequestsScreen() {
                           onPress={() => {
                             setBookingId(b.id);
                             setSelectedBooking(b);
-                            setAmount(String(b.price || ""));
+                            setAmount(String(Number(b.price || 0) + Number(b.visitCharge || 0) || ""));
                             setShowBookingPicker(false);
                           }}
                         >
                           <Text style={styles.pickerItemTitle}>{b.service}</Text>
-                          <Text style={styles.pickerItemSub}>{formatCurrency(b.price)} · {b.status} · {formatLocalizedDate(b.createdAt || b.scheduledAt)}</Text>
+                          <Text style={styles.pickerItemSub}>{formatCurrency(Number(b.price || 0) + Number(b.visitCharge || 0))} · {b.status} · {formatLocalizedDate(b.createdAt || b.scheduledAt)}</Text>
                         </Pressable>
                       ))
                     )}

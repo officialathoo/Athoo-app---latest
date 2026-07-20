@@ -366,6 +366,7 @@ export function toPublicProvider(user: User | null | undefined) {
   // only the provider themselves and admins should see them.
   return {
     id: user.id,
+    publicId: user.publicId,
     name: user.name,
     role: user.role,
     profileImage: user.profileImage,

@@ -89,7 +89,7 @@ test("voice fallback drops stale backlog and ends all recording and playback res
   assert.match(calls, /sound\.unloadAsync/);
   assert.match(calls, /setRecordingMode\(false\)/);
   assert.match(callApi, /clearCallAudio\(call\.id\)/);
-  assert.match(callApi, /fallbackChunkMs: boundedInteger\(process\.env\.CALL_FALLBACK_CHUNK_MS, 400/);
+  assert.match(callApi, /fallbackChunkMs: boundedInteger\(process\.env\.CALL_FALLBACK_CHUNK_MS, 800/);
 });
 
 test("location flow rejects poor fixes and map tile failures no longer render as an unexplained white screen", async () => {

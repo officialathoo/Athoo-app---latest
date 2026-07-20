@@ -4,7 +4,7 @@ import { logger } from "../lib/logger";
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
 import { refundRequestsTable, bookingsTable, usersTable, auditLogTable, financeLedgerTable } from "@workspace/db/schema";
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, gte, ilike, lte, or } from "drizzle-orm";
 import { requireAuth, requireAdmin, requirePermission, type AuthRequest } from "../middlewares/auth";
 import { emitToUser, emitToRole } from "../lib/eventBus";
 import { notifyUser } from "../lib/notifications";
@@ -143,18 +143,43 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
 export const refundsAdminRouter = Router();
 
-refundsAdminRouter.get("/", requireAuth, requireAdmin, requirePermission("finance.read"), async (_req, res) => {
+refundsAdminRouter.get("/", requireAuth, requireAdmin, requirePermission("finance.read"), async (req, res) => {
   try {
+    const search = String(req.query.search || "").trim().slice(0, 120);
+    const status = String(req.query.status || "all").trim();
+    const focus = String(req.query.focus || "").trim();
+    const from = typeof req.query.from === "string" && req.query.from ? new Date(`${req.query.from}T00:00:00.000Z`) : null;
+    const to = typeof req.query.to === "string" && req.query.to ? new Date(`${req.query.to}T23:59:59.999Z`) : null;
+    const conditions: any[] = [];
+    if (focus) {
+      conditions.push(eq(refundRequestsTable.id, focus));
+    } else {
+      if (["pending", "approved", "rejected", "paid"].includes(status)) conditions.push(eq(refundRequestsTable.status, status));
+      if (from && !Number.isNaN(from.getTime())) conditions.push(gte(refundRequestsTable.createdAt, from));
+      if (to && !Number.isNaN(to.getTime())) conditions.push(lte(refundRequestsTable.createdAt, to));
+      if (search) {
+        const like = `%${search}%`;
+        conditions.push(or(
+          ilike(usersTable.publicId, like),
+          ilike(usersTable.name, like),
+          ilike(usersTable.phone, like),
+          ilike(bookingsTable.service, like),
+          ilike(refundRequestsTable.reason, like),
+        ));
+      }
+    }
     const rows = await db
       .select({
         r: refundRequestsTable,
-        booking: { id: bookingsTable.id, service: bookingsTable.service, price: bookingsTable.price },
-        customer: { id: usersTable.id, name: usersTable.name, phone: usersTable.phone },
+        booking: { id: bookingsTable.id, publicId: bookingsTable.publicId, service: bookingsTable.service, price: bookingsTable.price },
+        customer: { id: usersTable.id, publicId: usersTable.publicId, name: usersTable.name, phone: usersTable.phone },
       })
       .from(refundRequestsTable)
       .innerJoin(bookingsTable, eq(bookingsTable.id, refundRequestsTable.bookingId))
       .innerJoin(usersTable, eq(usersTable.id, refundRequestsTable.customerId))
-      .orderBy(desc(refundRequestsTable.createdAt));
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(desc(refundRequestsTable.createdAt))
+      .limit(focus ? 1 : 500);
     res.json({
       refunds: rows.map((r) => ({ ...r.r, booking: r.booking, customer: r.customer })),
     });

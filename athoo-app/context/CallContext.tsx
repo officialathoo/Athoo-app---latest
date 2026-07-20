@@ -59,8 +59,9 @@ const CHUNK_OPTIONS = {
 
 // The backend owns fallback-audio tuning so deployments can adjust it without
 // rebuilding the mobile app. These limits are only safe client-side guards.
-const DEFAULT_FALLBACK_CHUNK_MS = 400;
-const MIN_FALLBACK_CHUNK_MS = 250;
+const DEFAULT_FALLBACK_CHUNK_MS = 800;
+const DEFAULT_FALLBACK_ACTIVATION_MS = 3_000;
+const MIN_FALLBACK_CHUNK_MS = 400;
 const MAX_FALLBACK_CHUNK_MS = 2_000;
 
 function normalizeFallbackChunkMs(value: unknown): number {
@@ -211,12 +212,16 @@ function ActiveCallBanner({ call, duration, onEnd }: {
 // ─── Provider ─────────────────────────────────────────────────────────────────
 export function CallProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  const iceConfigurationRef = useRef<{ iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }> }>({ iceServers: [] });
+  const iceConfigurationRef = useRef<{
+    iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }>;
+    iceTransportPolicy: "all" | "relay";
+  }>({ iceServers: [], iceTransportPolicy: "all" });
   const rtcProductionReadyRef = useRef(false);
   const iceConfigurationExpiresAtRef = useRef(0);
   const iceConfigurationRequestRef = useRef<Promise<boolean> | null>(null);
   const iceRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fallbackChunkMsRef = useRef(DEFAULT_FALLBACK_CHUNK_MS);
+  const fallbackActivationMsRef = useRef(DEFAULT_FALLBACK_ACTIVATION_MS);
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setMutedState] = useState(false);
@@ -264,7 +269,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const localStreamRef = useRef<any>(null);
   const remoteStreamRef = useRef<any>(null);
   const rtcConnectedRef = useRef(false);
+  const remoteTrackReceivedRef = useRef(false);
+  const inboundAudioBytesRef = useRef(0);
+  const inboundAudioPacketsRef = useRef(0);
   const rtcFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rtcMediaWatchdogAttemptRef = useRef(0);
   const rtcDisconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const signalingCallIdRef = useRef<string | null>(null);
   const pendingLocalCandidatesRef = useRef<any[]>([]);
@@ -328,14 +337,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (!canUseWebRtc() || !pcRef.current) {
           startVoiceStreaming(callId);
         } else {
-          if (rtcFallbackTimerRef.current) clearTimeout(rtcFallbackTimerRef.current);
-          rtcFallbackTimerRef.current = setTimeout(() => {
-            if (!rtcConnectedRef.current && activeCallRef.current?.state === "active") {
-              appLogger.warn("calls", "[CallContext] WebRTC connection timed out; activating audio fallback");
-              closePeerConnection();
-              startVoiceStreaming(callId);
-            }
-          }, 3_500);
+          scheduleRtcMediaWatchdog(callId, fallbackActivationMsRef.current);
         }
       }
 
@@ -367,6 +369,81 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
   }, [activeCall?.state]);
 
+  async function hasInboundAudioMedia(pc: any): Promise<boolean> {
+    try {
+      const stats = await pc?.getStats?.();
+      let bytesReceived = 0;
+      let packetsReceived = 0;
+      const inspect = (report: any) => {
+        if (!report || report.type !== "inbound-rtp") return;
+        const mediaKind = String(report.kind || report.mediaType || "").toLowerCase();
+        if (mediaKind && mediaKind !== "audio") return;
+        bytesReceived += Math.max(0, Number(report.bytesReceived || 0));
+        packetsReceived += Math.max(0, Number(report.packetsReceived || 0));
+      };
+      if (typeof stats?.forEach === "function") stats.forEach(inspect);
+      else if (Array.isArray(stats)) stats.forEach(inspect);
+      else if (stats && typeof stats === "object") Object.values(stats).forEach(inspect);
+
+      inboundAudioBytesRef.current = Math.max(inboundAudioBytesRef.current, bytesReceived);
+      inboundAudioPacketsRef.current = Math.max(inboundAudioPacketsRef.current, packetsReceived);
+      return bytesReceived > 0 || packetsReceived > 0;
+    } catch (error) {
+      appLogger.debug("calls", "[CallContext] unable to read inbound audio stats", error);
+      return false;
+    }
+  }
+
+  function scheduleRtcMediaWatchdog(callId: string, delayMs: number) {
+    if (rtcFallbackTimerRef.current) clearTimeout(rtcFallbackTimerRef.current);
+    rtcFallbackTimerRef.current = setTimeout(() => {
+      rtcFallbackTimerRef.current = null;
+      void (async () => {
+        if (activeCallRef.current?.state !== "active" || activeCallRef.current.callId !== callId) return;
+        const pc = pcRef.current;
+        const inboundAudioUsable = Boolean(pc) && await hasInboundAudioMedia(pc);
+        if (inboundAudioUsable) {
+          rtcConnectedRef.current = true;
+          if (isStreamingRef.current) stopVoiceStreaming();
+          void soundService.setCallSpeakerMode(isSpeaker);
+          appLogger.debug("calls", "[CallContext] inbound WebRTC audio packets confirmed", {
+            bytesReceived: inboundAudioBytesRef.current,
+            packetsReceived: inboundAudioPacketsRef.current,
+          });
+          return;
+        }
+
+        const connectionState = String(pc?.connectionState || "new");
+        const iceState = String(pc?.iceConnectionState || "new");
+        const stillNegotiating = ["new", "connecting"].includes(connectionState)
+          || ["new", "checking"].includes(iceState);
+        if (stillNegotiating && rtcMediaWatchdogAttemptRef.current < 1) {
+          rtcMediaWatchdogAttemptRef.current += 1;
+          appLogger.debug("calls", "[CallContext] WebRTC audio is not flowing yet; extending media watchdog", {
+            connectionState,
+            iceState,
+            remoteTrackReceived: remoteTrackReceivedRef.current,
+            attempt: rtcMediaWatchdogAttemptRef.current,
+          });
+          scheduleRtcMediaWatchdog(callId, 1_500);
+          return;
+        }
+
+        appLogger.warn("calls", "[CallContext] WebRTC carried no inbound audio; activating authenticated audio fallback", {
+          connected: rtcConnectedRef.current,
+          remoteTrackReceived: remoteTrackReceivedRef.current,
+          bytesReceived: inboundAudioBytesRef.current,
+          packetsReceived: inboundAudioPacketsRef.current,
+          connectionState,
+          iceState,
+        });
+        if (activeCallRef.current?.state !== "active" || activeCallRef.current.callId !== callId) return;
+        closePeerConnection();
+        startVoiceStreaming(callId);
+      })();
+    }, Math.max(1_000, delayMs));
+  }
+
   function canUseWebRtc(): boolean {
     return Boolean(
       WebRTCAvailable &&
@@ -397,8 +474,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             })
           : [];
         rtcProductionReadyRef.current = Boolean(configuration.productionReady && iceServers.length > 0);
-        iceConfigurationRef.current = rtcProductionReadyRef.current ? { iceServers } : { iceServers: [] };
+        const iceTransportPolicy = configuration.iceTransportPolicy === "relay" ? "relay" : "all";
+        iceConfigurationRef.current = rtcProductionReadyRef.current
+          ? { iceServers, iceTransportPolicy }
+          : { iceServers: [], iceTransportPolicy: "all" };
         fallbackChunkMsRef.current = normalizeFallbackChunkMs(configuration.audio?.fallbackChunkMs);
+        fallbackActivationMsRef.current = Math.min(15_000, Math.max(3_000, Number(configuration.audio?.fallbackActivationMs || DEFAULT_FALLBACK_ACTIVATION_MS)));
 
         const parsedExpiry = configuration.expiresAt ? Date.parse(configuration.expiresAt) : Number.NaN;
         iceConfigurationExpiresAtRef.current = Number.isFinite(parsedExpiry)
@@ -418,7 +499,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
         if (rtcProductionReadyRef.current && pcRef.current?.setConfiguration) {
           try {
-            pcRef.current.setConfiguration({ iceServers });
+            pcRef.current.setConfiguration({ iceServers, iceTransportPolicy });
           } catch (error) {
             appLogger.warn("calls", "[CallContext] unable to refresh active ICE configuration", error);
           }
@@ -432,9 +513,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       .catch((error) => {
         appLogger.warn("calls", "[CallContext] Unable to load ICE configuration; using authenticated audio fallback", error);
         rtcProductionReadyRef.current = false;
-        iceConfigurationRef.current = { iceServers: [] };
+        iceConfigurationRef.current = { iceServers: [], iceTransportPolicy: "all" };
         iceConfigurationExpiresAtRef.current = 0;
         fallbackChunkMsRef.current = DEFAULT_FALLBACK_CHUNK_MS;
+        fallbackActivationMsRef.current = DEFAULT_FALLBACK_ACTIVATION_MS;
         return false;
       })
       .finally(() => {
@@ -448,7 +530,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user) {
       rtcProductionReadyRef.current = false;
-      iceConfigurationRef.current = { iceServers: [] };
+      iceConfigurationRef.current = { iceServers: [], iceTransportPolicy: "all" };
       iceConfigurationExpiresAtRef.current = 0;
       fallbackChunkMsRef.current = DEFAULT_FALLBACK_CHUNK_MS;
       if (iceRefreshTimerRef.current) clearTimeout(iceRefreshTimerRef.current);
@@ -469,6 +551,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     remoteStreamRef.current = null;
     pcRef.current = null;
     rtcConnectedRef.current = false;
+    remoteTrackReceivedRef.current = false;
+    inboundAudioBytesRef.current = 0;
+    inboundAudioPacketsRef.current = 0;
+    rtcMediaWatchdogAttemptRef.current = 0;
     signalingCallIdRef.current = null;
     pendingLocalCandidatesRef.current = [];
     appliedCalleeCandRef.current = 0;
@@ -490,6 +576,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     signalingCallIdRef.current = callId;
     pendingLocalCandidatesRef.current = [];
     rtcConnectedRef.current = false;
+    remoteTrackReceivedRef.current = false;
+    inboundAudioBytesRef.current = 0;
+    inboundAudioPacketsRef.current = 0;
+    rtcMediaWatchdogAttemptRef.current = 0;
     const pc = new _RTCPeerConnection(iceConfigurationRef.current);
     pcRef.current = pc;
     pc.onicecandidate = async (event: any) => {
@@ -506,15 +596,20 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     };
     pc.ontrack = (event: any) => {
       remoteStreamRef.current = event.streams?.[0] || remoteStreamRef.current;
-      appLogger.debug("calls", "[CallContext] remote audio track received");
+      remoteTrackReceivedRef.current = true;
+      try { if (event.track) event.track.enabled = true; } catch {}
+      // Track creation alone is not proof that audio is flowing. The media
+      // watchdog confirms inbound RTP bytes before cancelling fallback.
+      void soundService.setCallSpeakerMode(isSpeaker);
+      appLogger.debug("calls", "[CallContext] remote audio track received; waiting for inbound packets");
     };
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState;
       if (state === "connected") {
         rtcConnectedRef.current = true;
-        if (rtcFallbackTimerRef.current) { clearTimeout(rtcFallbackTimerRef.current); rtcFallbackTimerRef.current = null; }
+        // A connected ICE state and a remote track can still carry zero audio.
+        // Keep the watchdog active until inbound RTP packets are confirmed.
         if (rtcDisconnectTimerRef.current) { clearTimeout(rtcDisconnectTimerRef.current); rtcDisconnectTimerRef.current = null; }
-        if (isStreamingRef.current) stopVoiceStreaming();
         void soundService.setCallSpeakerMode(isSpeaker);
       } else if (state === "disconnected") {
         rtcConnectedRef.current = false;

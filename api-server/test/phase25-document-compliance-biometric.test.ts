@@ -39,7 +39,7 @@ test("migration and schema implement provider document expiry, renewal requests,
   const migrations = readRepo("lib/db/src/migrations.ts");
   const schema = readRepo("lib/db/src/schema/index.ts");
 
-  assert.match(migrations, /20260720_provider_document_expiry_lifecycle\.sql/);
+  assert.match(migrations, /20260720_release_phase28_professional_workflow_integrity\.sql/);
   assert.match(migration, /provider_document_update_requests/);
   assert.match(migration, /provider_document_updates_one_pending_uidx/);
   assert.match(migration, /document_compliance_status IN \('active','action_required','warning','grace','renewal_pending','suspended'\)/);

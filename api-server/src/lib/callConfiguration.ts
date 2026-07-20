@@ -6,6 +6,8 @@ export type IceServerConfiguration = {
   credential?: string;
 };
 
+export type IceTransportPolicy = "all" | "relay";
+
 type RuntimeCallConfiguration = ReturnType<typeof getCallConfiguration> & {
   expiresAt?: string;
   ttlSeconds?: number;
@@ -38,6 +40,15 @@ function boundedInteger(value: unknown, fallback: number, minimum: number, maxim
 
 function configuredProvider(): string {
   return String(process.env.CALL_PROVIDER || "webrtc").trim().toLowerCase();
+}
+
+function configuredIceTransportPolicy(provider = configuredProvider()): IceTransportPolicy {
+  const configured = String(process.env.CALL_ICE_TRANSPORT_POLICY || "").trim().toLowerCase();
+  if (configured === "all" || configured === "relay") return configured;
+  // Cloudflare TURN is the production transport. Relay-only avoids false-positive
+  // direct ICE connections that report connected while carrying no audio on
+  // carrier-grade NAT and restrictive mobile networks.
+  return ["cloudflare-turn", "cloudflare-realtime-turn", "cloudflare_turn"].includes(provider) ? "relay" : "all";
 }
 
 function cloudflareSettings() {
@@ -91,6 +102,7 @@ function staticCallConfiguration() {
     validStunUrls,
     validTurnUrls,
     productionReady: validTurnUrls && hasTurnCredentials,
+    iceTransportPolicy: configuredIceTransportPolicy(),
   };
 }
 
@@ -191,6 +203,7 @@ async function generateCloudflareTurnConfiguration(subjectId: string): Promise<R
         validStunUrls: true,
         validTurnUrls: true,
         productionReady: true,
+        iceTransportPolicy: configuredIceTransportPolicy("cloudflare-turn"),
         warning: null,
         credentialMode: "short-lived",
         ttlSeconds: settings.ttlSeconds,

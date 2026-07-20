@@ -405,8 +405,12 @@ services:
         sync: false
       - key: TURN_CREDENTIAL
         sync: false
+      - key: CALL_ICE_TRANSPORT_POLICY
+        value: relay
       - key: CALL_FALLBACK_CHUNK_MS
-        value: "400"
+        value: "800"
+      - key: CALL_FALLBACK_ACTIVATION_MS
+        value: "3000"
       - key: CALL_PREFERRED_CODEC
         value: opus
       - key: COMMISSION_INCLUDES_VISIT_CHARGE

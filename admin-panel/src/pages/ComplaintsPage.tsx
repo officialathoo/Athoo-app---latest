@@ -16,6 +16,7 @@ interface SupportTicket {
   userName: string;
   userPhone: string;
   userRole?: string;
+  userPublicId?: string | null;
   category?: string;
   subject: string;
   description?: string;
@@ -68,6 +69,8 @@ export function ComplaintsPage() {
   const [search, setSearch] = useState(initialParams.get("q") || "");
   const [statusFilter, setStatusFilter] = useState(initialParams.get("status") || "all");
   const [priorityFilter, setPriorityFilter] = useState(initialParams.get("priority") || "all");
+  const [from, setFrom] = useState(initialParams.get("from") || "");
+  const [to, setTo] = useState(initialParams.get("to") || "");
   const [selected, setSelected] = useState<SupportTicket | null>(null);
   const [focusOpened, setFocusOpened] = useState(false);
   const [newNote, setNewNote] = useState("");
@@ -76,9 +79,9 @@ export function ComplaintsPage() {
   const [showResolution, setShowResolution] = useState(false);
 
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ["support-tickets", statusFilter, priorityFilter, search, focusId],
+    queryKey: ["support-tickets", statusFilter, priorityFilter, search, from, to, focusId],
     queryFn: () => api<{ tickets: SupportTicket[] }>("/api/admin/support", {
-      params: focusId ? { focus: focusId } : { q: search || undefined, status: statusFilter, priority: priorityFilter },
+      params: focusId ? { focus: focusId } : { q: search || undefined, status: statusFilter, priority: priorityFilter, from: from || undefined, to: to || undefined },
     }),
     refetchInterval: 180000,
   });
@@ -195,6 +198,8 @@ export function ComplaintsPage() {
             <option value="normal">Normal</option>
             <option value="low">Low</option>
           </select>
+          <input aria-label="Complaints from date" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="px-3 py-2 text-sm border border-slate-200 rounded-xl bg-white" />
+          <input aria-label="Complaints to date" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="px-3 py-2 text-sm border border-slate-200 rounded-xl bg-white" />
           <button onClick={() => refetch()} className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 transition-colors">
             <RefreshCw size={16} />
           </button>
@@ -220,6 +225,7 @@ export function ComplaintsPage() {
               render: t => (
                 <div>
                   <p className="text-sm font-medium text-slate-700">{t.userName}</p>
+                  {t.userPublicId ? <p className="font-mono text-[11px] font-semibold text-slate-500">{t.userPublicId}</p> : null}
                   <p className="text-xs text-slate-400">{t.userPhone}</p>
                 </div>
               ),
@@ -278,7 +284,7 @@ export function ComplaintsPage() {
                 </div>
                 <h3 className="font-semibold text-slate-800 text-base">{selected.subject}</h3>
                 <p className="text-xs text-slate-400 mt-1 flex items-center gap-1.5">
-                  <User size={11} /> {selected.userName} · {selected.userPhone}
+                  <User size={11} /> {selected.userName}{selected.userPublicId ? ` · ${selected.userPublicId}` : ""} · {selected.userPhone}
                   {selected.assignedToName && <span className="ml-2">· Assigned to {selected.assignedToName}</span>}
                 </p>
               </div>

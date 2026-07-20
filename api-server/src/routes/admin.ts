@@ -32,6 +32,8 @@ import {
   bookingOperationsTable,
   financeLedgerTable,
   notificationTemplatesTable,
+  reportIssuesTable,
+  adminWorkItemViewsTable,
 } from "@workspace/db/schema";
 import { and, between, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import {
@@ -69,6 +71,7 @@ import { getOtpDeliveryConfigurationStatus } from "../lib/otpDelivery";
 import { getStorageConfigurationStatus, testConfiguredStorageProvider } from "../lib/storageProvider";
 import { getInfrastructureProviderStatus } from "../lib/infrastructureConfiguration";
 import { queueStats } from "../lib/queue";
+import { publicUserId } from "../lib/publicIds";
 
 
 function isStrongAdminPassword(value: string): boolean {
@@ -245,6 +248,256 @@ router.get("/dashboard", requirePermission("dashboard.read"), async (_req, res) 
   }
 });
 
+
+type AdminWorkItem = {
+  resourceType: string;
+  id: string;
+  status: string;
+  title: string;
+  description: string;
+  personId?: string | null;
+  personName?: string | null;
+  personPublicId?: string | null;
+  priority: "critical" | "high" | "normal";
+  createdAt: Date | null;
+  href: string;
+  seen?: boolean;
+};
+
+router.get("/operations-inbox", requirePermission("dashboard.read"), async (req: AuthRequest, res) => {
+  try {
+    const perTypeLimit = Math.min(50, Math.max(5, Number(req.query.perTypeLimit) || 50));
+    const requestedType = String(req.query.type || "all").trim();
+    const visibility = String(req.query.visibility || "all").trim();
+    const search = String(req.query.search || "").trim().slice(0, 120).toLowerCase();
+    const fromValue = String(req.query.from || "").trim();
+    const toValue = String(req.query.to || "").trim();
+    const from = fromValue ? new Date(`${fromValue}T00:00:00.000Z`) : null;
+    const to = toValue ? new Date(`${toValue}T23:59:59.999Z`) : null;
+    const supportedTypes = new Set([
+      "all", "admin_notification", "inactive_account_review", "provider_verification", "document_renewal",
+      "rate_request", "refund", "withdrawal", "commission_payment", "subscription", "support_ticket",
+      "reported_issue", "service_request", "deletion_request", "overdue_negotiation",
+    ]);
+    if (!supportedTypes.has(requestedType)) return res.status(400).json({ error: "Invalid operations inbox type" });
+    if (!["all", "seen", "unseen"].includes(visibility)) return res.status(400).json({ error: "Invalid operations inbox visibility" });
+    if (from && Number.isNaN(from.getTime())) return res.status(400).json({ error: "Invalid operations inbox from date" });
+    if (to && Number.isNaN(to.getTime())) return res.status(400).json({ error: "Invalid operations inbox to date" });
+    if (from && to && from > to) return res.status(400).json({ error: "Operations inbox date range is invalid" });
+    const includeType = (type: string) => requestedType === "all" || requestedType === type;
+    const queries: Array<Promise<AdminWorkItem[]>> = [];
+
+    if (hasAdminPermission(req.user!, "notifications.read") && includeType("admin_notification")) {
+      const adminId = req.user!.userId;
+      queries.push(db.select().from(adminNotificationsTable)
+        .where(or(eq(adminNotificationsTable.targetAdminId, adminId), isNull(adminNotificationsTable.targetAdminId)))
+        .orderBy(desc(adminNotificationsTable.createdAt)).limit(perTypeLimit).then((rows) => rows.map((row) => ({
+          resourceType: "admin_notification", id: row.id, status: "open", title: row.title,
+          description: row.message.slice(0, 180),
+          priority: row.type === "error" || row.type === "security" ? "critical" as const : row.type === "warning" ? "high" as const : "normal" as const,
+          createdAt: row.createdAt, href: row.link || "/",
+          seen: Array.isArray(row.readByAdminIds) && row.readByAdminIds.includes(adminId),
+        }))));
+    }
+
+    if (hasAdminPermission(req.user!, "users.read") && includeType("inactive_account_review")) {
+      queries.push(db.select({
+        id: usersTable.id, status: usersTable.inactivityState, name: usersTable.name,
+        publicId: usersTable.publicId, createdAt: usersTable.inactivityReviewAt,
+      }).from(usersTable).where(and(
+        eq(usersTable.inactivityState, "review"),
+        eq(usersTable.accountStatus, "active"),
+        eq(usersTable.isDeactivated, false),
+        eq(usersTable.isBlocked, false),
+      )).orderBy(desc(usersTable.inactivityReviewAt)).limit(perTypeLimit).then((rows) => rows.map((row) => ({
+        resourceType: "inactive_account_review", id: row.id, status: row.status || "review",
+        title: "Inactive account review", description: `${row.name} requires an admin retention review.`,
+        personId: row.id, personName: row.name, personPublicId: row.publicId,
+        priority: "normal" as const, createdAt: row.createdAt, href: `/inactive-accounts?focus=${encodeURIComponent(row.id)}`,
+      }))));
+    }
+
+    if (hasAdminPermission(req.user!, "verification.write")) {
+      if (includeType("provider_verification")) queries.push(db.select({
+        id: usersTable.id, status: usersTable.verificationStatus, name: usersTable.name,
+        publicId: usersTable.publicId, createdAt: usersTable.joinedAt,
+      }).from(usersTable).where(and(eq(usersTable.role, "provider"), inArray(usersTable.verificationStatus, ["pending", "in_process"])))
+        .orderBy(desc(usersTable.joinedAt)).limit(perTypeLimit).then((rows) => rows.map((row) => ({
+          resourceType: "provider_verification", id: row.id, status: row.status || "pending",
+          title: "Provider verification", description: `${row.name} is waiting for identity review.`,
+          personId: row.id, personName: row.name, personPublicId: row.publicId, priority: "high" as const,
+          createdAt: row.createdAt, href: `/verification?focus=${encodeURIComponent(row.id)}`,
+        }))));
+      if (includeType("document_renewal")) queries.push(db.select().from(providerDocumentUpdateRequestsTable)
+        .where(eq(providerDocumentUpdateRequestsTable.status, "pending"))
+        .orderBy(desc(providerDocumentUpdateRequestsTable.createdAt)).limit(perTypeLimit).then((rows) => rows.map((row) => ({
+          resourceType: "document_renewal", id: row.id, status: row.status,
+          title: "Document renewal", description: `${row.documentType.replace(/_/g, " ")} replacement requires review.`,
+          personId: row.providerId, priority: "high" as const, createdAt: row.createdAt,
+          href: `/document-renewals?focus=${encodeURIComponent(row.id)}`,
+        }))));
+      if (includeType("rate_request")) queries.push(db.select().from(hourlyRateRequestsTable).where(eq(hourlyRateRequestsTable.status, "pending"))
+        .orderBy(desc(hourlyRateRequestsTable.createdAt)).limit(perTypeLimit).then((rows) => rows.map((row) => ({
+          resourceType: "rate_request", id: row.id, status: row.status || "pending", title: "Hourly rate request",
+          description: `${row.providerName} requested a new rate for ${row.service}.`, personId: row.providerId,
+          personName: row.providerName, priority: "normal" as const, createdAt: row.createdAt,
+          href: `/rate-requests?focus=${encodeURIComponent(row.id)}`,
+        }))));
+    }
+
+    if (hasAdminPermission(req.user!, "finance.write") || hasAdminPermission(req.user!, "finance.read")) {
+      if (includeType("refund")) queries.push(db.select().from(refundRequestsTable).where(eq(refundRequestsTable.status, "pending"))
+        .orderBy(desc(refundRequestsTable.createdAt)).limit(perTypeLimit).then((rows) => rows.map((row) => ({
+          resourceType: "refund", id: row.id, status: row.status, title: "Refund request",
+          description: `${row.bookingPublicId || "Booking"} · Rs. ${row.amountRequested.toLocaleString("en-PK")}`,
+          personId: row.customerId, priority: "high" as const, createdAt: row.createdAt,
+          href: `/refunds?focus=${encodeURIComponent(row.id)}`,
+        }))));
+      if (includeType("withdrawal")) queries.push(db.select().from(withdrawalRequestsTable).where(eq(withdrawalRequestsTable.status, "pending"))
+        .orderBy(desc(withdrawalRequestsTable.createdAt)).limit(perTypeLimit).then((rows) => rows.map((row) => ({
+          resourceType: "withdrawal", id: row.id, status: row.status, title: "Withdrawal request",
+          description: `Provider withdrawal · Rs. ${row.amount.toLocaleString("en-PK")}`, personId: row.providerId,
+          priority: "high" as const, createdAt: row.createdAt, href: `/withdrawals?focus=${encodeURIComponent(row.id)}`,
+        }))));
+      if (includeType("commission_payment")) queries.push(db.select().from(commissionPaymentsTable).where(eq(commissionPaymentsTable.status, "pending"))
+        .orderBy(desc(commissionPaymentsTable.createdAt)).limit(perTypeLimit).then((rows) => rows.map((row) => ({
+          resourceType: "commission_payment", id: row.id, status: row.status, title: "Commission payment",
+          description: `Payment proof · Rs. ${row.amount.toLocaleString("en-PK")}${row.reference ? ` · ${row.reference}` : ""}`,
+          personId: row.providerId, priority: "normal" as const, createdAt: row.createdAt,
+          href: `/commission?focus=${encodeURIComponent(row.id)}`,
+        }))));
+      if (includeType("subscription")) queries.push(db.select().from(userSubscriptionsTable).where(eq(userSubscriptionsTable.status, "pending"))
+        .orderBy(desc(userSubscriptionsTable.createdAt)).limit(perTypeLimit).then((rows) => rows.map((row) => ({
+          resourceType: "subscription", id: row.id, status: row.status, title: "Subscription review",
+          description: `Premium application · Rs. ${row.amount.toLocaleString("en-PK")}`, personId: row.userId,
+          priority: "normal" as const, createdAt: row.createdAt, href: `/plans?tab=subs&status=pending&focus=${encodeURIComponent(row.id)}`,
+        }))));
+    }
+
+    if (hasAdminPermission(req.user!, "complaints.read") || hasAdminPermission(req.user!, "support.read")) {
+      if (includeType("support_ticket")) queries.push(db.select().from(supportTicketsTable).where(inArray(supportTicketsTable.status, ["open", "in_progress"]))
+        .orderBy(desc(supportTicketsTable.createdAt)).limit(perTypeLimit).then((rows) => rows.map((row) => ({
+          resourceType: "support_ticket", id: row.id, status: row.status, title: row.subject,
+          description: row.message.slice(0, 160), personId: row.userId, personName: row.userName,
+          priority: row.priority === "urgent" ? "critical" as const : row.priority === "high" ? "high" as const : "normal" as const,
+          createdAt: row.createdAt, href: `/complaints?focus=${encodeURIComponent(row.id)}`,
+        }))));
+      if (includeType("reported_issue")) queries.push(db.select().from(reportIssuesTable).where(inArray(reportIssuesTable.status, ["open", "under_review"]))
+        .orderBy(desc(reportIssuesTable.createdAt)).limit(perTypeLimit).then((rows) => rows.map((row) => ({
+          resourceType: "reported_issue", id: row.id, status: row.status || "open", title: `Reported issue: ${row.category}`,
+          description: row.description.slice(0, 160), personId: row.reporterId, personName: row.reporterName,
+          priority: row.category === "fraud" ? "critical" as const : "high" as const, createdAt: row.createdAt,
+          href: `/reported-issues?focus=${encodeURIComponent(row.id)}`,
+        }))));
+    }
+
+    if (hasAdminPermission(req.user!, "operations.read")) {
+      if (includeType("service_request")) queries.push(db.select().from(serviceAddRequestsTable).where(eq(serviceAddRequestsTable.status, "pending"))
+        .orderBy(desc(serviceAddRequestsTable.createdAt)).limit(perTypeLimit).then((rows) => rows.map((row) => ({
+          resourceType: "service_request", id: row.id, status: row.status, title: "Service addition request",
+          description: row.serviceName, personId: row.providerId, priority: "normal" as const, createdAt: row.createdAt,
+          href: `/requests?tab=services&focus=${encodeURIComponent(row.id)}`,
+        }))));
+      if (includeType("deletion_request")) queries.push(db.select().from(accountDeletionRequestsTable).where(eq(accountDeletionRequestsTable.status, "pending"))
+        .orderBy(desc(accountDeletionRequestsTable.createdAt)).limit(perTypeLimit).then((rows) => rows.map((row) => ({
+          resourceType: "deletion_request", id: row.id, status: row.status, title: "Account deletion request",
+          description: row.reason || "Deletion requires operational review.", personId: row.userId,
+          priority: "high" as const, createdAt: row.createdAt, href: `/requests?tab=deletions&focus=${encodeURIComponent(row.id)}`,
+        }))));
+      const overdue = new Date();
+      if (includeType("overdue_negotiation")) queries.push(db.select().from(negotiationsTable).where(and(
+        inArray(negotiationsTable.status, ["customer_offer", "provider_counter"]),
+        lte(negotiationsTable.expiresAt, overdue),
+      )).orderBy(desc(negotiationsTable.updatedAt)).limit(perTypeLimit).then((rows) => rows.map((row) => ({
+        resourceType: "overdue_negotiation", id: row.id, status: row.status, title: "Overdue negotiation",
+        description: `${row.customerName} ↔ ${row.providerName} · ${row.service}`, personId: row.customerId,
+        personName: row.customerName, priority: "high" as const, createdAt: row.updatedAt,
+        href: `/negotiations?focus=${encodeURIComponent(row.id)}`,
+      }))));
+    }
+
+    let items = (await Promise.all(queries)).flat();
+    const personIds = [...new Set(items.map((item) => item.personId).filter((value): value is string => Boolean(value)))];
+    const people = personIds.length
+      ? await db.select({ id: usersTable.id, name: usersTable.name, publicId: usersTable.publicId }).from(usersTable).where(inArray(usersTable.id, personIds))
+      : [];
+    const personMap = new Map(people.map((person) => [person.id, person]));
+    const views = await db.select().from(adminWorkItemViewsTable)
+      .where(eq(adminWorkItemViewsTable.adminId, req.user!.userId)).orderBy(desc(adminWorkItemViewsTable.seenAt)).limit(2_000);
+    const seenKeys = new Set(views.map((view) => `${view.resourceType}:${view.resourceId}`));
+
+    items = items.map((item) => {
+      const person = item.personId ? personMap.get(item.personId) : null;
+      return {
+        ...item,
+        personName: item.personName || person?.name || null,
+        personPublicId: item.personPublicId || person?.publicId || null,
+        seen: Boolean(item.seen) || seenKeys.has(`${item.resourceType}:${item.id}`),
+      };
+    });
+
+    if (search) items = items.filter((item) => [item.title, item.description, item.personName, item.personPublicId, item.id].some((value) => String(value || "").toLowerCase().includes(search)));
+    if (requestedType !== "all") items = items.filter((item) => item.resourceType === requestedType);
+    if (visibility === "unseen") items = items.filter((item) => !item.seen);
+    if (visibility === "seen") items = items.filter((item) => item.seen);
+    if (from) items = items.filter((item) => item.createdAt && item.createdAt >= from);
+    if (to) items = items.filter((item) => item.createdAt && item.createdAt <= to);
+    items.sort((a, b) => {
+      const severity = { critical: 3, high: 2, normal: 1 } as const;
+      if (a.seen !== b.seen) return a.seen ? 1 : -1;
+      if (severity[a.priority] !== severity[b.priority]) return severity[b.priority] - severity[a.priority];
+      return Number(b.createdAt || 0) - Number(a.createdAt || 0);
+    });
+
+    return res.json({
+      items,
+      summary: {
+        totalOpen: items.length,
+        unseen: items.filter((item) => !item.seen).length,
+        critical: items.filter((item) => item.priority === "critical").length,
+        high: items.filter((item) => item.priority === "high").length,
+      },
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error({ err: error }, "admin operations inbox error");
+    return res.status(500).json({ error: "Failed to load operations inbox" });
+  }
+});
+
+router.post("/operations-inbox/seen", requirePermission("dashboard.read"), async (req: AuthRequest, res) => {
+  try {
+    const rawItems = Array.isArray(req.body?.items) ? req.body.items.slice(0, 200) : [];
+    const items = rawItems.map((item: any) => ({
+      resourceType: String(item?.resourceType || "").trim(),
+      resourceId: String(item?.resourceId || item?.id || "").trim(),
+    })).filter((item: any) => /^[a-z0-9_]{2,60}$/.test(item.resourceType) && item.resourceId.length >= 8 && item.resourceId.length <= 120);
+    if (!items.length) return res.status(400).json({ error: "At least one valid work item is required" });
+    const now = new Date();
+    await db.insert(adminWorkItemViewsTable).values(items.map((item: any) => ({
+      id: generateId(), adminId: req.user!.userId, resourceType: item.resourceType, resourceId: item.resourceId, seenAt: now,
+    }))).onConflictDoUpdate({
+      target: [adminWorkItemViewsTable.adminId, adminWorkItemViewsTable.resourceType, adminWorkItemViewsTable.resourceId],
+      set: { seenAt: now },
+    });
+    const notificationIds = items.filter((item: any) => item.resourceType === "admin_notification").map((item: any) => item.resourceId);
+    if (notificationIds.length) {
+      const adminId = req.user!.userId;
+      await db.update(adminNotificationsTable).set({
+        readByAdminIds: sql`COALESCE(${adminNotificationsTable.readByAdminIds}, '[]'::jsonb) || jsonb_build_array(${adminId}::text)`,
+      }).where(and(
+        inArray(adminNotificationsTable.id, notificationIds),
+        or(eq(adminNotificationsTable.targetAdminId, adminId), isNull(adminNotificationsTable.targetAdminId)),
+        sql`NOT (COALESCE(${adminNotificationsTable.readByAdminIds}, '[]'::jsonb) @> jsonb_build_array(${adminId}::text))`,
+      ));
+    }
+    return res.json({ success: true, seen: items.length });
+  } catch (error) {
+    logger.error({ err: error }, "admin operations inbox seen error");
+    return res.status(500).json({ error: "Failed to update work-item visibility" });
+  }
+});
+
 // CUSTOMER MANAGEMENT
 router.get("/customers", requirePermission("users.read"), async (req: AuthRequest, res) => {
   try {
@@ -255,8 +508,17 @@ router.get("/customers", requirePermission("users.read"), async (req: AuthReques
     const offset = (page - 1) * limit;
     const sort = ["name", "joinedAt", "totalJobs"].includes(String(req.query.sort)) ? String(req.query.sort) : "joinedAt";
     const direction = req.query.direction === "asc" ? "asc" : "desc";
+    const from = typeof req.query.from === "string" && req.query.from ? new Date(`${req.query.from}T00:00:00.000Z`) : null;
+    const to = typeof req.query.to === "string" && req.query.to ? new Date(`${req.query.to}T23:59:59.999Z`) : null;
     const conditions: any[] = [eq(usersTable.role, "customer")];
-    if (search) conditions.push(or(ilike(usersTable.name, `%${search}%`), ilike(usersTable.phone, `%${search}%`), ilike(usersTable.email, `%${search}%`)));
+    if (search) conditions.push(or(
+      ilike(usersTable.publicId, `%${search}%`),
+      ilike(usersTable.name, `%${search}%`),
+      ilike(usersTable.phone, `%${search}%`),
+      ilike(usersTable.email, `%${search}%`),
+    ));
+    if (from && !Number.isNaN(from.getTime())) conditions.push(gte(usersTable.joinedAt, from));
+    if (to && !Number.isNaN(to.getTime())) conditions.push(lte(usersTable.joinedAt, to));
     if (status === "active") conditions.push(eq(usersTable.isDeactivated, false));
     if (status === "deactivated") conditions.push(eq(usersTable.isDeactivated, true));
     const where = and(...conditions);
@@ -364,6 +626,7 @@ router.get("/users", requirePermission("users.read"), async (req, res) => {
     if (search) {
       conditions.push(
         or(
+          ilike(usersTable.publicId, `%${search}%`),
           ilike(usersTable.name, `%${search}%`),
           ilike(usersTable.phone, `%${search}%`),
           ilike(usersTable.email, `%${search}%`)
@@ -418,15 +681,20 @@ router.get("/providers", requirePermission("users.read"), async (req, res) => {
     const offset = (page - 1) * limit;
     const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
     const status = typeof req.query.status === "string" ? req.query.status.trim() : "all";
+    const from = typeof req.query.from === "string" && req.query.from ? new Date(`${req.query.from}T00:00:00.000Z`) : null;
+    const to = typeof req.query.to === "string" && req.query.to ? new Date(`${req.query.to}T23:59:59.999Z`) : null;
     const conditions: any[] = [eq(usersTable.role, "provider")];
     if (search) {
       conditions.push(or(
+        ilike(usersTable.publicId, `%${search}%`),
         ilike(usersTable.name, `%${search}%`),
         ilike(usersTable.phone, `%${search}%`),
         ilike(usersTable.email, `%${search}%`),
         ilike(usersTable.cnicNumber, `%${search}%`),
       ));
     }
+    if (from && !Number.isNaN(from.getTime())) conditions.push(gte(usersTable.joinedAt, from));
+    if (to && !Number.isNaN(to.getTime())) conditions.push(lte(usersTable.joinedAt, to));
     if (status === "blocked") conditions.push(eq(usersTable.isBlocked, true));
     if (status === "verified") conditions.push(eq(usersTable.isVerified, true));
     if (status === "unverified") conditions.push(eq(usersTable.isVerified, false));
@@ -1443,17 +1711,25 @@ router.get("/support", requirePermission("complaints.read"), async (req, res) =>
     const status = String(req.query.status || "all");
     const priority = String(req.query.priority || "all");
     const focus = String(req.query.focus || "").trim();
+    const from = typeof req.query.from === "string" && req.query.from ? new Date(`${req.query.from}T00:00:00.000Z`) : null;
+    const to = typeof req.query.to === "string" && req.query.to ? new Date(`${req.query.to}T23:59:59.999Z`) : null;
     const validStatuses = new Set(["all", "open", "in_progress", "resolved", "closed"]);
     const validPriorities = new Set(["all", "urgent", "high", "normal", "low"]);
     if (!validStatuses.has(status)) return res.status(400).json({ error: "Invalid support status" });
     if (!validPriorities.has(priority)) return res.status(400).json({ error: "Invalid support priority" });
 
+    const publicIdMatches = q
+      ? await db.select({ id: usersTable.id }).from(usersTable).where(ilike(usersTable.publicId, `%${q}%`)).limit(200)
+      : [];
+    const publicIdUserIds = publicIdMatches.map((row) => row.id);
     const conditions: any[] = [];
     if (focus) {
       conditions.push(eq(supportTicketsTable.id, focus));
     } else {
       if (status !== "all") conditions.push(eq(supportTicketsTable.status, status));
       if (priority !== "all") conditions.push(eq(supportTicketsTable.priority, priority));
+      if (from && !Number.isNaN(from.getTime())) conditions.push(gte(supportTicketsTable.createdAt, from));
+      if (to && !Number.isNaN(to.getTime())) conditions.push(lte(supportTicketsTable.createdAt, to));
       if (q) {
         const like = `%${q}%`;
         conditions.push(or(
@@ -1463,6 +1739,7 @@ router.get("/support", requirePermission("complaints.read"), async (req, res) =>
           ilike(supportTicketsTable.userPhone, like),
           eq(supportTicketsTable.id, q),
           eq(supportTicketsTable.bookingId, q),
+          ...(publicIdUserIds.length ? [inArray(supportTicketsTable.userId, publicIdUserIds)] : []),
         ));
       }
     }
@@ -1475,15 +1752,18 @@ router.get("/support", requirePermission("complaints.read"), async (req, res) =>
       .limit(focus ? 1 : 200);
 
     const assignedIds = [...new Set(tickets.map((ticket) => ticket.assignedTo).filter((id): id is string => Boolean(id)))];
-    const assignedAdmins = assignedIds.length
-      ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, assignedIds))
+    const ticketUserIds = [...new Set(tickets.map((ticket) => ticket.userId).filter(Boolean))];
+    const peopleIds = [...new Set([...assignedIds, ...ticketUserIds])];
+    const people = peopleIds.length
+      ? await db.select({ id: usersTable.id, name: usersTable.name, publicId: usersTable.publicId }).from(usersTable).where(inArray(usersTable.id, peopleIds))
       : [];
-    const assignedNames = new Map(assignedAdmins.map((admin) => [admin.id, admin.name]));
+    const peopleMap = new Map(people.map((person) => [person.id, person]));
 
     return res.json({
       tickets: tickets.map((ticket) => ({
         ...ticket,
-        assignedToName: ticket.assignedTo ? assignedNames.get(ticket.assignedTo) || null : null,
+        userPublicId: peopleMap.get(ticket.userId)?.publicId || null,
+        assignedToName: ticket.assignedTo ? peopleMap.get(ticket.assignedTo)?.name || null : null,
       })),
     });
   } catch (e) {
@@ -1968,8 +2248,10 @@ router.post("/admin-users", requireSuperAdmin, async (req: AuthRequest, res) => 
     const bcrypt = await import("bcryptjs");
     const hashed = await bcrypt.hash(password, 12);
 
+    const newAdminId = generateId();
     const newAdmin = {
-      id: generateId(),
+      id: newAdminId,
+      publicId: publicUserId("admin", newAdminId),
       name: name.trim(),
       phone: phone.trim(),
       email: email?.trim() || null,
@@ -2476,6 +2758,8 @@ router.get("/sidebar-counts", async (req: AuthRequest, res) => {
       pendingServiceRequests,
       pendingDeletionRequests,
       inactiveAccountsForReview,
+      openReportedIssues,
+      overdueNegotiationsForReview,
     ] = await Promise.all([
       db.$count(usersTable, and(eq(usersTable.role, "provider"), eq(usersTable.verificationStatus, "pending"))),
       db.$count(providerDocumentUpdateRequestsTable, eq(providerDocumentUpdateRequestsTable.status, "pending")),
@@ -2488,6 +2772,11 @@ router.get("/sidebar-counts", async (req: AuthRequest, res) => {
       db.$count(serviceAddRequestsTable, eq(serviceAddRequestsTable.status, "pending")),
       db.$count(accountDeletionRequestsTable, eq(accountDeletionRequestsTable.status, "pending")),
       db.$count(usersTable, and(eq(usersTable.inactivityState, "review"), eq(usersTable.accountStatus, "active"), eq(usersTable.isDeactivated, false), eq(usersTable.isBlocked, false))),
+      db.$count(reportIssuesTable, inArray(reportIssuesTable.status, ["open", "under_review"])),
+      db.$count(negotiationsTable, and(
+        inArray(negotiationsTable.status, ["customer_offer", "provider_counter"]),
+        lte(negotiationsTable.expiresAt, new Date()),
+      )),
     ]);
 
     // Count every visible unread notification. Do not cap this query to the
@@ -2513,6 +2802,8 @@ router.get("/sidebar-counts", async (req: AuthRequest, res) => {
         pendingServiceRequests,
         pendingDeletionRequests,
         inactiveAccountsForReview,
+        openReportedIssues,
+        overdueNegotiations: overdueNegotiationsForReview,
         unreadNotifications,
       },
     });
@@ -2623,7 +2914,7 @@ router.get("/search", requirePermission("users.read"), async (req: AuthRequest, 
     const [users, bookings, negs, invs, notes, complaints, broadcasts] = await Promise.all([
       // Users (customers + providers + admins)
       db.select({
-        id: usersTable.id, name: usersTable.name, phone: usersTable.phone,
+        id: usersTable.id, publicId: usersTable.publicId, name: usersTable.name, phone: usersTable.phone,
         email: usersTable.email, role: usersTable.role,
         isBlocked: usersTable.isBlocked, isDeactivated: usersTable.isDeactivated,
         verificationStatus: usersTable.verificationStatus,
@@ -2631,6 +2922,7 @@ router.get("/search", requirePermission("users.read"), async (req: AuthRequest, 
         .from(usersTable)
         .where(or(
           eq(usersTable.id, q),
+          ilike(usersTable.publicId, like),
           ilike(usersTable.name, like),
           ilike(usersTable.phone, like),
           ilike(usersTable.email, like),

@@ -44,6 +44,11 @@ const db = drizzle(pool, { schema });
 
 const id = () => crypto.randomUUID();
 const hash = (pw: string) => bcrypt.hashSync(pw, 12);
+const publicUserId = (role: "customer" | "provider" | "admin", rawId: string) => {
+  const prefix = role === "provider" ? "PRO" : role === "admin" ? "ADM" : "CUS";
+  const digest = crypto.createHash("sha256").update(`${role}:${rawId}`).digest("hex").slice(0, 16).toUpperCase();
+  return `${prefix}-${digest}`;
+};
 
 async function seed() {
   console.log("🌱 Starting ATHOO seed...\n");
@@ -211,6 +216,7 @@ async function seed() {
     .insert(schema.usersTable)
     .values({
       id: "user-admin-001",
+      publicId: publicUserId("admin", "user-admin-001"),
       name: "Super Admin",
       phone: "03000000001",
       email: "admin@athoo.pk",
@@ -240,6 +246,7 @@ async function seed() {
     .insert(schema.usersTable)
     .values({
       id: "user-customer-001",
+      publicId: publicUserId("customer", "user-customer-001"),
       name: "Ali Hassan",
       phone: "03000000002",
       email: "customer@athoo.pk",
@@ -266,6 +273,7 @@ async function seed() {
     .insert(schema.usersTable)
     .values({
       id: "user-provider-001",
+      publicId: publicUserId("provider", "user-provider-001"),
       name: "Usman Khalid",
       phone: "03000000004",
       email: "provider@athoo.pk",
@@ -303,6 +311,7 @@ async function seed() {
     .insert(schema.usersTable)
     .values({
       id: "user-customer-002",
+      publicId: publicUserId("customer", "user-customer-002"),
       name: "Sara Malik",
       phone: "03000000003",
       email: "sara@athoo.pk",
@@ -329,6 +338,7 @@ async function seed() {
     .insert(schema.usersTable)
     .values({
       id: "user-provider-002",
+      publicId: publicUserId("provider", "user-provider-002"),
       name: "Bilal Ahmed",
       phone: "03000000005",
       email: "bilal@athoo.pk",
