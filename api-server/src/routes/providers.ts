@@ -69,10 +69,14 @@ router.get("/nearest", async (req, res) => {
           serviceId ? arrayContains(usersTable.services, [serviceId]) : isNotNull(usersTable.id),
         )
       );
+    const maximumLocationAccuracy = Math.max(25, Math.min(1_000, Number(process.env.PROVIDER_LOCATION_MAX_ACCURACY_METERS || 250)));
+    const maximumLocationAgeMs = Math.max(60_000, Number(process.env.PROVIDER_LOCATION_MAX_AGE_MS || 30 * 60_000));
     const ranked = rows
       .map((p) => {
-        const pl = Number(p.latitude);
-        const pn = Number(p.longitude);
+        const locationAccuracy = Number(p.locationAccuracy);
+        const locationUpdatedAt = p.locationUpdatedAt ? new Date(p.locationUpdatedAt).getTime() : null;
+        if (Number.isFinite(locationAccuracy) && locationAccuracy > maximumLocationAccuracy) return null;
+        if (locationUpdatedAt && Date.now() - locationUpdatedAt > maximumLocationAgeMs) return null;
         const match = providerWithinRadius(p, lat, lng);
         return match.allowed ? { ...toPublicProvider(p), distanceKm: match.distanceKm, serviceRadiusKm: match.radiusKm } : null;
       })
@@ -219,15 +223,27 @@ router.patch("/location", requireAuth, async (req: AuthRequest, res) => {
       res.status(400).json({ error: "Invalid location accuracy" });
       return;
     }
+    const maximumAcceptedAccuracy = Math.max(25, Math.min(1_000, Number(process.env.PROVIDER_LOCATION_MAX_ACCURACY_METERS || 250)));
+    if (accuracy !== null && accuracy > maximumAcceptedAccuracy) {
+      res.status(422).json({
+        error: `Location accuracy is too low (${Math.round(accuracy)} m). Move near a window or outdoors and try again.`,
+        code: "LOCATION_ACCURACY_TOO_LOW",
+        maximumAccuracyMeters: maximumAcceptedAccuracy,
+      });
+      return;
+    }
 
     const provider = await db.query.usersTable.findFirst({ where: eq(usersTable.id, req.user!.userId) });
     if (!provider) { res.status(404).json({ error: "User not found" }); return; }
     if (provider.role !== "provider") { res.status(403).json({ error: "Provider account required" }); return; }
 
+    const capturedAt = new Date();
     const [updated] = await db.update(usersTable).set({
       latitude: String(latitude),
       longitude: String(longitude),
-      updatedAt: new Date(),
+      locationAccuracy: accuracy,
+      locationUpdatedAt: capturedAt,
+      updatedAt: capturedAt,
     }).where(eq(usersTable.id, provider.id)).returning();
 
     emitToUser(provider.id, "provider:location", {
@@ -311,6 +327,13 @@ router.patch("/availability", requireAuth, async (req: AuthRequest, res) => {
     }
     if (isAvailable && (!me.isVerified || me.verificationStatus !== "approved")) {
       res.status(403).json({ error: "Provider verification approval is required before going online" });
+      return;
+    }
+    if (isAvailable && (me.documentSuspendedAt || me.documentComplianceStatus === "suspended")) {
+      res.status(409).json({
+        error: me.documentComplianceReason || "Your provider account is temporarily paused until updated identity documents are approved.",
+        code: "DOCUMENT_RENEWAL_REQUIRED",
+      });
       return;
     }
     if (me.isBlocked && isAvailable) {

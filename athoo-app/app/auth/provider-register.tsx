@@ -148,6 +148,10 @@ export default function ProviderRegisterScreen() {
     name: "",
     fatherName: "",
     cnic: "",
+    cnicExpiry: "",
+    cnicLifetime: false,
+    policeIssuedAt: "",
+    policeExpiresAt: "",
     phone: phoneParam || "",
     email: "",
     services: [] as string[],
@@ -159,6 +163,13 @@ export default function ProviderRegisterScreen() {
   });
 
   const update = (key: string, val: string) => setForm((p) => ({ ...p, [key]: val }));
+  const updateBoolean = (key: "cnicLifetime", val: boolean) => setForm((p) => ({ ...p, [key]: val }));
+
+  const validDateOnly = (value: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const parsed = new Date(`${value}T12:00:00.000Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  };
 
   const toggleService = (id: string) => {
     setForm((p) => ({
@@ -263,6 +274,14 @@ export default function ProviderRegisterScreen() {
       Alert.alert(tr("Invalid CNIC"), tr("Enter a valid 13-digit CNIC number."));
       return false;
     }
+    if (!form.cnicLifetime && !validDateOnly(form.cnicExpiry)) {
+      Alert.alert(tr("CNIC Validity Required"), tr("Enter the CNIC valid-until date in YYYY-MM-DD format, or select Lifetime CNIC."));
+      return false;
+    }
+    if (!form.cnicLifetime && form.cnicExpiry < new Date().toISOString().slice(0, 10)) {
+      Alert.alert(tr("Expired CNIC"), tr("The CNIC valid-until date must be today or later."));
+      return false;
+    }
     if (!otpVerified) {
       Alert.alert(tr("Phone Not Verified"), tr("Please verify your phone number before continuing."));
       return false;
@@ -275,6 +294,19 @@ export default function ProviderRegisterScreen() {
   };
 
   const validateStep1 = () => {
+    if (!validDateOnly(form.policeIssuedAt) || !validDateOnly(form.policeExpiresAt)) {
+      Alert.alert(tr("Police Verification Validity Required"), tr("Enter the police certificate issue and valid-until dates in YYYY-MM-DD format."));
+      return false;
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    if (form.policeIssuedAt > today) {
+      Alert.alert(tr("Invalid Issue Date"), tr("The police certificate issue date cannot be in the future."));
+      return false;
+    }
+    if (form.policeExpiresAt < today || form.policeIssuedAt > form.policeExpiresAt) {
+      Alert.alert(tr("Invalid Validity Dates"), tr("The police certificate must still be valid and its issue date must be before the valid-until date."));
+      return false;
+    }
     const required = docItems.filter(d => d.required).map(d => d.id);
     const missing = required.filter(r => !uploadedDocs.includes(r));
     if (missing.length > 0) {
@@ -312,6 +344,10 @@ export default function ProviderRegisterScreen() {
       services: form.services,
       fatherName: form.fatherName.trim(),
       cnicNumber: form.cnic.replace(/\D/g, ""),
+      cnicExpiry: form.cnicLifetime ? undefined : form.cnicExpiry,
+      cnicLifetime: form.cnicLifetime,
+      policeIssuedAt: form.policeIssuedAt,
+      policeExpiresAt: form.policeExpiresAt,
       experience: form.experience.trim() || undefined,
       location: form.city ? `${form.city}${form.address ? ", " + form.address : ""}` : undefined,
       ratePerHour: form.hourlyRate ? parseInt(form.hourlyRate, 10) : undefined,
@@ -338,7 +374,20 @@ export default function ProviderRegisterScreen() {
             const ext = (localUri.split(".").pop() || "jpg").toLowerCase();
             const contentType = ext === "mp4" || ext === "mov" ? "video/mp4" : "image/jpeg";
             const objectPath = await uploadPickedImage(localUri, `${docId}.${ext}`, contentType, undefined, "private");
-            await api.postDocument({ type: docId, label: docLabel[docId] || docId, url: objectPath });
+            await api.postDocument({
+              type: docId,
+              label: docLabel[docId] || docId,
+              url: objectPath,
+              ...(docId === "cnic_front" || docId === "cnic_back" ? {
+                expiresAt: form.cnicLifetime ? undefined : form.cnicExpiry,
+                expiryNotApplicable: form.cnicLifetime,
+              } : {}),
+              ...(docId === "police" ? {
+                issuedAt: form.policeIssuedAt,
+                expiresAt: form.policeExpiresAt,
+                expiryNotApplicable: false,
+              } : {}),
+            });
           } catch {
             if (["cnic_front", "cnic_back", "selfie", "police"].includes(docId)) failedRequired.push(tr(docLabel[docId] || docId));
           }
@@ -420,6 +469,28 @@ export default function ProviderRegisterScreen() {
                 required
                 maxLength={13}
               />
+              <Pressable
+                style={[styles.declarationRow, localizedRow, { marginBottom: 10 }]}
+                onPress={() => updateBoolean("cnicLifetime", !form.cnicLifetime)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: form.cnicLifetime }}
+              >
+                <View style={[styles.checkbox, form.cnicLifetime && styles.checkboxChecked]}>
+                  {form.cnicLifetime && <Icon name="check" size={14} color={theme.colors.white} />}
+                </View>
+                <Text style={styles.declarationText}>{tr("This CNIC has lifetime validity")}</Text>
+              </Pressable>
+              {!form.cnicLifetime && (
+                <InputField
+                  label={tr("CNIC Valid Until")}
+                  value={form.cnicExpiry}
+                  onChange={(v: string) => update("cnicExpiry", v.replace(/[^0-9-]/g, "").slice(0, 10))}
+                  placeholder="YYYY-MM-DD"
+                  keyboardType="numbers-and-punctuation"
+                  required
+                  maxLength={10}
+                />
+              )}
               <InputField
                 label={tr("Phone Number")}
                 value={form.phone}
@@ -517,6 +588,29 @@ export default function ProviderRegisterScreen() {
                 </Text>
               </View>
 
+              <View style={styles.validityCard}>
+                <Text style={[styles.label, localizedText]}>{tr("Police Verification Validity")}</Text>
+                <Text style={styles.validityHint}>{tr("Enter the exact dates printed on the certificate. Athoo does not assume a fixed validity period.")}</Text>
+                <InputField
+                  label={tr("Issue Date")}
+                  value={form.policeIssuedAt}
+                  onChange={(v: string) => update("policeIssuedAt", v.replace(/[^0-9-]/g, "").slice(0, 10))}
+                  placeholder="YYYY-MM-DD"
+                  keyboardType="numbers-and-punctuation"
+                  required
+                  maxLength={10}
+                />
+                <InputField
+                  label={tr("Valid Until")}
+                  value={form.policeExpiresAt}
+                  onChange={(v: string) => update("policeExpiresAt", v.replace(/[^0-9-]/g, "").slice(0, 10))}
+                  placeholder="YYYY-MM-DD"
+                  keyboardType="numbers-and-punctuation"
+                  required
+                  maxLength={10}
+                />
+              </View>
+
               {docItems.map((doc) => {
                 const uploaded = uploadedDocs.includes(doc.id);
                 const fileUri = docFiles[doc.id];
@@ -558,7 +652,7 @@ export default function ProviderRegisterScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.policeTitle, localizedText]}>{tr("Police Verification")}</Text>
                   <Text style={styles.policeText}>
-                    {tr("After registration, our team will guide you through the police character certificate verification process. This builds customer trust and helps you get more bookings.")}
+                    {tr("Upload a current police character certificate and enter the exact issue and valid-until dates printed on it. Athoo will remind you before renewal is due.")}
                   </Text>
                 </View>
               </View>
@@ -600,6 +694,8 @@ export default function ProviderRegisterScreen() {
                   <Text style={[styles.reviewSummaryTitle, localizedText]}>{tr("Summary")}</Text>
                   <View style={[styles.summaryRow, localizedRow]}><Text style={[styles.summaryKey, localizedText]}>{tr("Name")}</Text><Text style={styles.summaryVal}>{form.name}</Text></View>
                   <View style={[styles.summaryRow, localizedRow]}><Text style={styles.summaryKey}>CNIC</Text><Text style={styles.summaryVal}>{"*".repeat(9) + form.cnic.slice(-4)}</Text></View>
+                  <View style={[styles.summaryRow, localizedRow]}><Text style={[styles.summaryKey, localizedText]}>{tr("CNIC Validity")}</Text><Text style={styles.summaryVal}>{form.cnicLifetime ? tr("Lifetime") : form.cnicExpiry}</Text></View>
+                  <View style={[styles.summaryRow, localizedRow]}><Text style={[styles.summaryKey, localizedText]}>{tr("Police Verification")}</Text><Text style={styles.summaryVal}>{form.policeIssuedAt} – {form.policeExpiresAt}</Text></View>
                   <View style={[styles.summaryRow, localizedRow]}><Text style={[styles.summaryKey, localizedText]}>{tr("Phone")}</Text><Text style={styles.summaryVal}>{form.phone.slice(0, 4) + "***" + form.phone.slice(-3)}</Text></View>
                   <View style={[styles.summaryRow, localizedRow]}><Text style={[styles.summaryKey, localizedText]}>{tr("Services")}</Text><Text style={[styles.summaryVal, localizedText]}>{tr("{{count}} selected", { count: form.services.length })}</Text></View>
                   <View style={[styles.summaryRow, localizedRow]}><Text style={[styles.summaryKey, localizedText]}>{tr("Documents")}</Text><Text style={styles.summaryVal}>{tr("{{uploaded}}/{{total}} uploaded", { uploaded: uploadedDocs.length, total: docItems.length })}</Text></View>
@@ -859,6 +955,20 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     justifyContent: "center",
   },
   docCheckDone: { backgroundColor: theme.colors.success },
+  validityCard: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 14,
+    backgroundColor: theme.colors.surfaceAlt,
+    gap: 10,
+  },
+  validityHint: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: theme.colors.textSecondary,
+  },
   policeBox: {
     flexDirection: "row",
     gap: 12,

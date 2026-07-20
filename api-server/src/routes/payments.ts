@@ -136,10 +136,14 @@ adminRouter.get("/accounts", requirePermission("finance.read"), async (_req, res
 
 adminRouter.post("/accounts", requirePermission("finance.write"), async (req: AuthRequest, res) => {
   try {
-    const { label, bankName, accountTitle, accountNumber, iban, instructions, isActive, sortOrder } =
+    const { label, bankName, accountTitle, accountNumber, iban, instructions, qrCodeUrl, isActive, sortOrder } =
       req.body ?? {};
     if (!label || !accountTitle || !accountNumber) {
       return res.status(400).json({ error: "label, accountTitle, accountNumber are required" });
+    }
+    const normalizedQrCodeUrl = normalizeStoredObjectPath(qrCodeUrl);
+    if (normalizedQrCodeUrl && !isOwnedUploadObjectPath(normalizedQrCodeUrl, req.user!.userId, ["shared"])) {
+      return res.status(400).json({ error: "QR code must be uploaded through the admin Athoo storage uploader" });
     }
     const newId = id();
     await db.insert(paymentAccountsTable).values({
@@ -150,6 +154,7 @@ adminRouter.post("/accounts", requirePermission("finance.write"), async (req: Au
       accountNumber: String(accountNumber).trim(),
       iban: iban ? String(iban).trim() : null,
       instructions: instructions ? String(instructions) : null,
+      qrCodeUrl: normalizedQrCodeUrl || null,
       isActive: isActive !== false,
       sortOrder: Number.isFinite(Number(sortOrder)) ? Number(sortOrder) : 0,
     });
@@ -180,7 +185,7 @@ adminRouter.patch("/accounts/:id", requirePermission("finance.write"), async (re
     });
     if (!acct) return res.status(404).json({ error: "Account not found" });
     const patch: Record<string, unknown> = { updatedAt: new Date() };
-    const { label, bankName, accountTitle, accountNumber, iban, instructions, isActive, sortOrder } =
+    const { label, bankName, accountTitle, accountNumber, iban, instructions, qrCodeUrl, isActive, sortOrder } =
       req.body ?? {};
     if (typeof label === "string" && label.trim()) patch.label = label.trim();
     if (typeof bankName === "string") patch.bankName = bankName.trim() || null;
@@ -188,6 +193,14 @@ adminRouter.patch("/accounts/:id", requirePermission("finance.write"), async (re
     if (typeof accountNumber === "string" && accountNumber.trim()) patch.accountNumber = accountNumber.trim();
     if (typeof iban === "string") patch.iban = iban.trim() || null;
     if (typeof instructions === "string") patch.instructions = instructions;
+    if (qrCodeUrl === null || qrCodeUrl === "") patch.qrCodeUrl = null;
+    if (typeof qrCodeUrl === "string" && qrCodeUrl.trim()) {
+      const normalizedQrCodeUrl = normalizeStoredObjectPath(qrCodeUrl);
+      if (!isOwnedUploadObjectPath(normalizedQrCodeUrl, req.user!.userId, ["shared"])) {
+        return res.status(400).json({ error: "QR code must be uploaded through the admin Athoo storage uploader" });
+      }
+      patch.qrCodeUrl = normalizedQrCodeUrl;
+    }
     if (typeof isActive === "boolean") patch.isActive = isActive;
     if (Number.isFinite(Number(sortOrder))) patch.sortOrder = Number(sortOrder);
     await db.update(paymentAccountsTable).set(patch).where(eq(paymentAccountsTable.id, acct.id));
@@ -319,7 +332,9 @@ adminRouter.post("/commission/:id/approve", requirePermission("finance.write"), 
       userId: provider.id,
       title: "Payment approved ✅",
       body: `Your commission payment of Rs ${pay.amount} has been approved.${shouldUnblock ? " Your account has been unblocked." : ""}`,
-      type: "system",
+      type: "commission_payment",
+      link: "/provider/pay-commission",
+      data: { paymentId: pay.id },
     
       email: { category: "transactional" },
     });
@@ -359,7 +374,9 @@ adminRouter.post("/commission/:id/reject", requirePermission("finance.write"), a
       userId: pay.providerId,
       title: "Payment rejected ❌",
       body: reason || "Your commission payment was rejected. Please contact support.",
-      type: "system",
+      type: "commission_payment",
+      link: "/provider/pay-commission",
+      data: { paymentId: pay.id },
     
       email: { category: "transactional" },
     });

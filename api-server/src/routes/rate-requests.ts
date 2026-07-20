@@ -11,6 +11,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { requireAuth, requireAdmin, requirePermission, type AuthRequest } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 import { notifyUser } from "../lib/notifications";
+import { createAdminNotification } from "../lib/adminNotifications";
 import { emitToRole, emitToUser } from "../lib/eventBus";
 import crypto from "crypto";
 
@@ -60,6 +61,16 @@ providerRouter.post("/", requireAuth, async (req: AuthRequest, res: Response) =>
       reason: reason || null, status: "pending",
     };
     await db.insert(hourlyRateRequestsTable).values(rateRequest);
+    try {
+      await createAdminNotification({
+        title: "New hourly-rate request",
+        message: `${provider.name} requested Rs. ${requestedRate} per hour for ${isGeneralRate ? "their profile" : service}.`,
+        type: "rate_request",
+        link: `/admin/rate-requests/${rateRequest.id}`,
+      });
+    } catch (notificationError) {
+      logger.error({ err: notificationError, rateRequestId: rateRequest.id }, "rate-request admin notification error");
+    }
     return res.status(201).json({ rateRequest });
   } catch (e) {
     logger.error({ err: e }, "rate-request create error");

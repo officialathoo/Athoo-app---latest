@@ -5,6 +5,10 @@ import { emitToUser } from "./eventBus";
 import { notifyUser } from "./notifications";
 import { logger } from "./logger";
 import { sweepInactiveAccounts } from "./inactivityLifecycle";
+import {
+  restoreProviderAvailabilityIfCompliant,
+  sweepProviderDocumentCompliance,
+} from "./documentCompliance";
 
 const NO_SHOW_GRACE_MS = 30 * 60 * 1000;
 // Pending bookings (no provider has accepted) auto-cancel after 10 minutes.
@@ -83,11 +87,7 @@ async function sweepStuckAcceptedBookings(): Promise<number> {
         .where(eq(bookingsTable.id, booking.id));
 
       if (booking.providerId) {
-        await db
-          .update(usersTable)
-          .set({ isAvailable: true, updatedAt: new Date() })
-          .where(eq(usersTable.id, booking.providerId));
-        emitToUser(booking.providerId, "provider:availability", { isAvailable: true, reason: "auto_cancelled" });
+        await restoreProviderAvailabilityIfCompliant(booking.providerId, "auto_cancelled");
         await applyNoShowPenalty(booking.providerId);
       }
 
@@ -479,6 +479,7 @@ async function runAllSweeps(): Promise<void> {
     sweepPremiumExpiryReminders(),
     sweepExpiredNegotiations(),
     sweepInactiveAccounts(),
+    sweepProviderDocumentCompliance(),
     ]);
     const rejected = results.filter((result) => result.status === "rejected");
     lastError = rejected.length ? `${rejected.length} sweep task(s) failed` : null;

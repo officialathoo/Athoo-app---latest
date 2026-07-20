@@ -30,7 +30,13 @@ export interface User {
   ratePerHour?: number | null;
   maxTravelDistanceKm?: number | null;
   cnicNumber?: string | null;
+  cnicExpiry?: string | null;
+  cnicLifetime?: boolean;
   fatherName?: string | null;
+  documentComplianceStatus?: "active" | "action_required" | "warning" | "grace" | "renewal_pending" | "suspended";
+  documentComplianceReason?: string | null;
+  documentGraceEndsAt?: string | null;
+  documentSuspendedAt?: string | null;
   isDeactivated: boolean;
   pendingCommission: number;
   totalCommission: number;
@@ -54,8 +60,36 @@ export interface ProviderDocument {
   rejectionNote?: string | null;
   reviewedBy?: string | null;
   reviewedAt?: string | null;
+  issuedAt?: string | null;
+  expiresAt?: string | null;
+  expiryNotApplicable?: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ProviderDocumentUpdateRequest {
+  id: string;
+  providerId: string;
+  documentType: "cnic_front" | "cnic_back" | "police";
+  label?: string | null;
+  url: string;
+  issuedAt?: string | null;
+  expiresAt?: string | null;
+  expiryNotApplicable: boolean;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  rejectionNote?: string | null;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  provider: {
+    id: string;
+    name: string;
+    phone: string;
+    email?: string | null;
+    documentComplianceStatus?: string | null;
+    documentSuspendedAt?: string | null;
+  };
 }
 
 export interface Booking {
@@ -193,6 +227,7 @@ export interface AdminBlacklist {
 
 export interface SidebarCounts {
   pendingVerifications: number;
+  pendingDocumentRenewals: number;
   pendingCommissionPayments: number;
   pendingWithdrawals: number;
   pendingRefunds: number;

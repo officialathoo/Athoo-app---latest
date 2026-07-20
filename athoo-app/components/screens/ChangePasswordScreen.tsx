@@ -18,6 +18,7 @@ import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import { api } from "@/services/api";
 import { apiErrorToMessage } from "@/lib/apiError";
+import { useAuth } from "@/context/AuthContext";
 
 type PasswordFieldProps = {
   label: string;
@@ -85,6 +86,7 @@ export function ChangePasswordScreen() {
   const { theme } = useTheme();
   const { translate: tr } = useLang();
   const insets = useSafeAreaInsets();
+  const { logout } = useAuth();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -127,8 +129,13 @@ export function ChangePasswordScreen() {
       setConfirmPassword("");
       Alert.alert(
         tr("Password updated"),
-        tr("Your password has been saved securely. You can continue using OTP or sign in with your password."),
-        [{ text: tr("Done"), onPress: () => router.back() }],
+        tr("Your password was changed and all existing sessions were signed out for security. Please sign in again with the new password or OTP."),
+        [{
+          text: tr("Sign in"),
+          onPress: () => {
+            void logout().finally(() => router.replace("/auth/welcome"));
+          },
+        }],
       );
     } catch (caught) {
       Alert.alert(

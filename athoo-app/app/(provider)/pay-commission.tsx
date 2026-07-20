@@ -35,6 +35,7 @@ interface PaymentAccount {
   accountNumber: string;
   iban?: string;
   instructions?: string;
+  qrCodeUrl?: string | null;
 }
 
 interface SubmittedPayment {
@@ -292,6 +293,12 @@ export default function PayCommissionScreen() {
                         {acct.iban && <Text style={styles.accountDetail}>{tr("IBAN")}: <Text style={styles.bold}>{acct.iban}</Text></Text>}
                       </View>
                     </View>
+                    {acct.qrCodeUrl ? (
+                      <View style={styles.qrWrap}>
+                        <PrivateImage objectPath={acct.qrCodeUrl} style={styles.qrImage} resizeMode="contain" />
+                        <Text style={styles.qrCaption}>{tr("Scan to pay")}</Text>
+                      </View>
+                    ) : null}
                     {acct.instructions && (
                       <Text style={styles.accountInstructions}>{acct.instructions}</Text>
                     )}
@@ -508,6 +515,17 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     fontSize: 12, color: theme.colors.textMuted, fontStyle: "italic",
     backgroundColor: theme.colors.surfaceAlt, borderRadius: 8, padding: 8, lineHeight: 16,
   },
+  qrWrap: {
+    alignSelf: "center", alignItems: "center", gap: 6,
+    marginTop: 8, padding: 10, borderRadius: 14,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1, borderColor: theme.colors.border,
+  },
+  qrImage: {
+    width: 180, height: 180, borderRadius: 10,
+    backgroundColor: theme.colors.white,
+  },
+  qrCaption: { fontSize: 12, fontWeight: "700", color: theme.colors.textSecondary },
   bold: { fontWeight: "700", color: theme.colors.text },
 
   formCard: { backgroundColor: theme.colors.surface, borderRadius: 18, padding: 16, gap: 16, borderWidth: 1, borderColor: theme.colors.border },

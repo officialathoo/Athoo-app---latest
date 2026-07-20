@@ -49,7 +49,7 @@ test("Phase 3C call ICE providers are server configured without embedded public 
 
   assert.match(callConfiguration, /STUN_URLS/);
   assert.match(callConfiguration, /TURN_URLS/);
-  assert.match(server, /getCallConfiguration/);
+  assert.match(server, /getRuntimeCallConfiguration/);
   assert.doesNotMatch(callConfiguration, /stun\.l\.google\.com/);
   assert.match(api, /getCallConfig\(\)/);
   assert.match(mobile, /api\.getCallConfig\(\)/);
@@ -57,8 +57,8 @@ test("Phase 3C call ICE providers are server configured without embedded public 
   assert.match(mobile, /fallbackChunkMsRef\.current/);
   assert.match(mobile, /configuration\.audio\?\.fallbackChunkMs/);
   assert.doesNotMatch(mobile, /stun\.l\.google\.com/);
-  assert.match(env, /CALL_PROVIDER=webrtc/);
-  assert.match(env, /CALL_FALLBACK_CHUNK_MS=800/);
+  assert.match(env, /CALL_PROVIDER=cloudflare-turn/);
+  assert.match(env, /CALL_FALLBACK_CHUNK_MS=400/);
   assert.match(env, /CALL_PREFERRED_CODEC=opus/);
   assert.doesNotMatch(env, /EXPO_PUBLIC_TURN_CREDENTIAL/);
 });

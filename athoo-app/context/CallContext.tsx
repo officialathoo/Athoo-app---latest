@@ -33,9 +33,9 @@ try {
 
 
 // ─── Voice chunk recording options ──────────────────────────────────────────
-// Android → AAC_ADTS (.aac) — no MOOV atom, ~1.8KB per 600ms, ExoPlayer native
-// iOS     → LinearPCM  (.wav) — RIFF header only, ~8KB per 600ms, ExoPlayer+AVFoundation native
-const CHUNK_EXT = Platform.OS === "android" ? ".aac" : ".wav";
+// Android → AAC_ADTS (.aac); iOS → MPEG-4 AAC (.m4a). Compressed chunks reduce
+// upload time and memory pressure compared with raw WAV fallback audio.
+const CHUNK_EXT = Platform.OS === "android" ? ".aac" : ".m4a";
 
 const CHUNK_OPTIONS = {
   android: {
@@ -47,22 +47,20 @@ const CHUNK_OPTIONS = {
     bitRate: 32000,
   },
   ios: {
-    extension: ".wav",
-    outputFormat: Audio.IOSOutputFormat.LINEARPCM,
-    sampleRate: 16000,         // wideband quality, matches Android
+    extension: ".m4a",
+    outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
+    audioQuality: Audio.IOSAudioQuality.MEDIUM,
+    sampleRate: 16000,
     numberOfChannels: 1,
-    bitRate: 128000,
-    linearPCMBitDepth: 16,
-    linearPCMIsBigEndian: false,
-    linearPCMIsFloat: false,
+    bitRate: 32000,
   },
   web: {},
 };
 
 // The backend owns fallback-audio tuning so deployments can adjust it without
 // rebuilding the mobile app. These limits are only safe client-side guards.
-const DEFAULT_FALLBACK_CHUNK_MS = 800;
-const MIN_FALLBACK_CHUNK_MS = 300;
+const DEFAULT_FALLBACK_CHUNK_MS = 400;
+const MIN_FALLBACK_CHUNK_MS = 250;
 const MAX_FALLBACK_CHUNK_MS = 2_000;
 
 function normalizeFallbackChunkMs(value: unknown): number {
@@ -215,6 +213,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const iceConfigurationRef = useRef<{ iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }> }>({ iceServers: [] });
   const rtcProductionReadyRef = useRef(false);
+  const iceConfigurationExpiresAtRef = useRef(0);
+  const iceConfigurationRequestRef = useRef<Promise<boolean> | null>(null);
+  const iceRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fallbackChunkMsRef = useRef(DEFAULT_FALLBACK_CHUNK_MS);
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [callDuration, setCallDuration] = useState(0);
@@ -264,6 +265,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const remoteStreamRef = useRef<any>(null);
   const rtcConnectedRef = useRef(false);
   const rtcFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rtcDisconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const signalingCallIdRef = useRef<string | null>(null);
   const pendingLocalCandidatesRef = useRef<any[]>([]);
   const appliedCalleeCandRef = useRef(0);
@@ -277,6 +279,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const nextFetchIndexRef = useRef(0);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeCallIdRef = useRef<string | null>(null);
+  const recordingRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activePlaybackSoundRef = useRef<Audio.Sound | null>(null);
+  const activePlaybackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activePlaybackUriRef = useRef<string | null>(null);
 
   useEffect(() => {
     activeCallRef.current = activeCall;
@@ -294,6 +300,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       });
       if (outgoingTimeoutRef.current) clearTimeout(outgoingTimeoutRef.current);
       if (rtcFallbackTimerRef.current) clearTimeout(rtcFallbackTimerRef.current);
+      if (iceRefreshTimerRef.current) clearTimeout(iceRefreshTimerRef.current);
       soundService.stopRingtone();
       closePeerConnection();
       stopVoiceStreaming();
@@ -328,11 +335,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               closePeerConnection();
               startVoiceStreaming(callId);
             }
-          }, 8_000);
+          }, 3_500);
         }
       }
 
-      // Poll every 2s to detect when the remote side ends the call.
+      // Poll every second to detect when the remote side ends the call and stop audio promptly.
       if (activeCallWatcherRef.current) clearInterval(activeCallWatcherRef.current);
       if (callId) {
         activeCallWatcherRef.current = setInterval(async () => {
@@ -349,7 +356,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               setCallDuration(0);
             }
           } catch {}
-        }, 2000);
+        }, 1000);
       }
     } else {
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
@@ -369,42 +376,87 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     );
   }
 
-  useEffect(() => {
-    if (!user) {
-      rtcProductionReadyRef.current = false;
-      iceConfigurationRef.current = { iceServers: [] };
-      fallbackChunkMsRef.current = DEFAULT_FALLBACK_CHUNK_MS;
-      return;
+  async function refreshCallConfiguration(force = false): Promise<boolean> {
+    if (!user) return false;
+    const now = Date.now();
+    if (
+      !force &&
+      rtcProductionReadyRef.current &&
+      iceConfigurationExpiresAtRef.current > now + 5 * 60_000
+    ) {
+      return true;
     }
+    if (iceConfigurationRequestRef.current) return iceConfigurationRequestRef.current;
 
-    let active = true;
-    api.getCallConfig()
+    const request = api.getCallConfig()
       .then((configuration) => {
-        if (!active || !Array.isArray(configuration.iceServers)) return;
-        const iceServers = configuration.iceServers.filter((server) => {
-          const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
-          return urls.some((url) => typeof url === "string" && /^(stun|turn|turns):/i.test(url));
-        });
-        // STUN-only calling frequently produces one-way or silent audio behind
-        // carrier-grade NAT. Until authenticated TURN is configured, skip the
-        // doomed WebRTC attempt and use the authenticated HTTP audio transport.
-        // This avoids call-screen crashes and long silent waits while keeping
-        // TURN as the production path once deployment credentials are present.
+        const iceServers = Array.isArray(configuration.iceServers)
+          ? configuration.iceServers.filter((server) => {
+              const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+              return urls.some((url) => typeof url === "string" && /^(stun|turn|turns):/i.test(url));
+            })
+          : [];
         rtcProductionReadyRef.current = Boolean(configuration.productionReady && iceServers.length > 0);
         iceConfigurationRef.current = rtcProductionReadyRef.current ? { iceServers } : { iceServers: [] };
         fallbackChunkMsRef.current = normalizeFallbackChunkMs(configuration.audio?.fallbackChunkMs);
+
+        const parsedExpiry = configuration.expiresAt ? Date.parse(configuration.expiresAt) : Number.NaN;
+        iceConfigurationExpiresAtRef.current = Number.isFinite(parsedExpiry)
+          ? parsedExpiry
+          : rtcProductionReadyRef.current
+            ? now + 6 * 60 * 60_000
+            : 0;
+
+        if (iceRefreshTimerRef.current) clearTimeout(iceRefreshTimerRef.current);
+        iceRefreshTimerRef.current = null;
+        if (rtcProductionReadyRef.current && Number.isFinite(parsedExpiry)) {
+          const refreshInMs = Math.max(60_000, parsedExpiry - Date.now() - 5 * 60_000);
+          iceRefreshTimerRef.current = setTimeout(() => {
+            void refreshCallConfiguration(true);
+          }, refreshInMs);
+        }
+
+        if (rtcProductionReadyRef.current && pcRef.current?.setConfiguration) {
+          try {
+            pcRef.current.setConfiguration({ iceServers });
+          } catch (error) {
+            appLogger.warn("calls", "[CallContext] unable to refresh active ICE configuration", error);
+          }
+        }
+
         if (!rtcProductionReadyRef.current) {
           appLogger.warn("calls", "[CallContext] TURN is not production-ready; using authenticated audio fallback", configuration.warning);
         }
+        return rtcProductionReadyRef.current;
       })
       .catch((error) => {
         appLogger.warn("calls", "[CallContext] Unable to load ICE configuration; using authenticated audio fallback", error);
         rtcProductionReadyRef.current = false;
         iceConfigurationRef.current = { iceServers: [] };
+        iceConfigurationExpiresAtRef.current = 0;
         fallbackChunkMsRef.current = DEFAULT_FALLBACK_CHUNK_MS;
+        return false;
+      })
+      .finally(() => {
+        iceConfigurationRequestRef.current = null;
       });
 
-    return () => { active = false; };
+    iceConfigurationRequestRef.current = request;
+    return request;
+  }
+
+  useEffect(() => {
+    if (!user) {
+      rtcProductionReadyRef.current = false;
+      iceConfigurationRef.current = { iceServers: [] };
+      iceConfigurationExpiresAtRef.current = 0;
+      fallbackChunkMsRef.current = DEFAULT_FALLBACK_CHUNK_MS;
+      if (iceRefreshTimerRef.current) clearTimeout(iceRefreshTimerRef.current);
+      iceRefreshTimerRef.current = null;
+      return;
+    }
+
+    void refreshCallConfiguration(true);
   }, [user?.id]);
 
   // ── WebRTC helpers ──────────────────────────────────────────────────────────
@@ -412,6 +464,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     try { localStreamRef.current?.getTracks().forEach((t: any) => t.stop()); } catch {}
     try { pcRef.current?.close(); } catch {}
     if (rtcFallbackTimerRef.current) { clearTimeout(rtcFallbackTimerRef.current); rtcFallbackTimerRef.current = null; }
+    if (rtcDisconnectTimerRef.current) { clearTimeout(rtcDisconnectTimerRef.current); rtcDisconnectTimerRef.current = null; }
     localStreamRef.current = null;
     remoteStreamRef.current = null;
     pcRef.current = null;
@@ -460,16 +513,28 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       if (state === "connected") {
         rtcConnectedRef.current = true;
         if (rtcFallbackTimerRef.current) { clearTimeout(rtcFallbackTimerRef.current); rtcFallbackTimerRef.current = null; }
+        if (rtcDisconnectTimerRef.current) { clearTimeout(rtcDisconnectTimerRef.current); rtcDisconnectTimerRef.current = null; }
         if (isStreamingRef.current) stopVoiceStreaming();
         void soundService.setCallSpeakerMode(isSpeaker);
-      } else if (state === "failed") {
+      } else if (state === "disconnected") {
+        rtcConnectedRef.current = false;
+        if (rtcDisconnectTimerRef.current) clearTimeout(rtcDisconnectTimerRef.current);
+        rtcDisconnectTimerRef.current = setTimeout(() => {
+          if (pcRef.current !== pc || pc.connectionState !== "disconnected") return;
+          try { pc.restartIce?.(); } catch {}
+          rtcDisconnectTimerRef.current = setTimeout(() => {
+            if (pcRef.current !== pc || pc.connectionState === "connected") return;
+            const callIdForFallback = activeCallRef.current?.callId;
+            closePeerConnection();
+            if (callIdForFallback && activeCallRef.current?.state === "active") startVoiceStreaming(callIdForFallback);
+          }, 2_500);
+        }, 2_000);
+      } else if (state === "failed" || state === "closed") {
         rtcConnectedRef.current = false;
         const callIdForFallback = activeCallRef.current?.callId;
         closePeerConnection();
-        if (callIdForFallback && activeCallRef.current?.state === "active") startVoiceStreaming(callIdForFallback);
+        if (state === "failed" && callIdForFallback && activeCallRef.current?.state === "active") startVoiceStreaming(callIdForFallback);
       }
-      // `disconnected` can be transient during network switching. The server
-      // status watcher remains authoritative for ending the call.
     };
     return pc;
   }
@@ -492,7 +557,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (role === "caller") appliedCalleeCandRef.current = remoteCands.length;
         else appliedCallerCandRef.current = remoteCands.length;
       } catch {}
-    }, 2000);
+    }, 750);
   }
 
   // ── HTTP-based voice streaming (works through all proxies) ──────────────────
@@ -500,6 +565,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (isStreamingRef.current) return;
     appLogger.debug("calls", "[Voice] startVoiceStreaming callId:", callId, "platform:", Platform.OS);
 
+    // A prior call is cleaned by the call-state lifecycle before this starts.
+    // Reset the per-call queue/index without toggling the native audio mode off
+    // and back on, which can itself introduce one-way audio on some Android OEMs.
     activeCallIdRef.current = callId;
     nextFetchIndexRef.current = 0;
     isStreamingRef.current = true;
@@ -550,23 +618,31 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     activeCallIdRef.current = null;
 
     if (pollTimerRef.current) { clearTimeout(pollTimerRef.current); pollTimerRef.current = null; }
+    if (recordingRetryTimerRef.current) { clearTimeout(recordingRetryTimerRef.current); recordingRetryTimerRef.current = null; }
+    if (activePlaybackTimerRef.current) { clearTimeout(activePlaybackTimerRef.current); activePlaybackTimerRef.current = null; }
 
-    if (recordingRef.current) {
-      try { recordingRef.current.stopAndUnloadAsync(); } catch {}
-      recordingRef.current = null;
-    }
+    const recording = recordingRef.current;
+    recordingRef.current = null;
+    if (recording) void recording.stopAndUnloadAsync().catch(() => undefined);
+
+    const sound = activePlaybackSoundRef.current;
+    activePlaybackSoundRef.current = null;
+    if (sound) void sound.stopAsync().catch(() => undefined).finally(() => sound.unloadAsync().catch(() => undefined));
+
+    const playbackUri = activePlaybackUriRef.current;
+    activePlaybackUriRef.current = null;
+    if (playbackUri) void FileSystem.deleteAsync(playbackUri, { idempotent: true }).catch(() => undefined);
 
     playQueueRef.current = [];
     isPlayingRef.current = false;
-
-    try { soundService.setRecordingMode(false); } catch {}
+    void soundService.setRecordingMode(false).catch(() => undefined);
   }
 
   // ── Record + upload loop ─────────────────────────────────────────────────────
   async function recordNextChunk(callId: string) {
     if (!isStreamingRef.current || activeCallIdRef.current !== callId) return;
     if (mutedRef.current) {
-      setTimeout(() => recordNextChunk(callId), 300);
+      recordingRetryTimerRef.current = setTimeout(() => recordNextChunk(callId), 250);
       return;
     }
 
@@ -625,17 +701,37 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       const resAny = res as any;
       const chunks = Array.isArray(resAny.chunks) ? resAny.chunks : resAny.chunks?.chunks || [];
       if (chunks && chunks.length > 0) {
-        // Update the index pointer
+        // Advance past every received index even when the media itself is stale,
+        // otherwise an old backlog would be fetched repeatedly after reconnects.
         for (const chunk of chunks) {
           if (chunk.index >= nextFetchIndexRef.current) {
             nextFetchIndexRef.current = chunk.index + 1;
           }
         }
-        appLogger.debug("calls", "[Voice] Got", chunks.length, "chunks, next:", nextFetchIndexRef.current);
-        // Keep only the LATEST chunk — drop everything older to avoid backlog/delay
-        const latest = chunks[chunks.length - 1];
-        playQueueRef.current = [{ data: latest.data, ext: latest.ext ?? ".m4a" }];
-        if (!isPlayingRef.current) drainQueue();
+
+        const serverTime = Number(resAny.serverTime || Date.now());
+        const freshChunks = chunks.filter((chunk: any) => {
+          const capturedAt = Number(chunk?.ts);
+          return !Number.isFinite(capturedAt) || Math.max(0, serverTime - capturedAt) <= 2_000;
+        });
+        appLogger.debug(
+          "calls",
+          "[Voice] Got",
+          chunks.length,
+          "chunks (fresh:",
+          freshChunks.length,
+          ") next:",
+          nextFetchIndexRef.current,
+        );
+
+        // Real-time speech is more important than guaranteed delivery. Play only
+        // the newest fresh chunk and discard any backlog that would create the
+        // reported 8–10 second delay.
+        const latest = freshChunks[freshChunks.length - 1];
+        if (latest?.data) {
+          playQueueRef.current = [{ data: latest.data, ext: latest.ext ?? ".m4a" }];
+          if (!isPlayingRef.current) drainQueue();
+        }
       }
     } catch {}
     schedulePoll(callId);
@@ -648,40 +744,50 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function drainQueue() {
-    if (playQueueRef.current.length === 0) { isPlayingRef.current = false; return; }
+    if (!isStreamingRef.current || playQueueRef.current.length === 0) {
+      isPlayingRef.current = false;
+      return;
+    }
     isPlayingRef.current = true;
     const { data, ext } = playQueueRef.current.shift()!;
-    const androidHint = ext.replace(".", ""); // "m4a" | "aac"
+    const androidHint = ext.replace(".", "");
     const tempUri = `${FileSystem.cacheDirectory}athoo_rx_${Date.now()}${ext}`;
+    activePlaybackUriRef.current = tempUri;
     try {
       await FileSystem.writeAsStringAsync(tempUri, data, { encoding: FileSystem.EncodingType.Base64 });
+      if (!isStreamingRef.current) throw new Error("CALL_ENDED");
       const { sound } = await Audio.Sound.createAsync(
         { uri: tempUri, overrideFileExtensionAndroid: androidHint },
-        { shouldPlay: true, volume: 1 }
+        { shouldPlay: true, volume: 1, progressUpdateIntervalMillis: 100 },
       );
+      activePlaybackSoundRef.current = sound;
 
       let done = false;
       const advance = async () => {
         if (done) return;
         done = true;
+        if (activePlaybackTimerRef.current) { clearTimeout(activePlaybackTimerRef.current); activePlaybackTimerRef.current = null; }
+        if (activePlaybackSoundRef.current === sound) activePlaybackSoundRef.current = null;
+        if (activePlaybackUriRef.current === tempUri) activePlaybackUriRef.current = null;
+        try { await sound.stopAsync(); } catch {}
         try { await sound.unloadAsync(); } catch {}
         try { await FileSystem.deleteAsync(tempUri, { idempotent: true }); } catch {}
-        drainQueue();
+        if (isStreamingRef.current) void drainQueue();
+        else isPlayingRef.current = false;
       };
 
-      // Safety: move on after chunk duration + small buffer if didJustFinish never fires (Android quirk)
-      const safetyTimer = setTimeout(advance, fallbackChunkMsRef.current + 80);
-
-      sound.setOnPlaybackStatusUpdate(async (s) => {
-        if (s.isLoaded && s.didJustFinish) {
-          clearTimeout(safetyTimer);
-          advance();
-        }
+      activePlaybackTimerRef.current = setTimeout(() => void advance(), fallbackChunkMsRef.current + 180);
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) void advance();
       });
-    } catch (e) {
-      appLogger.warn("calls", "[Voice] Chunk play error (ext:", ext, "):", e);
+    } catch (error) {
+      if (activePlaybackUriRef.current === tempUri) activePlaybackUriRef.current = null;
       try { await FileSystem.deleteAsync(tempUri, { idempotent: true }); } catch {}
-      drainQueue();
+      if (String((error as Error)?.message) !== "CALL_ENDED") {
+        appLogger.warn("calls", "[Voice] Chunk play error (ext:", ext, "):", error);
+      }
+      if (isStreamingRef.current) void drainQueue();
+      else isPlayingRef.current = false;
     }
   }
 
@@ -745,6 +851,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       appStateRef.current = next;
       const state = activeCallRef.current?.state;
       if (next === "active") {
+        void refreshCallConfiguration();
         if (state === "incoming" || state === "outgoing") {
           soundService.startRingtone().catch(() => {});
         }
@@ -786,6 +893,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const myInitials = (user.name || "Me").split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
     const receiverInitials = receiverName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 
+    await refreshCallConfiguration();
     let offerSdp: string | undefined;
     if (canUseWebRtc()) {
       try {
@@ -888,6 +996,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const current = activeCallRef.current;
     if (!current) return;
 
+    await refreshCallConfiguration();
     let answerSdp: string | undefined;
     if (canUseWebRtc() && current.offer) {
       try {

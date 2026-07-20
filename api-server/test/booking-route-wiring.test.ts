@@ -10,7 +10,7 @@ test("PIN start and completion commands are guarded by atomic status/PIN updates
   assert.match(source, /gte\(bookingsTable\.startPinExpiresAt, new Date\(\)\)/);
   assert.match(source, /BOOKING_COMPLETE_CONFLICT/);
   assert.match(source, /eq\(bookingsTable\.status, "in_progress"\)/);
-  assert.match(source, /gte\(bookingsTable\.completePinExpiresAt, new Date\(\)\)/);
+  assert.match(source, /gte\(bookingsTable\.completePinExpiresAt, completedAt\)/);
 });
 
 test("same-price counter acceptance validates provider before accepting and returns sanitized data", () => {

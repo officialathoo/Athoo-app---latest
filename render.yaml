@@ -382,7 +382,17 @@ services:
       - key: ALLOW_DEV_OTP_RESPONSE
         value: "false"
       - key: CALL_PROVIDER
-        value: webrtc
+        value: cloudflare-turn
+      - key: CLOUDFLARE_TURN_KEY_ID
+        sync: false
+      - key: CLOUDFLARE_TURN_API_TOKEN
+        sync: false
+      - key: CLOUDFLARE_TURN_TTL_SECONDS
+        value: "7200"
+      - key: CLOUDFLARE_TURN_TIMEOUT_MS
+        value: "6000"
+      - key: CLOUDFLARE_TURN_CACHE_MAX_USERS
+        value: "2000"
       - key: MAX_CALL_AUDIO_CHUNK_B64
         value: "900000"
       - key: ENABLE_LIVE_TRACKING
@@ -396,9 +406,11 @@ services:
       - key: TURN_CREDENTIAL
         sync: false
       - key: CALL_FALLBACK_CHUNK_MS
-        value: "800"
+        value: "400"
       - key: CALL_PREFERRED_CODEC
         value: opus
+      - key: COMMISSION_INCLUDES_VISIT_CHARGE
+        value: "true"
       - key: SENTRY_DSN
         sync: false
       - key: ERROR_TRACKING_DSN
@@ -409,12 +421,24 @@ services:
         sync: false
       - key: STATUS_PAGE_URL
         sync: false
+      - key: PROVIDER_LOCATION_MAX_ACCURACY_METERS
+        value: "250"
+      - key: PROVIDER_LOCATION_MAX_AGE_MS
+        value: "1800000"
       - key: USER_ACTIVITY_WRITE_INTERVAL_MS
         value: "600000"
       - key: INACTIVITY_SWEEP_MIN_INTERVAL_MS
         value: "21600000"
       - key: BOOKING_SWEEP_INTERVAL_MS
         value: "60000"
+      - key: DOCUMENT_EXPIRY_GRACE_DAYS
+        value: "7"
+      - key: DOCUMENT_EXPIRY_SWEEP_MIN_INTERVAL_MS
+        value: "900000"
+      - key: DOCUMENT_EXPIRY_SWEEP_BATCH_SIZE
+        value: "250"
+      - key: DOCUMENT_EXPIRY_SWEEP_MAX_BATCHES
+        value: "4"
       - key: METRICS_TOKEN
         generateValue: true
       - key: ALLOW_PENDING_MIGRATIONS

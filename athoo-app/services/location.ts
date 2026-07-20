@@ -3,7 +3,7 @@ import * as Location from "expo-location";
 import { ensureForegroundLocation, type PermissionResult } from "@/lib/permissions";
 
 const LOCATION_CACHE_KEY = "athoo:last-known-location:v1";
-const DEFAULT_TIMEOUT_MS = 8_000;
+const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_CACHE_AGE_MS = 10 * 60 * 1000;
 
 export type AthooLocation = {
@@ -100,7 +100,7 @@ function preferUsableFreshLocation(
 ): AthooLocation | null {
   if (!fresh) return cached;
   if (!cached) return fresh;
-  const usableFreshAccuracy = Math.max(500, requiredAccuracy * 5);
+  const usableFreshAccuracy = Math.min(150, Math.max(60, requiredAccuracy * 2));
   if (fresh.accuracy == null || fresh.accuracy <= usableFreshAccuracy) return fresh;
   return betterLocation(fresh, cached);
 }
@@ -165,7 +165,9 @@ export async function getFastForegroundLocation(options: Options = {}): Promise<
 }> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxCacheAgeMs = options.maxCacheAgeMs ?? DEFAULT_CACHE_AGE_MS;
-  const requiredAccuracy = options.requiredAccuracy ?? 1_500;
+  // 80 metres is a realistic foreground target for marketplace matching.
+  // Callers can request stricter accuracy for live-job screens.
+  const requiredAccuracy = options.requiredAccuracy ?? 50;
 
   let permission: PermissionResult = "granted";
   if (options.requestPermission !== false) {
@@ -192,14 +194,14 @@ export async function getFastForegroundLocation(options: Options = {}): Promise<
     })[0] ?? null;
 
   // Use cached coordinates only when they satisfy this flow's accuracy requirement.
-  const cachedAccuracyThreshold = Math.min(250, Math.max(25, requiredAccuracy));
+  const cachedAccuracyThreshold = Math.min(75, Math.max(20, requiredAccuracy));
   if (!options.preferFresh && bestCached?.accuracy != null && bestCached.accuracy <= cachedAccuracyThreshold) {
     void writeAppCache(bestCached);
     return { permission, location: bestCached, stale: false };
   }
 
   const startedAt = Date.now();
-  const requestedAccuracy = resolveExpoAccuracy(options.freshAccuracy);
+  const requestedAccuracy = resolveExpoAccuracy(options.freshAccuracy ?? "highest");
   let fresh: AthooLocation | null = null;
   try {
     const firstAttemptMs = Math.max(3_000, Math.min(timeoutMs, Math.round(timeoutMs * 0.65)));
@@ -227,6 +229,12 @@ export async function getFastForegroundLocation(options: Options = {}): Promise<
   }
 
   const best = preferUsableFreshLocation(fresh, bestCached, requiredAccuracy);
+  // Do not silently accept a point hundreds of metres away. A poor fix is
+  // worse than asking the user to search the address or place the pin manually.
+  const maximumAcceptedAccuracy = Math.min(200, Math.max(75, requiredAccuracy * 2));
+  if (best?.accuracy != null && best.accuracy > maximumAcceptedAccuracy) {
+    return { permission, location: null, stale: true };
+  }
   if (best) {
     await writeAppCache(best);
     return {

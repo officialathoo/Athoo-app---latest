@@ -8,7 +8,7 @@ import { requireAuth, AuthRequest } from "../middlewares/auth";
 import { emitToUser } from "../lib/eventBus";
 import { notifyUser } from "../lib/notifications";
 import { Response } from "express";
-import { getCallConfiguration } from "../lib/callConfiguration";
+import { getRuntimeCallConfiguration } from "../lib/callConfiguration";
 
 const router = Router();
 const incomingCallCache = new Map<string, { ts: number; payload: any }>();
@@ -47,6 +47,11 @@ function getChunks(callId: string): AudioChunk[] {
     audioIndexCounter.set(callId, 0);
   }
   return audioStore.get(callId)!;
+}
+
+function clearCallAudio(callId: string): void {
+  audioStore.delete(callId);
+  audioIndexCounter.delete(callId);
 }
 
 function nextIndex(callId: string): number {
@@ -101,6 +106,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
     });
     if (existingRinging) {
       await db.update(callsTable).set({ status: "ended", endedAt: new Date() }).where(eq(callsTable.id, existingRinging.id));
+      clearCallAudio(existingRinging.id);
     }
 
     const call = {
@@ -144,15 +150,15 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
 });
 
 
-router.get("/config", requireAuth, (_req: AuthRequest, res: Response) => {
-  const configuration = getCallConfiguration();
+router.get("/config", requireAuth, async (req: AuthRequest, res: Response) => {
+  const configuration = await getRuntimeCallConfiguration(req.user!.userId);
   res.setHeader("Cache-Control", "private, no-store");
   res.json({
     ...configuration,
     warning: configuration.warning,
     audio: {
       preferredCodec: process.env.CALL_PREFERRED_CODEC || "opus",
-      fallbackChunkMs: boundedInteger(process.env.CALL_FALLBACK_CHUNK_MS, 800, 300, 2_000),
+      fallbackChunkMs: boundedInteger(process.env.CALL_FALLBACK_CHUNK_MS, 400, 250, 2_000),
     },
   });
 });
@@ -176,6 +182,7 @@ router.get("/incoming", requireAuth, async (req: AuthRequest, res: Response) => 
     const age = Date.now() - new Date(call.createdAt!).getTime();
     if (age > 35000) {
       await db.update(callsTable).set({ status: "ended", endedAt: new Date() }).where(eq(callsTable.id, call.id));
+      clearCallAudio(call.id);
       const payload = { call: null };
       incomingCallCache.set(userId, { ts: Date.now(), payload });
       res.json(payload);
@@ -238,6 +245,7 @@ router.patch("/:callId/reject", requireAuth, async (req: AuthRequest, res: Respo
       return;
     }
     await db.update(callsTable).set({ status: "rejected", endedAt: new Date() }).where(eq(callsTable.id, req.params.callId as string));
+    clearCallAudio(req.params.callId as string);
     const updatedCall = await db.query.callsTable.findFirst({ where: eq(callsTable.id, req.params.callId as string) });
     if (updatedCall) {
       incomingCallCache.delete(updatedCall.callerId); incomingCallCache.delete(updatedCall.receiverId);
@@ -255,6 +263,7 @@ router.patch("/:callId/end", requireAuth, async (req: AuthRequest, res: Response
     const call = await getAuthorizedCall(req.params.callId as string, req.user!.userId, res);
     if (!call) return;
     await db.update(callsTable).set({ status: "ended", endedAt: new Date() }).where(eq(callsTable.id, req.params.callId as string));
+    clearCallAudio(req.params.callId as string);
     const updatedCall = await db.query.callsTable.findFirst({ where: eq(callsTable.id, req.params.callId as string) });
     if (updatedCall) {
       incomingCallCache.delete(updatedCall.callerId); incomingCallCache.delete(updatedCall.receiverId);
@@ -343,9 +352,9 @@ router.post("/:callId/audio", requireAuth, async (req: AuthRequest, res: Respons
   const chunk: AudioChunk = { index: nextIndex(callId), senderId, data, ext: safeExt, ts: Date.now() };
   chunks.push(chunk);
 
-  // Keep only last 30 chunks per call (~12 seconds).
+  // Keep only a small recent window. Older chunks are useless for a live call and create audible backlog.
   // Trimming does NOT affect the counter — indices stay sequential forever.
-  if (chunks.length > 30) chunks.splice(0, chunks.length - 30);
+  if (chunks.length > 12) chunks.splice(0, chunks.length - 12);
 
   return res.json({ index: chunk.index });
 });
@@ -365,7 +374,7 @@ router.get("/:callId/audio", requireAuth, async (req: AuthRequest, res: Response
 
   // Never cache — audio chunks change every few hundred ms
   res.setHeader("Cache-Control", "no-store");
-  return res.json({ chunks: results.map((c) => ({ index: c.index, data: c.data, ext: c.ext })) });
+  return res.json({ chunks: results.map((c) => ({ index: c.index, data: c.data, ext: c.ext, ts: c.ts })), serverTime: Date.now() });
 });
 
 export default router;

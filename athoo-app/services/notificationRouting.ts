@@ -138,6 +138,10 @@ export function resolveNotificationTarget(
     return role === "provider" ? "/(provider)/invoices" : "/(customer)/invoices";
   }
 
+  if (input.type === "commission_payment" || input.type === "commission") {
+    return role === "provider" ? "/(provider)/pay-commission" : roleHome(role);
+  }
+
   const link = input.link?.split("?")[0].replace(/\/$/, "") || "";
   const chatMatch = link.match(/^\/chats?\/([^/]+)$/);
   if (chatMatch) {
@@ -176,6 +180,7 @@ export function resolveNotificationTarget(
   }
   if (link === "/provider/dashboard") return "/(provider)/(tabs)/dashboard";
   if (link === "/provider/availability") return "/(provider)/availability";
+  if (link === "/provider/pay-commission" || link === "/commission" || link === "/payments") return role === "provider" ? "/(provider)/pay-commission" : roleHome(role);
   if (link === "/premium") return role === "provider" ? "/(provider)/subscription" : "/(customer)/subscription";
   if (link === "/refunds") return role === "provider" ? "/(provider)/(tabs)/earnings" : "/(customer)/refund-requests";
   if (link === "/withdrawals") return role === "provider" ? "/(provider)/withdrawal-requests" : roleHome(role);

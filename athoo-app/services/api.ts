@@ -422,6 +422,10 @@ export const api = {
     services?: string[];
     fatherName?: string;
     cnicNumber?: string;
+    cnicExpiry?: string;
+    cnicLifetime?: boolean;
+    policeIssuedAt?: string;
+    policeExpiresAt?: string;
     experience?: string;
     location?: string;
     ratePerHour?: number;
@@ -550,7 +554,14 @@ export const api = {
     return request<{ documents: any[] }>("/api/me/documents", { method: "GET", auth: true });
   },
 
-  postDocument(payload: { type: string; label?: string; url: string }) {
+  postDocument(payload: {
+    type: string;
+    label?: string;
+    url: string;
+    issuedAt?: string;
+    expiresAt?: string;
+    expiryNotApplicable?: boolean;
+  }) {
     return request<{ document: any; verificationStatus?: string }>("/api/me/documents", {
       method: "POST",
       auth: true,
@@ -560,6 +571,35 @@ export const api = {
 
   deleteDocument(docId: string) {
     return request<{ success: boolean }>(`/api/me/documents/${docId}`, { method: "DELETE", auth: true });
+  },
+
+  getDocumentRenewals() {
+    return request<{ documents: any[]; requests: any[]; compliance: any }>("/api/me/document-renewals", {
+      method: "GET",
+      auth: true,
+    });
+  },
+
+  createDocumentRenewal(payload: {
+    documentType: "cnic_front" | "cnic_back" | "police";
+    label?: string;
+    url: string;
+    issuedAt?: string;
+    expiresAt?: string;
+    expiryNotApplicable?: boolean;
+  }) {
+    return request<{ request: any }>("/api/me/document-renewals", {
+      method: "POST",
+      auth: true,
+      body: payload,
+    });
+  },
+
+  cancelDocumentRenewal(requestId: string) {
+    return request<{ request: any }>(`/api/me/document-renewals/${requestId}`, {
+      method: "DELETE",
+      auth: true,
+    });
   },
 
   async switchRole(role?: "customer" | "provider") {
@@ -973,6 +1013,9 @@ export const api = {
       productionReady: boolean;
       hasTurn: boolean;
       warning: string | null;
+      credentialMode: "static" | "short-lived" | "none";
+      expiresAt?: string;
+      ttlSeconds?: number;
       iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }>;
       audio: { preferredCodec: string; fallbackChunkMs: number };
     }>("/api/calls/config", { method: "GET", auth: true });
@@ -1201,7 +1244,7 @@ export const api = {
     return request<{ success: boolean }>("/api/me/account/password", {
       method: "POST",
       auth: true,
-      body: payload,
+      body: { oldPassword: payload.currentPassword, newPassword: payload.newPassword },
     });
   },
   deactivateAccount(payload: { password?: string } = {}) {

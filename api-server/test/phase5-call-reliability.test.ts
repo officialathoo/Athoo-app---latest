@@ -28,8 +28,8 @@ test("call API exposes TURN readiness and protects signaling", () => {
   const calls = read("api-server/src/routes/calls.ts");
   const configuration = read("api-server/src/lib/callConfiguration.ts");
   assert.match(configuration, /productionReady/);
-  assert.match(configuration, /Production voice calling requires valid TURN_URLS/);
-  assert.match(calls, /getCallConfiguration/);
+  assert.match(configuration, /Production voice calling requires Cloudflare TURN credentials or valid TURN_URLS/);
+  assert.match(calls, /getRuntimeCallConfiguration/);
   assert.match(calls, /Too many ICE candidates/);
   assert.match(calls, /Call is not active/);
 });

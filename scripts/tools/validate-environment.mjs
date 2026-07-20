@@ -246,8 +246,8 @@ if (values.get("ALLOW_DEV_OTP_RESPONSE") === "true") {
 }
 
 const callProvider = (values.get("CALL_PROVIDER") || "webrtc").trim().toLowerCase();
-if (!new Set(["webrtc", "webrtc-turn", "webrtc-stun", "audio-fallback"]).has(callProvider)) {
-  errors.push("CALL_PROVIDER must be webrtc, webrtc-turn, webrtc-stun, or audio-fallback");
+if (!new Set(["webrtc", "webrtc-turn", "webrtc-stun", "cloudflare-turn", "audio-fallback"]).has(callProvider)) {
+  errors.push("CALL_PROVIDER must be webrtc, webrtc-turn, webrtc-stun, cloudflare-turn, or audio-fallback");
 }
 const parseCsvValues = (...keys) => [...new Set(keys
   .flatMap((key) => String(values.get(key) || "").split(","))
@@ -260,11 +260,20 @@ for (const url of turnUrls) if (!/^turns?:/i.test(url)) errors.push(`Invalid TUR
 const turnUsername = values.get("TURN_USERNAME") || "";
 const turnCredential = values.get("TURN_CREDENTIAL") || "";
 if (Boolean(turnUsername) !== Boolean(turnCredential)) errors.push("TURN_USERNAME and TURN_CREDENTIAL must be configured together");
-if (values.get("NODE_ENV") === "production") {
-  if (!turnUrls.length) errors.push("Production voice calling requires TURN_URLS (or legacy TURN_URL)");
-  if (!turnUsername || !turnCredential) errors.push("Production voice calling requires TURN_USERNAME and TURN_CREDENTIAL");
+const cloudflareTurnKeyId = values.get("CLOUDFLARE_TURN_KEY_ID") || "";
+const cloudflareTurnApiToken = values.get("CLOUDFLARE_TURN_API_TOKEN") || "";
+if (Boolean(cloudflareTurnKeyId) !== Boolean(cloudflareTurnApiToken)) {
+  errors.push("CLOUDFLARE_TURN_KEY_ID and CLOUDFLARE_TURN_API_TOKEN must be configured together");
 }
-validateBoundedInteger("CALL_FALLBACK_CHUNK_MS", 800, 300, 2000);
+const staticTurnReady = turnUrls.length > 0 && Boolean(turnUsername && turnCredential);
+const cloudflareTurnReady = Boolean(cloudflareTurnKeyId && cloudflareTurnApiToken);
+if (values.get("NODE_ENV") === "production" && !staticTurnReady && !cloudflareTurnReady) {
+  errors.push("Production voice calling requires Cloudflare TURN credentials or static TURN_URLS, TURN_USERNAME, and TURN_CREDENTIAL");
+}
+validateBoundedInteger("CLOUDFLARE_TURN_TTL_SECONDS", 7200, 300, 172800);
+validateBoundedInteger("CLOUDFLARE_TURN_TIMEOUT_MS", 6000, 1000, 20000);
+validateBoundedInteger("CLOUDFLARE_TURN_CACHE_MAX_USERS", 2000, 100, 20000);
+validateBoundedInteger("CALL_FALLBACK_CHUNK_MS", 400, 250, 2000);
 validateBoundedInteger("INACTIVITY_SWEEP_MIN_INTERVAL_MS", 21600000, 900000, 86400000);
 validateBoundedInteger("USER_ACTIVITY_WRITE_INTERVAL_MS", 600000, 60000, 86400000);
 validateBoundedInteger("BOOKING_SWEEP_INTERVAL_MS", 60000, 10000, 3600000);

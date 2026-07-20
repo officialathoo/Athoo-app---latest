@@ -21,7 +21,8 @@ function tileUrl(template: string, zoom: number, x: number, y: number, refreshKe
     .replace("{z}", String(zoom))
     .replace("{x}", String(x))
     .replace("{y}", String(y));
-  return `${base}${base.includes("?") ? "&" : "?"}athoo=${refreshKey}`;
+  if (refreshKey <= 0) return base;
+  return `${base}${base.includes("?") ? "&" : "?"}athoo_retry=${refreshKey}`;
 }
 
 type Coordinate = { latitude: number; longitude: number };
@@ -130,17 +131,21 @@ export function OpenStreetMapPreview({
   const mapSettings = settings.map;
   const tileSize = mapSettings.tileSize === 512 ? 512 : 256;
   const tileTemplate = String(mapSettings.tileUrl || "").trim();
-  const tileTemplateConfigured = mapSettings.configured && mapSettings.productionSafe &&
-    ["{z}", "{x}", "{y}"].every((token) => tileTemplate.includes(token));
+  // A tokenized Athoo proxy URL is safe to attempt even when a stale settings
+  // payload has not yet refreshed its configured/productionSafe flags. The API
+  // still enforces production provider policy server-side.
+  const tileTemplateConfigured = ["{z}", "{x}", "{y}"].every((token) => tileTemplate.includes(token));
   const attribution = String(mapSettings.attribution || "© OpenStreetMap contributors").trim();
   const styles = useMemo(() => createStyles(theme, tileSize), [theme, tileSize]);
   const [size, setSize] = useState<Size>({ width: 360, height });
   const [failedTiles, setFailedTiles] = useState(0);
+  const [loadedTiles, setLoadedTiles] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     setFailedTiles(0);
-    setRefreshKey((value) => value + 1);
+    setLoadedTiles(0);
+    setRefreshKey(0);
   }, [tileTemplate, tileSize, mapSettings.provider, mapSettings.configured, mapSettings.productionSafe]);
 
   const explicitCenter = isCoordinate({ latitude: latitude as number, longitude: longitude as number })
@@ -233,6 +238,7 @@ export function OpenStreetMapPreview({
           key={`${tile.key}-${refreshKey}`}
           source={{ uri: tile.url }}
           resizeMode="cover"
+          onLoad={() => setLoadedTiles((count) => count + 1)}
           onError={() => setFailedTiles((count) => count + 1)}
           style={[styles.tile, { left: tile.left, top: tile.top }]}
         />
@@ -266,7 +272,11 @@ export function OpenStreetMapPreview({
         );
       })}
 
-      {!tileTemplateConfigured || failedTiles >= Math.max(3, Math.ceil(tiles.length / 2)) ? (
+      {!tileTemplateConfigured || (
+        tiles.length > 0 &&
+        failedTiles >= Math.max(3, Math.ceil(tiles.length / 2)) &&
+        failedTiles + loadedTiles >= tiles.length
+      ) ? (
         <View style={styles.failureOverlay}>
           <Text style={styles.failureTitle}>Map preview unavailable</Text>
           <Text style={styles.failureText}>
@@ -276,7 +286,11 @@ export function OpenStreetMapPreview({
           </Text>
           {tileTemplateConfigured ? (
             <Pressable
-              onPress={() => { setFailedTiles(0); setRefreshKey((value) => value + 1); }}
+              onPress={() => {
+                setFailedTiles(0);
+                setLoadedTiles(0);
+                setRefreshKey((value) => value + 1);
+              }}
               style={styles.retryButton}
             >
               <Text style={styles.retryText}>Retry Map</Text>

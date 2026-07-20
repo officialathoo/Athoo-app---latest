@@ -21,7 +21,7 @@ import { useAuth, UserRole } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
-import { isBiometricAvailable, isBiometricEnabled, getBiometricLabel } from "@/services/biometric";
+import { isBiometricAvailable, isBiometricEnabled, getBiometricLabel, getBiometricType, type BiometricType } from "@/services/biometric";
 import { apiErrorToMessage } from "@/lib/apiError";
 
 type LoginTab = "otp" | "password";
@@ -59,6 +59,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricBtnLabel, setBiometricBtnLabel] = useState(() => tr("Sign in with Biometrics"));
+  const [biometricType, setBiometricType] = useState<BiometricType>("biometric");
 
   useEffect(() => {
     if (otpStep !== "otp") return;
@@ -75,8 +76,9 @@ export default function LoginScreen() {
       const enabled = await isBiometricEnabled();
       setBiometricAvailable(hardwareAvailable && enabled);
       if (hardwareAvailable) {
-        const label = await getBiometricLabel();
+        const [label, type] = await Promise.all([getBiometricLabel(), getBiometricType()]);
         setBiometricBtnLabel(tr("Sign in with {{method}}", { method: label }));
+        setBiometricType(type);
       }
     };
     checkBiometric();
@@ -278,7 +280,7 @@ export default function LoginScreen() {
               onPress={handleBiometricLogin}
               disabled={loading}
             >
-              <Icon name="fingerprint" size={20} color={theme.colors.primary} />
+              <Icon name={biometricType === "face" ? "scan-face" : biometricType === "iris" ? "eye" : biometricType === "fingerprint" ? "fingerprint" : "shield"} size={20} color={theme.colors.primary} />
               <Text style={[styles.biometricText, localizedText]}>{biometricBtnLabel}</Text>
             </Pressable>
           )}

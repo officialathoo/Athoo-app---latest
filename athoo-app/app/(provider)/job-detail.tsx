@@ -399,7 +399,9 @@ export default function JobDetailScreen() {
       try {
         const initialResult = await getFastForegroundLocation({
           timeoutMs: 8_000,
-          requiredAccuracy: 1_000,
+          requiredAccuracy: 75,
+          freshAccuracy: "highest",
+          preferFresh: true,
           rationaleTitle: "Location access needed",
           rationaleBody: "Athoo uses your location while this job is active so the customer can follow your arrival.",
         });

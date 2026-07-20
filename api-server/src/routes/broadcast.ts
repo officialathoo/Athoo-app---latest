@@ -1030,7 +1030,8 @@ router.post("/:id/select/:responseId", requireAuth, async (req: AuthRequest, res
       providerAmount: agreedPrice,
       commissionRate: 0,
       visitCharge: request.travellingCharge ?? 0,
-      ratePerHour: provider.ratePerHour || null,
+      // Snapshot the rate accepted for this booking; provider profile edits must not change it.
+      ratePerHour: agreedPrice,
       pickedLat: request.latitude,
       pickedLng: request.longitude,
       customerLat: request.latitude,

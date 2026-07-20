@@ -18,6 +18,7 @@ import { getOtpDeliveryConfigurationStatus } from "./lib/otpDelivery";
 import { getStorageConfigurationStatus } from "./lib/storageProvider";
 import { getReleaseIdentity } from "./lib/releaseIdentity";
 import { isInProcessCacheEnabled } from "./lib/infrastructureConfiguration";
+import { getCallConfigurationStatus } from "./lib/callConfiguration";
 
 const app: Express = express();
 // Disable weak ETag 304s on dynamic mobile/admin API data; Athoo uses realtime events and explicit client caching instead.
@@ -460,7 +461,7 @@ app.get("/api/health", async (_req, res) => {
     release: getReleaseIdentity(),
     queue: queueStats(),
     nativeReadiness: {
-      turnConfigured: Boolean(process.env.TURN_URLS || process.env.TURN_URL),
+      turnConfigured: getCallConfigurationStatus().productionReady,
       redisConfigured: Boolean(process.env.REDIS_URL),
       storageProvider: process.env.STORAGE_PROVIDER || "local/object-storage-adapter",
       push: pushStatus,

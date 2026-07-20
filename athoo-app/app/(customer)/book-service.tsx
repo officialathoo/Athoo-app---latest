@@ -219,8 +219,9 @@ export default function BookServiceScreen() {
       const result = await getFastForegroundLocation({
         timeoutMs: 12_000,
         maxCacheAgeMs: 5 * 60 * 1000,
-        requiredAccuracy: 150,
-        freshAccuracy: "high",
+        requiredAccuracy: 60,
+        freshAccuracy: "highest",
+        preferFresh: true,
         rationaleTitle: "Location permission",
         rationaleBody: "ATHOO uses your location to auto-detect your address so the provider can find you.",
       });

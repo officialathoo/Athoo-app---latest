@@ -561,6 +561,7 @@ router.patch("/:id/accept", requireAuth, async (req: AuthRequest, res: Response)
           providerAmount: finalPrice,
           commissionRate: 0,
           visitCharge: 0,
+          ratePerHour: finalPrice,
           categorySlug: null,
           pickedLat: (neg.latitude as number | null) ?? null,
           pickedLng: (neg.longitude as number | null) ?? null,

@@ -19,6 +19,7 @@ export const invoiceConfig = Object.freeze({
     textSecondary: "#64748B",
     textMuted: "#94A3B8",
     page: "#FFFFFF",
+    canvas: "#E2E8F0",
     background: "#F8FAFC",
     surface: "#F1F5F9",
     border: "#CBD5E1",

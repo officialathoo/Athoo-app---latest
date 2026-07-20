@@ -49,8 +49,19 @@ export const usersTable = pgTable("users", {
   // Identity / KYC
   fatherName: text("father_name"),
   cnicNumber: text("cnic_number"),
+  // ISO date (YYYY-MM-DD) from the physical CNIC. Lifetime cards are tracked
+  // explicitly so providers are never forced to invent an expiry date.
   cnicExpiry: text("cnic_expiry"),
+  cnicLifetime: boolean("cnic_lifetime").default(false),
   dob: text("dob"),
+  // Provider document-compliance lifecycle. This is separate from manual
+  // deactivation so document renewal approval cannot accidentally undo an
+  // administrator suspension or a user-requested account closure.
+  documentComplianceStatus: text("document_compliance_status").default("active"), // active | action_required | warning | grace | renewal_pending | suspended
+  documentComplianceReason: text("document_compliance_reason"),
+  documentGraceEndsAt: timestamp("document_grace_ends_at"),
+  documentSuspendedAt: timestamp("document_suspended_at"),
+  documentActionRequiredNotifiedAt: timestamp("document_action_required_notified_at"),
   // Account lifecycle
   accountStatus: text("account_status").default("active"), // active | deactivated | pending_deletion | deleted
   deletionScheduledAt: timestamp("deletion_scheduled_at"),
@@ -77,6 +88,8 @@ export const usersTable = pgTable("users", {
   // Geo (used for nearest-provider matching, no paid Maps API needed)
   latitude: text("latitude"),
   longitude: text("longitude"),
+  locationAccuracy: real("location_accuracy"),
+  locationUpdatedAt: timestamp("location_updated_at"),
   // Legal acceptance (v4.4) — captured at registration
   termsAcceptedAt: timestamp("terms_accepted_at"),
   privacyAcceptedAt: timestamp("privacy_accepted_at"),
@@ -108,6 +121,11 @@ export const usersTable = pgTable("users", {
   index("users_account_status_idx").on(t.accountStatus),
   index("users_last_active_at_idx").on(t.lastActiveAt),
   index("users_inactivity_state_idx").on(t.inactivityState),
+  index("users_document_compliance_status_idx").on(t.documentComplianceStatus),
+  index("users_document_grace_ends_at_idx").on(t.documentGraceEndsAt),
+  index("users_document_suspended_at_idx")
+    .on(t.documentSuspendedAt)
+    .where(sql`${t.documentSuspendedAt} is not null`),
   index("users_updated_at_idx").on(t.updatedAt),
 ]);
 
@@ -147,6 +165,7 @@ export const paymentAccountsTable = pgTable("payment_accounts", {
   accountNumber: text("account_number").notNull(),
   iban: text("iban"),
   instructions: text("instructions"),
+  qrCodeUrl: text("qr_code_url"),
   isActive: boolean("is_active").default(true),
   sortOrder: integer("sort_order").default(0),
   createdAt: timestamp("created_at").defaultNow(),
@@ -588,18 +607,54 @@ export const ticketNotesTable = pgTable("ticket_notes", {
 export const providerDocumentsTable = pgTable("provider_documents", {
   id: text("id").primaryKey(),
   providerId: text("provider_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
-  type: text("type").notNull(), // cnic_front | cnic_back | license | selfie | other
+  type: text("type").notNull(), // cnic_front | cnic_back | police | license | selfie | other
   label: text("label"),
   url: text("url").notNull(),
   status: text("status").notNull().default("pending"), // pending | approved | rejected
   rejectionNote: text("rejection_note"),
   reviewedBy: text("reviewed_by"),
   reviewedAt: timestamp("reviewed_at"),
+  issuedAt: timestamp("issued_at"),
+  expiresAt: timestamp("expires_at"),
+  expiryNotApplicable: boolean("expiry_not_applicable").notNull().default(false),
+  expiryReminder30SentAt: timestamp("expiry_reminder_30_sent_at"),
+  expiryReminder7SentAt: timestamp("expiry_reminder_7_sent_at"),
+  expiryReminder1SentAt: timestamp("expiry_reminder_1_sent_at"),
+  expiryNoticeSentAt: timestamp("expiry_notice_sent_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => [
   index("provider_documents_provider_id_idx").on(t.providerId),
+  index("provider_documents_expiry_idx")
+    .on(t.expiresAt)
+    .where(sql`${t.status} = 'approved' and ${t.expiryNotApplicable} = false`),
   uniqueIndex("provider_documents_provider_type_uidx").on(t.providerId, t.type),
+]);
+
+// Provider-submitted replacements for expiring identity documents. Approved
+// documents remain untouched while a replacement is pending, preserving a
+// complete audit trail and preventing an upload from silently bypassing review.
+export const providerDocumentUpdateRequestsTable = pgTable("provider_document_update_requests", {
+  id: text("id").primaryKey(),
+  providerId: text("provider_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  documentType: text("document_type").notNull(), // cnic_front | cnic_back | police
+  label: text("label"),
+  url: text("url").notNull(),
+  issuedAt: timestamp("issued_at"),
+  expiresAt: timestamp("expires_at"),
+  expiryNotApplicable: boolean("expiry_not_applicable").notNull().default(false),
+  status: text("status").notNull().default("pending"), // pending | approved | rejected | cancelled
+  rejectionNote: text("rejection_note"),
+  reviewedBy: text("reviewed_by").references(() => usersTable.id, { onDelete: "set null" }),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => [
+  index("provider_document_updates_provider_idx").on(t.providerId, t.createdAt),
+  index("provider_document_updates_status_idx").on(t.status, t.createdAt),
+  uniqueIndex("provider_document_updates_one_pending_uidx")
+    .on(t.providerId, t.documentType)
+    .where(sql`${t.status} = 'pending'`),
 ]);
 
 // Customer favorites — saved providers
@@ -652,6 +707,7 @@ export const promotionsTable = pgTable("promotions", {
 export const refundRequestsTable = pgTable("refund_requests", {
   id: text("id").primaryKey(),
   bookingId: text("booking_id").notNull().references(() => bookingsTable.id, { onDelete: "cascade" }),
+  bookingPublicId: text("booking_public_id"),
   customerId: text("customer_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   providerId: text("provider_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   reason: text("reason").notNull(),
@@ -763,6 +819,7 @@ export type AdminNotification = typeof adminNotificationsTable.$inferSelect;
 export type TicketNote = typeof ticketNotesTable.$inferSelect;
 export type Promotion = typeof promotionsTable.$inferSelect;
 export type ProviderDocument = typeof providerDocumentsTable.$inferSelect;
+export type ProviderDocumentUpdateRequest = typeof providerDocumentUpdateRequestsTable.$inferSelect;
 export type SavedProvider = typeof savedProvidersTable.$inferSelect;
 export type Notification = typeof notificationsTable.$inferSelect;
 export type ServiceCategory = typeof serviceCategoriesTable.$inferSelect;
@@ -951,6 +1008,7 @@ export const invoicesTable = pgTable("invoices", {
   id: text("id").primaryKey(),
   invoiceNumber: text("invoice_number").notNull().unique(), // ATH-000001
   bookingId: text("booking_id").notNull().references(() => bookingsTable.id, { onDelete: "cascade" }),
+  bookingPublicId: text("booking_public_id"),
   customerId: text("customer_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   providerId: text("provider_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   customerName: text("customer_name").notNull(),
@@ -959,6 +1017,10 @@ export const invoicesTable = pgTable("invoices", {
   address: text("address").notNull(),
   scheduledDate: text("scheduled_date").notNull(),
   scheduledTime: text("scheduled_time").notNull(),
+  ratePerHour: integer("rate_per_hour"),
+  durationMinutes: integer("duration_minutes"),
+  jobStartedAt: timestamp("job_started_at"),
+  jobCompletedAt: timestamp("job_completed_at"),
   subtotal: integer("subtotal").notNull(),
   visitCharge: integer("visit_charge").default(0),
   platformFee: integer("platform_fee").default(0),   // 5% from customer

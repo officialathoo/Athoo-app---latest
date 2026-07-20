@@ -12,7 +12,7 @@ The built-in durable adapter is PostgreSQL. It supports retries, deduplication, 
 
 ## Calling and TURN
 
-Calling remains WebRTC-based and vendor-neutral because STUN/TURN use open protocols. Any standards-compliant TURN vendor can be selected by changing `STUN_URLS`, `TURN_URLS`, `TURN_USERNAME`, and `TURN_CREDENTIAL`, followed by a controlled restart. Active calls must be drained before changing providers.
+Calling remains WebRTC-based and vendor-neutral because STUN/TURN use open protocols. Athoo supports short-lived Cloudflare TURN credentials through `CLOUDFLARE_TURN_KEY_ID` and `CLOUDFLARE_TURN_API_TOKEN`, while any standards-compliant static TURN vendor can still be selected with `STUN_URLS`, `TURN_URLS`, `TURN_USERNAME`, and `TURN_CREDENTIAL`. Master credentials never enter the mobile bundle. Drain active calls before changing providers.
 
 ## Important boundary
 

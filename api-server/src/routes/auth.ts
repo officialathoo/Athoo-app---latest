@@ -16,6 +16,7 @@ import { accountUnavailableResponse, cleanOtpPurpose, otpHashMatches, type OtpPu
 import { hasSeenDevice, normalizeEmailAddress, queueNewDeviceEmail, queuePasswordChangedEmail, queueWelcomeEmail, sendEmailChallenge, verifyEmailChallenge } from "../lib/emailAuth";
 import { deliverAuthenticationOtp } from "../lib/otpDelivery";
 import { recordUserActivity } from "../lib/inactivityLifecycle";
+import { dateOnly, validateDocumentValidity } from "../lib/documentValidity";
 
 const router = Router();
 
@@ -536,7 +537,26 @@ router.post("/email/verify-otp", async (req, res) => {
 
 router.post("/register", async (req, res) => {
   try {
-    const { name, phone, email, role, services, fatherName, cnicNumber, experience, location, ratePerHour, password, termsAccepted, privacyAccepted, registrationToken } = req.body as {
+    const {
+      name,
+      phone,
+      email,
+      role,
+      services,
+      fatherName,
+      cnicNumber,
+      cnicExpiry,
+      cnicLifetime,
+      policeIssuedAt,
+      policeExpiresAt,
+      experience,
+      location,
+      ratePerHour,
+      password,
+      termsAccepted,
+      privacyAccepted,
+      registrationToken,
+    } = req.body as {
       name: string;
       phone: string;
       email?: string;
@@ -544,6 +564,10 @@ router.post("/register", async (req, res) => {
       services?: string[];
       fatherName?: string;
       cnicNumber?: string;
+      cnicExpiry?: string;
+      cnicLifetime?: boolean;
+      policeIssuedAt?: string;
+      policeExpiresAt?: string;
       experience?: string;
       location?: string;
       ratePerHour?: number;
@@ -592,6 +616,8 @@ router.post("/register", async (req, res) => {
       });
     }
     let normalizedCnic: string | null = null;
+    let validatedCnicExpiry: string | null = null;
+    let validatedCnicLifetime = false;
     if (normalizedRole === "provider") {
       normalizedCnic = String(cnicNumber || "").replace(/\D/g, "");
       if (!String(fatherName || "").trim() || normalizedCnic.length !== 13) {
@@ -600,6 +626,24 @@ router.post("/register", async (req, res) => {
       }
       if (!Array.isArray(services) || services.length === 0) {
         res.status(400).json({ error: "Select at least one provider service" });
+        return;
+      }
+      try {
+        const cnicValidity = validateDocumentValidity({
+          documentType: "cnic_front",
+          expiresAt: cnicExpiry,
+          expiryNotApplicable: cnicLifetime,
+        });
+        validateDocumentValidity({
+          documentType: "police",
+          issuedAt: policeIssuedAt,
+          expiresAt: policeExpiresAt,
+          expiryNotApplicable: false,
+        });
+        validatedCnicExpiry = dateOnly(cnicValidity.expiresAt);
+        validatedCnicLifetime = cnicValidity.expiryNotApplicable;
+      } catch (error) {
+        res.status(400).json({ error: error instanceof Error ? error.message : "Valid CNIC and police verification dates are required" });
         return;
       }
       const duplicateCnic = await db.query.usersTable.findFirst({ where: eq(usersTable.cnicNumber, normalizedCnic) });
@@ -690,6 +734,8 @@ router.post("/register", async (req, res) => {
       services: Array.isArray(services) ? [...new Set(services.map((value) => String(value).trim()).filter(Boolean))] : [],
       fatherName: normalizedRole === "provider" ? String(fatherName || "").trim() : null,
       cnicNumber: normalizedCnic,
+      cnicExpiry: normalizedRole === "provider" ? validatedCnicExpiry : null,
+      cnicLifetime: normalizedRole === "provider" ? validatedCnicLifetime : false,
       experience: normalizedRole === "provider" ? String(experience || "").trim() || null : null,
       location: normalizedRole === "provider" ? String(location || "").trim() || null : null,
       ratePerHour: normalizedRole === "provider" && Number.isInteger(Number(ratePerHour)) && Number(ratePerHour) > 0 ? Number(ratePerHour) : null,
@@ -697,7 +743,10 @@ router.post("/register", async (req, res) => {
       profileColor: role === "provider" ? "#FF6B1A" : "#1A6EE0",
       isVerified: autoApproved,
       verificationStatus: autoApproved ? "approved" : "pending",
-      isAvailable: true,
+      // Providers remain offline until identity documents are uploaded and the
+      // verification workflow has completed. Customer accounts do not use this
+      // matching flag.
+      isAvailable: normalizedRole !== "provider",
       rating: 0,
       ratingCount: 0,
       totalJobs: 0,

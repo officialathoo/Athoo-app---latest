@@ -4,7 +4,7 @@ import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import { Icon } from "@/components/ui/Icon";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState, useMemo } from "react";
 import {
   ActivityIndicator,
@@ -21,6 +21,7 @@ import { brandConfig } from "@/config/brand";
 import { invoiceConfig } from "@/config/invoice";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
+import * as FileSystem from "expo-file-system/legacy";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnimatedCard } from "@/components/ui/AnimatedCard";
 import { useAuth } from "@/context/AuthContext";
@@ -40,6 +41,7 @@ type ApiInvoice = {
   id: string;
   invoiceNumber: string;
   bookingId: string;
+  bookingPublicId?: string | null;
   customerId: string;
   providerId: string;
   customerName: string;
@@ -48,6 +50,10 @@ type ApiInvoice = {
   address: string;
   scheduledDate: string;
   scheduledTime: string;
+  ratePerHour?: number | null;
+  durationMinutes?: number | null;
+  jobStartedAt?: string | null;
+  jobCompletedAt?: string | null;
   subtotal: number;
   visitCharge: number;
   platformFee: number;
@@ -65,6 +71,7 @@ export default function InvoicesScreen() {
   const styles = useMemo(() => createStyles(theme, isUrdu), [theme, isUrdu]);
   const { user } = useAuth();
   const { getMyBookings } = useBookings();
+  const params = useLocalSearchParams<{ bookingId?: string }>();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null);
@@ -89,9 +96,12 @@ export default function InvoicesScreen() {
     loadInvoices();
   }, [loadInvoices]);
 
-  const completed = user
-    ? getMyBookings(user.id, "customer").filter((b) => b.status === "completed")
-    : [];
+  const completed = useMemo(
+    () => user
+      ? getMyBookings(user.id, "customer").filter((booking) => booking.status === "completed")
+      : [],
+    [getMyBookings, user],
+  );
 
   const selected = completed.find((b) => b.id === selectedInvoice);
 
@@ -102,12 +112,41 @@ export default function InvoicesScreen() {
     return b ? `ATH-${b.id.slice(-6).toUpperCase()}` : "ATH-??????";
   }
 
-  function getInvoiceTotal(b: any): { subtotal: number; visitCharge: number } {
+  function getInvoiceAmounts(b: any) {
     const match = apiInvoices.find((i) => i.bookingId === b.id);
-    if (match) return { subtotal: match.subtotal, visitCharge: match.visitCharge };
-    const serviceAmount = b.price || 0;
-    const visitCharge = (b as any).visitCharge ?? 0;
-    return { subtotal: serviceAmount + visitCharge, visitCharge };
+    const serviceAmount = Number(match?.subtotal ?? b.price ?? 0);
+    const visitCharge = Number(match?.visitCharge ?? b.visitCharge ?? 0);
+    const discount = Number(match?.discountAmount ?? 0);
+    const totalAmount = Number(match?.totalAmount ?? Math.max(0, serviceAmount + visitCharge - discount));
+    const ratePerHour = Number(match?.ratePerHour ?? b.ratePerHour ?? 0);
+    const durationMinutes = Number(match?.durationMinutes ?? (
+      ratePerHour > 0 ? Math.max(1, Math.round((serviceAmount / ratePerHour) * 60)) : 0
+    ));
+    return { match, serviceAmount, visitCharge, discount, totalAmount, ratePerHour, durationMinutes };
+  }
+
+  useEffect(() => {
+    const requestedBookingId = typeof params.bookingId === "string" ? params.bookingId : "";
+    if (requestedBookingId && completed.some((booking) => booking.id === requestedBookingId)) {
+      setSelectedInvoice(requestedBookingId);
+    }
+  }, [params.bookingId, completed]);
+
+  async function loadInvoiceLogoDataUri(): Promise<string> {
+    try {
+      const source = Image.resolveAssetSource(brandConfig.assets.mark);
+      if (!source?.uri) return "";
+      let uri = source.uri;
+      if (/^https?:\/\//i.test(uri)) {
+        const target = `${FileSystem.cacheDirectory || ""}athoo-invoice-logo.png`;
+        const downloaded = await FileSystem.downloadAsync(uri, target);
+        uri = downloaded.uri;
+      }
+      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+      return base64 ? `data:image/png;base64,${base64}` : "";
+    } catch {
+      return "";
+    }
   }
 
   const handleShare = async (b: any) => {
@@ -119,13 +158,10 @@ export default function InvoicesScreen() {
   const handleDownloadPdf = async (b: any) => {
     if (generatingPdf) return;
     const invoiceNo = getInvoiceNo(b.id);
-    const { subtotal, visitCharge } = getInvoiceTotal(b);
-    const serviceAmount = subtotal - visitCharge;
-    const hourlyRate = Number((b as any).ratePerHour ?? (b as any).price ?? serviceAmount ?? 0);
-    const durationHours = hourlyRate > 0 ? Math.max(1, Math.round((serviceAmount / hourlyRate) * 100) / 100) : 1;
-    const match = apiInvoices.find((i) => i.bookingId === b.id);
-    const discount = match?.discountAmount ?? 0;
-    const total = match?.totalAmount ?? subtotal;
+    const { match, serviceAmount, visitCharge, discount, totalAmount, ratePerHour, durationMinutes } = getInvoiceAmounts(b);
+    const jobNumber = match?.bookingPublicId || b.publicId || b.id;
+    const logoDataUri = await loadInvoiceLogoDataUri();
+    const statusLabel = String(match?.status || "issued").toUpperCase();
     const customerName = escapeHtml(b.customerName);
     const providerName = escapeHtml(b.providerName);
     const address = escapeHtml(b.address);
@@ -137,61 +173,67 @@ export default function InvoicesScreen() {
 
     const html = `<!DOCTYPE html><html dir="${direction}"><head><meta charset="utf-8">
 <style>
-  body{font-family:Arial,sans-serif;margin:0;padding:0;color:${printColors.text};background:${printColors.page};direction:${direction}}
-  .page{max-width:700px;margin:0 auto;background:${printColors.page};border-radius:12px;overflow:hidden;border:1px solid ${printColors.text};box-shadow:none}
-  .header{background:${printColors.primaryPressed};color:${printColors.page};padding:28px 30px;display:flex;justify-content:space-between;align-items:flex-start;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .logo{font-size:24px;font-weight:900;letter-spacing:-1px}
-  .logo-sub{font-size:11px;opacity:.75;margin-top:2px}
-  .inv-meta{text-align:right}
-  .inv-no{font-size:18px;font-weight:700}
-  .inv-date{font-size:12px;opacity:.8;margin-top:4px}
-  .paid-badge{background:rgba(255,255,255,0.25);border-radius:20px;padding:3px 12px;font-size:11px;font-weight:700;margin-top:8px;display:inline-block}
-  .body{padding:28px 30px}
-  .parties{display:flex;gap:30px;margin-bottom:24px}
-  .party{flex:1;background:${printColors.page};border:1px solid ${printColors.text};border-radius:10px;padding:14px 16px}
-  .party-label{font-size:10px;color:${printColors.textMuted};font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
-  .party-name{font-size:15px;font-weight:700;color:${printColors.text};margin-bottom:3px}
-  .party-detail{font-size:12px;color:${printColors.textSecondary}}
-  table{width:100%;border-collapse:collapse;margin-bottom:16px}
-  th{background:${printColors.surface};font-size:11px;color:${printColors.text};text-transform:uppercase;letter-spacing:.5px;padding:10px 12px;text-align:left;font-weight:700}
-  td{padding:11px 12px;font-size:13px;border-bottom:1px solid ${printColors.border}}
-  .amount{text-align:right}
-  .total-row{background:linear-gradient(135deg,${printColors.primary},${printColors.primaryPressed});color:${printColors.page}}
-  .total-row td{font-weight:700;font-size:15px;padding:14px 12px}
-  .formula{background:${printColors.infoSoft};border:1px solid ${printColors.primary};border-radius:8px;padding:12px 14px;font-size:12px;color:${printColors.text};font-weight:700;margin-bottom:16px}
-  .note{background:${printColors.infoSoft};border:1px solid ${printColors.infoBorder};border-radius:8px;padding:12px 14px;font-size:12px;color:${printColors.info};margin-bottom:20px}
-  .footer{text-align:center;font-size:11px;color:${printColors.textMuted};padding:0 0 8px}
-</style></head><body>
-<div class="page">
-  <div class="header">
-    <div><div class="logo">${escapeHtml(invoiceConfig.brandName)}</div><div class="logo-sub">${escapeHtml(tr("Home Services · Across Pakistan"))}</div></div>
-    <div class="inv-meta"><div class="inv-no">${escapeHtml(invoiceNo)}</div><div class="inv-date">${escapeHtml(formatLocalizedDate(b.createdAt))}</div><div class="paid-badge">✓ ${escapeHtml(tr("PAID"))}</div></div>
-  </div>
-  <div class="body">
-    <div class="parties">
-      <div class="party"><div class="party-label">${escapeHtml(tr("Billed To"))}</div><div class="party-name">${customerName}</div><div class="party-detail">${address}</div></div>
-      <div class="party"><div class="party-label">${escapeHtml(tr("Service By"))}</div><div class="party-name">${providerName}</div><div class="party-detail">${serviceName}</div></div>
+  @page{size:A4;margin:0}
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:${printColors.canvas};color:${printColors.text};font-family:Arial,sans-serif;direction:${direction}}
+  .page{width:210mm;min-height:297mm;margin:0 auto;background:${printColors.page};position:relative;padding-bottom:34mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .header{min-height:48mm;background:linear-gradient(135deg,${printColors.primary},${printColors.primaryPressed});color:${printColors.page};padding:15mm 16mm 11mm;display:flex;justify-content:space-between;align-items:flex-start}
+  .brand{display:flex;align-items:center;gap:12px}.brand img{width:52px;height:52px;border-radius:13px;background:${printColors.page};object-fit:contain;padding:4px}.brand-name{font-size:27px;font-weight:900;letter-spacing:-1px}.brand-sub{font-size:11px;opacity:.85;margin-top:3px}
+  .meta{text-align:${isUrdu ? "left" : "right"}}.invoice-title{font-size:13px;letter-spacing:2px;font-weight:700;opacity:.8}.invoice-no{font-size:20px;font-weight:900;margin-top:4px}.status{display:inline-block;margin-top:8px;padding:5px 12px;border:1px solid rgba(255,255,255,.45);border-radius:999px;font-size:10px;font-weight:800}
+  .body{padding:12mm 16mm}.refs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10mm}.ref{border:1px solid ${printColors.border};border-radius:8px;padding:9px}.label{font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:${printColors.textMuted};font-weight:800}.value{font-size:12px;font-weight:700;margin-top:4px;word-break:break-word}
+  .parties{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:9mm}.party{background:${printColors.background};border:1px solid ${printColors.border};border-radius:10px;padding:12px}.party-name{font-size:15px;font-weight:800;margin-top:5px}.party-detail{font-size:11px;line-height:1.5;color:${printColors.textSecondary};margin-top:4px}
+  .formula{background:${printColors.infoSoft};border-left:4px solid ${printColors.primary};padding:10px 12px;font-size:11px;font-weight:700;margin-bottom:7mm}
+  table{width:100%;border-collapse:collapse}th{background:${printColors.surface};padding:10px 12px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:${printColors.textSecondary}}td{padding:11px 12px;border-bottom:1px solid ${printColors.border};font-size:12px}.amount{text-align:right}.total td{background:${printColors.primaryPressed};color:${printColors.page};font-size:16px;font-weight:900;border:0}.small{font-size:10px;color:${printColors.textSecondary};margin-top:4px}
+  .note{margin-top:8mm;background:${printColors.successSoft};border:1px solid ${printColors.successBorder};border-radius:8px;padding:10px 12px;font-size:10px;line-height:1.5;color:${printColors.textSecondary}}
+  .footer{position:absolute;left:16mm;right:16mm;bottom:10mm;border-top:1px solid ${printColors.border};padding-top:7mm;display:flex;justify-content:space-between;gap:15px;font-size:9px;color:${printColors.textMuted}}.footer strong{color:${printColors.text}}
+  @media screen{.page{box-shadow:0 8px 30px rgba(15,23,42,.18)}}
+</style></head><body><main class="page">
+  <header class="header">
+    <div class="brand">${logoDataUri ? `<img src="${logoDataUri}" alt="Athoo logo">` : ""}<div><div class="brand-name">${escapeHtml(invoiceConfig.brandName)}</div><div class="brand-sub">${escapeHtml(invoiceConfig.descriptor)} · Pakistan</div></div></div>
+    <div class="meta"><div class="invoice-title">INVOICE</div><div class="invoice-no">${escapeHtml(invoiceNo)}</div><div class="status">${escapeHtml(statusLabel)}</div></div>
+  </header>
+  <section class="body">
+    <div class="refs">
+      <div class="ref"><div class="label">Job number</div><div class="value">${escapeHtml(jobNumber)}</div></div>
+      <div class="ref"><div class="label">Issued</div><div class="value">${escapeHtml(formatLocalizedDate(match?.createdAt || b.createdAt))}</div></div>
+      <div class="ref"><div class="label">Completed</div><div class="value">${escapeHtml(formatLocalizedDate(match?.jobCompletedAt || b.jobCompletedAt || b.updatedAt || b.createdAt))}</div></div>
     </div>
-    <div class="formula">${escapeHtml(tr("Final Invoice = Hourly Rate × Actual Job Time + Travel Charges"))}</div>
+    <div class="parties">
+      <div class="party"><div class="label">Billed to</div><div class="party-name">${customerName}</div><div class="party-detail">${address}</div></div>
+      <div class="party"><div class="label">Service provider</div><div class="party-name">${providerName}</div><div class="party-detail">${serviceName}</div></div>
+    </div>
+    <div class="formula">Service amount = agreed hourly rate ÷ 60 × actual worked minutes. Visit/travel charge is then added.</div>
     <table>
-      <tr><th>${escapeHtml(tr("Description"))}</th><th style="text-align:right">${escapeHtml(tr("Amount"))}</th></tr>
-      <tr><td>${escapeHtml(tr("Hourly Rate"))}<br><small style="color:${printColors.textSecondary}">${escapeHtml(formatCurrency(hourlyRate))} / ${escapeHtml(tr("hour"))} × ${durationHours} ${escapeHtml(tr("hour(s)"))}</small></td><td class="amount">${escapeHtml(formatCurrency(serviceAmount))}</td></tr>
-      ${visitCharge > 0 ? `<tr><td>${escapeHtml(tr("Travel Charges"))}<br><small style="color:${printColors.textSecondary}">${escapeHtml(tr("Separate from hourly rate"))}</small></td><td class="amount">${escapeHtml(formatCurrency(visitCharge))}</td></tr>` : ""}
-      <tr><td style="color:${printColors.textSecondary}">${escapeHtml(tr("Subtotal"))}</td><td class="amount" style="color:${printColors.textSecondary}">${escapeHtml(formatCurrency(subtotal))}</td></tr>
-      ${discount > 0 ? `<tr><td style="color:${printColors.success}">${escapeHtml(tr("Discount Applied"))}</td><td class="amount" style="color:${printColors.success}">−${escapeHtml(formatCurrency(discount))}</td></tr>` : ""}
-      <tr class="total-row"><td>${escapeHtml(tr("TOTAL PAID"))}</td><td class="amount">${escapeHtml(formatCurrency(total))}</td></tr>
+      <thead><tr><th>Description</th><th class="amount">Amount</th></tr></thead>
+      <tbody>
+        <tr><td><strong>${serviceName}</strong><div class="small">${escapeHtml(formatCurrency(ratePerHour))} per hour × ${durationMinutes} minute(s)</div></td><td class="amount">${escapeHtml(formatCurrency(serviceAmount))}</td></tr>
+        ${visitCharge > 0 ? `<tr><td>Visit / travelling charge</td><td class="amount">${escapeHtml(formatCurrency(visitCharge))}</td></tr>` : ""}
+        ${discount > 0 ? `<tr><td>Discount</td><td class="amount">−${escapeHtml(formatCurrency(discount))}</td></tr>` : ""}
+        <tr class="total"><td>TOTAL</td><td class="amount">${escapeHtml(formatCurrency(totalAmount))}</td></tr>
+      </tbody>
     </table>
-    <div class="note">${escapeHtml(tr("Payment was made directly to the service provider. Athoo does not handle funds. This is an electronic receipt only."))}</div>
-    <div class="footer">${escapeHtml(invoiceFooter)}${invoiceFooter ? " · " : ""}${escapeHtml(tr("Thank you for using {{name}}!", { name: invoiceConfig.brandName }))}</div>
-  </div>
-</div>
-</body></html>`;
+    <div class="note">Payment is made directly between customer and provider. This invoice is the official Athoo job record and uses the agreed booking rate and recorded job duration.</div>
+  </section>
+  <footer class="footer"><div><strong>${escapeHtml(invoiceConfig.brandName)}</strong><br>${escapeHtml(invoiceConfig.descriptor)}</div><div>${escapeHtml(invoiceFooter || "Official Athoo service invoice")}</div></footer>
+</main></body></html>`;
 
     try {
       setGeneratingPdf(true);
       if (Platform.OS === "web") {
-        const w = window.open("", "_blank", "noopener,noreferrer");
-        if (w) { w.opener = null; w.document.write(html); w.document.close(); w.print(); }
+        const frame = document.createElement("iframe");
+        frame.style.position = "fixed";
+        frame.style.right = "0";
+        frame.style.bottom = "0";
+        frame.style.width = "0";
+        frame.style.height = "0";
+        frame.style.border = "0";
+        frame.srcdoc = html;
+        frame.onload = () => {
+          frame.contentWindow?.focus();
+          frame.contentWindow?.print();
+          window.setTimeout(() => frame.remove(), 1_000);
+        };
+        document.body.appendChild(frame);
         return;
       }
       const { uri } = await Print.printToFileAsync({ html, base64: false });
@@ -209,11 +251,9 @@ export default function InvoicesScreen() {
   };
 
   if (selected) {
-    const { subtotal, visitCharge } = getInvoiceTotal(selected);
-    const serviceAmount = subtotal - visitCharge;
-    const hourlyRate = Number((selected as any).ratePerHour ?? (selected as any).price ?? serviceAmount ?? 0);
-    const durationHours = hourlyRate > 0 ? Math.max(1, Math.round((serviceAmount / hourlyRate) * 100) / 100) : 1;
-    const match = apiInvoices.find((i) => i.bookingId === selected.id);
+    const { match, serviceAmount, visitCharge, discount, totalAmount, ratePerHour, durationMinutes } = getInvoiceAmounts(selected);
+    const statusLabel = String(match?.status || "issued").toUpperCase();
+    const jobNumber = match?.bookingPublicId || (selected as any).publicId || selected.id;
 
     return (
       <View style={[styles.container, { paddingTop: topPad }]}>
@@ -245,12 +285,26 @@ export default function InvoicesScreen() {
               <Text style={styles.invoiceDate}>{formatLocalizedDate(selected.createdAt)}</Text>
               <View style={styles.invoicePaidBadge}>
                 <Icon name="check-circle" size={11} color={theme.colors.onBrand} />
-                <Text style={styles.invoicePaidText}>{tr("PAID")}</Text>
+                <Text style={styles.invoicePaidText}>{statusLabel}</Text>
               </View>
             </View>
           </LinearGradient>
 
           <View style={styles.invoiceBody}>
+            <View style={styles.invoiceMetaGrid}>
+              <View style={styles.invoiceMetaItem}>
+                <Text style={styles.partyLabel}>{tr("JOB NUMBER")}</Text>
+                <Text style={styles.partyName}>{jobNumber}</Text>
+              </View>
+              <View style={styles.invoiceMetaItem}>
+                <Text style={styles.partyLabel}>{tr("WORKED TIME")}</Text>
+                <Text style={styles.partyName}>{durationMinutes} {tr("minutes")}</Text>
+              </View>
+              <View style={styles.invoiceMetaItem}>
+                <Text style={styles.partyLabel}>{tr("AGREED RATE")}</Text>
+                <Text style={styles.partyName}>{formatCurrency(ratePerHour)} / {tr("hour")}</Text>
+              </View>
+            </View>
             <View style={styles.invoiceParty}>
               <View style={styles.invoicePartyItem}>
                 <Text style={styles.partyLabel}>{tr("BILLED TO")}</Text>
@@ -273,7 +327,7 @@ export default function InvoicesScreen() {
               <View style={styles.tableRow}>
                 <View style={{ flex: 2 }}>
                   <Text style={styles.tableRowLabel}>{selected.service}</Text>
-                  <Text style={styles.tableRowSub}>{selected.scheduledDate} · {selected.scheduledTime}</Text>
+                  <Text style={styles.tableRowSub}>{formatCurrency(ratePerHour)} / {tr("hour")} × {durationMinutes} {tr("minutes")}</Text>
                 </View>
                 <Text style={styles.tableRowAmount}>{formatCurrency(serviceAmount)}</Text>
               </View>
@@ -292,19 +346,19 @@ export default function InvoicesScreen() {
 
               <View style={styles.tableRow}>
                 <Text style={[styles.tableRowLabel, { flex: 2 }]}>{tr("Subtotal")}</Text>
-                <Text style={styles.tableRowAmount}>{formatCurrency(subtotal)}</Text>
+                <Text style={styles.tableRowAmount}>{formatCurrency(serviceAmount + visitCharge)}</Text>
               </View>
 
-              {match && match.discountAmount > 0 && (
+              {discount > 0 && (
                 <View style={styles.tableRow}>
                   <Text style={[styles.tableRowLabel, { flex: 2, color: theme.colors.success }]}>{tr("Discount")}</Text>
-                  <Text style={[styles.tableRowAmount, { color: theme.colors.success }]}>−{formatCurrency(match.discountAmount)}</Text>
+                  <Text style={[styles.tableRowAmount, { color: theme.colors.success }]}>−{formatCurrency(discount)}</Text>
                 </View>
               )}
 
               <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.totalRow}>
-                <Text style={styles.totalLabel}>{tr("TOTAL PAID")}</Text>
-                <Text style={styles.totalAmount}>{formatCurrency(match ? match.totalAmount : subtotal)}</Text>
+                <Text style={styles.totalLabel}>{tr("TOTAL")}</Text>
+                <Text style={styles.totalAmount}>{formatCurrency(totalAmount)}</Text>
               </LinearGradient>
             </View>
 
@@ -359,7 +413,7 @@ export default function InvoicesScreen() {
             </AnimatedCard>
           ) : (
             completed.map((b, i) => {
-              const { subtotal } = getInvoiceTotal(b);
+              const { totalAmount, match } = getInvoiceAmounts(b);
               return (
                 <AnimatedCard key={b.id} delay={i * 60}>
                   <Pressable
@@ -377,9 +431,9 @@ export default function InvoicesScreen() {
                       </View>
                     </View>
                     <View style={styles.invoiceCardRight}>
-                      <Text style={styles.invoiceCardAmount}>{formatCurrency(subtotal)}</Text>
+                      <Text style={styles.invoiceCardAmount}>{formatCurrency(totalAmount)}</Text>
                       <View style={styles.paidBadge}>
-                        <Text style={styles.paidBadgeText}>{tr("PAID")}</Text>
+                        <Text style={styles.paidBadgeText}>{String(match?.status || "issued").toUpperCase()}</Text>
                       </View>
                       <Icon name="chevron-right" size={14} color={theme.colors.textMuted} />
                     </View>
@@ -463,6 +517,8 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
   },
   invoicePaidText: { fontSize: 10, fontWeight: "800", color: theme.colors.onBrand },
   invoiceBody: { padding: 20, gap: 20 },
+  invoiceMetaGrid: { flexDirection: isUrdu ? "row-reverse" : "row", flexWrap: "wrap", gap: 10 },
+  invoiceMetaItem: { minWidth: 150, flex: 1, backgroundColor: theme.colors.surfaceAlt, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: theme.colors.border },
   invoiceParty: { flexDirection: isUrdu ? "row-reverse" : "row", gap: 16 },
   invoicePartyItem: { flex: 1, gap: 4 },
   partyLabel: { fontSize: 9, fontWeight: "800", color: theme.colors.textMuted, letterSpacing: 1 },

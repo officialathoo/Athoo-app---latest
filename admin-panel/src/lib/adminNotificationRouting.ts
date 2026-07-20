@@ -44,6 +44,7 @@ export function resolveAdminNotificationLink(notification: AdminNotificationLike
       [/^\/admin\/refunds\/([^/]+)$/, (m) => withQuery("/refunds", { focus: decodeId(m[1]) })],
       [/^\/admin\/withdrawals\/([^/]+)$/, (m) => withQuery("/withdrawals", { focus: decodeId(m[1]) })],
       [/^\/admin\/verification\/([^/]+)$/, (m) => withQuery("/verification", { focus: decodeId(m[1]) })],
+      [/^\/admin\/document-renewals(?:\/)?$/, () => withQuery("/document-renewals", { status: query.get("status") || "pending", focus: query.get("focus") || undefined, provider: query.get("provider") || undefined })],
       [/^\/admin\/rate-requests\/([^/]+)$/, (m) => withQuery("/rate-requests", { focus: decodeId(m[1]) })],
       [/^\/admin\/reported-issues\/([^/]+)$/, (m) => withQuery("/reported-issues", { focus: decodeId(m[1]) })],
       [/^\/admin\/inactive-accounts(?:\/)?$/, () => withQuery("/inactive-accounts", { focus: query.get("focus") || undefined })],
@@ -63,7 +64,7 @@ export function resolveAdminNotificationLink(notification: AdminNotificationLike
       "/complaints", "/chat-moderation", "/reviews", "/reports", "/audit-log", "/categories",
       "/service-areas", "/payment-accounts", "/plans", "/live-jobs", "/reported-issues",
       "/rate-requests", "/notification-templates", "/invoices", "/leads",
-      "/inactive-accounts", "/policies",
+      "/inactive-accounts", "/policies", "/document-renewals",
     ]);
     if (allowedDirect.has(pathname)) return raw;
   }

@@ -12,6 +12,8 @@ import { activeWorkHttpPayload, getCustomerActiveWorkBlock, getProviderActiveWor
 import { canTransitionBookingStatus, isBookingStatus, type BookingStatus } from "../domain/booking-status";
 import { ReviewSubmissionError, submitBookingReview } from "../domain/reviews";
 import { providerScheduleAllows, providerWithinRadius } from "../lib/providerAvailability";
+import { restoreProviderAvailabilityIfCompliant } from "../lib/documentCompliance";
+import { calculateTimedInvoice } from "../domain/invoiceCalculation";
 
 
 function parseScheduledDateTime(dateValue: unknown, timeValue: unknown): Date | null {
@@ -152,80 +154,122 @@ async function enrichBookings(bookings: any[], role: string, userId: string) {
   );
 }
 
-async function applyCompletionCommission(bookingId: string) {
-  const booking = await db.query.bookingsTable.findFirst({ where: eq(bookingsTable.id, bookingId) });
-  if (!booking) return null;
-
-  if (Number(booking.commissionAmount || 0) > 0 || Number(booking.commissionRate || 0) > 0) {
-    return booking;
-  }
-
+async function completeBookingWithInvoice(args: {
+  bookingId: string;
+  providerId: string;
+  completionPin: string;
+}) {
   const settings = await getPlatformSettings();
   const commissionRate = Number(settings.commissionRate || 0);
+  const commissionIncludesVisitCharge = String(process.env.COMMISSION_INCLUDES_VISIT_CHARGE || "true").toLowerCase() !== "false";
+  const completedAt = new Date();
 
-  // If the booking has an hourly rate stored, calculate actual time-based service charge.
-  // Otherwise fall back to the fixed agreed price.
-  const bookingRatePerHour = Number((booking as any).ratePerHour || 0);
-  const jobStartedAt = booking.jobStartedAt;
-  let serviceCharge: number;
-  if (bookingRatePerHour > 0 && jobStartedAt) {
-    const elapsedMs = Date.now() - new Date(jobStartedAt).getTime();
-    const elapsedHours = Math.max(elapsedMs / (1000 * 60 * 60), 1 / 60); // minimum 1 minute
-    serviceCharge = Math.round(elapsedHours * bookingRatePerHour);
-  } else {
-    serviceCharge = Number(booking.price || 0);
-  }
+  return db.transaction(async (tx) => {
+    // Serialize completion attempts for this booking. This protects the invoice,
+    // commission ledger and provider counters from double-taps and retries.
+    await tx.execute(sql`SELECT id FROM bookings WHERE id = ${args.bookingId} FOR UPDATE`);
+    const booking = await tx.query.bookingsTable.findFirst({
+      where: eq(bookingsTable.id, args.bookingId),
+    });
+    if (!booking) return { status: 404 as const, error: "Booking not found" };
+    if (booking.providerId !== args.providerId) {
+      return { status: 403 as const, error: "Only the assigned provider can verify the completion PIN" };
+    }
+    if (booking.status !== "in_progress") {
+      return {
+        status: 409 as const,
+        error: booking.status === "completed"
+          ? "This booking has already been completed."
+          : "Only in-progress bookings can be completed",
+        code: "BOOKING_COMPLETE_CONFLICT",
+      };
+    }
+    if (!booking.completePin) {
+      return { status: 400 as const, error: "No active PIN. Generate a fresh completion PIN." };
+    }
+    if (isPinExpired(booking.completePinExpiresAt)) {
+      return { status: 400 as const, error: "This PIN has expired. Generate a new one." };
+    }
+    if (booking.completePin !== args.completionPin) {
+      return { status: 400 as const, error: "Incorrect PIN. Ask the customer for the current 4-digit code." };
+    }
 
-  // Commission applies to the full amount: service charge + visit/travel charge
-  const visitCharge = Number(booking.visitCharge || 0);
-  const totalAmount = serviceCharge + visitCharge;
-  const commissionAmount = Math.max(0, Math.round((totalAmount * commissionRate) / 100));
-  const providerAmount = Math.max(0, totalAmount - commissionAmount);
+    const calculation = calculateTimedInvoice({
+      ratePerHour: booking.ratePerHour,
+      visitCharge: booking.visitCharge,
+      fallbackServiceAmount: booking.price,
+      jobStartedAt: booking.jobStartedAt,
+      jobCompletedAt: completedAt,
+      commissionRate,
+      commissionIncludesVisitCharge,
+    });
 
-  // Wrap in a DB transaction to prevent race conditions when multiple bookings
-  // complete simultaneously for the same provider (prevents double-counting commission).
-  await db.transaction(async (tx) => {
-    // Re-read the provider inside the transaction for an up-to-date pendingCommission.
-    const provider = await tx.query.usersTable.findFirst({ where: eq(usersTable.id, booking.providerId) });
-    if (!provider) return;
+    await tx.execute(sql`SELECT id FROM users WHERE id = ${booking.providerId} FOR UPDATE`);
+    const provider = await tx.query.usersTable.findFirst({
+      where: eq(usersTable.id, booking.providerId),
+    });
+    if (!provider) return { status: 404 as const, error: "Provider not found" };
 
-    const nextPending = Number(provider.pendingCommission || 0) + commissionAmount;
+    const nextPending = Number(provider.pendingCommission || 0) + calculation.commissionAmount;
     const commissionLimit = Number(provider.commissionLimit || settings.defaultCommissionLimit || 5000);
     const shouldBlock = nextPending >= commissionLimit;
 
-    await tx.update(bookingsTable).set({
-      price: serviceCharge,        // update price to actual time-based service charge
-      commissionRate,
-      commissionAmount,
-      providerAmount,
-      jobCompletedAt: new Date(),
-      updatedAt: new Date(),
-    }).where(eq(bookingsTable.id, bookingId));
+    const [completedBooking] = await tx.update(bookingsTable)
+      .set({
+        status: "completed",
+        completePin: null,
+        completePinExpiresAt: null,
+        price: calculation.serviceAmount,
+        commissionRate: calculation.commissionRate,
+        commissionAmount: calculation.commissionAmount,
+        providerAmount: calculation.providerAmount,
+        jobCompletedAt: completedAt,
+        updatedAt: completedAt,
+      })
+      .where(and(
+        eq(bookingsTable.id, args.bookingId),
+        eq(bookingsTable.status, "in_progress"),
+        eq(bookingsTable.completePin, args.completionPin),
+        gte(bookingsTable.completePinExpiresAt, completedAt),
+      ))
+      .returning();
+
+    if (!completedBooking) {
+      return {
+        status: 409 as const,
+        error: "This booking was already completed or the PIN changed. Please refresh and try again.",
+        code: "BOOKING_COMPLETE_CONFLICT",
+      };
+    }
 
     await tx.update(usersTable).set({
       totalJobs: Number(provider.totalJobs || 0) + 1,
-      totalCommission: Number(provider.totalCommission || 0) + commissionAmount,
+      totalCommission: Number(provider.totalCommission || 0) + calculation.commissionAmount,
       pendingCommission: nextPending,
       isBlocked: shouldBlock,
       blockedReason: shouldBlock ? "Commission due limit reached. Please clear your Athoo dues." : null,
-      updatedAt: new Date(),
+      updatedAt: completedAt,
     }).where(eq(usersTable.id, provider.id));
 
-    // Generate invoice — check if one already exists for idempotency
-    const existing = await tx.select({ id: invoicesTable.id })
+    const existingInvoice = await tx.select({ id: invoicesTable.id })
       .from(invoicesTable)
-      .where(eq(invoicesTable.bookingId, bookingId))
+      .where(eq(invoicesTable.bookingId, booking.id))
       .limit(1);
 
-    if (existing.length === 0) {
-      const sequenceResult = await tx.execute<{ next_value: string }>(sql`select nextval('athoo_invoice_number_seq')::text as next_value`);
+    if (existingInvoice.length === 0) {
+      const sequenceResult = await tx.execute<{ next_value: string }>(
+        sql`select nextval('athoo_invoice_number_seq')::text as next_value`,
+      );
       const nextNum = Number(sequenceResult.rows[0]?.next_value || 0);
-      if (!Number.isSafeInteger(nextNum) || nextNum <= 0) throw new Error("Failed to allocate invoice number");
+      if (!Number.isSafeInteger(nextNum) || nextNum <= 0) {
+        throw new Error("Failed to allocate invoice number");
+      }
       const invoiceNumber = `ATH-${String(nextNum).padStart(6, "0")}`;
       await tx.insert(invoicesTable).values({
         id: crypto.randomUUID(),
         invoiceNumber,
-        bookingId,
+        bookingId: booking.id,
+        bookingPublicId: booking.publicId,
         customerId: booking.customerId,
         providerId: booking.providerId,
         customerName: booking.customerName,
@@ -234,19 +278,23 @@ async function applyCompletionCommission(bookingId: string) {
         address: booking.address,
         scheduledDate: booking.scheduledDate,
         scheduledTime: booking.scheduledTime,
-        subtotal: serviceCharge,
-        visitCharge: visitCharge,
+        ratePerHour: calculation.ratePerHour,
+        durationMinutes: calculation.durationMinutes,
+        jobStartedAt: booking.jobStartedAt,
+        jobCompletedAt: completedAt,
+        subtotal: calculation.serviceAmount,
+        visitCharge: calculation.visitCharge,
         platformFee: 0,
         discountAmount: 0,
-        totalAmount: totalAmount,
-        commissionAmount,
-        providerAmount,
+        totalAmount: calculation.totalAmount,
+        commissionAmount: calculation.commissionAmount,
+        providerAmount: calculation.providerAmount,
         status: "issued",
       });
     }
-  });
 
-  return await db.query.bookingsTable.findFirst({ where: eq(bookingsTable.id, bookingId) });
+    return { status: 200 as const, booking: completedBooking };
+  });
 }
 
 router.get("/summary", requireAuth, async (req: AuthRequest, res: Response) => {
@@ -521,7 +569,8 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       providerAmount: parsedPrice ?? 0,
       commissionRate: 0,
       visitCharge,
-      ratePerHour: provider.ratePerHour || null,
+      // Snapshot the agreed hourly amount. Future provider profile changes must not alter this job.
+      ratePerHour: parsedPrice,
       categorySlug: categorySlug || null,
       pickedLat: parsedPickedLat,
       pickedLng: parsedPickedLng,
@@ -693,10 +742,7 @@ router.patch("/:id/status", requireAuth, async (req: AuthRequest, res: Response)
     // If we cancelled out of an active job, free the provider so they
     // aren't stuck "busy" with no active booking.
     if (status === "cancelled" && ["accepted", "in_progress"].includes(existing.status)) {
-      await db.update(usersTable)
-        .set({ isAvailable: true, updatedAt: new Date() })
-        .where(eq(usersTable.id, existing.providerId));
-      emitToUser(existing.providerId, "provider:availability", { isAvailable: true, reason: "cancelled" });
+      await restoreProviderAvailabilityIfCompliant(existing.providerId, "cancelled");
     }
     if (updated) {
       const eventName: EventName =
@@ -1102,36 +1148,21 @@ router.post("/:id/verify-complete-pin", requireAuth, async (req: AuthRequest, re
       return;
     }
 
-    const [completedBooking] = await db.update(bookingsTable)
-      .set({
-        status: "completed",
-        completePin: null,
-        completePinExpiresAt: null,
-        updatedAt: new Date(),
-      })
-      .where(and(
-        eq(bookingsTable.id, req.params.id as string),
-        eq(bookingsTable.status, "in_progress"),
-        eq(bookingsTable.completePin, String(pin || "").trim()),
-        gte(bookingsTable.completePinExpiresAt, new Date()),
-      ))
-      .returning();
-    if (!completedBooking) {
-      res.status(409).json({
-        error: "This booking was already completed or the PIN changed. Please refresh and try again.",
-        code: "BOOKING_COMPLETE_CONFLICT",
-      });
+    const completion = await completeBookingWithInvoice({
+      bookingId: req.params.id as string,
+      providerId: userId,
+      completionPin: String(pin || "").trim(),
+    });
+    if (!("booking" in completion)) {
+      const code = "code" in completion ? completion.code : undefined;
+      res.status(completion.status).json({ error: completion.error, ...(code ? { code } : {}) });
       return;
     }
-    // Free the provider so they can take new requests again.
-    await db.update(usersTable)
-      .set({ isAvailable: true, updatedAt: new Date() })
-      .where(eq(usersTable.id, booking.providerId));
-    const updated = await applyCompletionCommission(req.params.id as string);
+    const updated = completion.booking;
 
     if (updated) {
+      await restoreProviderAvailabilityIfCompliant(updated.providerId, "completed");
       broadcastBookingUpdate(updated, "booking:completed");
-      emitToUser(updated.providerId, "provider:availability", { isAvailable: true, reason: "completed" });
       notifyUser({
         userId: updated.customerId,
         title: "Job completed",

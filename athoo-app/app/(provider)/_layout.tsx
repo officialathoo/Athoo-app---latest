@@ -45,6 +45,38 @@ function VerificationWall({ status, note }: { status: string; note?: string | nu
   );
 }
 
+
+function DocumentComplianceWall({ reason }: { reason?: string | null }) {
+  const { logout, refreshUser } = useAuth();
+  const { theme } = useTheme();
+  const vw = useMemo(() => createVerificationStyles(theme), [theme]);
+  return (
+    <View style={vw.container} testID="provider-document-expiry-wall">
+      <View style={vw.card}>
+        <Icon name="shield-x" size={52} color={theme.colors.danger} />
+        <Text style={vw.title}>Provider Account Temporarily Paused</Text>
+        <Text style={vw.body}>
+          {reason || "A required identity document has expired. Submit an updated document for administrator approval to reactivate your provider account."}
+        </Text>
+        <View style={{ backgroundColor: theme.colors.warningSoft, borderRadius: 12, padding: 12, width: "100%" }}>
+          <Text style={{ color: theme.colors.text, fontSize: 13, lineHeight: 19, textAlign: "center", fontWeight: "600" }}>
+            Submit or review your replacement request below. Athoo will reactivate provider access after every required document is approved.
+          </Text>
+        </View>
+        <Pressable style={vw.primaryBtn} onPress={() => router.push("/(provider)/verification-documents" as any)}>
+          <Text style={vw.primaryBtnText}>Manage Document Updates</Text>
+        </Pressable>
+        <Pressable style={vw.btn} onPress={() => refreshUser().catch(() => {})}>
+          <Text style={vw.btnText}>Refresh Review Status</Text>
+        </Pressable>
+        <Pressable style={vw.linkBtn} onPress={logout}>
+          <Text style={vw.linkText}>Logout</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 const createVerificationStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background, alignItems: "center", justifyContent: "center", padding: 24 },
   card: { backgroundColor: theme.colors.surface, borderRadius: 20, padding: 32, alignItems: "center", gap: 16, maxWidth: 360, width: "100%", borderWidth: 1, borderColor: theme.colors.border, shadowColor: theme.colors.overlay, shadowOpacity: 0.12, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
@@ -66,6 +98,16 @@ export default function ProviderLayout() {
 
   if (isLoading) return <AthooLoader />;
   if (!user || user.role !== "provider") return <AthooLoader />;
+
+  const documentSuspended = Boolean(user.documentSuspendedAt) || user.documentComplianceStatus === "suspended";
+  if (documentSuspended) {
+    if (pathname.includes("verification-documents")) {
+      return <Stack screenOptions={{ headerShown: false }}><Stack.Screen name="verification-documents" /></Stack>;
+    }
+    return (
+      <DocumentComplianceWall reason={user.documentComplianceReason} />
+    );
+  }
 
   // Block access until admin approves the provider account.
   // "approved" is set by admin via the verification panel.
@@ -99,6 +141,7 @@ export default function ProviderLayout() {
       <Stack.Screen name="pay-commission" />
       <Stack.Screen name="withdrawal-requests" />
       <Stack.Screen name="availability" />
+      <Stack.Screen name="verification-documents" />
       <Stack.Screen name="subscription" />
       <Stack.Screen name="service-radius" />
       <Stack.Screen name="support-tickets" />

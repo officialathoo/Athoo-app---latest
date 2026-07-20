@@ -144,7 +144,10 @@ const inflight = new Map<string, Promise<unknown>>();
 const cache = new Map<string, { expiresAt: number; data: unknown }>();
 function cacheTtl(path: string, method: string): number {
   if (method !== "GET") return 0;
-  if (/\/api\/admin\/(notifications|sidebar-counts)/.test(path)) return 10_000;
+  // These endpoints drive live badges and read state. Client-side caching made
+  // newly submitted requests and mark-read actions appear broken for up to ten
+  // seconds even after React Query invalidation.
+  if (/\/api\/admin\/(notifications|sidebar-counts)/.test(path)) return 0;
   if (/\/api\/(categories|settings\/public|providers|service-areas)/.test(path)) return 30_000;
   return 0;
 }

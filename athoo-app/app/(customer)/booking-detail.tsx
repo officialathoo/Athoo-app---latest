@@ -220,7 +220,6 @@ export default function BookingDetailScreen() {
   const [reportCategory, setReportCategory] = useState("");
   const [reportDescription, setReportDescription] = useState("");
   const [submittingReport, setSubmittingReport] = useState(false);
-  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [isMarkingPaid, setIsMarkingPaid] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showRateThanks, setShowRateThanks] = useState(false);
@@ -349,7 +348,6 @@ export default function BookingDetailScreen() {
       const res = await api.markBookingPaid(booking.id);
       const updated = res.booking as Booking;
       await loadBookings();
-      setShowInvoiceModal(false);
       showToast(`Cash payment confirmed for ${updated.service}.`);
     } catch (e: any) {
       showToast(apiErrorToMessage(e, "We couldn't mark this booking as paid. Please try again."));
@@ -364,7 +362,9 @@ export default function BookingDetailScreen() {
     try {
       const result = await getFastForegroundLocation({
         timeoutMs: 8_000,
-        requiredAccuracy: 800,
+        requiredAccuracy: 75,
+        freshAccuracy: "highest",
+        preferFresh: true,
         rationaleTitle: "Location permission",
         rationaleBody: "Athoo uses your location to update the job pin for the provider.",
       });
@@ -924,7 +924,7 @@ export default function BookingDetailScreen() {
             </View>
             <View style={styles.invoiceDivider} />
             <View style={styles.invoiceRow}>
-              <Text style={styles.invoiceLabel}>Agreed Amount</Text>
+              <Text style={styles.invoiceLabel}>Timed Service Amount</Text>
               <Text style={styles.invoiceValue}>Rs. {(booking.price || 0).toLocaleString()}</Text>
             </View>
             {!!((booking as any).visitCharge) && (
@@ -939,6 +939,13 @@ export default function BookingDetailScreen() {
                 Rs. {((booking.price || 0) + ((booking as any).visitCharge || 0)).toLocaleString()}
               </Text>
             </View>
+            <Button
+              title="View Full Invoice"
+              onPress={() => router.push({ pathname: "/(customer)/invoices", params: { bookingId: booking.id } } as any)}
+              fullWidth
+              variant="outline"
+              style={{ marginTop: 8 }}
+            />
             {booking.paymentStatus === "paid" || booking.paymentStatus === "received" ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8, backgroundColor: theme.colors.successSoft, borderRadius: 10, padding: 10 }}>
                 <Icon name="check-circle" size={16} color={theme.colors.success} />
@@ -994,7 +1001,7 @@ export default function BookingDetailScreen() {
           <PostServiceCare
             rated={Boolean(booking.rating)}
             paymentConfirmed={["paid", "received"].includes(String((booking as any).paymentStatus || ""))}
-            onInvoice={() => setShowInvoiceModal(true)}
+            onInvoice={() => router.push({ pathname: "/(customer)/invoices", params: { bookingId: booking.id } } as any)}
             onSupport={() => router.push({ pathname: "/(customer)/contact-support", params: { bookingId: booking.id } } as any)}
             onBookAgain={() => router.push({ pathname: "/(customer)/book-service", params: buildRepeatBookingParams(booking) } as any)}
           />

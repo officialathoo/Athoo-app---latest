@@ -16,6 +16,8 @@ import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { toPublicProvider } from "../lib/admin";
 import { LEGAL_VERSION } from "../lib/legal";
 import { getProviderSchedule, saveProviderSchedule, validateProviderSchedule, validateTravelRadius } from "../lib/providerAvailability";
+import { EXPIRING_DOCUMENT_TYPES, type ExpiringDocumentType } from "../lib/documentCompliance";
+import { dateOnly, validateDocumentValidity } from "../lib/documentValidity";
 
 const router = Router();
 router.use(requireAuth);
@@ -260,7 +262,14 @@ router.post("/documents", async (req: AuthRequest, res) => {
     const user = await db.query.usersTable.findFirst({ where: eq(usersTable.id, req.user!.userId) });
     if (!user || user.role !== "provider") return res.status(403).json({ error: "Provider account required" });
 
-    const { type, label, url } = req.body as { type?: string; label?: string; url?: string };
+    const { type, label, url, issuedAt, expiresAt, expiryNotApplicable } = req.body as {
+      type?: string;
+      label?: string;
+      url?: string;
+      issuedAt?: string;
+      expiresAt?: string;
+      expiryNotApplicable?: boolean;
+    };
     const allowedTypes = ["cnic_front", "cnic_back", "selfie", "police", "diploma", "video", "license", "other"];
     const normalizedType = String(type || "").trim();
     const normalizedUrl = normalizeStoredObjectPath(url);
@@ -272,14 +281,72 @@ router.post("/documents", async (req: AuthRequest, res) => {
     const existing = await db.query.providerDocumentsTable.findFirst({
       where: and(eq(providerDocumentsTable.providerId, req.user!.userId), eq(providerDocumentsTable.type, normalizedType)),
     });
+    if (
+      EXPIRING_DOCUMENT_TYPES.includes(normalizedType as ExpiringDocumentType) &&
+      (
+        Boolean(user.documentSuspendedAt) ||
+        Boolean(existing && (existing.status === "approved" || user.verificationStatus === "approved"))
+      )
+    ) {
+      return res.status(409).json({
+        error: "Approved identity documents must be replaced through the document renewal request screen",
+        code: "DOCUMENT_RENEWAL_REQUIRED",
+      });
+    }
+
+    let validity = { issuedAt: null as Date | null, expiresAt: null as Date | null, expiryNotApplicable: false };
+    if (EXPIRING_DOCUMENT_TYPES.includes(normalizedType as ExpiringDocumentType)) {
+      try {
+        validity = validateDocumentValidity({
+          documentType: normalizedType as ExpiringDocumentType,
+          issuedAt,
+          expiresAt,
+          expiryNotApplicable,
+        });
+      } catch (error) {
+        return res.status(400).json({ error: error instanceof Error ? error.message : "Invalid document validity" });
+      }
+    }
     const now = new Date();
     const doc = existing
       ? (await db.update(providerDocumentsTable).set({
-          label: label?.trim() || existing.label, url: normalizedUrl, status: "pending", rejectionNote: null, reviewedBy: null, reviewedAt: null, updatedAt: now,
+          label: label?.trim() || existing.label,
+          url: normalizedUrl,
+          status: "pending",
+          rejectionNote: null,
+          reviewedBy: null,
+          reviewedAt: null,
+          issuedAt: validity.issuedAt,
+          expiresAt: validity.expiresAt,
+          expiryNotApplicable: validity.expiryNotApplicable,
+          expiryReminder30SentAt: null,
+          expiryReminder7SentAt: null,
+          expiryReminder1SentAt: null,
+          expiryNoticeSentAt: null,
+          updatedAt: now,
         }).where(eq(providerDocumentsTable.id, existing.id)).returning())[0]
       : (await db.insert(providerDocumentsTable).values({
-          id: id(), providerId: req.user!.userId, type: normalizedType, label: label?.trim() || null, url: normalizedUrl, status: "pending",
+          id: id(),
+          providerId: req.user!.userId,
+          type: normalizedType,
+          label: label?.trim() || null,
+          url: normalizedUrl,
+          status: "pending",
+          issuedAt: validity.issuedAt,
+          expiresAt: validity.expiresAt,
+          expiryNotApplicable: validity.expiryNotApplicable,
         }).returning())[0];
+
+    if (normalizedType === "cnic_front" || normalizedType === "cnic_back") {
+      await db.update(usersTable).set({
+        cnicExpiry: dateOnly(validity.expiresAt),
+        cnicLifetime: validity.expiryNotApplicable,
+        updatedAt: now,
+      }).where(eq(usersTable.id, req.user!.userId));
+    }
+    if (existing?.url && existing.url !== normalizedUrl) {
+      cleanupReplacedOwnedMedia(existing.url, normalizedUrl, req.user!.userId);
+    }
 
     const requiredTypes = ["cnic_front", "cnic_back", "selfie", "police"];
     const currentDocs = await db.select({ type: providerDocumentsTable.type }).from(providerDocumentsTable)
@@ -298,16 +365,38 @@ router.post("/documents", async (req: AuthRequest, res) => {
 
 router.delete("/documents/:docId", async (req: AuthRequest, res) => {
   try {
-    await db
-      .delete(providerDocumentsTable)
-      .where(
-        and(
-          eq(providerDocumentsTable.id, req.params.docId),
-          eq(providerDocumentsTable.providerId, req.user!.userId)
-        )
-      );
+    const [user, document] = await Promise.all([
+      db.query.usersTable.findFirst({ where: eq(usersTable.id, req.user!.userId) }),
+      db.query.providerDocumentsTable.findFirst({ where: and(
+        eq(providerDocumentsTable.id, req.params.docId),
+        eq(providerDocumentsTable.providerId, req.user!.userId),
+      ) }),
+    ]);
+    if (!user || !document) return res.status(404).json({ error: "Document not found" });
+
+    if (
+      EXPIRING_DOCUMENT_TYPES.includes(document.type as ExpiringDocumentType) &&
+      (
+        document.status === "approved" ||
+        user.verificationStatus === "approved" ||
+        Boolean(user.documentSuspendedAt)
+      )
+    ) {
+      return res.status(409).json({
+        error: "Approved identity documents cannot be removed. Submit an updated document for administrator review.",
+        code: "DOCUMENT_RENEWAL_REQUIRED",
+      });
+    }
+
+    const [deleted] = await db.delete(providerDocumentsTable).where(and(
+      eq(providerDocumentsTable.id, document.id),
+      eq(providerDocumentsTable.providerId, req.user!.userId),
+    )).returning({ id: providerDocumentsTable.id });
+    if (!deleted) return res.status(404).json({ error: "Document not found" });
+    cleanupReplacedOwnedMedia(document.url, null, req.user!.userId);
     return res.json({ success: true });
   } catch (e) {
+    logger.error({ err: e, documentId: req.params.docId }, "delete document error");
     return res.status(500).json({ error: "Failed to delete document" });
   }
 });

@@ -13,18 +13,20 @@ test("production call readiness requires valid TURN URLs and credentials", () =>
   const config = read("api-server/src/lib/callConfiguration.ts");
   const health = read("api-server/src/routes/health.ts");
   const envValidator = read("scripts/tools/validate-environment.mjs");
-  assert.match(config, /validTurnUrls && hasTurnCredentials/);
+  assert.match(config, /cloudflareReady \|\| staticConfiguration\.productionReady/);
   assert.match(config, /TURN_USERNAME/);
   assert.match(config, /TURN_CREDENTIAL/);
   assert.match(health, /calls: infrastructure\.calls/);
-  assert.match(envValidator, /Production voice calling requires TURN_URLS/);
-  assert.match(envValidator, /Production voice calling requires TURN_USERNAME and TURN_CREDENTIAL/);
+  assert.match(envValidator, /Production voice calling requires Cloudflare TURN credentials or static TURN_URLS/);
+  assert.match(envValidator, /CLOUDFLARE_TURN_KEY_ID/);
+  assert.match(envValidator, /CLOUDFLARE_TURN_API_TOKEN/);
 });
 
 test("Render production blueprint carries session, TURN, lifecycle, and escalation configuration", () => {
   const render = read("render.yaml");
   for (const key of [
-    "JWT_ISSUER", "JWT_AUDIENCE", "TRUST_PROXY", "TURN_URLS", "TURN_USERNAME", "TURN_CREDENTIAL",
+    "JWT_ISSUER", "JWT_AUDIENCE", "TRUST_PROXY", "CLOUDFLARE_TURN_KEY_ID", "CLOUDFLARE_TURN_API_TOKEN",
+    "TURN_URLS", "TURN_USERNAME", "TURN_CREDENTIAL",
     "USER_ACTIVITY_WRITE_INTERVAL_MS", "INACTIVITY_SWEEP_MIN_INTERVAL_MS", "INCIDENT_COMMANDER_CONTACT",
     "SUPPORT_ESCALATION_EMAIL",
   ]) assert.match(render, new RegExp(`- key: ${key}`));

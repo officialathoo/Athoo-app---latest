@@ -2,7 +2,9 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Plus, Pencil, Trash2, X, Building2 } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, X, Building2, ImagePlus } from "lucide-react";
+import { uploadFile } from "@/lib/storage";
+import { StorageImage } from "@/components/ui/StorageImage";
 
 type Account = {
   id: string;
@@ -12,6 +14,7 @@ type Account = {
   accountNumber: string;
   iban: string | null;
   instructions: string | null;
+  qrCodeUrl: string | null;
   isActive: boolean;
   sortOrder: number | null;
 };
@@ -112,6 +115,7 @@ export function PaymentAccountsPage() {
               <div><div className="text-xs text-slate-500">Number</div><div className="text-slate-800 font-mono">{a.accountNumber}</div></div>
               {a.iban && <div className="col-span-2"><div className="text-xs text-slate-500">IBAN</div><div className="text-slate-800 font-mono text-xs">{a.iban}</div></div>}
               {a.instructions && <div className="col-span-2"><div className="text-xs text-slate-500">Instructions</div><div className="text-slate-700 text-sm">{a.instructions}</div></div>}
+              {a.qrCodeUrl && <div className="col-span-2"><div className="text-xs text-slate-500 mb-2">Payment QR code</div><StorageImage objectPath={a.qrCodeUrl} alt={`${a.label} payment QR code`} className="h-40 w-40 rounded-lg border border-slate-200 object-contain bg-white p-2" /></div>}
             </div>
           </div>
         ))}
@@ -127,6 +131,8 @@ function AccountForm({ initial, onCancel, onSave, saving }: { initial: Account |
   const [accountNumber, setAccountNumber] = useState(initial?.accountNumber ?? "");
   const [iban, setIban] = useState(initial?.iban ?? "");
   const [instructions, setInstructions] = useState(initial?.instructions ?? "");
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(initial?.qrCodeUrl ?? null);
+  const [uploadingQr, setUploadingQr] = useState(false);
   const [isActive, setIsActive] = useState(initial?.isActive ?? true);
   const [sortOrder, setSortOrder] = useState(String(initial?.sortOrder ?? 0));
 
@@ -143,14 +149,46 @@ function AccountForm({ initial, onCancel, onSave, saving }: { initial: Account |
         <F label="Account number *"><input value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} className="i" /></F>
         <F label="IBAN" wide><input value={iban} onChange={(e) => setIban(e.target.value)} className="i" /></F>
         <F label="Instructions" wide><textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} className="i min-h-[60px]" placeholder="Send screenshot of payment after transfer" /></F>
+        <F label="Payment QR code" wide>
+          <div className="flex flex-wrap items-center gap-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4">
+            {qrCodeUrl ? (
+              <StorageImage objectPath={qrCodeUrl} alt="Payment QR preview" className="h-36 w-36 rounded-lg border border-slate-200 bg-white object-contain p-2" />
+            ) : (
+              <div className="flex h-36 w-36 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400"><ImagePlus size={28} /></div>
+            )}
+            <div className="space-y-2">
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">
+                {uploadingQr ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />}
+                {qrCodeUrl ? "Replace QR image" : "Upload QR image"}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  disabled={uploadingQr}
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    event.currentTarget.value = "";
+                    if (!file) return;
+                    setUploadingQr(true);
+                    try { setQrCodeUrl(await uploadFile(file, "shared")); }
+                    catch (error) { window.alert(error instanceof Error ? error.message : "QR upload failed"); }
+                    finally { setUploadingQr(false); }
+                  }}
+                />
+              </label>
+              {qrCodeUrl && <button type="button" className="block text-sm text-red-600 hover:underline" onClick={() => setQrCodeUrl(null)}>Remove QR image</button>}
+              <p className="max-w-md text-xs text-slate-500">Use a clear square PNG, JPG or WebP. It will be shown to providers for scanning.</p>
+            </div>
+          </div>
+        </F>
         <F label="Sort order"><input type="number" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="i" /></F>
         <F label="Active"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Show on provider app</label></F>
       </div>
       <div className="mt-5 flex items-center justify-end gap-2">
         <button onClick={onCancel} className="px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg">Cancel</button>
         <button
-          disabled={saving || !label.trim() || !accountTitle.trim() || !accountNumber.trim()}
-          onClick={() => onSave({ label, bankName: bankName || null, accountTitle, accountNumber, iban: iban || null, instructions: instructions || null, isActive, sortOrder: Number(sortOrder) || 0 })}
+          disabled={saving || uploadingQr || !label.trim() || !accountTitle.trim() || !accountNumber.trim()}
+          onClick={() => onSave({ label, bankName: bankName || null, accountTitle, accountNumber, iban: iban || null, instructions: instructions || null, qrCodeUrl, isActive, sortOrder: Number(sortOrder) || 0 })}
           className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm rounded-lg inline-flex items-center gap-2"
         >
           {saving && <Loader2 size={14} className="animate-spin" />} Save

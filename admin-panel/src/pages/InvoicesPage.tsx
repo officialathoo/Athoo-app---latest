@@ -10,6 +10,7 @@ interface Invoice {
   id: string;
   invoiceNumber: string;
   bookingId: string;
+  bookingPublicId?: string | null;
   customerId: string;
   providerId: string;
   customerName: string;
@@ -18,6 +19,10 @@ interface Invoice {
   address: string;
   scheduledDate: string;
   scheduledTime: string;
+  ratePerHour?: number | null;
+  durationMinutes?: number | null;
+  jobStartedAt?: string | null;
+  jobCompletedAt?: string | null;
   subtotal: number;
   visitCharge: number;
   platformFee: number;
@@ -122,56 +127,48 @@ export function InvoicesPage() {
     filtered.reduce((s, inv) => s + (inv.commissionAmount || 0), 0),
     [filtered]);
 
-  function printInvoice(inv: Invoice) {
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${escapeHtml(inv.invoiceNumber)}</title>
+  function buildInvoiceHtml(inv: Invoice) {
+    const serviceAmount = Number(inv.subtotal || 0);
+    const visitCharge = Number(inv.visitCharge || 0);
+    const jobNumber = inv.bookingPublicId || inv.bookingId;
+    const rate = Number(inv.ratePerHour || 0);
+    const duration = Number(inv.durationMinutes || 0);
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${escapeHtml(inv.invoiceNumber)}</title>
 <style>
-  body{font-family:Arial,sans-serif;margin:0;padding:20px;color:#1e293b}
-  h1{font-size:22px;font-weight:900;color:#1A6EE0;margin:0}
-  .sub{font-size:12px;color:#64748b;margin-top:2px}
-  .inv-header{display:flex;justify-content:space-between;align-items:flex-start;padding:20px 24px;background:linear-gradient(135deg,#1A6EE0,#0D4BA0);color:#fff;border-radius:10px;margin-bottom:20px}
-  .inv-no{font-size:16px;font-weight:700;text-align:right}
-  .inv-date{font-size:11px;opacity:.8;text-align:right;margin-top:4px}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px}
-  .cell{background:#f8fafc;border-radius:8px;padding:10px 12px}
-  .cell-label{font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;margin-bottom:3px}
-  .cell-val{font-size:13px;font-weight:600;color:#1e293b}
-  table{width:100%;border-collapse:collapse}
-  th{background:#f1f5f9;padding:8px 10px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase}
-  td{padding:9px 10px;border-bottom:1px solid #f1f5f9;font-size:13px}
-  .total{background:linear-gradient(135deg,#1A6EE0,#0D4BA0);color:#fff;font-weight:700;font-size:15px}
-  .footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:20px}
-  @media print{body{padding:0}}
-</style></head><body>
-<div class="inv-header">
-  <div><h1>ATHOO</h1><div class="sub">Admin Invoice Record</div></div>
-  <div><div class="inv-no">${escapeHtml(inv.invoiceNumber)}</div><div class="inv-date">${escapeHtml(inv.scheduledDate)} ${escapeHtml(inv.scheduledTime)}</div></div>
-</div>
-<div class="grid">
-  <div class="cell"><div class="cell-label">Customer</div><div class="cell-val">${escapeHtml(inv.customerName)}</div></div>
-  <div class="cell"><div class="cell-label">Provider</div><div class="cell-val">${escapeHtml(inv.providerName)}</div></div>
-  <div class="cell"><div class="cell-label">Service</div><div class="cell-val">${escapeHtml(inv.service.replace(/_/g," "))}</div></div>
-  <div class="cell"><div class="cell-label">Address</div><div class="cell-val">${escapeHtml(inv.address || "—")}</div></div>
-</div>
-<table>
-  <tr><th>Description</th><th style="text-align:right">Amount</th></tr>
-  <tr><td>Service Charge</td><td style="text-align:right">Rs. ${(inv.subtotal - inv.visitCharge).toLocaleString()}</td></tr>
-  ${inv.visitCharge > 0 ? `<tr><td>Visit / Call-out Charge</td><td style="text-align:right">Rs. ${inv.visitCharge.toLocaleString()}</td></tr>` : ""}
-  <tr><td style="color:#64748b">Platform Fee</td><td style="text-align:right;color:#64748b">Rs. ${inv.platformFee.toLocaleString()}</td></tr>
-  ${inv.discountAmount > 0 ? `<tr><td style="color:#059669">Discount</td><td style="text-align:right;color:#059669">−Rs. ${inv.discountAmount.toLocaleString()}</td></tr>` : ""}
-  <tr><td style="color:#64748b">Commission (Athoo)</td><td style="text-align:right;color:#64748b">Rs. ${inv.commissionAmount.toLocaleString()}</td></tr>
-  <tr><td style="color:#059669">Provider Earns</td><td style="text-align:right;color:#059669">Rs. ${inv.providerAmount.toLocaleString()}</td></tr>
-  <tr class="total"><td>TOTAL</td><td style="text-align:right">Rs. ${inv.totalAmount.toLocaleString()}</td></tr>
-</table>
-<div class="footer">Athoo Admin — Generated ${new Date().toLocaleString("en-PK")}</div>
-</body></html>`;
-    const w = window.open("", "_blank", "noopener,noreferrer");
-    if (w) {
-      w.opener = null;
-      w.document.write(html);
-      w.document.close();
-      w.focus();
-      w.print();
-    }
+  @page{size:A4;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#e2e8f0;color:#0f172a;font-family:Arial,sans-serif}
+  .page{width:210mm;min-height:297mm;margin:0 auto;background:#fff;position:relative;padding-bottom:34mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .header{min-height:48mm;background:linear-gradient(135deg,#1A6EE0,#0D4BA0);color:#fff;padding:15mm 16mm 11mm;display:flex;justify-content:space-between;align-items:flex-start}
+  .brand{display:flex;gap:12px;align-items:center}.logo{width:52px;height:52px;border-radius:14px;background:#fff;object-fit:contain;padding:4px}.brand-name{font-size:28px;font-weight:900}.brand-sub{font-size:11px;opacity:.82;margin-top:3px}.meta{text-align:right}.title{font-size:12px;letter-spacing:2px;opacity:.78}.number{font-size:20px;font-weight:900;margin-top:4px}.status{display:inline-block;margin-top:8px;padding:5px 12px;border:1px solid rgba(255,255,255,.45);border-radius:999px;font-size:10px;font-weight:800;text-transform:uppercase}
+  .body{padding:12mm 16mm}.refs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:9mm}.ref,.party{border:1px solid #cbd5e1;border-radius:9px;padding:10px}.label{font-size:9px;color:#94a3b8;font-weight:800;text-transform:uppercase;letter-spacing:.7px}.value{font-size:12px;font-weight:700;margin-top:4px;word-break:break-word}.parties{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8mm}.party{background:#f8fafc}.party strong{display:block;font-size:15px;margin-top:5px}.detail{font-size:11px;color:#64748b;line-height:1.5;margin-top:4px}
+  table{width:100%;border-collapse:collapse}th{background:#f1f5f9;padding:10px 12px;text-align:left;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.6px}td{padding:11px 12px;border-bottom:1px solid #cbd5e1;font-size:12px}.amount{text-align:right}.small{font-size:10px;color:#64748b;margin-top:4px}.total td{background:#0D4BA0;color:#fff;font-size:16px;font-weight:900;border:0}.finance{margin-top:8mm;display:grid;grid-template-columns:1fr 1fr;gap:8px}.finance .ref{background:#f8fafc}.footer{position:absolute;left:16mm;right:16mm;bottom:10mm;border-top:1px solid #cbd5e1;padding-top:7mm;display:flex;justify-content:space-between;font-size:9px;color:#64748b}
+  @media screen{.page{box-shadow:0 8px 30px rgba(15,23,42,.18)}}
+</style></head><body><main class="page">
+<header class="header"><div class="brand"><img class="logo" src="${escapeHtml(`${window.location.origin}/logo.png`)}" alt="Athoo logo"><div><div class="brand-name">ATHOO</div><div class="brand-sub">Home Services · Pakistan</div></div></div><div class="meta"><div class="title">OFFICIAL INVOICE</div><div class="number">${escapeHtml(inv.invoiceNumber)}</div><div class="status">${escapeHtml(inv.status)}</div></div></header>
+<section class="body">
+<div class="refs"><div class="ref"><div class="label">Job number</div><div class="value">${escapeHtml(jobNumber)}</div></div><div class="ref"><div class="label">Issued</div><div class="value">${escapeHtml(formatDate(inv.createdAt))}</div></div><div class="ref"><div class="label">Completed</div><div class="value">${escapeHtml(inv.jobCompletedAt ? formatDate(inv.jobCompletedAt) : `${inv.scheduledDate} ${inv.scheduledTime}`)}</div></div></div>
+<div class="parties"><div class="party"><div class="label">Customer</div><strong>${escapeHtml(inv.customerName)}</strong><div class="detail">${escapeHtml(inv.address || "—")}</div></div><div class="party"><div class="label">Provider</div><strong>${escapeHtml(inv.providerName)}</strong><div class="detail">${escapeHtml(inv.service.replace(/_/g, " "))}</div></div></div>
+<table><thead><tr><th>Description</th><th class="amount">Amount</th></tr></thead><tbody>
+<tr><td><strong>${escapeHtml(inv.service.replace(/_/g, " "))}</strong><div class="small">${rate > 0 && duration > 0 ? `Rs. ${rate.toLocaleString()} / hour × ${duration} minute(s)` : "Recorded service amount"}</div></td><td class="amount">Rs. ${serviceAmount.toLocaleString()}</td></tr>
+${visitCharge > 0 ? `<tr><td>Visit / travelling charge</td><td class="amount">Rs. ${visitCharge.toLocaleString()}</td></tr>` : ""}
+${inv.discountAmount > 0 ? `<tr><td>Discount</td><td class="amount">−Rs. ${inv.discountAmount.toLocaleString()}</td></tr>` : ""}
+<tr class="total"><td>TOTAL</td><td class="amount">Rs. ${Number(inv.totalAmount || 0).toLocaleString()}</td></tr></tbody></table>
+<div class="finance"><div class="ref"><div class="label">Athoo commission</div><div class="value">Rs. ${Number(inv.commissionAmount || 0).toLocaleString()}</div></div><div class="ref"><div class="label">Provider amount</div><div class="value">Rs. ${Number(inv.providerAmount || 0).toLocaleString()}</div></div></div>
+</section><footer class="footer"><div><strong>Athoo · Home Services Pakistan</strong><br>Support: official@athoo.pk · athoo.pk</div><div>Official marketplace invoice<br>Generated ${escapeHtml(new Date().toLocaleString("en-PK"))}</div></footer></main></body></html>`;
+  }
+
+  function printInvoice(inv: Invoice) {
+    const frame = document.createElement("iframe");
+    frame.setAttribute("aria-hidden", "true");
+    Object.assign(frame.style, {
+      position: "fixed", right: "0", bottom: "0", width: "0", height: "0", border: "0",
+    });
+    frame.srcdoc = buildInvoiceHtml(inv);
+    frame.onload = () => {
+      frame.contentWindow?.focus();
+      frame.contentWindow?.print();
+      window.setTimeout(() => frame.remove(), 1_500);
+    };
+    document.body.appendChild(frame);
   }
 
   function exportCSV() {
@@ -349,8 +346,11 @@ export function InvoicesPage() {
                   ["Customer", selected.customerName],
                   ["Provider", selected.providerName],
                   ["Service", selected.service.replace(/_/g, " ")],
+                  ["Job Number", selected.bookingPublicId || selected.bookingId],
                   ["Scheduled", `${selected.scheduledDate} ${selected.scheduledTime}`],
-                  ["Subtotal", currency(selected.subtotal)],
+                  ["Hourly Rate", selected.ratePerHour ? `${currency(selected.ratePerHour)} / hour` : "—"],
+                  ["Worked Time", selected.durationMinutes ? `${selected.durationMinutes} minutes` : "—"],
+                  ["Service Amount", currency(selected.subtotal)],
                   ["Visit Charge", currency(selected.visitCharge)],
                   ["Platform Fee", currency(selected.platformFee)],
                   ["Discount", currency(selected.discountAmount)],

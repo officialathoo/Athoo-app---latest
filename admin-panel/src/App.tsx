@@ -18,6 +18,7 @@ const ProvidersPage = lazy(() => import("@/pages/ProvidersPage").then((m) => ({ 
 const NegotiationsPage = lazy(() => import("@/pages/NegotiationsPage").then((m) => ({ default: m.NegotiationsPage })));
 const BookingsPage = lazy(() => import("@/pages/BookingsPage").then((m) => ({ default: m.BookingsPage })));
 const VerificationPage = lazy(() => import("@/pages/VerificationPage").then((m) => ({ default: m.VerificationPage })));
+const DocumentRenewalsPage = lazy(() => import("@/pages/DocumentRenewalsPage").then((m) => ({ default: m.DocumentRenewalsPage })));
 const FinancePage = lazy(() => import("@/pages/FinancePage").then((m) => ({ default: m.FinancePage })));
 const BroadcastsPage = lazy(() => import("@/pages/BroadcastsPage").then((m) => ({ default: m.BroadcastsPage })));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage").then((m) => ({ default: m.SettingsPage })));
@@ -144,6 +145,9 @@ function AppShell() {
               <Route path="/verification">
                 <Guard perm="verification.write"><VerificationPage /></Guard>
               </Route>
+              <Route path="/document-renewals">
+                <Guard perm="verification.write"><DocumentRenewalsPage /></Guard>
+              </Route>
               <Route path="/finance">
                 <Guard perm="finance.read"><FinancePage /></Guard>
               </Route>
@@ -163,13 +167,13 @@ function AppShell() {
                 <Guard perm="broadcast.write"><BroadcastsPage /></Guard>
               </Route>
               <Route path="/complaints">
-                <Guard perm="support.write"><ComplaintsPage /></Guard>
+                <Guard perm="complaints.write"><ComplaintsPage /></Guard>
               </Route>
               <Route path="/chat-moderation">
-                <Guard perm="support.read"><ChatModerationPage /></Guard>
+                <Guard perm="complaints.read"><ChatModerationPage /></Guard>
               </Route>
               <Route path="/reviews">
-                <Guard perm="support.read"><ReviewsPage /></Guard>
+                <Guard perm="complaints.read"><ReviewsPage /></Guard>
               </Route>
               <Route path="/marketing">
                 <Guard perm="marketing.read"><MarketingPage /></Guard>
@@ -206,7 +210,7 @@ function AppShell() {
                 <Guard perm="operations.read"><LiveJobsPage /></Guard>
               </Route>
               <Route path="/reported-issues">
-                <Guard perm="support.write"><ReportedIssuesPage /></Guard>
+                <Guard perm="complaints.write"><ReportedIssuesPage /></Guard>
               </Route>
               <Route path="/rate-requests">
                 <Guard perm="verification.write"><RateRequestsPage /></Guard>

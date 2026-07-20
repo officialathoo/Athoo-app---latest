@@ -10,6 +10,7 @@ import {
   notificationsTable,
   promotionsTable,
   providerDocumentsTable,
+  providerDocumentUpdateRequestsTable,
   supportTicketsTable,
   ticketNotesTable,
   usersTable,
@@ -32,7 +33,7 @@ import {
   financeLedgerTable,
   notificationTemplatesTable,
 } from "@workspace/db/schema";
-import { and, between, desc, eq, gte, ilike, lte, or, sql, inArray } from "drizzle-orm";
+import { and, between, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import {
   requireAdmin,
   requireAuth,
@@ -49,6 +50,7 @@ import {
   toSafeUser,
 } from "../lib/admin";
 import { notifyUser, notifyUsers } from "../lib/notifications";
+import { restoreProviderAvailabilityIfCompliant } from "../lib/documentCompliance";
 import { createAdminNotification } from "../lib/adminNotifications";
 import { sendEmail, renderVerificationEmail } from "../lib/email";
 import { ADMIN_ROLES, validateAdminPermissions, hasAdminPermission } from "../lib/adminPermissions";
@@ -602,12 +604,12 @@ router.patch("/bookings/:id/cancel", requirePermission("bookings.write"), async 
         action: "cancelled", reason: reason.slice(0, 500), fromProviderId: existing.providerId,
         previousStatus: existing.status, nextStatus: "cancelled", metadata: { publicId: existing.publicId },
       });
-      if (existing.status === "accepted") {
-        await tx.update(usersTable).set({ isAvailable: true, updatedAt: new Date() }).where(eq(usersTable.id, existing.providerId));
-      }
       return updated;
     });
     if (!result) return res.status(409).json({ error: "Booking changed on another device. Refresh and try again." });
+    if (["accepted", "in_progress"].includes(existing.status)) {
+      await restoreProviderAvailabilityIfCompliant(existing.providerId, "admin_cancelled");
+    }
     await logAdminAction(req, "booking_cancelled_by_operations", "booking", bookingId, { reason, previousStatus: existing.status });
     emitToUser(result.customerId, "booking:cancelled", { booking: result, reason });
     emitToUser(result.providerId, "booking:cancelled", { booking: result, reason });
@@ -1128,8 +1130,15 @@ router.patch("/users/:id/availability", requirePermission("users.write"), async 
     const provider = await db.query.usersTable.findFirst({ where: eq(usersTable.id, providerId) });
     if (!provider || provider.role !== "provider") return res.status(404).json({ error: "Provider not found" });
     if (isAvailable) {
-      if (provider.isBlocked || provider.isDeactivated || !provider.isVerified || provider.verificationStatus !== "approved") {
-        return res.status(409).json({ error: "Provider is not eligible to be forced online" });
+      if (
+        provider.isBlocked ||
+        provider.isDeactivated ||
+        !provider.isVerified ||
+        provider.verificationStatus !== "approved" ||
+        provider.documentSuspendedAt ||
+        provider.documentComplianceStatus === "suspended"
+      ) {
+        return res.status(409).json({ error: "Provider is not eligible to be forced online until account and document verification are active" });
       }
       const active = await getProviderActiveWorkBlock(providerId);
       if (active.blocked) return res.status(409).json({ error: active.message || "Provider has active work" });
@@ -1237,6 +1246,12 @@ router.patch("/users/:id/verification-status", requirePermission("verification.w
     if (!target || target.role !== "provider") return res.status(404).json({ error: "Provider not found" });
     if (status === "rejected" && !note?.trim()) return res.status(400).json({ error: "A rejection reason is required" });
     if (status === "approved") {
+      if (target.documentSuspendedAt || target.documentComplianceStatus === "suspended") {
+        return res.status(409).json({
+          error: "This provider is paused for expired documents. Review and approve the replacement requests before reactivating verification.",
+          code: "DOCUMENT_RENEWAL_REQUIRED",
+        });
+      }
       const requiredTypes = ["cnic_front", "cnic_back", "selfie", "police"];
       const docs = await db.select().from(providerDocumentsTable).where(eq(providerDocumentsTable.providerId, target.id));
       const incomplete = requiredTypes.filter((type) => !docs.some((doc) => doc.type === type && doc.status === "approved"));
@@ -1842,7 +1857,13 @@ router.get("/notifications", requirePermission("notifications.read"), async (req
       isRead: Array.isArray(n.readByAdminIds) ? n.readByAdminIds.includes(adminId) : false,
     }));
 
-    const unreadCount = withRead.filter((n) => !n.isRead).length;
+    const unreadResult = await db.execute<{ unread_count: number }>(sql`
+      SELECT count(*)::int AS unread_count
+      FROM admin_notifications
+      WHERE (target_admin_id = ${adminId} OR target_admin_id IS NULL)
+        AND NOT (COALESCE(read_by_admin_ids, '[]'::jsonb) @> jsonb_build_array(${adminId}::text))
+    `);
+    const unreadCount = Number(unreadResult.rows[0]?.unread_count || 0);
     return res.json({ notifications: withRead, unreadCount });
   } catch (e) {
     return res.status(500).json({ error: "Failed to load notifications" });
@@ -1872,17 +1893,22 @@ router.post("/notifications", requirePermission("notifications.write"), async (r
 router.patch("/notifications/:id/read", requirePermission("notifications.read"), async (req: AuthRequest, res) => {
   try {
     const adminId = req.user!.userId;
-    const notif = await db.query.adminNotificationsTable.findFirst({
-      where: eq(adminNotificationsTable.id, req.params.id),
-    });
-    if (!notif) return res.status(404).json({ error: "Notification not found" });
-
-    const reads = Array.isArray(notif.readByAdminIds) ? notif.readByAdminIds : [];
-    if (!reads.includes(adminId)) {
-      await db
-        .update(adminNotificationsTable)
-        .set({ readByAdminIds: [...reads, adminId] })
-        .where(eq(adminNotificationsTable.id, req.params.id));
+    const result = await db.execute<{ id: string }>(sql`
+      UPDATE admin_notifications
+      SET read_by_admin_ids = COALESCE(read_by_admin_ids, '[]'::jsonb) || jsonb_build_array(${adminId}::text)
+      WHERE id = ${req.params.id as string}
+        AND (target_admin_id = ${adminId} OR target_admin_id IS NULL)
+        AND NOT (COALESCE(read_by_admin_ids, '[]'::jsonb) @> jsonb_build_array(${adminId}::text))
+      RETURNING id
+    `);
+    if (result.rows.length === 0) {
+      const visible = await db.query.adminNotificationsTable.findFirst({
+        where: and(
+          eq(adminNotificationsTable.id, req.params.id as string),
+          or(eq(adminNotificationsTable.targetAdminId, adminId), isNull(adminNotificationsTable.targetAdminId)),
+        ),
+      });
+      if (!visible) return res.status(404).json({ error: "Notification not found" });
     }
     return res.json({ success: true });
   } catch (e) {
@@ -2440,6 +2466,7 @@ router.get("/sidebar-counts", async (req: AuthRequest, res) => {
 
     const [
       pendingVerifications,
+      pendingDocumentRenewals,
       pendingCommissionPayments,
       pendingWithdrawals,
       pendingRefunds,
@@ -2451,6 +2478,7 @@ router.get("/sidebar-counts", async (req: AuthRequest, res) => {
       inactiveAccountsForReview,
     ] = await Promise.all([
       db.$count(usersTable, and(eq(usersTable.role, "provider"), eq(usersTable.verificationStatus, "pending"))),
+      db.$count(providerDocumentUpdateRequestsTable, eq(providerDocumentUpdateRequestsTable.status, "pending")),
       db.$count(commissionPaymentsTable, eq(commissionPaymentsTable.status, "pending")),
       db.$count(withdrawalRequestsTable, eq(withdrawalRequestsTable.status, "pending")),
       db.$count(refundRequestsTable, eq(refundRequestsTable.status, "pending")),
@@ -2462,25 +2490,20 @@ router.get("/sidebar-counts", async (req: AuthRequest, res) => {
       db.$count(usersTable, and(eq(usersTable.inactivityState, "review"), eq(usersTable.accountStatus, "active"), eq(usersTable.isDeactivated, false), eq(usersTable.isBlocked, false))),
     ]);
 
-    // Count unread notifications for this admin
-    const notifications = await db
-      .select()
-      .from(adminNotificationsTable)
-      .where(
-        or(
-          eq(adminNotificationsTable.targetAdminId, adminId),
-          sql`${adminNotificationsTable.targetAdminId} IS NULL`
-        )
-      )
-      .limit(100);
-
-    const unreadNotifications = notifications.filter(
-      (n) => !(Array.isArray(n.readByAdminIds) && n.readByAdminIds.includes(adminId))
-    ).length;
+    // Count every visible unread notification. Do not cap this query to the
+    // latest 100 rows because the sidebar badge must remain authoritative.
+    const unreadResult = await db.execute<{ unread_count: number }>(sql`
+      SELECT count(*)::int AS unread_count
+      FROM admin_notifications
+      WHERE (target_admin_id = ${adminId} OR target_admin_id IS NULL)
+        AND NOT (COALESCE(read_by_admin_ids, '[]'::jsonb) @> jsonb_build_array(${adminId}::text))
+    `);
+    const unreadNotifications = Number(unreadResult.rows[0]?.unread_count || 0);
 
     return res.json({
       counts: {
         pendingVerifications,
+        pendingDocumentRenewals,
         pendingCommissionPayments,
         pendingWithdrawals,
         pendingRefunds,

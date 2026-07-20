@@ -77,7 +77,8 @@ test("print and spreadsheet exports neutralize injected content", () => {
   const csv = readRepo("admin-panel/src/lib/csv.ts");
   const leads = readRepo("api-server/src/routes/leads.ts");
   assert.match(invoices, /escapeHtml\(inv\.customerName\)/);
-  assert.match(invoices, /noopener,noreferrer/);
+  assert.match(invoices, /document\.createElement\("iframe"\)/);
+  assert.match(invoices, /frame\.srcdoc = buildInvoiceHtml\(inv\)/);
   assert.doesNotMatch(invoices, /<script>window\.onload/);
   assert.match(csv, /\[=\+@-\]/);
   assert.match(leads, /csvCell/);

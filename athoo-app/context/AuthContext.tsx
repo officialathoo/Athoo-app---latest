@@ -58,6 +58,12 @@ export interface User {
   legalVersion?: string | null;
   termsAcceptedAt?: string | null;
   privacyAcceptedAt?: string | null;
+  cnicExpiry?: string | null;
+  cnicLifetime?: boolean;
+  documentComplianceStatus?: "active" | "action_required" | "warning" | "grace" | "renewal_pending" | "suspended";
+  documentComplianceReason?: string | null;
+  documentGraceEndsAt?: string | null;
+  documentSuspendedAt?: string | null;
 }
 
 export interface RegisterData {
@@ -68,6 +74,10 @@ export interface RegisterData {
   services?: string[];
   fatherName?: string;
   cnicNumber?: string;
+  cnicExpiry?: string;
+  cnicLifetime?: boolean;
+  policeIssuedAt?: string;
+  policeExpiresAt?: string;
   experience?: string;
   location?: string;
   ratePerHour?: number;
@@ -293,8 +303,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const result = await getFastForegroundLocation({
         timeoutMs: 12_000,
         maxCacheAgeMs: runtimeConfig.location.providerForegroundSyncIntervalMs,
-        requiredAccuracy: 100,
-        freshAccuracy: "high",
+        requiredAccuracy: 60,
+        freshAccuracy: "highest",
         requestPermission: true,
         rationaleTitle: "Allow precise location",
         rationaleBody: "Athoo uses your current location while the app is open so nearby customers can send you suitable jobs.",
@@ -496,7 +506,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const register = useCallback(async (data: RegisterData) => {
     try {
-      const res = await api.register({ name: data.name, phone: data.phone.trim(), email: data.email, role: data.role, services: data.services || [], fatherName: data.fatherName, cnicNumber: data.cnicNumber, experience: data.experience, location: data.location, ratePerHour: data.ratePerHour, password: data.password, termsAccepted: data.termsAccepted, privacyAccepted: data.privacyAccepted, legalVersion: data.legalVersion, registrationToken: data.registrationToken });
+      const res = await api.register({
+        name: data.name,
+        phone: data.phone.trim(),
+        email: data.email,
+        role: data.role,
+        services: data.services || [],
+        fatherName: data.fatherName,
+        cnicNumber: data.cnicNumber,
+        cnicExpiry: data.cnicExpiry,
+        cnicLifetime: data.cnicLifetime,
+        policeIssuedAt: data.policeIssuedAt,
+        policeExpiresAt: data.policeExpiresAt,
+        experience: data.experience,
+        location: data.location,
+        ratePerHour: data.ratePerHour,
+        password: data.password,
+        termsAccepted: data.termsAccepted,
+        privacyAccepted: data.privacyAccepted,
+        legalVersion: data.legalVersion,
+        registrationToken: data.registrationToken,
+      });
       if (!res.token) return { success: false, error: "Registration token not received from server" };
       await setToken(res.token, true);
       await setRefreshToken(res.refreshToken || null, true);
@@ -656,12 +686,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const completeBiometricLogin = useCallback(async () => {
     try {
       if (!(await isBiometricEnabled())) {
-        return { success: false, error: "Biometric login is not enabled" };
+        return { success: false, error: "Device authentication login is not enabled" };
       }
       const available = await isBiometricAvailable();
       if (!available) {
         await disableBiometric();
-        return { success: false, error: "No Face ID / Fingerprint is enrolled on this device. Please sign in normally." };
+        return { success: false, error: "No supported Face ID, Touch ID, fingerprint, face unlock, or iris method is enrolled on this device. Please sign in with your Athoo password or OTP." };
       }
       const result = await authenticateWithBiometric("Sign in to Athoo");
       if (!result.success) return { success: false, error: result.error || "Authentication cancelled or failed" };
@@ -680,7 +710,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (rawUser.biometricEnabled !== true) {
         await disableBiometric();
         setRequiresBiometric(false);
-        return { success: false, error: "Biometric login must be enabled again from Security settings." };
+        return { success: false, error: "Device authentication must be enabled again from Athoo Security settings." };
       }
       const hydrated = await attachSavedProviders(sanitizeUser(rawUser));
       setUser(hydrated);
@@ -691,7 +721,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await clearLocalSession(true);
         return { success: false, error: "Session expired. Please login again." };
       }
-      return { success: false, error: apiErrorToMessage(error, "Biometric login failed. Please try again or use password/OTP.") };
+      return { success: false, error: apiErrorToMessage(error, "Device authentication failed. Please try again or use password/OTP.") };
     }
   }, [attachSavedProviders, clearLocalSession]);
 
@@ -730,12 +760,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!(await isBiometricAvailable())) {
-        return { success: false, error: "Set up Face ID, Touch ID, Fingerprint, or Iris in your phone settings first." };
+        return { success: false, error: "Set up Face ID, Touch ID, fingerprint, face unlock, or iris authentication in your phone security settings first. Your device passcode can remain the native fallback." };
       }
 
       const verification = await authenticateWithBiometric("Confirm biometric login for Athoo");
       if (!verification.success) {
-        return { success: false, error: verification.error || "Biometric verification failed." };
+        return { success: false, error: verification.error || "Device authentication failed." };
       }
 
       const response = await api.setBiometricPreference({
@@ -773,8 +803,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return {
         success: false,
         error: apiErrorToMessage(error, enabled
-          ? "Biometric login could not be enabled. Check your password and try again."
-          : "Biometric login could not be disabled. Please try again."),
+          ? "Device authentication could not be enabled. Check your password and try again."
+          : "Device authentication could not be disabled. Please try again."),
       };
     }
   }, [user?.id, user?.phone, user?.role]);

@@ -11,6 +11,7 @@ const PAGE_TITLES: Record<string, [string, string]> = {
   "/bookings": ["Bookings", "Track jobs, status flow, and platform revenue"],
   "/negotiations": ["Negotiations", "Review active offers and resolve stuck negotiations"],
   "/verification": ["Verification", "Review and approve provider verification requests"],
+  "/document-renewals": ["Document Renewals", "Review replacement CNIC and police-verification documents"],
   "/requests": ["Broadcast Requests", "Open broadcast jobs from customers seeking providers"],
   "/live-jobs": ["Live Jobs Monitor", "Real-time view of active and in-progress bookings"],
   "/finance": ["Finance", "Platform revenue, provider dues, and commission analytics"],

@@ -36,6 +36,7 @@ import { leadsPublicRouter, leadsAdminRouter } from "./leads";
 import { emailPublicRouter, emailUserRouter, emailAdminRouter } from "./email";
 import { policiesPublicRouter, policiesAdminRouter } from "./policies";
 import inactivityAdminRouter from "./inactivity";
+import documentRenewalsRouter, { documentRenewalsAdminRouter } from "./document-renewals";
 
 const router: IRouter = Router();
 
@@ -62,6 +63,7 @@ router.use("/report-issues", reportIssuesRouter);
 // the cancel-deletion / reactivate endpoints.
 router.use("/me/account", accountRouter);
 router.use("/me/rate-requests", rateRequestsProviderRouter);
+router.use("/me/document-renewals", documentRenewalsRouter);
 router.use("/me", meRouter);
 router.use("/categories", categoriesRouter);
 router.use("/payments", paymentsRouter);
@@ -87,6 +89,7 @@ router.use("/admin/emergency-contacts", emergencyContactsAdminRouter);
 router.use("/admin/notification-templates", notificationTemplatesRouter);
 router.use("/admin/report-issues", reportIssuesAdminRouter);
 router.use("/admin/rate-requests", rateRequestsAdminRouter);
+router.use("/admin/document-renewals", documentRenewalsAdminRouter);
 
 router.use("/admin/service-areas", serviceAreasAdminRouter);
 router.use("/service-areas", serviceAreasPublicRouter);

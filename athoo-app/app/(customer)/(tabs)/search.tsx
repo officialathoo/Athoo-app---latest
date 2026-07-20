@@ -158,8 +158,8 @@ export default function SearchScreen() {
       const result = await getFastForegroundLocation({
         timeoutMs: 12_000,
         maxCacheAgeMs: 5 * 60 * 1000,
-        requiredAccuracy: 150,
-        freshAccuracy: "high",
+        requiredAccuracy: 60,
+        freshAccuracy: "highest",
         rationaleTitle: tr("Location permission"),
         rationaleBody: tr("Athoo uses your location to show nearby providers and choose an address."),
       });

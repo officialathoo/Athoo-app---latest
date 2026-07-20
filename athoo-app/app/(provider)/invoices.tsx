@@ -28,6 +28,7 @@ type ApiInvoice = {
   id: string;
   invoiceNumber: string;
   bookingId: string;
+  bookingPublicId?: string | null;
   customerId: string;
   providerId: string;
   customerName: string;
@@ -36,6 +37,8 @@ type ApiInvoice = {
   address: string;
   scheduledDate: string;
   scheduledTime: string;
+  ratePerHour?: number | null;
+  durationMinutes?: number | null;
   subtotal: number;
   visitCharge: number;
   platformFee: number;
@@ -88,9 +91,14 @@ export default function ProviderInvoicesScreen() {
         : b.createdAt
           ? formatLocalizedDate(b.createdAt)
           : "—",
-      serviceCharge: match ? match.providerAmount : Number(b.providerAmount ?? b.price ?? 0),
-      visitCharge: match ? match.visitCharge : Number((b as any).visitCharge ?? 0),
-      providerAmount: match ? match.providerAmount : Number(b.providerAmount ?? b.price ?? 0),
+      serviceAmount: match ? Number(match.subtotal || 0) : Number(b.price ?? 0),
+      visitCharge: match ? Number(match.visitCharge || 0) : Number((b as any).visitCharge ?? 0),
+      grossTotal: match ? Number(match.totalAmount || 0) : Number((b.price ?? 0) + ((b as any).visitCharge ?? 0)),
+      commissionAmount: match ? Number(match.commissionAmount || 0) : Number((b as any).commissionAmount ?? 0),
+      providerAmount: match ? Number(match.providerAmount || 0) : Number(b.providerAmount ?? b.price ?? 0),
+      ratePerHour: match ? Number(match.ratePerHour || 0) : Number((b as any).ratePerHour ?? 0),
+      durationMinutes: match ? Number(match.durationMinutes || 0) : 0,
+      jobNumber: match?.bookingPublicId || (b as any).publicId || b.id,
       invoiceNo: match ? match.invoiceNumber : `ATH-${b.id.slice(-6).toUpperCase()}`,
     };
   });
@@ -105,7 +113,7 @@ export default function ProviderInvoicesScreen() {
 
   const handleDownloadPdf = async (inv: NonNullable<typeof selected>) => {
     if (generatingPdf) return;
-    const total = inv.serviceCharge + inv.visitCharge;
+    const total = inv.providerAmount;
     const customerName = escapeHtml(inv.customer);
     const serviceName = escapeHtml(inv.service);
     const invoiceDate = escapeHtml(inv.date);
@@ -116,8 +124,9 @@ export default function ProviderInvoicesScreen() {
 
     const html = `<!DOCTYPE html><html dir="${direction}"><head><meta charset="utf-8">
 <style>
-  body{font-family:Arial,sans-serif;margin:0;padding:0;color:${printColors.text};background:${printColors.page};direction:${direction}}
-  .page{max-width:700px;margin:0 auto;background:${printColors.page};border-radius:12px;overflow:hidden;border:1px solid ${printColors.text};box-shadow:none}
+  @page{size:A4;margin:0}
+  body{font-family:Arial,sans-serif;margin:0;padding:0;color:${printColors.text};background:${printColors.canvas};direction:${direction}}
+  .page{width:210mm;min-height:297mm;margin:0 auto;background:${printColors.page};overflow:hidden;position:relative;padding-bottom:30mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .header{background:linear-gradient(135deg,${printColors.primary},${printColors.primaryPressed});color:${printColors.page};padding:28px 30px;display:flex;justify-content:space-between;align-items:flex-start}
   .logo{font-size:24px;font-weight:900;letter-spacing:-1px}
   .logo-sub{font-size:11px;opacity:.75;margin-top:2px}
@@ -152,8 +161,9 @@ export default function ProviderInvoicesScreen() {
     </div>
     <table>
       <tr><th>${escapeHtml(tr("Description"))}</th><th style="text-align:right">${escapeHtml(tr("Amount"))}</th></tr>
-      <tr><td>${serviceName}<br><small style="color:${printColors.textSecondary}">${invoiceDate}</small></td><td class="amount">${escapeHtml(formatCurrency(inv.serviceCharge))}</td></tr>
+      <tr><td>${serviceName}<br><small style="color:${printColors.textSecondary}">${escapeHtml(formatCurrency(inv.ratePerHour))} / hour × ${inv.durationMinutes} minute(s)</small></td><td class="amount">${escapeHtml(formatCurrency(inv.serviceAmount))}</td></tr>
       ${inv.visitCharge > 0 ? `<tr><td>${escapeHtml(tr("Visit / Call-out Charge"))}</td><td class="amount">${escapeHtml(formatCurrency(inv.visitCharge))}</td></tr>` : ""}
+      <tr><td>${escapeHtml(tr("Athoo Commission"))}</td><td class="amount">−${escapeHtml(formatCurrency(inv.commissionAmount))}</td></tr>
       <tr class="total-row"><td>${escapeHtml(tr("TOTAL EARNED"))}</td><td class="amount">${escapeHtml(formatCurrency(total))}</td></tr>
     </table>
     <div class="note">${escapeHtml(tr("This earnings statement reflects what you received directly from the customer. Keep it for your records."))}</div>
@@ -165,8 +175,15 @@ export default function ProviderInvoicesScreen() {
     try {
       setGeneratingPdf(true);
       if (Platform.OS === "web") {
-        const w = window.open("", "_blank", "noopener,noreferrer");
-        if (w) { w.opener = null; w.document.write(html); w.document.close(); w.print(); }
+        const frame = document.createElement("iframe");
+        Object.assign(frame.style, { position: "fixed", right: "0", bottom: "0", width: "0", height: "0", border: "0" });
+        frame.srcdoc = html;
+        frame.onload = () => {
+          frame.contentWindow?.focus();
+          frame.contentWindow?.print();
+          window.setTimeout(() => frame.remove(), 1_000);
+        };
+        document.body.appendChild(frame);
         return;
       }
       const { uri } = await Print.printToFileAsync({ html, base64: false });
@@ -184,7 +201,7 @@ export default function ProviderInvoicesScreen() {
   };
 
   if (selected) {
-    const total = selected.serviceCharge + selected.visitCharge;
+    const total = selected.providerAmount;
     return (
       <View style={[styles.container, { paddingTop: topPad }]}>
         <View style={styles.header}>
@@ -215,13 +232,15 @@ export default function ProviderInvoicesScreen() {
             <View style={styles.invRow}><Text style={styles.invLabel}>{tr("Service")}</Text><Text style={styles.invVal}>{selected.service}</Text></View>
             <View style={styles.invRow}><Text style={styles.invLabel}>{tr("Customer")}</Text><Text style={styles.invVal}>{selected.customer}</Text></View>
             <View style={styles.invDivider} />
-            <View style={styles.invRow}><Text style={styles.invLabel}>{tr("Provider Amount")}</Text><Text style={styles.invVal}>{formatCurrency(selected.serviceCharge)}</Text></View>
+            <View style={styles.invRow}><Text style={styles.invLabel}>{tr("Job Number")}</Text><Text style={styles.invVal}>{selected.jobNumber}</Text></View>
+            <View style={styles.invRow}><Text style={styles.invLabel}>{tr("Service Amount")}</Text><Text style={styles.invVal}>{formatCurrency(selected.serviceAmount)}</Text></View>
             {selected.visitCharge > 0 && (
               <View style={styles.invRow}>
                 <Text style={styles.invLabel}>{tr("Visit Charge")}</Text>
                 <Text style={[styles.invVal, { color: theme.colors.secondary }]}>{formatCurrency(selected.visitCharge)}</Text>
               </View>
             )}
+            <View style={styles.invRow}><Text style={styles.invLabel}>{tr("Athoo Commission")}</Text><Text style={[styles.invVal, { color: theme.colors.danger }]}>−{formatCurrency(selected.commissionAmount)}</Text></View>
             <View style={styles.invDivider} />
             <View style={styles.invRow}>
               <Text style={styles.invTotalLabel}>{tr("Total Earned")}</Text>
@@ -275,7 +294,7 @@ export default function ProviderInvoicesScreen() {
                 <Text style={styles.invItemNo}>{inv.invoiceNo}</Text>
               </View>
               <View style={styles.invItemRight}>
-                <Text style={styles.invItemAmount}>{formatCurrency(inv.serviceCharge + inv.visitCharge)}</Text>
+                <Text style={styles.invItemAmount}>{formatCurrency(inv.providerAmount)}</Text>
                 <View style={styles.paidBadge}><Text style={styles.paidText}>{tr("PAID")}</Text></View>
               </View>
             </Pressable>

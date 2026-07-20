@@ -65,12 +65,42 @@ export function NotificationBell() {
 
   const markReadMut = useMutation({
     mutationFn: (id: string) => api(`/api/admin/notifications/${id}/read`, { method: "PATCH" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-notifications"] }),
+    onMutate: async (id: string) => {
+      await qc.cancelQueries({ queryKey: ["admin-notifications"] });
+      const previous = qc.getQueryData<{ notifications: AdminNotification[]; unreadCount: number }>(["admin-notifications"]);
+      qc.setQueryData<{ notifications: AdminNotification[]; unreadCount: number }>(["admin-notifications"], (current) => {
+        if (!current) return current;
+        const wasUnread = current.notifications.some((notification) => notification.id === id && !notification.isRead);
+        return {
+          notifications: current.notifications.map((notification) =>
+            notification.id === id ? { ...notification, isRead: true } : notification,
+          ),
+          unreadCount: Math.max(0, current.unreadCount - (wasUnread ? 1 : 0)),
+        };
+      });
+      return { previous };
+    },
+    onError: (_error, _id, context) => {
+      if (context?.previous) qc.setQueryData(["admin-notifications"], context.previous);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["admin-notifications"] }),
   });
 
   const markAllMut = useMutation({
     mutationFn: () => api("/api/admin/notifications/read-all", { method: "PATCH" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-notifications"] }),
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: ["admin-notifications"] });
+      const previous = qc.getQueryData<{ notifications: AdminNotification[]; unreadCount: number }>(["admin-notifications"]);
+      qc.setQueryData<{ notifications: AdminNotification[]; unreadCount: number }>(["admin-notifications"], (current) => current ? {
+        notifications: current.notifications.map((notification) => ({ ...notification, isRead: true })),
+        unreadCount: 0,
+      } : current);
+      return { previous };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previous) qc.setQueryData(["admin-notifications"], context.previous);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["admin-notifications"] }),
   });
 
   useEffect(() => {

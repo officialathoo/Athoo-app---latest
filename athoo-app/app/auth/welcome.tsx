@@ -26,7 +26,7 @@ export default function WelcomeScreen() {
   const { requiresBiometric, completeBiometricLogin } = useAuth();
   const { t } = useLang();
   const { theme } = useTheme();
-  const [biometricType, setBiometricType] = useState<"face" | "fingerprint" | "iris" | "none">("none");
+  const [biometricType, setBiometricType] = useState<"face" | "fingerprint" | "iris" | "biometric" | "none">("none");
   const [bioRole, setBioRole] = useState<string>("customer");
   const [bioLoading, setBioLoading] = useState(false);
   const [bioError, setBioError] = useState("");
@@ -64,12 +64,16 @@ export default function WelcomeScreen() {
     ? t.signInWithFaceId
     : biometricType === "iris"
       ? t.signInWithIris
-      : t.signInWithFingerprint;
+      : biometricType === "fingerprint"
+        ? t.signInWithFingerprint
+        : "Sign in with device biometrics";
   const biometricHint = biometricType === "face"
     ? t.biometricFaceHint
     : biometricType === "iris"
       ? t.biometricIrisHint
-      : t.biometricFingerprintHint;
+      : biometricType === "fingerprint"
+        ? t.biometricFingerprintHint
+        : "Use the biometric method enrolled on this phone.";
 
   const gradientEnd = theme.dark ? theme.colors.elevated : theme.colors.primaryPressed;
 
@@ -110,7 +114,7 @@ export default function WelcomeScreen() {
                 <>
                   <View style={[styles.biometricIcon, { backgroundColor: theme.colors.infoSoft, borderColor: theme.colors.primary }]}> 
                     <Icon
-                      name={biometricType === "face" ? "scan-face" : biometricType === "iris" ? "eye" : "fingerprint"}
+                      name={biometricType === "face" ? "scan-face" : biometricType === "iris" ? "eye" : biometricType === "fingerprint" ? "fingerprint" : "shield"}
                       size={50}
                       color={theme.colors.primary}
                       strokeWidth={1.5}

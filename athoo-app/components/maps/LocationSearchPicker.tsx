@@ -168,8 +168,9 @@ export function LocationSearchPicker({
       const result = await getFastForegroundLocation({
         timeoutMs: 12_000,
         maxCacheAgeMs: 2 * 60 * 1000,
-        requiredAccuracy: 120,
-        freshAccuracy: "high",
+        requiredAccuracy: 60,
+        freshAccuracy: "highest",
+        preferFresh: true,
         rationaleTitle: tr("Location permission"),
         rationaleBody: tr("Athoo uses your location so providers can find the correct service address."),
       });
