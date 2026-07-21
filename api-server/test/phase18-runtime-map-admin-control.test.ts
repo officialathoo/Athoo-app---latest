@@ -28,7 +28,7 @@ test("geo runtime resolves provider selection from cached admin settings", () =>
   const geo = read("api-server/src/routes/geo.ts");
   assert.match(geo, /getRuntimeMapOverrides/);
   assert.match(geo, /getMapConfigurationStatus\(runtimeOverrides\)/);
-  assert.match(geo, /buildMapTileUpstreamUrl\(z, x, y, runtimeOverrides\)/);
+  assert.match(geo, /buildMapTileUpstreamCandidates\(z, x, y, runtimeOverrides\)/);
   assert.match(geo, /getMapProviderConfiguration\(runtimeOverrides\)/);
 });
 

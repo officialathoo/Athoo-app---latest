@@ -10,6 +10,9 @@ const timeoutMs = boundedNumber(process.env.CONNECTED_TIMEOUT_MS, 20_000, 2_000,
 const strict = readBoolean("CONNECTED_STRICT", true);
 const expectedInstances = boundedNumber(process.env.CONNECTED_EXPECTED_API_INSTANCES, 1, 1, 100);
 const maxFailedQueueJobs = boundedNumber(process.env.CONNECTED_MAX_FAILED_QUEUE_JOBS, 0, 0, 1_000_000);
+const minMapTileBytes = boundedNumber(process.env.CONNECTED_MIN_MAP_TILE_BYTES, 1_500, 256, 5_000_000);
+const maxOperationsInboxLatencyMs = boundedNumber(process.env.CONNECTED_MAX_OPERATIONS_INBOX_LATENCY_MS, 8_000, 500, 60_000);
+const maxSidebarCountsLatencyMs = boundedNumber(process.env.CONNECTED_MAX_SIDEBAR_COUNTS_LATENCY_MS, 5_000, 500, 60_000);
 
 if (!apiBase) throw new Error("Set CONNECTED_API_BASE_URL or pass the API base URL as the first argument");
 
@@ -66,6 +69,10 @@ function compactHeaders(headers) {
     "x-content-type-options",
     "x-frame-options",
     "x-map-provider",
+    "x-map-upstream",
+    "x-map-tile-bytes",
+    "x-map-tile-suspect",
+    "server-timing",
     "x-robots-tag",
   ];
   const output = {};
@@ -236,13 +243,26 @@ const publicPolicies = await apiRequest("public policy center", "/api/policies?a
 requireCondition(Array.isArray(publicPolicies.body?.policies) && publicPolicies.body.policies.length >= 2, "Published customer policy center is incomplete");
 
 if (deepChecks.maps?.configured) {
-  const tileZ = boundedNumber(process.env.CONNECTED_TILE_Z, 10, 0, 22);
-  const tileX = boundedNumber(process.env.CONNECTED_TILE_X, 720, 0, 2 ** tileZ - 1);
-  const tileY = boundedNumber(process.env.CONNECTED_TILE_Y, 410, 0, 2 ** tileZ - 1);
-  const tile = await apiRequest("map tile", `/api/geo/tiles/${tileZ}/${tileX}/${tileY}.png`);
+  const publicSettings = await apiRequest("public map settings", "/api/settings/public");
+  const mapSettings = publicSettings.body?.settings?.map || publicSettings.body?.map || {};
+  requireCondition(mapSettings.configured === true, "Public settings do not report a configured map provider");
+  requireCondition(/\{z\}.*\{x\}.*\{y\}/.test(String(mapSettings.tileUrl || "")), "Public map tile template is missing z/x/y placeholders");
+  requireCondition(/[?&]v=\d+/.test(String(mapSettings.tileUrl || "")), "Public map tile template is not cache-versioned; stale blank tiles may remain on devices");
+
+  // Representative Islamabad city tile. A 200 response containing a tiny
+  // transparent PNG is not a usable map and must fail connected verification.
+  const tileZ = boundedNumber(process.env.CONNECTED_TILE_Z, 15, 0, 22);
+  const tileX = boundedNumber(process.env.CONNECTED_TILE_X, 23032, 0, 2 ** tileZ - 1);
+  const tileY = boundedNumber(process.env.CONNECTED_TILE_Y, 13124, 0, 2 ** tileZ - 1);
+  const tile = await apiRequest("map tile", `/api/geo/tiles/${tileZ}/${tileX}/${tileY}.png?v=connected-${Date.now()}`);
   const type = String(tile.response?.headers.get("content-type") || "");
+  const tileBytes = Number(tile.body?.bytes || tile.response?.headers.get("x-map-tile-bytes") || 0);
+  const tileSuspect = String(tile.response?.headers.get("x-map-tile-suspect") || "").toLowerCase() === "true";
+  const tileUpstream = String(tile.response?.headers.get("x-map-upstream") || "").trim();
   requireCondition(type.startsWith("image/"), `Map tile returned unexpected content type: ${type || "missing"}`);
-  requireCondition(Number(tile.body?.bytes || 0) > 0, "Map tile returned an empty image");
+  requireCondition(tileBytes >= minMapTileBytes, `Map tile is suspiciously small (${tileBytes} bytes < ${minMapTileBytes})`);
+  requireCondition(!tileSuspect, "Map provider marked the returned tile as suspicious");
+  requireCondition(Boolean(tileUpstream), "Map tile response did not expose its redacted upstream diagnostic");
 }
 
 let userToken = String(process.env.CONNECTED_USER_TOKEN || "").trim() || null;
@@ -293,7 +313,13 @@ if (providerToken) {
   requireCondition(Array.isArray(providerBroadcasts.body?.requests), "Provider broadcast endpoint did not return a request list");
   requireCondition(providerBroadcasts.body?.eligibility?.eligible !== false, `Controlled provider is not eligible for customer broadcasts: ${providerBroadcasts.body?.eligibility?.reason || "unknown"}`);
   const callConfig = await apiRequest("production call configuration", "/api/calls/config", { headers: providerAuth });
+  const iceServers = Array.isArray(callConfig.body?.iceServers) ? callConfig.body.iceServers : [];
+  const turnUrls = iceServers.flatMap((server) => Array.isArray(server?.urls) ? server.urls : [server?.urls]).filter((url) => /^turns?:/i.test(String(url || "")));
   requireCondition(callConfig.body?.productionReady === true && callConfig.body?.hasTurnCredentials === true, `Authenticated call configuration is not production ready: ${callConfig.body?.warning || "TURN missing"}`);
+  requireCondition(callConfig.body?.provider === "cloudflare-turn", `Call provider is ${callConfig.body?.provider || "missing"}, expected cloudflare-turn`);
+  requireCondition(callConfig.body?.iceTransportPolicy === "relay", `Call transport policy is ${callConfig.body?.iceTransportPolicy || "missing"}, expected relay`);
+  requireCondition(turnUrls.length > 0, "Authenticated call configuration returned no TURN relay URL");
+  requireCondition(iceServers.every((server) => !turnUrls.some((url) => (Array.isArray(server?.urls) ? server.urls : [server?.urls]).includes(url)) || (server?.username && server?.credential)), "TURN relay URLs are missing short-lived credentials");
   const providerPolicies = await apiRequest("provider policy center", "/api/policies?audience=provider", { headers: providerAuth });
   requireCondition(Array.isArray(providerPolicies.body?.policies) && providerPolicies.body.policies.length >= 2, "Published provider policy center is incomplete");
 }
@@ -327,7 +353,17 @@ requireCondition(Boolean(adminToken), "Controlled administrator credentials are 
 let integrationStatus = null;
 if (adminToken) {
   const adminAuth = { authorization: `Bearer ${adminToken}` };
-  await apiRequest("admin sidebar counts", "/api/admin/sidebar-counts", { headers: adminAuth });
+  const sidebarCounts = await apiRequest("admin sidebar counts", "/api/admin/sidebar-counts", { headers: adminAuth });
+  requireCondition(sidebarCounts.body?.counts && typeof sidebarCounts.body.counts === "object", "Admin sidebar counts returned no count object");
+  requireCondition(Number(sidebarCounts.record?.latencyMs || 0) <= maxSidebarCountsLatencyMs, `Admin sidebar counts exceeded latency budget (${sidebarCounts.record?.latencyMs || 0}ms > ${maxSidebarCountsLatencyMs}ms)`);
+
+  const operationsInbox = await apiRequest("admin operations inbox", "/api/admin/operations-inbox?perTypeLimit=5", { headers: adminAuth });
+  requireCondition(Array.isArray(operationsInbox.body?.items), "Admin operations inbox returned no item list");
+  requireCondition(operationsInbox.body?.summary && typeof operationsInbox.body.summary === "object", "Admin operations inbox returned no workload summary");
+  requireCondition(Number(operationsInbox.record?.latencyMs || 0) <= maxOperationsInboxLatencyMs, `Admin operations inbox exceeded latency budget (${operationsInbox.record?.latencyMs || 0}ms > ${maxOperationsInboxLatencyMs}ms)`);
+  const degradedSources = Array.isArray(operationsInbox.body?.degradedSources) ? operationsInbox.body.degradedSources : [];
+  requireCondition(degradedSources.length === 0, `Operations inbox is degraded: ${degradedSources.join(", ")}`, strict ? "failure" : "warning");
+
   const governedPolicies = await apiRequest("admin policy governance", "/api/admin/policies", { headers: adminAuth });
   requireCondition(Array.isArray(governedPolicies.body?.policies) && governedPolicies.body.policies.length >= 2, "Admin policy governance returned no policy documents");
   await apiRequest("admin inactive account queue", "/api/admin/inactive-accounts?limit=1", { headers: adminAuth });
@@ -373,7 +409,7 @@ if (adminToken) {
 warnings.push("Actual Expo push receipt, notification sound, background/killed-state deep link, and two-way media transfer remain physical-device evidence and are not claimed by this HTTP verifier");
 
 const evidence = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   status: failures.length ? "failed" : "passed",
   apiBaseUrl: apiBase,
   adminBaseUrl: adminBase,

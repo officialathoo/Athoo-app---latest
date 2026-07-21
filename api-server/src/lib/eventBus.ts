@@ -49,6 +49,7 @@ export type EventName =
   | "broadcast:cancelled"
   | "call:incoming"
   | "call:accepted"
+  | "call:ice-candidate"
   | "call:rejected"
   | "call:ended"
   | "booking:location-updated";

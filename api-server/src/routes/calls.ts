@@ -3,7 +3,7 @@ import { logger } from "../lib/logger";
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { callsTable, usersTable } from "@workspace/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or, inArray, desc, gte, sql } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../middlewares/auth";
 import { emitToUser } from "../lib/eventBus";
 import { notifyUser } from "../lib/notifications";
@@ -30,6 +30,91 @@ function configuredBrandName(): string {
 function configuredBrandColor(): string {
   const value = String(process.env.BRAND_PRIMARY_COLOR || "#1A6EE0").trim();
   return /^#[0-9A-Fa-f]{6}$/.test(value) ? value.toUpperCase() : "#1A6EE0";
+}
+
+const LIVE_CALL_STATUSES = ["ringing", "active"] as const;
+const MAX_SESSION_DESCRIPTION_LENGTH = 160_000;
+const MAX_ICE_CANDIDATE_LENGTH = 8_000;
+const MAX_ICE_CANDIDATES_PER_SIDE = 128;
+const RINGING_CALL_TTL_MS = 35_000;
+
+class CallRouteError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+  }
+}
+
+function boundedText(value: unknown, limit: number): string {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, limit);
+}
+
+function normalizedSessionDescription(value: unknown, expectedType: "offer" | "answer"): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  const raw = typeof value === "string" ? value : JSON.stringify(value);
+  if (raw.length > MAX_SESSION_DESCRIPTION_LENGTH) {
+    throw new CallRouteError(413, `${expectedType === "offer" ? "Call offer" : "Call answer"} is too large`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new CallRouteError(400, `Invalid WebRTC ${expectedType}`);
+  }
+  if (!parsed || typeof parsed !== "object") throw new CallRouteError(400, `Invalid WebRTC ${expectedType}`);
+  const record = parsed as Record<string, unknown>;
+  const type = String(record.type || "").trim().toLowerCase();
+  const sdp = typeof record.sdp === "string" ? record.sdp : "";
+  if (type !== expectedType || !sdp || sdp.length > MAX_SESSION_DESCRIPTION_LENGTH) {
+    throw new CallRouteError(400, `Invalid WebRTC ${expectedType}`);
+  }
+  return JSON.stringify({ type, sdp });
+}
+
+type NormalizedIceCandidate = {
+  candidate: string;
+  sdpMid?: string | null;
+  sdpMLineIndex?: number | null;
+  usernameFragment?: string | null;
+};
+
+function normalizeIceCandidate(value: unknown): NormalizedIceCandidate {
+  if (!value || typeof value !== "object") throw new CallRouteError(400, "A valid ICE candidate is required");
+  const record = value as Record<string, unknown>;
+  const candidate = String(record.candidate || "").trim();
+  if (!candidate || candidate.length > MAX_ICE_CANDIDATE_LENGTH || !candidate.startsWith("candidate:")) {
+    throw new CallRouteError(400, "A valid ICE candidate is required");
+  }
+  const sdpMid = record.sdpMid === null || record.sdpMid === undefined
+    ? null
+    : String(record.sdpMid).trim().slice(0, 64);
+  const parsedIndex = record.sdpMLineIndex === null || record.sdpMLineIndex === undefined
+    ? null
+    : Number(record.sdpMLineIndex);
+  if (parsedIndex !== null && (!Number.isInteger(parsedIndex) || parsedIndex < 0 || parsedIndex > 64)) {
+    throw new CallRouteError(400, "Invalid ICE media-line index");
+  }
+  const usernameFragment = record.usernameFragment === null || record.usernameFragment === undefined
+    ? null
+    : String(record.usernameFragment).trim().slice(0, 256);
+  return {
+    candidate,
+    sdpMid,
+    sdpMLineIndex: parsedIndex,
+    usernameFragment,
+  };
+}
+
+function safeCandidateArray(value: string | null | undefined): NormalizedIceCandidate[] {
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function callInvolvesUser(call: { callerId: string; receiverId: string }, userId: string): boolean {
+  return call.callerId === userId || call.receiverId === userId;
 }
 
 // ── In-memory audio chunk store (cleared when call ends) ────────────────────
@@ -83,94 +168,204 @@ setInterval(() => {
       audioIndexCounter.delete(id);
     }
   }
+  for (const [userId, cached] of incomingCallCache.entries()) {
+    if (cached.ts < cutoff) incomingCallCache.delete(userId);
+  }
 }, 60_000);
 
 router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const callerId = req.user!.userId;
-    const { receiverId, callerName, callerInitials, callerColor, service, offer } = req.body;
-
+    const receiverId = String(req.body?.receiverId || "").trim();
     if (!receiverId || receiverId === callerId) {
       res.status(400).json({ error: "Valid receiverId is required" });
       return;
     }
 
-    const receiver = await db.query.usersTable.findFirst({ where: eq(usersTable.id, receiverId) });
-    if (!receiver || receiver.isBlocked || receiver.isDeactivated) {
-      res.status(400).json({ error: "Receiver is not available for calls" });
+    const service = boundedText(req.body?.service, 120) || null;
+    const offer = normalizedSessionDescription(req.body?.offer, "offer");
+    const participantIds = [callerId, receiverId].sort();
+    const now = new Date();
+
+    const result = await db.transaction(async (tx) => {
+      // Serialize call creation per participant. Two devices dialing at the same
+      // moment must not create overlapping ringing sessions or race the busy check.
+      for (const participantId of participantIds) {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`athoo-call:${participantId}`}, 0))`);
+      }
+
+      const participants = await tx.select({
+        id: usersTable.id,
+        role: usersTable.role,
+        name: usersTable.name,
+        profileColor: usersTable.profileColor,
+        isBlocked: usersTable.isBlocked,
+        isDeactivated: usersTable.isDeactivated,
+        accountStatus: usersTable.accountStatus,
+      }).from(usersTable).where(inArray(usersTable.id, participantIds));
+      const caller = participants.find((participant) => participant.id === callerId);
+      const receiver = participants.find((participant) => participant.id === receiverId);
+
+      if (!caller || caller.isBlocked || caller.isDeactivated || caller.accountStatus === "deleted") {
+        throw new CallRouteError(403, "Caller account is not eligible to place calls");
+      }
+      if (!receiver || receiver.isBlocked || receiver.isDeactivated || receiver.accountStatus === "deleted") {
+        throw new CallRouteError(400, "Receiver is not available for calls");
+      }
+      const validRolePair = new Set([caller.role, receiver.role]);
+      if (validRolePair.size !== 2 || !validRolePair.has("customer") || !validRolePair.has("provider")) {
+        throw new CallRouteError(403, "Calls are available only between customers and service providers");
+      }
+
+      const liveCalls = await tx.select().from(callsTable).where(and(
+        inArray(callsTable.status, [...LIVE_CALL_STATUSES]),
+        or(
+          inArray(callsTable.callerId, participantIds),
+          inArray(callsTable.receiverId, participantIds),
+        ),
+      )).orderBy(desc(callsTable.createdAt)).limit(20);
+
+      const usableCalls = [] as typeof liveCalls;
+      for (const existing of liveCalls) {
+        const createdAt = existing.createdAt ? new Date(existing.createdAt).getTime() : 0;
+        if (existing.status === "ringing" && (!createdAt || now.getTime() - createdAt > RINGING_CALL_TTL_MS)) {
+          await tx.update(callsTable).set({ status: "ended", endedAt: now }).where(and(
+            eq(callsTable.id, existing.id),
+            eq(callsTable.status, "ringing"),
+          ));
+          clearCallAudio(existing.id);
+          continue;
+        }
+        usableCalls.push(existing);
+      }
+
+      const samePendingCall = usableCalls.find((existing) =>
+        existing.status === "ringing" &&
+        existing.callerId === callerId &&
+        existing.receiverId === receiverId
+      );
+      if (samePendingCall) {
+        if (offer && offer !== samePendingCall.offer) {
+          const [refreshedCall] = await tx.update(callsTable).set({
+            offer,
+            answer: null,
+            callerCandidates: "[]",
+            calleeCandidates: "[]",
+          }).where(and(
+            eq(callsTable.id, samePendingCall.id),
+            eq(callsTable.status, "ringing"),
+            eq(callsTable.callerId, callerId),
+          )).returning();
+          if (refreshedCall) return { call: refreshedCall, created: false, signalingRefreshed: true };
+        }
+        return { call: samePendingCall, created: false, signalingRefreshed: false };
+      }
+
+      const callerBusy = usableCalls.find((existing) => callInvolvesUser(existing, callerId));
+      if (callerBusy?.status === "active" || callerBusy?.receiverId === callerId) {
+        throw new CallRouteError(409, "You are already in another call");
+      }
+      // Starting a new outgoing call intentionally replaces the caller's older
+      // unanswered outgoing attempt, but never interrupts an incoming or active call.
+      for (const existing of usableCalls.filter((candidate) =>
+        candidate.status === "ringing" && candidate.callerId === callerId
+      )) {
+        await tx.update(callsTable).set({ status: "ended", endedAt: now }).where(and(
+          eq(callsTable.id, existing.id),
+          eq(callsTable.status, "ringing"),
+        ));
+        clearCallAudio(existing.id);
+      }
+
+      const receiverBusy = usableCalls.find((existing) => callInvolvesUser(existing, receiverId));
+      if (receiverBusy) throw new CallRouteError(409, "The other person is already on another call");
+
+      const callerName = boundedText(caller.name, 120) || "Athoo user";
+      const callerInitials = callerName.split(/\s+/).filter(Boolean).map((part) => part[0]).join("").toUpperCase().slice(0, 2) || "AU";
+      const [createdCall] = await tx.insert(callsTable).values({
+        id: generateId(),
+        callerId,
+        callerName,
+        callerInitials,
+        callerColor: /^#[0-9A-Fa-f]{6}$/.test(String(caller.profileColor || ""))
+          ? String(caller.profileColor).toUpperCase()
+          : configuredBrandColor(),
+        receiverId,
+        service,
+        status: "ringing",
+        offer,
+        callerCandidates: "[]",
+        calleeCandidates: "[]",
+      }).returning();
+      if (!createdCall) throw new Error("Call record was not created");
+      return { call: createdCall, created: true, signalingRefreshed: false };
+    });
+
+    const call = result.call;
+    incomingCallCache.delete(receiverId);
+    if (result.created || result.signalingRefreshed) {
+      emitToUser(receiverId, "call:incoming", { call, signalingRefreshed: result.signalingRefreshed });
+    }
+    if (result.created) {
+      // WebSocket is the fastest path while the app is open. The push-backed
+      // notification is the recovery path when the app is backgrounded or killed.
+      const brandName = configuredBrandName();
+      void notifyUser({
+        userId: receiverId,
+        title: `Incoming ${brandName} call`,
+        body: `${call.callerName || `A ${brandName} user`} is calling${service ? ` about ${service}` : ""}.`,
+        type: "call",
+        link: "/call",
+        data: {
+          callId: call.id,
+          callerId,
+          role: req.user!.role === "customer" ? "provider" : "customer",
+          expiresAt: new Date(Date.now() + RINGING_CALL_TTL_MS).toISOString(),
+        },
+      });
+    }
+    res.setHeader("Cache-Control", "private, no-store");
+    res.status(result.created ? 201 : 200).json({ call, reused: !result.created });
+  } catch (error) {
+    if (error instanceof CallRouteError) {
+      res.status(error.status).json({ error: error.message });
       return;
     }
-
-    const existingRinging = await db.query.callsTable.findFirst({
-      where: and(eq(callsTable.callerId, callerId), eq(callsTable.status, "ringing")),
-    });
-    if (existingRinging) {
-      await db.update(callsTable).set({ status: "ended", endedAt: new Date() }).where(eq(callsTable.id, existingRinging.id));
-      clearCallAudio(existingRinging.id);
-    }
-
-    const call = {
-      id: generateId(),
-      callerId,
-      callerName,
-      callerInitials: callerInitials || "??",
-      callerColor: callerColor || configuredBrandColor(),
-      receiverId,
-      service: service || null,
-      status: "ringing",
-      offer: offer || null,
-      callerCandidates: "[]",
-      calleeCandidates: "[]",
-    };
-
-    await db.insert(callsTable).values(call);
-    incomingCallCache.delete(receiverId);
-    emitToUser(receiverId, "call:incoming", { call });
-    // WebSocket is the fastest path while the app is open. The push-backed
-    // notification is the recovery path when the app is backgrounded or killed.
-    const brandName = configuredBrandName();
-    void notifyUser({
-      userId: receiverId,
-      title: `Incoming ${brandName} call`,
-      body: `${callerName || `A ${brandName} user`} is calling${service ? ` about ${service}` : ""}.`,
-      type: "call",
-      link: "/call",
-      data: {
-        callId: call.id,
-        callerId,
-        role: receiver.role,
-        expiresAt: new Date(Date.now() + 35_000).toISOString(),
-      },
-    });
-    res.json({ call });
-  } catch (e) {
-    logger.error({ err: e }, "call create error");
+    logger.error({ err: error }, "call create error");
     res.status(500).json({ error: "Failed to initiate call" });
   }
 });
 
 
 router.get("/config", requireAuth, async (req: AuthRequest, res: Response) => {
-  const configuration = await getRuntimeCallConfiguration(req.user!.userId);
-  res.setHeader("Cache-Control", "private, no-store");
-  res.json({
-    ...configuration,
-    warning: configuration.warning,
-    audio: {
-      preferredCodec: process.env.CALL_PREFERRED_CODEC || "opus",
-      fallbackChunkMs: boundedInteger(process.env.CALL_FALLBACK_CHUNK_MS, 800, 400, 2_000),
-      fallbackActivationMs: boundedInteger(process.env.CALL_FALLBACK_ACTIVATION_MS, 8_000, 7_000, 20_000),
-    },
-  });
+  try {
+    const configuration = await getRuntimeCallConfiguration(req.user!.userId);
+    res.setHeader("Cache-Control", "private, no-store");
+    res.json({
+      ...configuration,
+      warning: configuration.warning,
+      audio: {
+        preferredCodec: process.env.CALL_PREFERRED_CODEC || "opus",
+        fallbackChunkMs: boundedInteger(process.env.CALL_FALLBACK_CHUNK_MS, 800, 400, 2_000),
+        fallbackActivationMs: boundedInteger(process.env.CALL_FALLBACK_ACTIVATION_MS, 8_000, 7_000, 20_000),
+      },
+    });
+  } catch (error) {
+    logger.warn({ err: error, userId: req.user!.userId }, "call configuration error");
+    res.setHeader("Cache-Control", "private, no-store");
+    res.status(503).json({ error: "Secure call configuration is temporarily unavailable" });
+  }
 });
 
 router.get("/incoming", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
     const cached = incomingCallCache.get(userId);
+    res.setHeader("Cache-Control", "private, no-store");
     if (cached && Date.now() - cached.ts < 2500) { res.json(cached.payload); return; }
     const call = await db.query.callsTable.findFirst({
       where: and(eq(callsTable.receiverId, userId), eq(callsTable.status, "ringing")),
+      orderBy: [desc(callsTable.createdAt)],
     });
 
     if (!call) {
@@ -181,8 +376,11 @@ router.get("/incoming", requireAuth, async (req: AuthRequest, res: Response) => 
     }
 
     const age = Date.now() - new Date(call.createdAt!).getTime();
-    if (age > 35000) {
-      await db.update(callsTable).set({ status: "ended", endedAt: new Date() }).where(eq(callsTable.id, call.id));
+    if (age > RINGING_CALL_TTL_MS) {
+      await db.update(callsTable).set({ status: "ended", endedAt: new Date() }).where(and(
+        eq(callsTable.id, call.id),
+        eq(callsTable.status, "ringing"),
+      ));
       clearCallAudio(call.id);
       const payload = { call: null };
       incomingCallCache.set(userId, { ts: Date.now(), payload });
@@ -193,7 +391,8 @@ router.get("/incoming", requireAuth, async (req: AuthRequest, res: Response) => 
     const payload = { call };
     incomingCallCache.set(userId, { ts: Date.now(), payload });
     res.json(payload);
-  } catch (e) {
+  } catch (error) {
+    logger.warn({ err: error, userId: req.user!.userId }, "incoming call lookup error");
     res.status(500).json({ error: "Failed to check incoming calls" });
   }
 });
@@ -202,130 +401,234 @@ router.get("/:callId/status", requireAuth, async (req: AuthRequest, res: Respons
   try {
     const call = await getAuthorizedCall(req.params.callId as string, req.user!.userId, res);
     if (!call) return;
+    res.setHeader("Cache-Control", "private, no-store");
     res.json({ call });
-  } catch (e) {
+  } catch (error) {
+    logger.warn({ err: error, userId: req.user!.userId, callId: req.params.callId }, "call status lookup error");
     res.status(500).json({ error: "Failed to get call status" });
   }
 });
 
 router.patch("/:callId/accept", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const call = await getAuthorizedCall(req.params.callId as string, req.user!.userId, res);
-    if (!call) return;
-    if (call.receiverId !== req.user!.userId) {
-      res.status(403).json({ error: "Only the receiver can accept this call" });
-      return;
-    }
-    if (call.status !== "ringing") {
-      res.status(409).json({ error: `Call is already ${call.status}` });
-      return;
-    }
-    const { answer } = req.body;
-    const updateData: Record<string, unknown> = { status: "active", startedAt: new Date() };
-    if (answer) updateData.answer = answer;
+    const callId = String(req.params.callId);
+    const receiverId = req.user!.userId;
+    const answer = normalizedSessionDescription(req.body?.answer, "answer");
+    const startedAt = new Date();
+    const [updatedCall] = await db.update(callsTable).set({
+      status: "active",
+      startedAt,
+      ...(answer ? { answer } : {}),
+    }).where(and(
+      eq(callsTable.id, callId),
+      eq(callsTable.receiverId, receiverId),
+      eq(callsTable.status, "ringing"),
+      gte(callsTable.createdAt, new Date(Date.now() - RINGING_CALL_TTL_MS)),
+    )).returning();
 
-    await db.update(callsTable).set(updateData).where(eq(callsTable.id, req.params.callId as string));
-    const updatedCall = await db.query.callsTable.findFirst({ where: eq(callsTable.id, req.params.callId as string) });
-    if (updatedCall) {
-      incomingCallCache.delete(updatedCall.callerId); incomingCallCache.delete(updatedCall.receiverId);
-      emitToUser(updatedCall.callerId, "call:accepted", { call: updatedCall });
-      emitToUser(updatedCall.receiverId, "call:accepted", { call: updatedCall });
+    if (!updatedCall) {
+      const current = await getAuthorizedCall(callId, receiverId, res);
+      if (!current) return;
+      if (current.receiverId !== receiverId) {
+        res.status(403).json({ error: "Only the receiver can accept this call" });
+        return;
+      }
+      // A network retry after a successful acceptance is idempotent and must
+      // preserve the original startedAt used by both call timers.
+      if (current.status === "active") {
+        res.setHeader("Cache-Control", "private, no-store");
+        res.json({ call: current, reused: true });
+        return;
+      }
+      const createdAt = current.createdAt ? new Date(current.createdAt).getTime() : 0;
+      if (current.status === "ringing" && (!createdAt || Date.now() - createdAt > RINGING_CALL_TTL_MS)) {
+        await db.update(callsTable).set({ status: "ended", endedAt: new Date() }).where(and(
+          eq(callsTable.id, callId),
+          eq(callsTable.status, "ringing"),
+        ));
+        incomingCallCache.delete(current.callerId);
+        incomingCallCache.delete(current.receiverId);
+        res.status(410).json({ error: "This call has expired" });
+        return;
+      }
+      res.status(409).json({ error: `Call is already ${current.status}` });
+      return;
     }
-    res.json({ call: updatedCall });
-  } catch (e) {
+
+    incomingCallCache.delete(updatedCall.callerId);
+    incomingCallCache.delete(updatedCall.receiverId);
+    emitToUser(updatedCall.callerId, "call:accepted", { call: updatedCall });
+    emitToUser(updatedCall.receiverId, "call:accepted", { call: updatedCall });
+    res.setHeader("Cache-Control", "private, no-store");
+    res.json({ call: updatedCall, reused: false });
+  } catch (error) {
+    if (error instanceof CallRouteError) {
+      res.status(error.status).json({ error: error.message });
+      return;
+    }
+    logger.error({ err: error }, "call accept error");
     res.status(500).json({ error: "Failed to accept call" });
   }
 });
 
 router.patch("/:callId/reject", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const call = await getAuthorizedCall(req.params.callId as string, req.user!.userId, res);
-    if (!call) return;
-    if (call.receiverId !== req.user!.userId) {
-      res.status(403).json({ error: "Only the receiver can reject this call" });
+    const callId = String(req.params.callId);
+    const receiverId = req.user!.userId;
+    const [updatedCall] = await db.update(callsTable).set({ status: "rejected", endedAt: new Date() }).where(and(
+      eq(callsTable.id, callId),
+      eq(callsTable.receiverId, receiverId),
+      eq(callsTable.status, "ringing"),
+    )).returning();
+
+    if (!updatedCall) {
+      const current = await getAuthorizedCall(callId, receiverId, res);
+      if (!current) return;
+      if (current.receiverId !== receiverId) {
+        res.status(403).json({ error: "Only the receiver can reject this call" });
+        return;
+      }
+      if (current.status === "rejected" || current.status === "ended") {
+        res.setHeader("Cache-Control", "private, no-store");
+        res.json({ call: current, success: true, reused: true });
+        return;
+      }
+      res.status(409).json({ error: `Call is already ${current.status}` });
       return;
     }
-    await db.update(callsTable).set({ status: "rejected", endedAt: new Date() }).where(eq(callsTable.id, req.params.callId as string));
-    clearCallAudio(req.params.callId as string);
-    const updatedCall = await db.query.callsTable.findFirst({ where: eq(callsTable.id, req.params.callId as string) });
-    if (updatedCall) {
-      incomingCallCache.delete(updatedCall.callerId); incomingCallCache.delete(updatedCall.receiverId);
-      emitToUser(updatedCall.callerId, "call:rejected", { call: updatedCall });
-      emitToUser(updatedCall.receiverId, "call:rejected", { call: updatedCall });
-    }
-    res.json({ call: updatedCall, success: true });
-  } catch (e) {
+
+    clearCallAudio(callId);
+    incomingCallCache.delete(updatedCall.callerId);
+    incomingCallCache.delete(updatedCall.receiverId);
+    emitToUser(updatedCall.callerId, "call:rejected", { call: updatedCall });
+    emitToUser(updatedCall.receiverId, "call:rejected", { call: updatedCall });
+    res.setHeader("Cache-Control", "private, no-store");
+    res.json({ call: updatedCall, success: true, reused: false });
+  } catch (error) {
+    logger.error({ err: error }, "call reject error");
     res.status(500).json({ error: "Failed to reject call" });
   }
 });
 
 router.patch("/:callId/end", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const call = await getAuthorizedCall(req.params.callId as string, req.user!.userId, res);
-    if (!call) return;
-    await db.update(callsTable).set({ status: "ended", endedAt: new Date() }).where(eq(callsTable.id, req.params.callId as string));
-    clearCallAudio(req.params.callId as string);
-    const updatedCall = await db.query.callsTable.findFirst({ where: eq(callsTable.id, req.params.callId as string) });
-    if (updatedCall) {
-      incomingCallCache.delete(updatedCall.callerId); incomingCallCache.delete(updatedCall.receiverId);
-      emitToUser(updatedCall.callerId, "call:ended", { call: updatedCall });
-      emitToUser(updatedCall.receiverId, "call:ended", { call: updatedCall });
+    const callId = String(req.params.callId);
+    const userId = req.user!.userId;
+    const [updatedCall] = await db.update(callsTable).set({ status: "ended", endedAt: new Date() }).where(and(
+      eq(callsTable.id, callId),
+      or(eq(callsTable.callerId, userId), eq(callsTable.receiverId, userId)),
+      inArray(callsTable.status, [...LIVE_CALL_STATUSES]),
+    )).returning();
+
+    if (!updatedCall) {
+      const current = await getAuthorizedCall(callId, userId, res);
+      if (!current) return;
+      if (current.status === "ended" || current.status === "rejected") {
+        clearCallAudio(callId);
+        res.setHeader("Cache-Control", "private, no-store");
+        res.json({ call: current, success: true, reused: true });
+        return;
+      }
+      res.status(409).json({ error: `Call cannot be ended from status ${current.status}` });
+      return;
     }
-    res.json({ call: updatedCall, success: true });
-  } catch (e) {
+
+    clearCallAudio(callId);
+    incomingCallCache.delete(updatedCall.callerId);
+    incomingCallCache.delete(updatedCall.receiverId);
+    emitToUser(updatedCall.callerId, "call:ended", { call: updatedCall });
+    emitToUser(updatedCall.receiverId, "call:ended", { call: updatedCall });
+    res.setHeader("Cache-Control", "private, no-store");
+    res.json({ call: updatedCall, success: true, reused: false });
+  } catch (error) {
+    logger.error({ err: error }, "call end error");
     res.status(500).json({ error: "Failed to end call" });
   }
 });
 
 router.post("/:callId/ice-candidate", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const { candidate, role } = req.body;
-    if (!candidate || !role || !["caller", "callee"].includes(role)) {
-      res.status(400).json({ error: "A valid candidate and role are required" });
+    const callId = String(req.params.callId);
+    const userId = req.user!.userId;
+    const role = String(req.body?.role || "") as "caller" | "callee";
+    if (role !== "caller" && role !== "callee") {
+      res.status(400).json({ error: "A valid call role is required" });
       return;
     }
+    const candidate = normalizeIceCandidate(req.body?.candidate);
+    const candidateJson = JSON.stringify(candidate);
 
-    const call = await db.query.callsTable.findFirst({
-      where: eq(callsTable.id, req.params.callId as string),
-    });
+    const call = await db.query.callsTable.findFirst({ where: eq(callsTable.id, callId) });
     if (!call) {
       res.status(404).json({ error: "Call not found" });
       return;
     }
-    if (call.callerId !== req.user!.userId && call.receiverId !== req.user!.userId) {
+    if (!callInvolvesUser(call, userId)) {
       res.status(403).json({ error: "You can only update your own calls" });
       return;
     }
-    if (!["ringing", "active"].includes(call.status)) {
+    if (!LIVE_CALL_STATUSES.includes(call.status as (typeof LIVE_CALL_STATUSES)[number])) {
       res.status(409).json({ error: "Call is no longer accepting ICE candidates" });
       return;
     }
-    if ((role === "caller" && call.callerId !== req.user!.userId) || (role === "callee" && call.receiverId !== req.user!.userId)) {
+    if ((role === "caller" && call.callerId !== userId) || (role === "callee" && call.receiverId !== userId)) {
       res.status(403).json({ error: "Invalid call role" });
       return;
     }
 
-    if (role === "caller") {
-      const existing = JSON.parse(call.callerCandidates || "[]");
-      if (existing.length >= 128) {
-        res.status(413).json({ error: "Too many ICE candidates" });
-        return;
-      }
-      existing.push(candidate);
-      await db.update(callsTable).set({ callerCandidates: JSON.stringify(existing) }).where(eq(callsTable.id, call.id));
-    } else {
-      const existing = JSON.parse(call.calleeCandidates || "[]");
-      if (existing.length >= 128) {
-        res.status(413).json({ error: "Too many ICE candidates" });
-        return;
-      }
-      existing.push(candidate);
-      await db.update(callsTable).set({ calleeCandidates: JSON.stringify(existing) }).where(eq(callsTable.id, call.id));
+    const currentCandidates = safeCandidateArray(role === "caller" ? call.callerCandidates : call.calleeCandidates);
+    const duplicate = currentCandidates.some((existing) => JSON.stringify(existing) === candidateJson);
+    if (currentCandidates.length >= MAX_ICE_CANDIDATES_PER_SIDE && !duplicate) {
+      res.status(413).json({ error: "Too many ICE candidates" });
+      return;
     }
 
+    const candidateColumn = role === "caller" ? callsTable.callerCandidates : callsTable.calleeCandidates;
+    const currentJson = sql`COALESCE(NULLIF(${candidateColumn}, ''), '[]')::jsonb`;
+    const containsCandidate = sql`${currentJson} @> jsonb_build_array(${candidateJson}::jsonb)`;
+    const hasCapacity = sql`jsonb_array_length(${currentJson}) < ${MAX_ICE_CANDIDATES_PER_SIDE}`;
+    const nextValue = sql<string>`CASE
+      WHEN ${containsCandidate} THEN ${candidateColumn}
+      ELSE (${currentJson} || jsonb_build_array(${candidateJson}::jsonb))::text
+    END`;
+
+    const updateWhere = and(
+      eq(callsTable.id, callId),
+      role === "caller" ? eq(callsTable.callerId, userId) : eq(callsTable.receiverId, userId),
+      inArray(callsTable.status, [...LIVE_CALL_STATUSES]),
+      or(containsCandidate, hasCapacity),
+    );
+    const returningIdentity = {
+      callerId: callsTable.callerId,
+      receiverId: callsTable.receiverId,
+      status: callsTable.status,
+    };
+    const [updatedCall] = role === "caller"
+      ? await db.update(callsTable).set({ callerCandidates: nextValue }).where(updateWhere).returning(returningIdentity)
+      : await db.update(callsTable).set({ calleeCandidates: nextValue }).where(updateWhere).returning(returningIdentity);
+
+    if (!updatedCall) {
+      const latest = await db.query.callsTable.findFirst({ where: eq(callsTable.id, callId) });
+      if (!latest || !LIVE_CALL_STATUSES.includes(latest.status as (typeof LIVE_CALL_STATUSES)[number])) {
+        res.status(409).json({ error: "Call is no longer accepting ICE candidates" });
+        return;
+      }
+      res.status(413).json({ error: "Too many ICE candidates" });
+      return;
+    }
+
+    const remoteUserId = role === "caller" ? updatedCall.receiverId : updatedCall.callerId;
+    emitToUser(remoteUserId, "call:ice-candidate", { callId, candidate, role });
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("X-Athoo-Ice-Duplicate", duplicate ? "true" : "false");
     res.json({ success: true });
     return;
-  } catch (e) {
+  } catch (error) {
+    if (error instanceof CallRouteError) {
+      res.status(error.status).json({ error: error.message });
+      return;
+    }
+    logger.error({ err: error }, "call ICE candidate error");
     res.status(500).json({ error: "Failed to add ICE candidate" });
     return;
   }

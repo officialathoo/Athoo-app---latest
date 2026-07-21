@@ -99,6 +99,30 @@ function callStartedAtMs(value: unknown, fallback = Date.now()): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function peerConnectionState(pc: any): string {
+  const connectionState = String(pc?.connectionState || "").toLowerCase();
+  const iceState = String(pc?.iceConnectionState || "").toLowerCase();
+  if (connectionState === "connected" || iceState === "connected" || iceState === "completed") return "connected";
+  if (connectionState && connectionState !== "new") return connectionState;
+  return iceState || connectionState || "new";
+}
+
+function peerIsConnected(pc: any): boolean {
+  return peerConnectionState(pc) === "connected";
+}
+
+function selectedCandidateType(localCandidate: any, selectedPair: any): string {
+  const explicit = String(
+    localCandidate?.candidateType
+      || localCandidate?.candidateTypeName
+      || selectedPair?.localCandidateType
+      || "",
+  ).trim().toLowerCase();
+  if (explicit) return explicit;
+  const candidateLine = String(localCandidate?.candidate || localCandidate?.address || "");
+  return candidateLine.match(/(?:^|\s)typ\s+(host|srflx|prflx|relay)(?:\s|$)/i)?.[1]?.toLowerCase() || "";
+}
+
 // Outgoing call timeout — auto-cancel if receiver doesn't answer within 35s.
 // Matches the server-side 35s incoming call expiry so both sides agree.
 const OUTGOING_CALL_TIMEOUT_MS = 35_000;
@@ -110,6 +134,13 @@ const OUTGOING_CALL_TIMEOUT_MS = 35_000;
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type CallState = "idle" | "incoming" | "outgoing" | "active" | "ended";
 export type CallMediaState = "idle" | "connecting" | "webrtc" | "fallback" | "failed";
+
+export interface CallTransportDetails {
+  candidateType?: string;
+  protocol?: string;
+  relayVerified: boolean;
+  roundTripMs?: number;
+}
 
 export interface ActiveCall {
   callId: string;
@@ -131,6 +162,7 @@ interface CallContextType {
   isSpeaker: boolean;
   mediaState: CallMediaState;
   transportLabel: string;
+  transportDetails: CallTransportDetails | null;
   setMuted: (v: boolean) => void;
   setSpeaker: (v: boolean) => Promise<void>;
   startOutgoingCall: (receiverId: string, receiverName: string, service?: string, receiverColor?: string) => Promise<void>;
@@ -256,6 +288,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const [isSpeaker, setIsSpeaker] = useState(false);
   const [mediaState, setMediaState] = useState<CallMediaState>("idle");
   const [transportLabel, setTransportLabel] = useState("Checking secure audio");
+  const [transportDetails, setTransportDetails] = useState<CallTransportDetails | null>(null);
   const configuredCallProviderRef = useRef("unknown");
   const remoteAnswerAppliedRef = useRef(false);
   const mediaFailureAlertedRef = useRef(false);
@@ -288,9 +321,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const incomingPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const outgoingStatusPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const outgoingStatusPollInFlightRef = useRef(false);
   const candidatePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const candidatePollInFlightRef = useRef(false);
   // Watches the live call status while active — detects remote hangup on both sides.
   const activeCallWatcherRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const activeCallWatcherInFlightRef = useRef(false);
   // Auto-cancel outgoing call if unanswered after OUTGOING_CALL_TIMEOUT_MS.
   const outgoingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeCallRef = useRef<ActiveCall | null>(null);
@@ -310,6 +346,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const rtcDisconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const signalingCallIdRef = useRef<string | null>(null);
   const pendingLocalCandidatesRef = useRef<any[]>([]);
+  const pendingRemoteCandidatesRef = useRef<any[]>([]);
+  const appliedRemoteCandidateKeysRef = useRef(new Set<string>());
+  const localCandidateUploadChainRef = useRef<Promise<void>>(Promise.resolve());
+  const transportStatsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const transportStatsInFlightRef = useRef(false);
   const appliedCalleeCandRef = useRef(0);
   const appliedCallerCandRef = useRef(0);
 
@@ -337,7 +378,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      [timerRef, incomingPollRef, outgoingStatusPollRef, candidatePollRef, activeCallWatcherRef].forEach((r) => {
+      [timerRef, incomingPollRef, outgoingStatusPollRef, candidatePollRef, activeCallWatcherRef, transportStatsTimerRef].forEach((r) => {
         if (r.current) clearInterval(r.current);
       });
       if (outgoingTimeoutRef.current) clearTimeout(outgoingTimeoutRef.current);
@@ -399,11 +440,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Poll every second to detect when the remote side ends the call and stop audio promptly.
+      // Realtime is primary for hangup. This bounded, non-overlapping poll is
+      // recovery for sleeping sockets and slow mobile-network transitions.
       if (callId) {
+        activeCallWatcherInFlightRef.current = false;
         activeCallWatcherRef.current = setInterval(async () => {
+          if (activeCallWatcherInFlightRef.current) return;
+          activeCallWatcherInFlightRef.current = true;
           try {
             const res = await api.getCallStatus(callId);
+            if (activeCallRef.current?.callId !== callId) return;
             const status = (res.call as any)?.status;
             if (status === "ended" || status === "rejected") {
               clearInterval(activeCallWatcherRef.current!);
@@ -414,8 +460,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               setActiveCall(null);
               setCallDuration(0);
             }
-          } catch {}
-        }, 1000);
+          } catch {
+            // Realtime remains authoritative; a recovery poll failure is non-fatal.
+          } finally {
+            activeCallWatcherInFlightRef.current = false;
+          }
+        }, 2_000);
       }
     } else {
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
@@ -460,24 +510,21 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (activeCallRef.current?.state !== "active" || activeCallRef.current.callId !== callId) return;
         const pc = pcRef.current;
         const inboundAudioUsable = Boolean(pc) && await hasInboundAudioMedia(pc);
-        const connectionState = String(pc?.connectionState || "new");
+        const connectionState = peerConnectionState(pc);
         const iceState = String(pc?.iceConnectionState || "new");
         // A user may stay silent for the first seconds of a call and Opus may
         // send no measurable payload. A connected peer plus a received remote
         // audio track is therefore a valid secure-media state; inbound RTP
         // counters remain an additional confirmation, not a fallback trigger.
         const secureMediaReady = inboundAudioUsable || (
-          connectionState === "connected" && remoteTrackReceivedRef.current
+          peerIsConnected(pc) && remoteTrackReceivedRef.current
         );
         if (secureMediaReady) {
           rtcConnectedRef.current = true;
           if (isStreamingRef.current) stopVoiceStreaming();
           setMediaState("webrtc");
-          setTransportLabel(
-            configuredCallProviderRef.current === "cloudflare-turn"
-              ? "Cloudflare TURN connected"
-              : "Secure relay connected",
-          );
+          setTransportLabel("Secure audio connected · verifying relay");
+          startTransportStats(pc);
           appLogger.info("calls", "[CallContext] secure WebRTC audio established", {
             provider: configuredCallProviderRef.current,
             transportPolicy: iceConfigurationRef.current.iceTransportPolicy,
@@ -685,24 +732,157 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     remoteAnswerAppliedRef.current = false;
     signalingCallIdRef.current = null;
     pendingLocalCandidatesRef.current = [];
+    pendingRemoteCandidatesRef.current = [];
+    appliedRemoteCandidateKeysRef.current.clear();
+    localCandidateUploadChainRef.current = Promise.resolve();
+    candidatePollInFlightRef.current = false;
+    transportStatsInFlightRef.current = false;
+    if (transportStatsTimerRef.current) { clearInterval(transportStatsTimerRef.current); transportStatsTimerRef.current = null; }
+    setTransportDetails(null);
     appliedCalleeCandRef.current = 0;
     appliedCallerCandRef.current = 0;
+  }
+
+  function candidateKey(candidate: any): string {
+    return [
+      String(candidate?.candidate || ""),
+      String(candidate?.sdpMid ?? ""),
+      String(candidate?.sdpMLineIndex ?? ""),
+      String(candidate?.usernameFragment ?? ""),
+    ].join("|");
+  }
+
+  function queueLocalCandidateUpload(callId: string, candidate: any, role: "caller" | "callee"): Promise<void> {
+    const upload = async () => {
+      try {
+        await api.addIceCandidate(callId, candidate, role);
+      } catch (error) {
+        appLogger.warn("calls", "[CallContext] unable to upload ICE candidate", error);
+      }
+    };
+    localCandidateUploadChainRef.current = localCandidateUploadChainRef.current.then(upload, upload);
+    return localCandidateUploadChainRef.current;
   }
 
   async function flushPendingLocalCandidates(callId: string, role: "caller" | "callee") {
     signalingCallIdRef.current = callId;
     const queued = pendingLocalCandidatesRef.current.splice(0);
-    for (const candidate of queued) {
-      try { await api.addIceCandidate(callId, candidate, role); } catch (error) {
-        appLogger.warn("calls", "[CallContext] unable to upload queued ICE candidate", error);
+    for (const candidate of queued) queueLocalCandidateUpload(callId, candidate, role);
+    await localCandidateUploadChainRef.current;
+  }
+
+  async function addRemoteIceCandidate(candidate: any): Promise<boolean> {
+    if (!candidate) return false;
+    const key = candidateKey(candidate);
+    if (!key || appliedRemoteCandidateKeysRef.current.has(key)) return true;
+    const pc = pcRef.current;
+    if (!pc || !pc.remoteDescription?.type) {
+      if (!pendingRemoteCandidatesRef.current.some((queued) => candidateKey(queued) === key)) {
+        pendingRemoteCandidatesRef.current.push(candidate);
       }
+      return false;
     }
+    try {
+      await pc.addIceCandidate(new _RTCIceCandidate(candidate));
+      appliedRemoteCandidateKeysRef.current.add(key);
+      return true;
+    } catch (error) {
+      appLogger.warn("calls", "[CallContext] unable to apply remote ICE candidate", error);
+      return false;
+    }
+  }
+
+  async function flushPendingRemoteCandidates(): Promise<void> {
+    if (!pcRef.current?.remoteDescription?.type) return;
+    const queued = pendingRemoteCandidatesRef.current.splice(0);
+    for (const candidate of queued) await addRemoteIceCandidate(candidate);
+  }
+
+  function statReports(stats: any): any[] {
+    const reports: any[] = [];
+    if (typeof stats?.forEach === "function") stats.forEach((report: any) => reports.push(report));
+    else if (Array.isArray(stats)) reports.push(...stats);
+    else if (stats && typeof stats === "object") reports.push(...Object.values(stats));
+    return reports;
+  }
+
+  async function inspectSelectedTransport(pc: any): Promise<void> {
+    try {
+      const reports = statReports(await pc?.getStats?.());
+      const byId = new Map(reports.filter((report) => report?.id).map((report) => [report.id, report]));
+      const transport = reports.find((report) => report?.type === "transport" && report.selectedCandidatePairId);
+      const selectedPair = (transport?.selectedCandidatePairId ? byId.get(transport.selectedCandidatePairId) : null)
+        || reports.find((report) => report?.type === "candidate-pair" && report.state === "succeeded" && (report.selected || report.nominated))
+        || reports.find((report) => report?.type === "googCandidatePair" && String(report.googActiveConnection).toLowerCase() === "true");
+      if (!selectedPair) return;
+      const localCandidate = byId.get(selectedPair.localCandidateId);
+      const candidateType = selectedCandidateType(localCandidate, selectedPair);
+      const protocol = String(localCandidate?.protocol || selectedPair?.protocol || selectedPair?.localCandidateProtocol || "").toLowerCase();
+      const currentRoundTripSeconds = Number(selectedPair.currentRoundTripTime);
+      const legacyRoundTripMs = Number(selectedPair.googRtt || selectedPair.roundTripTimeMs);
+      const roundTripMs = Number.isFinite(currentRoundTripSeconds) && currentRoundTripSeconds >= 0
+        ? Math.round(currentRoundTripSeconds * 1000)
+        : Number.isFinite(legacyRoundTripMs) && legacyRoundTripMs >= 0
+          ? Math.round(legacyRoundTripMs)
+          : undefined;
+      const relayRequired = iceConfigurationRef.current.iceTransportPolicy === "relay";
+      const relayVerified = candidateType === "relay";
+      setTransportDetails({
+        candidateType: candidateType || undefined,
+        protocol: protocol || undefined,
+        relayVerified,
+        roundTripMs,
+      });
+      if (relayRequired && candidateType && !relayVerified) {
+        setMediaState("failed");
+        setTransportLabel("Secure relay verification failed");
+        appLogger.error("calls", "[CallContext] non-relay candidate selected despite relay-only policy", { candidateType, protocol });
+        return;
+      }
+      if (relayVerified) {
+        setTransportLabel(
+          configuredCallProviderRef.current === "cloudflare-turn"
+            ? "Cloudflare TURN relay verified"
+            : "Secure TURN relay verified",
+        );
+      } else if (rtcConnectedRef.current) {
+        setTransportLabel("Secure audio connected · relay verification pending");
+      }
+    } catch (error) {
+      appLogger.debug("calls", "[CallContext] selected ICE transport stats unavailable", error);
+    }
+  }
+
+  function startTransportStats(pc: any): void {
+    if (transportStatsTimerRef.current) clearInterval(transportStatsTimerRef.current);
+    const inspect = async () => {
+      if (transportStatsInFlightRef.current || pcRef.current !== pc) return;
+      transportStatsInFlightRef.current = true;
+      try {
+        await inspectSelectedTransport(pc);
+      } finally {
+        transportStatsInFlightRef.current = false;
+      }
+    };
+    void inspect();
+    transportStatsTimerRef.current = setInterval(() => {
+      if (pcRef.current !== pc || peerConnectionState(pc) === "closed") {
+        if (transportStatsTimerRef.current) clearInterval(transportStatsTimerRef.current);
+        transportStatsTimerRef.current = null;
+        return;
+      }
+      void inspect();
+    }, 3_000);
   }
 
   async function createPeerConnection(callId: string | null, role: "caller" | "callee") {
     if (!canUseWebRtc()) return null;
     signalingCallIdRef.current = callId;
     pendingLocalCandidatesRef.current = [];
+    pendingRemoteCandidatesRef.current = [];
+    appliedRemoteCandidateKeysRef.current.clear();
+    localCandidateUploadChainRef.current = Promise.resolve();
+    setTransportDetails(null);
     rtcConnectedRef.current = false;
     remoteTrackReceivedRef.current = false;
     inboundAudioBytesRef.current = 0;
@@ -710,54 +890,53 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     rtcMediaWatchdogAttemptRef.current = 0;
     const pc = new _RTCPeerConnection(iceConfigurationRef.current);
     pcRef.current = pc;
-    pc.onicecandidate = async (event: any) => {
+    pc.onicecandidate = (event: any) => {
       if (!event.candidate) return;
-      const candidate = event.candidate.toJSON();
+      const candidate = typeof event.candidate.toJSON === "function" ? event.candidate.toJSON() : event.candidate;
       const resolvedCallId = signalingCallIdRef.current;
       if (!resolvedCallId) {
         pendingLocalCandidatesRef.current.push(candidate);
         return;
       }
-      try { await api.addIceCandidate(resolvedCallId, candidate, role); } catch (error) {
-        appLogger.warn("calls", "[CallContext] unable to upload ICE candidate", error);
-      }
+      void queueLocalCandidateUpload(resolvedCallId, candidate, role);
     };
-    pc.ontrack = (event: any) => {
-      remoteStreamRef.current = event.streams?.[0] || remoteStreamRef.current;
+
+    const registerRemoteStream = (stream: any, track?: any) => {
+      remoteStreamRef.current = stream || remoteStreamRef.current;
       remoteTrackReceivedRef.current = true;
-      try { if (event.track) event.track.enabled = true; } catch {}
-      // A received audio track plus a connected peer is enough to keep the
-      // native WebRTC path. RTP counters are observed by the watchdog as extra
-      // diagnostics, but user silence must never trigger chunked fallback.
+      try { if (track) track.enabled = true; } catch {}
       void soundService.setCallSpeakerMode(isSpeaker);
-      if (pc.connectionState === "connected") {
+      const connected = peerIsConnected(pc);
+      if (connected) {
         setMediaState("webrtc");
-        setTransportLabel(
-          configuredCallProviderRef.current === "cloudflare-turn"
-            ? "Cloudflare TURN connected"
-            : "Secure relay connected",
-        );
+        setTransportLabel("Secure audio connected · verifying relay");
+        startTransportStats(pc);
       } else {
         setMediaState("connecting");
       }
       appLogger.debug("calls", "[CallContext] remote audio track received", {
         connectionState: pc.connectionState,
+        iceConnectionState: pc.iceConnectionState,
         provider: configuredCallProviderRef.current,
       });
     };
-    pc.onconnectionstatechange = () => {
-      const state = pc.connectionState;
+
+    pc.ontrack = (event: any) => registerRemoteStream(event.streams?.[0], event.track);
+    // react-native-webrtc versions used by some existing preview binaries can
+    // still deliver the legacy stream event. Supporting both prevents silent
+    // one-way calls after an OTA JavaScript update.
+    pc.onaddstream = (event: any) => registerRemoteStream(event.stream);
+
+    const handleConnectionState = () => {
+      const state = peerConnectionState(pc);
       if (state === "connected") {
         rtcConnectedRef.current = true;
         if (rtcDisconnectTimerRef.current) { clearTimeout(rtcDisconnectTimerRef.current); rtcDisconnectTimerRef.current = null; }
         void soundService.setCallSpeakerMode(isSpeaker);
         if (remoteTrackReceivedRef.current) {
           setMediaState("webrtc");
-          setTransportLabel(
-            configuredCallProviderRef.current === "cloudflare-turn"
-              ? "Cloudflare TURN connected"
-              : "Secure relay connected",
-          );
+          setTransportLabel("Secure audio connected · verifying relay");
+          startTransportStats(pc);
         } else {
           setMediaState("connecting");
         }
@@ -771,10 +950,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         );
         if (rtcDisconnectTimerRef.current) clearTimeout(rtcDisconnectTimerRef.current);
         rtcDisconnectTimerRef.current = setTimeout(() => {
-          if (pcRef.current !== pc || pc.connectionState !== "disconnected") return;
+          if (pcRef.current !== pc || peerConnectionState(pc) !== "disconnected") return;
           try { pc.restartIce?.(); } catch {}
           rtcDisconnectTimerRef.current = setTimeout(() => {
-            if (pcRef.current !== pc || pc.connectionState === "connected") return;
+            if (pcRef.current !== pc || peerIsConnected(pc)) return;
             const active = activeCallRef.current;
             if (!active || active.state !== "active") return;
             if (!rtcProductionReadyRef.current) {
@@ -822,6 +1001,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         rtcConnectedRef.current = false;
       }
     };
+    pc.onconnectionstatechange = handleConnectionState;
+    pc.oniceconnectionstatechange = handleConnectionState;
     return pc;
   }
 
@@ -832,6 +1013,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     try {
       await pcRef.current.setRemoteDescription(new _RTCSessionDescription(JSON.parse(callData.answer)));
       remoteAnswerAppliedRef.current = true;
+      await flushPendingRemoteCandidates();
       startCandidatePolling(callId, "caller");
       appLogger.debug("calls", "[CallContext] remote SDP answer applied");
       return true;
@@ -843,23 +1025,34 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   function startCandidatePolling(callId: string, role: "caller" | "callee") {
     if (candidatePollRef.current) clearInterval(candidatePollRef.current);
+    const expectedPeer = pcRef.current;
+    candidatePollInFlightRef.current = false;
     candidatePollRef.current = setInterval(async () => {
-      if (!pcRef.current) { clearInterval(candidatePollRef.current!); return; }
+      if (!expectedPeer || pcRef.current !== expectedPeer) {
+        clearInterval(candidatePollRef.current!);
+        candidatePollRef.current = null;
+        return;
+      }
+      if (candidatePollInFlightRef.current) return;
+      candidatePollInFlightRef.current = true;
       try {
         const res = await api.getCallStatus(callId);
+        if (pcRef.current !== expectedPeer || activeCallRef.current?.callId !== callId) return;
         const call = res.call as any;
         if (!call) return;
         const remoteCands: any[] = JSON.parse(
           role === "caller" ? (call.calleeCandidates || "[]") : (call.callerCandidates || "[]")
         );
         const applied = role === "caller" ? appliedCalleeCandRef.current : appliedCallerCandRef.current;
-        for (let i = applied; i < remoteCands.length; i++) {
-          try { await pcRef.current.addIceCandidate(new _RTCIceCandidate(remoteCands[i])); } catch {}
-        }
+        for (let i = applied; i < remoteCands.length; i++) await addRemoteIceCandidate(remoteCands[i]);
         if (role === "caller") appliedCalleeCandRef.current = remoteCands.length;
         else appliedCallerCandRef.current = remoteCands.length;
-      } catch {}
-    }, 750);
+      } catch {
+        // Realtime trickle ICE is primary; polling is bounded recovery only.
+      } finally {
+        candidatePollInFlightRef.current = false;
+      }
+    }, 2_000);
   }
 
   // ── HTTP-based voice streaming (works through all proxies) ──────────────────
@@ -1100,7 +1293,17 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   }
 
   const presentIncomingCall = useCallback((rawCall: any) => {
-    if (!rawCall?.id || activeCallRef.current) return;
+    if (!rawCall?.id) return;
+    const existing = activeCallRef.current;
+    if (existing?.callId === rawCall.id && existing.state === "incoming") {
+      setActiveCall((previous) => previous ? {
+        ...previous,
+        offer: rawCall.offer || previous.offer,
+        service: rawCall.service || previous.service,
+      } : null);
+      return;
+    }
+    if (existing) return;
     const initials = (rawCall.callerName || "??")
       .split(" ")
       .map((name: string) => name[0])
@@ -1132,8 +1335,17 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const callData = message.payload?.call as any;
       const current = activeCallRef.current;
+      if (message.type === "call:ice-candidate") {
+        const payload = message.payload as any;
+        if (!current || current.callId !== payload?.callId) return;
+        const localRole = current.direction === "outgoing" ? "caller" : "callee";
+        if (payload?.role === localRole) return;
+        void addRemoteIceCandidate(payload?.candidate);
+        return;
+      }
+
+      const callData = message.payload?.call as any;
       if (!callData?.id || !current || current.callId !== callData.id) return;
 
       if (message.type === "call:accepted") {
@@ -1311,9 +1523,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         }
       }, OUTGOING_CALL_TIMEOUT_MS);
 
+      outgoingStatusPollInFlightRef.current = false;
       outgoingStatusPollRef.current = setInterval(async () => {
+        if (outgoingStatusPollInFlightRef.current) return;
+        outgoingStatusPollInFlightRef.current = true;
         try {
           const statusRes = await api.getCallStatus(call.id);
+          if (activeCallRef.current?.callId !== call.id) return;
           const callData = statusRes.call as any;
           const status = callData?.status;
 
@@ -1339,8 +1555,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             closePeerConnection();
             if (status === "rejected") Alert.alert("Call Declined", "The other person declined the call.");
           }
-        } catch {}
-      }, 500);
+        } catch {
+          // Realtime acceptance/rejection is primary; polling is recovery only.
+        } finally {
+          outgoingStatusPollInFlightRef.current = false;
+        }
+      }, 1_000);
 
     } catch (err) {
       closePeerConnection();
@@ -1435,8 +1655,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const callId = activeCallRef.current?.callId;
     // Clear all timers immediately so no more status polls fire
     if (outgoingStatusPollRef.current) { clearInterval(outgoingStatusPollRef.current); outgoingStatusPollRef.current = null; }
+    outgoingStatusPollInFlightRef.current = false;
     if (candidatePollRef.current) { clearInterval(candidatePollRef.current); candidatePollRef.current = null; }
+    candidatePollInFlightRef.current = false;
     if (activeCallWatcherRef.current) { clearInterval(activeCallWatcherRef.current); activeCallWatcherRef.current = null; }
+    activeCallWatcherInFlightRef.current = false;
     if (outgoingTimeoutRef.current) { clearTimeout(outgoingTimeoutRef.current); outgoingTimeoutRef.current = null; }
     // Stop media before network call so the mic releases immediately
     closePeerConnection();
@@ -1454,7 +1677,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <CallContext.Provider value={{ activeCall, callDuration, isMuted, isSpeaker, mediaState, transportLabel, setMuted, setSpeaker, startOutgoingCall, simulateIncomingCall, acceptCall, rejectCall, endCall }}>
+    <CallContext.Provider value={{ activeCall, callDuration, isMuted, isSpeaker, mediaState, transportLabel, transportDetails, setMuted, setSpeaker, startOutgoingCall, simulateIncomingCall, acceptCall, rejectCall, endCall }}>
       {children}
       {activeCall?.state === "incoming" && (
         <IncomingCallOverlay call={activeCall} onAccept={acceptCall} onReject={rejectCall} />

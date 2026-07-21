@@ -35,8 +35,9 @@ Test date: ___________________________
 - [ ] Home banners, broadcasts, categories, services, and emergency content load from admin data.
 - [ ] Search and service-area selection work.
 - [ ] GPS returns quickly or uses a safe cached/manual fallback.
-- [ ] Open map preview and marker selection work.
+- [ ] Open map preview and marker selection work; roads/streets remain visible while panning and zooming, not only the pin and attribution.
 - [ ] Booking, negotiation, chat, calling, completion PIN, invoice, and refund flows work.
+- [ ] Calls show **Cloudflare TURN relay verified**, keep both timers synchronized, and sustain clear two-way audio for at least 60 seconds.
 - [ ] Camera and gallery uploads work; cropping is optional.
 
 ## Provider workflow
@@ -56,6 +57,13 @@ Test date: ___________________________
 - [ ] Tapping each notification opens the correct destination.
 - [ ] Badge count and read state synchronize correctly.
 - [ ] Signed-out accounts stop receiving account notifications.
+
+## Admin operations
+
+- [ ] Operations Inbox opens without HTTP 500 and does not show a false empty state when a source fails.
+- [ ] Operations Inbox filters cancel stale requests and keep the newest result.
+- [ ] Sidebar counters and operations data load within the configured latency budgets.
+- [ ] Admin logo loads and browser console has no blocked Google Fonts CSP request.
 
 ## Theme, language, and accessibility
 

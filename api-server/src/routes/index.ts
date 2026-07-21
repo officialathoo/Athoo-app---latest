@@ -101,6 +101,10 @@ router.use("/admin/policies", policiesAdminRouter);
 router.use("/admin/inactivity", inactivityAdminRouter);
 
 // ─── Public settings (no auth) ───────────────────────────────────────────────
+const publicMapTileVersion = /^[a-z0-9._-]{1,24}$/i.test(String(process.env.MAP_TILE_PUBLIC_VERSION || "2"))
+  ? String(process.env.MAP_TILE_PUBLIC_VERSION || "2")
+  : "2";
+
 // getPlatformSettings() already uses the selected server-side cache provider.
 // Do not add a second HTTP-response cache here: admin provider changes must be
 // visible to mobile clients immediately after the realtime settings event.
@@ -133,7 +137,7 @@ router.get("/settings/public", async (_req, res) => {
           attribution: mapStatus.attribution,
           // The mobile app renders tiles through Athoo's credential-free proxy.
           // This relative path is safe to expose and is resolved against the configured API base URL.
-          tileUrl: mapStatus.configured ? "/api/geo/tiles/{z}/{x}/{y}.png" : "",
+          tileUrl: mapStatus.configured ? `/api/geo/tiles/{z}/{x}/{y}.png?v=${publicMapTileVersion}` : "",
         },
       },
     };

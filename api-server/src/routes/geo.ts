@@ -11,7 +11,7 @@ import { getRuntimeMapOverrides } from "../lib/mapRuntime";
 import { isInProcessCacheEnabled } from "../lib/infrastructureConfiguration";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import {
-  buildMapTileUpstreamUrl,
+  buildMapTileUpstreamCandidates,
   getMapConfigurationStatus,
   getMapProviderConfiguration,
 } from "../lib/mapConfiguration";
@@ -37,6 +37,10 @@ const MAP_TILE_MAX_ZOOM = Number.isFinite(configuredMapTileMaxZoom)
   ? Math.max(1, Math.min(22, Math.trunc(configuredMapTileMaxZoom)))
   : 20;
 const MAP_TILE_RESPECT_UPSTREAM_CACHE = String(process.env.MAP_TILE_RESPECT_UPSTREAM_CACHE || "true").toLowerCase() !== "false";
+const configuredMapTileSuspiciousBytes = Number(process.env.MAP_TILE_SUSPICIOUS_BYTES || 1_500);
+const MAP_TILE_SUSPICIOUS_BYTES = Number.isFinite(configuredMapTileSuspiciousBytes)
+  ? Math.min(MAP_TILE_MAX_BYTES, Math.max(256, Math.trunc(configuredMapTileSuspiciousBytes)))
+  : 1_500;
 
 function validTileCoordinate(z: number, x: number, y: number): boolean {
   if (!Number.isInteger(z) || !Number.isInteger(x) || !Number.isInteger(y) || z < 0 || z > MAP_TILE_MAX_ZOOM) return false;
@@ -124,6 +128,7 @@ router.get("/tiles/:z/:x/:y.png", async (req, res) => {
   }
 
   const runtimeOverrides = await getRuntimeMapOverrides();
+  const config = getMapProviderConfiguration(runtimeOverrides);
   const status = getMapConfigurationStatus(runtimeOverrides);
   if (!status.configured) {
     logger.warn({ provider: status.provider, error: status.error, z, x, y }, "map tile provider is not configured");
@@ -135,53 +140,99 @@ router.get("/tiles/:z/:x/:y.png", async (req, res) => {
     return;
   }
 
+  type TileResult = {
+    body: Buffer;
+    contentType: string;
+    cacheControl: string;
+    etag: string | null;
+    candidateId: string;
+  };
+
+  const failures: Array<{ candidateId: string; status?: number; contentType?: string; reason: string }> = [];
+
   try {
-    const upstream = await fetchWithTimeout(
-      buildMapTileUpstreamUrl(z, x, y, runtimeOverrides),
-      {
-        headers: {
-          Accept: "image/avif,image/webp,image/png,image/jpeg,*/*;q=0.8",
-          "User-Agent": String(process.env.MAP_TILE_USER_AGENT || "AthooApp/1.0 (+https://athoo.pk)"),
-        },
-      },
-      MAP_TILE_TIMEOUT_MS,
-    );
-    const contentType = String(upstream.headers.get("content-type") || "").toLowerCase();
-    if (!upstream.ok || !contentType.startsWith("image/")) {
-      logger.warn(
-        { upstreamStatus: upstream.status, contentType, provider: status.provider, operation: "tile", z, x, y },
-        "map tile upstream rejected request",
+    const candidates = buildMapTileUpstreamCandidates(z, x, y, runtimeOverrides);
+    for (const candidate of candidates) {
+      let upstream: globalThis.Response;
+      try {
+        upstream = await fetchWithTimeout(
+          candidate.url,
+          {
+            headers: {
+              Accept: "image/png,image/jpeg;q=0.9,*/*;q=0.1",
+              "Accept-Language": config.tileProvider === "tomtom" ? config.tomtom.language : "en",
+              "User-Agent": String(process.env.MAP_TILE_USER_AGENT || "AthooApp/1.0 (+https://athoo.pk)"),
+            },
+          },
+          MAP_TILE_TIMEOUT_MS,
+        );
+      } catch (error) {
+        failures.push({ candidateId: candidate.id, reason: error instanceof Error ? error.message : "network failure" });
+        continue;
+      }
+
+      const contentType = String(upstream.headers.get("content-type") || "").toLowerCase();
+      if (!upstream.ok || !contentType.startsWith("image/")) {
+        failures.push({ candidateId: candidate.id, status: upstream.status, contentType, reason: "upstream rejected tile" });
+        continue;
+      }
+
+      const body = Buffer.from(await upstream.arrayBuffer());
+      if (!body.length) {
+        failures.push({ candidateId: candidate.id, status: upstream.status, contentType, reason: "empty tile" });
+        continue;
+      }
+      if (body.length > MAP_TILE_MAX_BYTES) {
+        failures.push({ candidateId: candidate.id, status: upstream.status, contentType, reason: "tile exceeded size limit" });
+        continue;
+      }
+
+      // A tiny PNG at a city-level zoom is commonly a transparent/no-data tile.
+      // Try every configured raster generation, but never return or cache a
+      // known-suspicious image as a successful map. The mobile client can then
+      // show its honest retry state instead of a blank grey panel.
+      const suspicious = config.tileProvider === "tomtom" && z >= 8 && body.length < MAP_TILE_SUSPICIOUS_BYTES;
+      if (suspicious) {
+        failures.push({ candidateId: candidate.id, status: upstream.status, contentType, reason: `suspiciously small tile (${body.length} bytes)` });
+        continue;
+      }
+      const tile: TileResult = {
+        body,
+        contentType,
+        cacheControl: String(upstream.headers.get("cache-control") || "").trim(),
+        etag: upstream.headers.get("etag"),
+        candidateId: candidate.id,
+      };
+
+      res.setHeader("Content-Type", tile.contentType);
+      res.setHeader(
+        "Cache-Control",
+        MAP_TILE_RESPECT_UPSTREAM_CACHE && tile.cacheControl
+          ? tile.cacheControl
+          : `public, max-age=${MAP_TILE_BROWSER_CACHE_SECONDS}, s-maxage=${MAP_TILE_CDN_CACHE_SECONDS}, stale-while-revalidate=86400, stale-if-error=604800`,
       );
-      res.setHeader("Cache-Control", "no-store");
-      res.status(502).json({ error: "Map preview could not be loaded", code: "MAP_TILE_UPSTREAM_FAILED" });
+      res.setHeader("X-Map-Provider", status.provider);
+      res.setHeader("X-Map-Upstream", tile.candidateId);
+      res.setHeader("X-Map-Tile-Bytes", String(tile.body.length));
+      if (tile.etag) res.setHeader("ETag", tile.etag);
+      res.status(200).send(tile.body);
       return;
     }
 
-    const body = Buffer.from(await upstream.arrayBuffer());
-    if (!body.length) {
-      res.setHeader("Cache-Control", "no-store");
-      res.status(502).json({ error: "Map preview could not be loaded", code: "MAP_TILE_EMPTY_RESPONSE" });
-      return;
-    }
-    if (body.length > MAP_TILE_MAX_BYTES) {
-      logger.warn({ bytes: body.length, maxBytes: MAP_TILE_MAX_BYTES, provider: status.provider, z, x, y }, "map tile exceeded size limit");
-      res.setHeader("Cache-Control", "no-store");
-      res.status(502).json({ error: "Map preview could not be loaded", code: "MAP_TILE_RESPONSE_TOO_LARGE" });
-      return;
-    }
-
-    res.setHeader("Content-Type", contentType);
-    const upstreamCacheControl = String(upstream.headers.get("cache-control") || "").trim();
-    res.setHeader(
-      "Cache-Control",
-      MAP_TILE_RESPECT_UPSTREAM_CACHE && upstreamCacheControl
-        ? upstreamCacheControl
-        : `public, max-age=${MAP_TILE_BROWSER_CACHE_SECONDS}, s-maxage=${MAP_TILE_CDN_CACHE_SECONDS}, stale-while-revalidate=86400, stale-if-error=604800`,
-    );
+    logger.warn({ provider: status.provider, operation: "tile", z, x, y, failures }, "map tile upstream rejected request");
+    const responseTooLarge = failures.length > 0 && failures.every((failure) => failure.reason === "tile exceeded size limit");
+    const responseNoData = failures.length > 0 && failures.every((failure) => failure.reason.startsWith("suspiciously small tile"));
+    res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Map-Provider", status.provider);
-    const etag = upstream.headers.get("etag");
-    if (etag) res.setHeader("ETag", etag);
-    res.status(200).send(body);
+    res.setHeader("X-Map-Tile-Suspect", responseNoData ? "true" : "false");
+    res.status(502).json({
+      error: responseNoData ? "Map provider returned no usable map image" : "Map preview could not be loaded",
+      code: responseTooLarge
+        ? "MAP_TILE_RESPONSE_TOO_LARGE"
+        : responseNoData
+          ? "MAP_TILE_NO_USABLE_IMAGE"
+          : "MAP_TILE_UPSTREAM_FAILED",
+    });
   } catch (error) {
     logger.warn({ err: error, provider: status.provider, operation: "tile", z, x, y }, "map tile proxy unavailable");
     res.setHeader("Cache-Control", "no-store");

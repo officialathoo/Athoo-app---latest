@@ -1,15 +1,17 @@
 /**
  * ATHOO — Database Seed Script
  *
- * Seeds: Super Admin, Demo Customer, Demo Provider, Categories,
- * Service Areas, Payment Accounts, Emergency Contacts,
- * Subscription Plans, Platform Settings, Notification Templates.
+ * Seeds safe reference data plus an explicitly configured development admin.
+ * Optional demo users require dedicated opt-in flags. Payment destinations
+ * are never seeded and must be configured through the admin panel.
  *
  * Run: pnpm --filter @workspace/scripts run seed
  *
  * Development-only seed. Never run against production.
- * Required: SEED_ADMIN_PASSWORD (12+ chars, upper/lower/number/symbol).
- * Optional: SEED_DEMO_PASSWORD (defaults to a development-only value).
+ * Required: ALLOW_DEVELOPMENT_SEED=1 and SEED_ADMIN_PASSWORD
+ * (12+ chars, upper/lower/number/symbol).
+ * Optional demo users require SEED_DEMO_USERS=1 and an explicit
+ * SEED_DEMO_PASSWORD. Payment destinations are never activated by seed data.
  */
 
 import "dotenv/config";
@@ -17,7 +19,6 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as bcrypt from "bcryptjs";
 import * as schema from "@workspace/db/schema";
-import { sql } from "drizzle-orm";
 import crypto from "crypto";
 
 const { Pool } = pg;
@@ -26,17 +27,22 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is required");
 }
 
-if (process.env.NODE_ENV === "production" || process.env.ALLOW_PRODUCTION_SEED === "1") {
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("Database seeding is disabled in production. Create the first administrator through the secure bootstrap command.");
-  }
+if (process.env.NODE_ENV === "production") {
+  throw new Error("Database seeding is disabled in production. Create the first administrator through the secure bootstrap command.");
+}
+if (process.env.ALLOW_DEVELOPMENT_SEED !== "1") {
+  throw new Error("Development seeding requires the explicit ALLOW_DEVELOPMENT_SEED=1 safety flag.");
 }
 
 const seedAdminPassword = String(process.env.SEED_ADMIN_PASSWORD || "");
-const seedDemoPassword = String(process.env.SEED_DEMO_PASSWORD || "Demo@123!dev");
+const seedDemoUsers = process.env.SEED_DEMO_USERS === "1";
+const seedDemoPassword = String(process.env.SEED_DEMO_PASSWORD || "");
 const strongPassword = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
 if (!strongPassword.test(seedAdminPassword)) {
   throw new Error("SEED_ADMIN_PASSWORD must be at least 12 characters and include upper, lower, number, and symbol.");
+}
+if (seedDemoUsers && !strongPassword.test(seedDemoPassword)) {
+  throw new Error("SEED_DEMO_PASSWORD is required for SEED_DEMO_USERS=1 and must meet the strong-password policy.");
 }
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -73,14 +79,34 @@ async function seed() {
         allowGuestBrowsing: true,
         providerAutoApprove: false,
         bookingCancellationWindowHours: 1,
-        broadcastTTLMinutes: 3,
-        broadcastExpandIntervalMinutes: 1,
-        defaultServiceRadiusKm: 15,
+        broadcastTTLMinutes: 30,
+        broadcastInitialRadiusKm: 30,
+        broadcastExpansionRadiusKm: 50,
+        broadcastExpandAfterMinutes: 5,
+        defaultServiceRadiusKm: 25,
         maxNegotiationRounds: 3,
         premiumProfileBadgeEnabled: true,
+        premiumPriorityBoost: true,
         customerCancellationFee: 0,
         providerCancellationPenalty: 0,
-        premiumCommissionDiscountPercent: 10,
+        premiumCommissionDiscountPercent: 0,
+        inactivityLifecycleEnabled: true,
+        inactivityWarningDays: 60,
+        inactivityRestrictionDays: 90,
+        inactivityReviewDays: 180,
+        mapRuntimeConfigurationEnabled: false,
+        mapPrimaryProvider: "environment",
+        mapTileProvider: "environment",
+        mapSearchProvider: "environment",
+        mapReverseProvider: "environment",
+        mapDirectionsProvider: "environment",
+        mapProviderFallbackEnabled: false,
+        mapSearchFallbackProvider: "environment",
+        mapReverseFallbackProvider: "environment",
+        mapDirectionsFallbackProvider: "environment",
+        communicationRuntimeConfigurationEnabled: false,
+        emailProvider: "environment",
+        pushProvider: "environment",
       },
       updatedAt: new Date(),
     })
@@ -133,15 +159,10 @@ async function seed() {
   }
 
   // ─── PAYMENT ACCOUNTS ─────────────────────────────────────────────────────
-  console.log("🏦 Payment accounts...");
-  await db
-    .insert(schema.paymentAccountsTable)
-    .values([
-      { id: "pac-hbl",       label: "HBL Main Account", bankName: "Habib Bank Limited", accountTitle: "ATHOO Technologies", accountNumber: "01234567890123",  iban: "PK36HABB0000000123456701", instructions: "Transfer exact amount. Use your phone number as reference.", isActive: true, sortOrder: 1, createdAt: new Date(), updatedAt: new Date() },
-      { id: "pac-jazz",      label: "JazzCash",          bankName: null,                 accountTitle: "ATHOO Technologies", accountNumber: "03001234567",      iban: null,                       instructions: "Send to mobile account. Screenshot required.",               isActive: true, sortOrder: 2, createdAt: new Date(), updatedAt: new Date() },
-      { id: "pac-easypaisa", label: "Easypaisa",         bankName: null,                 accountTitle: "ATHOO Technologies", accountNumber: "03001234567",      iban: null,                       instructions: "Send to mobile account. Screenshot required.",               isActive: true, sortOrder: 3, createdAt: new Date(), updatedAt: new Date() },
-    ])
-    .onConflictDoNothing();
+  // Never seed an active payment destination. A plausible-looking demo account
+  // can cause a real user to transfer money to the wrong place. Production and
+  // staging payment accounts must be entered and reviewed in the admin panel.
+  console.log("🏦 Payment accounts skipped — configure verified destinations in Admin → Payment Accounts.");
 
   // ─── EMERGENCY CONTACTS ───────────────────────────────────────────────────
   console.log("🆘 Emergency contacts...");
@@ -240,151 +261,154 @@ async function seed() {
     })
     .onConflictDoNothing();
 
-  // ─── DEMO CUSTOMER ────────────────────────────────────────────────────────
-  console.log("👤 Creating Demo Customer (phone=03000000002 / Demo@123)...");
-  await db
-    .insert(schema.usersTable)
-    .values({
-      id: "user-customer-001",
-      publicId: publicUserId("customer", "user-customer-001"),
-      name: "Ali Hassan",
-      phone: "03000000002",
-      email: "customer@athoo.pk",
-      role: "customer",
-      password: hash(seedDemoPassword),
-      isVerified: true,
-      isAvailable: true,
-      isDeactivated: false,
-      isBlocked: false,
-      accountStatus: "active",
-      verificationStatus: "approved",
-      profileColor: "#10B981",
-      location: "Lahore",
-      latitude: "31.5204",
-      longitude: "74.3587",
-      joinedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .onConflictDoNothing();
+  if (seedDemoUsers) {
+    // ─── DEMO CUSTOMER ────────────────────────────────────────────────────────
+    console.log("👤 Creating optional development demo users...");
+    await db
+      .insert(schema.usersTable)
+      .values({
+        id: "user-customer-001",
+        publicId: publicUserId("customer", "user-customer-001"),
+        name: "Ali Hassan",
+        phone: "03000000002",
+        email: "customer@athoo.pk",
+        role: "customer",
+        password: hash(seedDemoPassword),
+        isVerified: true,
+        isAvailable: true,
+        isDeactivated: false,
+        isBlocked: false,
+        accountStatus: "active",
+        verificationStatus: "approved",
+        profileColor: "#10B981",
+        location: "Lahore",
+        latitude: "31.5204",
+        longitude: "74.3587",
+        joinedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .onConflictDoNothing();
 
-  // ─── DEMO PROVIDER ────────────────────────────────────────────────────────
-  console.log("🔧 Creating Demo Provider (phone=03000000004 / Demo@123)...");
-  await db
-    .insert(schema.usersTable)
-    .values({
-      id: "user-provider-001",
-      publicId: publicUserId("provider", "user-provider-001"),
-      name: "Usman Khalid",
-      phone: "03000000004",
-      email: "provider@athoo.pk",
-      role: "provider",
-      password: hash(seedDemoPassword),
-      isVerified: true,
-      isAvailable: true,
-      isDeactivated: false,
-      isBlocked: false,
-      accountStatus: "active",
-      verificationStatus: "approved",
-      profileColor: "#6366F1",
-      bio: "Experienced electrician with 8 years of professional service. Specializing in residential and commercial wiring, AC installation, and electrical fault finding.",
-      experience: "8 years",
-      services: ["cat-electrician", "cat-ac-repair"],
-      location: "Lahore",
-      latitude: "31.5105",
-      longitude: "74.3432",
-      ratePerHour: 1500,
-      rating: 47,
-      ratingCount: 12,
-      totalJobs: 28,
-      pendingCommission: 0,
-      totalCommission: 2800,
-      commissionLimit: 5000,
-      maxTravelDistanceKm: 20,
-      joinedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .onConflictDoNothing();
+    // ─── DEMO PROVIDER ────────────────────────────────────────────────────────
+    console.log("🔧 Creating Demo Provider 1...");
+    await db
+      .insert(schema.usersTable)
+      .values({
+        id: "user-provider-001",
+        publicId: publicUserId("provider", "user-provider-001"),
+        name: "Usman Khalid",
+        phone: "03000000004",
+        email: "provider@athoo.pk",
+        role: "provider",
+        password: hash(seedDemoPassword),
+        isVerified: true,
+        isAvailable: true,
+        isDeactivated: false,
+        isBlocked: false,
+        accountStatus: "active",
+        verificationStatus: "approved",
+        profileColor: "#6366F1",
+        bio: "Experienced electrician with 8 years of professional service. Specializing in residential and commercial wiring, AC installation, and electrical fault finding.",
+        experience: "8 years",
+        services: ["cat-electrician", "cat-ac-repair"],
+        location: "Lahore",
+        latitude: "31.5105",
+        longitude: "74.3432",
+        ratePerHour: 1500,
+        rating: 47,
+        ratingCount: 12,
+        totalJobs: 28,
+        pendingCommission: 0,
+        totalCommission: 2800,
+        commissionLimit: 5000,
+        maxTravelDistanceKm: 20,
+        joinedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .onConflictDoNothing();
 
-  // ─── DEMO CUSTOMER 2 ──────────────────────────────────────────────────────
-  console.log("👤 Creating Demo Customer 2 (phone=03000000003 / Demo@123)...");
-  await db
-    .insert(schema.usersTable)
-    .values({
-      id: "user-customer-002",
-      publicId: publicUserId("customer", "user-customer-002"),
-      name: "Sara Malik",
-      phone: "03000000003",
-      email: "sara@athoo.pk",
-      role: "customer",
-      password: hash(seedDemoPassword),
-      isVerified: true,
-      isAvailable: true,
-      isDeactivated: false,
-      isBlocked: false,
-      accountStatus: "active",
-      verificationStatus: "approved",
-      profileColor: "#EC4899",
-      location: "Lahore",
-      latitude: "31.5497",
-      longitude: "74.3436",
-      joinedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .onConflictDoNothing();
+    // ─── DEMO CUSTOMER 2 ──────────────────────────────────────────────────────
+    console.log("👤 Creating Demo Customer 2...");
+    await db
+      .insert(schema.usersTable)
+      .values({
+        id: "user-customer-002",
+        publicId: publicUserId("customer", "user-customer-002"),
+        name: "Sara Malik",
+        phone: "03000000003",
+        email: "sara@athoo.pk",
+        role: "customer",
+        password: hash(seedDemoPassword),
+        isVerified: true,
+        isAvailable: true,
+        isDeactivated: false,
+        isBlocked: false,
+        accountStatus: "active",
+        verificationStatus: "approved",
+        profileColor: "#EC4899",
+        location: "Lahore",
+        latitude: "31.5497",
+        longitude: "74.3436",
+        joinedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .onConflictDoNothing();
 
-  // ─── DEMO PROVIDER 2 ──────────────────────────────────────────────────────
-  console.log("🔧 Creating Demo Provider 2 (phone=03000000005 / Demo@123)...");
-  await db
-    .insert(schema.usersTable)
-    .values({
-      id: "user-provider-002",
-      publicId: publicUserId("provider", "user-provider-002"),
-      name: "Bilal Ahmed",
-      phone: "03000000005",
-      email: "bilal@athoo.pk",
-      role: "provider",
-      password: hash(seedDemoPassword),
-      isVerified: true,
-      isAvailable: true,
-      isDeactivated: false,
-      isBlocked: false,
-      accountStatus: "active",
-      verificationStatus: "approved",
-      profileColor: "#F59E0B",
-      bio: "Professional plumber with expertise in pipe fitting, leak repair, bathroom renovation, and water pump installation.",
-      experience: "5 years",
-      services: ["cat-plumber", "cat-gas"],
-      location: "Lahore",
-      latitude: "31.5300",
-      longitude: "74.3600",
-      ratePerHour: 1200,
-      rating: 43,
-      ratingCount: 9,
-      totalJobs: 19,
-      pendingCommission: 0,
-      totalCommission: 1900,
-      commissionLimit: 5000,
-      maxTravelDistanceKm: 25,
-      joinedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .onConflictDoNothing();
+    // ─── DEMO PROVIDER 2 ──────────────────────────────────────────────────────
+    console.log("🔧 Creating Demo Provider 2...");
+    await db
+      .insert(schema.usersTable)
+      .values({
+        id: "user-provider-002",
+        publicId: publicUserId("provider", "user-provider-002"),
+        name: "Bilal Ahmed",
+        phone: "03000000005",
+        email: "bilal@athoo.pk",
+        role: "provider",
+        password: hash(seedDemoPassword),
+        isVerified: true,
+        isAvailable: true,
+        isDeactivated: false,
+        isBlocked: false,
+        accountStatus: "active",
+        verificationStatus: "approved",
+        profileColor: "#F59E0B",
+        bio: "Professional plumber with expertise in pipe fitting, leak repair, bathroom renovation, and water pump installation.",
+        experience: "5 years",
+        services: ["cat-plumber", "cat-gas"],
+        location: "Lahore",
+        latitude: "31.5300",
+        longitude: "74.3600",
+        ratePerHour: 1200,
+        rating: 43,
+        ratingCount: 9,
+        totalJobs: 19,
+        pendingCommission: 0,
+        totalCommission: 1900,
+        commissionLimit: 5000,
+        maxTravelDistanceKm: 25,
+        joinedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .onConflictDoNothing();
+
+  } else {
+    console.log("👥 Demo users skipped. Set SEED_DEMO_USERS=1 with a strong SEED_DEMO_PASSWORD only in an isolated development database.");
+  }
 
   console.log("\n✅ Seed complete!\n");
   console.log("─".repeat(50));
-  console.log("DEMO CREDENTIALS");
+  console.log("Development seed completed with explicit safety flags.");
+  console.log(`Demo users: ${seedDemoUsers ? "created with supplied password" : "not created"}`);
+  console.log("Payment destinations: not seeded; configure verified accounts in the admin panel.");
   console.log("─".repeat(50));
-  console.log("  Super Admin   | phone: 03000000001 | password supplied via SEED_ADMIN_PASSWORD");
-  console.log("  Customer 1    | phone: 03000000002 | password supplied via SEED_DEMO_PASSWORD");
-  console.log("  Customer 2    | phone: 03000000003 | password supplied via SEED_DEMO_PASSWORD");
-  console.log("  Provider 1    | phone: 03000000004 | password supplied via SEED_DEMO_PASSWORD");
-  console.log("  Provider 2    | phone: 03000000005 | password supplied via SEED_DEMO_PASSWORD");
-  console.log("─".repeat(50));
-
-  await pool.end();
 }
 
-seed().catch((err) => {
-  console.error("❌ Seed failed:", err);
-  process.exit(1);
-});
+seed()
+  .catch((err) => {
+    console.error("❌ Seed failed:", err);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await pool.end();
+  });

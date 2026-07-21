@@ -118,7 +118,7 @@
   --chart-4: 280 65% 60%;
   --chart-5: 340 75% 55%;
 
-  --app-font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --app-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --app-font-serif: Georgia, serif;
   --app-font-mono: 'JetBrains Mono', Menlo, monospace;
   --radius: 0.5rem;

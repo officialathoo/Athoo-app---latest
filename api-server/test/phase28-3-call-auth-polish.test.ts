@@ -6,12 +6,12 @@ test("Phase 28.3 synchronizes caller and receiver call timing from the server", 
   const calls = readRepo("athoo-app/context/CallContext.tsx");
   const backend = readRepo("api-server/src/routes/calls.ts");
 
-  assert.match(backend, /status: "active", startedAt: new Date\(\)/);
+  assert.match(backend, /status: "active"[\s\S]{0,100}startedAt/);
   assert.match(backend, /emitToUser\(updatedCall\.callerId, "call:accepted"/);
   assert.match(calls, /message\.type === "call:accepted"/);
   assert.match(calls, /callStartedAtMs\(callData\.startedAt/);
   assert.match(calls, /Date\.now\(\) - startedAt/);
-  assert.match(calls, /}, 500\);/);
+  assert.match(calls, /}, 1_000\);/);
 });
 
 test("Phase 28.3 proves secure transport in the live call UI", () => {
@@ -20,7 +20,7 @@ test("Phase 28.3 proves secure transport in the live call UI", () => {
 
   assert.match(context, /configuredCallProviderRef\.current === "cloudflare-turn"/);
   assert.match(context, /Cloudflare TURN ready/);
-  assert.match(context, /Cloudflare TURN connected/);
+  assert.match(context, /Cloudflare TURN relay verified/);
   assert.match(context, /iceTransportPolicy/);
   assert.match(screen, /mediaState/);
   assert.match(screen, /transportLabel/);

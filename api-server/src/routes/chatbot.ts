@@ -231,7 +231,7 @@ const PROVIDER_FAQS: FAQ[] = [
   },
   {
     keywords: ["payment account", "bank account", "jazzcash", "easypaisa", "add bank", "payout method"],
-    answer: "To add your payout account:\n\n• Go to Profile → Payment Accounts\n• Add your bank account (IBAN) or mobile wallet (JazzCash/Easypaisa)\n• Verify your account with a small test deposit\n• You can have multiple accounts saved\n\nWithdrawal requests are only processed to verified accounts.",
+    answer: "To add your payout account:\n\n• Go to Profile → Payment Accounts\n• Add your bank account (IBAN) or mobile wallet (JazzCash/Easypaisa)\n• Double-check the account title and destination details before saving\n• You can have multiple accounts saved\n\nApproved withdrawals are processed manually only to an admin-verified payment account. Athoo will never ask you to make a test deposit to verify it.",
   },
   {
     keywords: ["visit charge", "200", "call-out fee", "arrival fee", "fixed fee"],

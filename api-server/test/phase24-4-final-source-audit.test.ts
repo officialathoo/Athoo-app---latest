@@ -30,16 +30,27 @@ test("available providers refresh location on activation and a bounded interval"
   assert.match(env, /^EXPO_PUBLIC_PROVIDER_LOCATION_SYNC_INTERVAL_MS=120000$/m);
 });
 
-test("active release metadata points to Phase 24.8 and remains NO-GO", () => {
+test("active release metadata, evidence templates, and runbooks remain aligned and NO-GO", () => {
   const status = json("docs/qa/current-release-status.json");
+  const deviceTemplate = json("docs/qa/device-acceptance-evidence-template.json");
+  const rc2Template = json("docs/qa/rc2-evidence-template.json");
   const connected = read("docs/runbooks/FINAL_CONNECTED_DEPLOYMENT.md");
   const launch = read("docs/runbooks/PRODUCTION_LAUNCH_RUNBOOK.md");
-  assert.equal(status.candidate, "ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip");
-  assert.equal(status.status, "SOURCE-VERIFIED-STRICT-DEVICE-EVIDENCE-PENDING");
+  const deviceRunbook = read("docs/runbooks/DEVICE_ACCEPTANCE_RUNBOOK.md");
+  const escapedCandidate = String(status.candidate).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const candidatePattern = new RegExp(escapedCandidate);
+
+  assert.match(status.candidate, /^ATHOO_PHASE28_5(?:_\d+)?_[A-Z0-9_]+\.zip$/);
+  assert.match(status.baseline, /^ATHOO_PHASE28_5(?:_\d+)?_[A-Z0-9_]+\.zip$/);
+  assert.notEqual(status.candidate, status.baseline);
+  assert.equal(status.status, "SOURCE-HARDENED-LOCAL-VALIDATION-PASSED");
   assert.match(status.launchDecision, /^NO-GO-/);
   assert.equal(status.externalVerification.connectedRuntime, "pending");
-  assert.match(connected, /ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY\.zip/);
-  assert.match(launch, /ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY\.zip/);
+  assert.equal(deviceTemplate.candidateArtifactName, status.candidate);
+  assert.equal(rc2Template.candidateArtifactName, status.candidate);
+  assert.match(connected, candidatePattern);
+  assert.match(launch, candidatePattern);
+  assert.match(deviceRunbook, candidatePattern);
 });
 
 test("phase notes do not accumulate in the repository root", () => {

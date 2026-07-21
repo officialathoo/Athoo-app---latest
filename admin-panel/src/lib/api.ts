@@ -3,6 +3,15 @@ export const TOKEN_KEY = "athoo_admin_token";
 export const REFRESH_TOKEN_KEY = "athoo_admin_refresh_token";
 const DEVICE_ID_KEY = "athoo_admin_device_id";
 
+const inflight = new Map<string, Promise<unknown>>();
+const cache = new Map<string, { expiresAt: number; data: unknown }>();
+let cacheGeneration = 0;
+
+function invalidateClientCache(): void {
+  cacheGeneration += 1;
+  cache.clear();
+}
+
 export function getAdminDeviceId(): string {
   const existing = typeof localStorage !== "undefined" ? localStorage.getItem(DEVICE_ID_KEY) : null;
   if (existing && /^[a-z0-9][a-z0-9._:-]{15,127}$/i.test(existing)) return existing.toLowerCase();
@@ -61,20 +70,25 @@ export function getToken(): string {
  */
 export function setApiBase(url: string): void {
   const clean = sanitizeBaseUrl(url);
+  const previous = sanitizeBaseUrl(localStorage.getItem(API_KEY));
 
   if (!clean) {
     localStorage.removeItem(API_KEY);
+    if (previous) invalidateClientCache();
     return;
   }
 
   localStorage.setItem(API_KEY, clean);
+  if (clean !== previous) invalidateClientCache();
 }
 
 /**
  * Save token
  */
 export function saveToken(token: string): void {
+  const previous = sessionStorage.getItem(TOKEN_KEY) || "";
   sessionStorage.setItem(TOKEN_KEY, token);
+  if (token !== previous) invalidateClientCache();
 }
 
 export function getRefreshToken(): string {
@@ -82,8 +96,10 @@ export function getRefreshToken(): string {
 }
 
 export function saveSessionTokens(token: string, refreshToken: string): void {
+  const previousToken = sessionStorage.getItem(TOKEN_KEY) || "";
   sessionStorage.setItem(TOKEN_KEY, token);
   sessionStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+  if (token !== previousToken) invalidateClientCache();
 }
 
 /** Clear the complete admin session. */
@@ -92,6 +108,7 @@ export function clearToken(): void {
   sessionStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
+  invalidateClientCache();
 }
 
 export async function openAuthenticatedFile(pathOrUrl: string): Promise<void> {
@@ -140,8 +157,6 @@ async function refreshAdminSession(): Promise<boolean> {
   return refreshPromise;
 }
 
-const inflight = new Map<string, Promise<unknown>>();
-const cache = new Map<string, { expiresAt: number; data: unknown }>();
 function cacheTtl(path: string, method: string): number {
   if (method !== "GET") return 0;
   // These endpoints drive live badges and read state. Client-side caching made
@@ -151,17 +166,33 @@ function cacheTtl(path: string, method: string): number {
   if (/\/api\/(categories|settings\/public|providers|service-areas)/.test(path)) return 30_000;
   return 0;
 }
-async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs = 90000): Promise<Response> {
+async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs = 30_000): Promise<Response> {
   const controller = new AbortController();
-  const id = window.setTimeout(() => controller.abort(), timeoutMs);
+  const externalSignal = init.signal;
+  let timedOut = false;
+  const forwardAbort = () => controller.abort(externalSignal?.reason);
+  if (externalSignal?.aborted) forwardAbort();
+  else externalSignal?.addEventListener("abort", forwardAbort, { once: true });
+  const id = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort(new DOMException("Request timeout", "TimeoutError"));
+  }, Math.max(1_000, timeoutMs));
   try {
     return await fetch(input, { ...init, signal: controller.signal });
   } catch (err: any) {
-    if (err?.name === "AbortError") throw new Error("Server is taking longer than expected. Please try again.");
+    if (timedOut) throw new Error("Server is taking longer than expected. Please try again.");
+    // Preserve caller-initiated AbortError so screens can silently discard stale requests.
     throw err;
   } finally {
     window.clearTimeout(id);
+    externalSignal?.removeEventListener("abort", forwardAbort);
   }
+}
+
+function requestTimeoutMs(path: string, method: string): number {
+  if (/\/api\/auth\/(admin-login|login|refresh)/.test(path)) return 60_000;
+  if (/\/api\/admin\/(operations-inbox|sidebar-counts)/.test(path)) return 15_000;
+  return method === "GET" ? 30_000 : 45_000;
 }
 
 /**
@@ -171,6 +202,7 @@ type JsonBody = Record<string, unknown> | unknown[];
 type ApiOptions = Omit<RequestInit, "body"> & {
   body?: BodyInit | JsonBody | null;
   params?: Record<string, string | number | boolean | undefined>;
+  timeoutMs?: number;
   _retriedAfterRefresh?: boolean;
 };
 
@@ -178,7 +210,7 @@ export async function api<T = unknown>(
   path: string,
   options: ApiOptions = {}
 ): Promise<T> {
-  const { params, _retriedAfterRefresh, body, ...requestOptions } = options;
+  const { params, timeoutMs, _retriedAfterRefresh, body, ...requestOptions } = options;
   const serializedBody =
     body != null &&
     typeof body === "object" &&
@@ -193,9 +225,6 @@ export async function api<T = unknown>(
 
   const fetchOptions: RequestInit = { ...requestOptions, body: serializedBody as BodyInit | null | undefined };
 
-/* legacy signature removed */
-/*
-*/
 
   const token = getToken();
   const base = getApiBase();
@@ -218,49 +247,64 @@ export async function api<T = unknown>(
   }
 
   const method = String(fetchOptions.method || "GET").toUpperCase();
-  const key = `${method}:${url}`;
+  const sessionKey = token ? token.slice(-24) : "anonymous";
+  const requestGeneration = cacheGeneration;
+  const key = `${requestGeneration}:${sessionKey}:${method}:${url}`;
   const ttl = cacheTtl(normalizedPath, method);
   const cached = ttl ? cache.get(key) : undefined;
   if (cached && cached.expiresAt > Date.now()) return cached.data as T;
-  if (ttl && inflight.has(key)) return inflight.get(key) as Promise<T>;
+  const dedupeEligible = method === "GET" && !fetchOptions.signal;
+  if (dedupeEligible && inflight.has(key)) return inflight.get(key) as Promise<T>;
 
   const doFetch = async (): Promise<T> => {
-  const res = await fetchWithTimeout(url, {
-    ...fetchOptions,
-    headers: {
-      "Content-Type": "application/json",
-      "X-Athoo-Device-Id": getAdminDeviceId(),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(fetchOptions.headers || {}),
-    },
-  });
+    const res = await fetchWithTimeout(
+      url,
+      {
+        ...fetchOptions,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Athoo-Device-Id": getAdminDeviceId(),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(fetchOptions.headers || {}),
+        },
+      },
+      timeoutMs ?? requestTimeoutMs(normalizedPath, method),
+    );
 
-  const text = await res.text();
+    const text = await res.text();
 
-  let data: any = {};
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { error: text || "Invalid server response" };
-  }
-
-  if (!res.ok) {
-    if (res.status === 401 && token && !_retriedAfterRefresh && normalizedPath !== "/api/auth/refresh") {
-      const refreshed = await refreshAdminSession();
-      if (refreshed) {
-        return api<T>(path, { ...options, _retriedAfterRefresh: true });
-      }
-      clearToken();
-      window.location.reload();
+    let data: any = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { error: text || "Invalid server response" };
     }
-    throw new Error(data.error || data.message || `Request failed (${res.status})`);
-  }
 
-  if (ttl) cache.set(key, { data, expiresAt: Date.now() + ttl });
-  return data as T;
+    if (!res.ok) {
+      if (res.status === 401 && token && !_retriedAfterRefresh && normalizedPath !== "/api/auth/refresh") {
+        const refreshed = await refreshAdminSession();
+        if (refreshed) {
+          return api<T>(path, { ...options, _retriedAfterRefresh: true });
+        }
+        clearToken();
+        window.location.reload();
+      }
+      throw new Error(data.error || data.message || `Request failed (${res.status})`);
+    }
+
+    // A mutation, API-base change, logout or token rotation advances the
+    // generation. A slow GET that started beforehand must never repopulate the
+    // cache with stale data after that invalidation.
+    if (ttl && requestGeneration === cacheGeneration) {
+      cache.set(key, { data, expiresAt: Date.now() + ttl });
+    }
+    if (method !== "GET") invalidateClientCache();
+    return data as T;
   };
-  const promise = doFetch().finally(() => { if (ttl) inflight.delete(key); });
-  if (ttl) inflight.set(key, promise);
+  const promise = doFetch().finally(() => {
+    if (dedupeEligible) inflight.delete(key);
+  });
+  if (dedupeEligible) inflight.set(key, promise);
   return promise;
 }
 

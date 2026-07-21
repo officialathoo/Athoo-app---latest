@@ -483,6 +483,10 @@ services:
         value: main
       - key: TOMTOM_MAP_VIEW
         value: Unified
+      - key: TOMTOM_RASTER_API
+        value: orbis-v2
+      - key: TOMTOM_ORBIS_STYLE
+        value: street-light
       - key: TOMTOM_TILE_SIZE
         value: "256"
       - key: TOMTOM_ROUTE_TYPE
@@ -557,6 +561,12 @@ services:
         value: "604800"
       - key: MAP_TILE_MAX_BYTES
         value: "2097152"
+      - key: MAP_TILE_SUSPICIOUS_BYTES
+        value: "1500"
+      - key: MAP_TILE_PUBLIC_VERSION
+        value: "2"
+      - key: ADMIN_OPERATIONS_SOURCE_TIMEOUT_MS
+        value: "5000"
       - key: MAP_TILE_MAX_ZOOM
         value: "20"
       - key: MAP_TILE_RESPECT_UPSTREAM_CACHE

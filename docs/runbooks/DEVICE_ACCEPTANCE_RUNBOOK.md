@@ -1,6 +1,6 @@
 # Athoo Android/iOS Device Acceptance Runbook
 
-This runbook validates the exact Phase 24.8 candidate on one physical Android phone and one physical iPhone. Do not reuse evidence from an older ZIP, commit, EAS build, Render deploy or Vercel deploy.
+This runbook validates the exact Phase 28.5 release candidate on one physical Android phone and one physical iPhone. Do not reuse evidence from an older ZIP, commit, EAS Update group, Render deploy or Vercel deploy.
 
 ## 1. Build preparation
 
@@ -10,19 +10,27 @@ pnpm device:prepare
 APP_ENV=staging EXPO_PUBLIC_API_BASE_URL=https://<staging-api> EAS_PROJECT_ID=<id> pnpm mobile:validate
 ```
 
-Create fresh internal builds from the same release commit:
+Use one of these two release paths from the same commit:
+
+1. Preferred final-binary acceptance after quota/reset:
 
 ```bash
 eas build --profile preview --platform android --clear-cache
 eas build --profile preview --platform ios --clear-cache
 ```
 
-Record each EAS build ID, artifact URL, creation time and source commit. Use dedicated customer, provider and administrator acceptance accounts. Do not use personal production accounts.
+2. OTA-compatible acceptance while reusing the existing preview binary:
+
+```bash
+eas update --channel preview --environment preview --message "Phase 28.5 release hardening"
+```
+
+For OTA testing, record the base EAS build ID **and** the EAS Update group ID/runtime version. Both devices must load the same update before cross-role tests. Native dependency, permission, notification-channel or bundled-resource changes still require a fresh binary. Use dedicated customer, provider and administrator acceptance accounts. Do not use personal production accounts.
 
 ## 2. Initialize evidence from the exact ZIP
 
 ```powershell
-pnpm device:evidence:init -- --artifact .\ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip --release-version <release-version> --commit <full-git-sha>
+pnpm device:evidence:init -- --artifact .\ATHOO_PHASE28_5_2_RELEASE_METADATA_FIXED.zip --release-version <release-version> --commit <full-git-sha>
 ```
 
 This computes the ZIP checksum and creates every required Android, iOS and cross-role evidence record. Do not delete cases or rename IDs.
@@ -48,7 +56,7 @@ Execute the full JSON checklist. The following sequences are mandatory because t
 ### Map rendering and provider location
 
 1. Fresh-launch the provider app with location enabled.
-2. Open every map screen and confirm streets/tiles render behind the marker; a white surface with only a red dot fails.
+2. Open every map screen and confirm streets/tiles render behind the marker; a gray/white surface with only a red dot or attribution fails. Pan and zoom to force additional tile requests.
 3. Record the device's current coordinates and accuracy.
 4. Move or simulate a meaningful location change, foreground the app, and verify the provider profile coordinates update.
 5. Turn **Available for Jobs** off and on and confirm another fresh location synchronization occurs.
@@ -85,10 +93,12 @@ Execute the full JSON checklist. The following sequences are mandatory because t
 
 1. Place customer-to-provider and provider-to-customer calls across different networks.
 2. Verify no crash during ringing, answer, speaker, mute, background/foreground and hang-up.
-3. Prove two-way voice for at least 30 seconds.
-4. Record whether authenticated TURN WebRTC or the configured safe fallback was used.
-5. Temporarily change network conditions and verify bounded failure/recovery instead of a silent hung call.
-6. A call that connects with one-way or no audio fails acceptance.
+3. Prove two-way voice for at least 60 seconds with no self-echo, clipping, repeated cut-outs or material timer skew.
+4. The live call screen must display **Cloudflare TURN relay verified** and show a `RELAY` candidate type. Record the displayed protocol and RTT. `TURN ready` or `secure connected` alone is not evidence that media used the relay.
+5. Confirm caller and receiver timers start from the same server timestamp and remain within one second.
+6. Temporarily change network conditions and verify bounded failure/recovery instead of a silent hung call.
+7. Test mute, speaker, foreground/background return and remote hang-up on both devices.
+8. A call that connects with one-way, low-volume, delayed, noisy or cut audio fails acceptance.
 
 ### Mobile layout and availability controls
 
@@ -100,6 +110,14 @@ Execute the full JSON checklist. The following sequences are mandatory because t
 ### Invoice tax policy
 
 Complete a controlled booking and inspect customer, provider, PDF/print and admin invoice views. No GST, VAT, tax rate, tax amount or tax-inclusive calculation may appear. Service amount, commission and final payable totals must remain internally consistent.
+
+### Admin operability and latency
+
+1. Open Operations Inbox after a cold API start; it must not return HTTP 500.
+2. Confirm a partial source failure is shown as degraded rather than a false all-clear queue.
+3. Change search/type/date filters rapidly and confirm stale responses do not overwrite the latest results.
+4. Confirm sidebar counters and Operations Inbox load within the connected-verifier latency budgets.
+5. Verify no blocked Google Fonts CSP request and that the Athoo admin logo loads locally.
 
 ## 5. Cross-role setup
 
@@ -120,7 +138,7 @@ For every completed, failed or blocked case record:
 Validate:
 
 ```powershell
-pnpm device:evidence:validate -- .\device-acceptance-evidence.json .\ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip
+pnpm device:evidence:validate -- .\device-acceptance-evidence.json .\ATHOO_PHASE28_5_2_RELEASE_METADATA_FIXED.zip
 ```
 
 The command returns exit code 0 only when every case passes. Pending evidence returns code 3. Failed or blocked evidence returns code 1. Invalid or mismatched evidence returns code 2.

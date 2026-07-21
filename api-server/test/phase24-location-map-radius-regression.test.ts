@@ -7,7 +7,7 @@ const read = (path: string) => fs.readFileSync(new URL(`../../${path}`, import.m
 test("public settings expose the credential-free map tile proxy", () => {
   const settingsRoute = read("api-server/src/routes/index.ts");
   const mobileSettings = read("athoo-app/context/SettingsContext.tsx");
-  assert.match(settingsRoute, /tileUrl: mapStatus\.configured \? "\/api\/geo\/tiles\/\{z\}\/\{x\}\/\{y\}\.png"/);
+  assert.match(settingsRoute, /tileUrl: mapStatus\.configured \? `\/api\/geo\/tiles\/\{z\}\/\{x\}\/\{y\}\.png\?v=\$\{publicMapTileVersion\}`/);
   assert.match(mobileSettings, /candidate\.startsWith\("\/"\) && api\.baseUrl/);
 });
 

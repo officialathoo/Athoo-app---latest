@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildMapTileUpstreamUrl, getMapConfigurationStatus, getMapProviderConfiguration } from "../src/lib/mapConfiguration.ts";
+import { buildMapTileUpstreamCandidates, buildMapTileUpstreamUrl, getMapConfigurationStatus, getMapProviderConfiguration } from "../src/lib/mapConfiguration.ts";
 
 const KEYS = [
   "NODE_ENV",
@@ -28,6 +28,8 @@ const KEYS = [
   "TOMTOM_MAP_STYLE",
   "TOMTOM_MAP_VIEW",
   "TOMTOM_TILE_SIZE",
+  "TOMTOM_RASTER_API",
+  "TOMTOM_ORBIS_STYLE",
   "MAP_CUSTOM_PROVIDER_ID",
   "MAP_CUSTOM_TILE_SIZE",
   "MAP_CUSTOM_API_KEY",
@@ -160,8 +162,38 @@ test("TomTom can provide tiles, search, reverse geocoding, and directions throug
     assert.equal(status.tomtomConfigured, true);
     assert.equal(
       buildMapTileUpstreamUrl(10, 720, 410),
-      "https://api.tomtom.com/map/1/tile/basic/main/10/720/410.png?tileSize=256&view=Unified&key=tomtom-test-key",
+      "https://api.tomtom.com/maps/orbis/display/raster/tile/10/720/410?apiVersion=2&style=street-light&tileSize=256&geopoliticalView=Unified&key=tomtom-test-key",
     );
+  });
+});
+
+test("TomTom exposes an ordered alternate raster endpoint for blank-tile recovery", () => {
+  withEnvironment({
+    NODE_ENV: "production",
+    MAP_PROVIDER: "tomtom",
+    TOMTOM_API_KEY: "tomtom-test-key",
+    TOMTOM_RASTER_API: "legacy-v1",
+  }, () => {
+    const candidates = buildMapTileUpstreamCandidates(15, 23032, 13124);
+    assert.equal(candidates.length, 2);
+    assert.equal(candidates[0]?.id, "tomtom-legacy-v1");
+    assert.match(candidates[0]?.url || "", /\/map\/1\/tile\/basic\/main\/15\/23032\/13124\.png/);
+    assert.equal(candidates[1]?.id, "tomtom-orbis-v2");
+    assert.match(candidates[1]?.url || "", /\/maps\/orbis\/display\/raster\/tile\/15\/23032\/13124/);
+  });
+});
+
+test("explicit tile upstream remains first while retaining TomTom recovery candidates", () => {
+  withEnvironment({
+    NODE_ENV: "production",
+    MAP_PROVIDER: "tomtom",
+    TOMTOM_API_KEY: "tomtom-test-key",
+    MAP_TILE_UPSTREAM_URL: "https://tiles.example.test/{z}/{x}/{y}.png?key={apiKey}",
+  }, () => {
+    const candidates = buildMapTileUpstreamCandidates(9, 365, 211);
+    assert.equal(candidates[0]?.id, "configured-upstream");
+    assert.equal(candidates[0]?.url, "https://tiles.example.test/9/365/211.png?key=tomtom-test-key");
+    assert.ok(candidates.some((candidate) => candidate.id === "tomtom-orbis-v2"));
   });
 });
 

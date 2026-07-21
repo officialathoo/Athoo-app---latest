@@ -48,7 +48,7 @@ test("strict connected verifier checks API, admin, Neon-backed infrastructure an
     "Configured cache is not safe",
     "Durable queue worker is not running",
   ]) assert.match(verifier, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(verifier, /schemaVersion: 3/);
+  assert.match(verifier, /schemaVersion: 4/);
   assert.match(verifier, /release-evidence/);
 });
 
@@ -66,8 +66,8 @@ test("connected GitHub workflow verifies source, Neon and deployed services from
 
 test("current status remains NO-GO until real external evidence exists", () => {
   const status = json("docs/qa/current-release-status.json");
-  assert.match(status.candidate, /^ATHOO_PHASE(?:23|24)_/);
-  assert.match(status.status, /(?:CONNECTED-VERIFICATION-READY|SOURCE-VERIFIED-CONNECTED-DEVICE-VALIDATION-PENDING|SOURCE-VERIFIED-STRICT-DEVICE-EVIDENCE-PENDING)/);
+  assert.match(status.candidate, /^ATHOO_PHASE(?:23|24|28)_/);
+  assert.match(status.status, /(?:CONNECTED-VERIFICATION-READY|SOURCE-VERIFIED-CONNECTED-DEVICE-VALIDATION-PENDING|SOURCE-VERIFIED-STRICT-DEVICE-EVIDENCE-PENDING|SOURCE-HARDENED-LOCAL-VERIFICATION-PENDING|SOURCE-HARDENED-LOCAL-VALIDATION-PASSED)/);
   assert.equal(status.externalVerification.connectedRuntime, "pending");
   assert.equal(status.externalVerification.androidDevice, "pending");
   assert.equal(status.externalVerification.iosDevice, "pending");

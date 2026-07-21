@@ -1,6 +1,6 @@
 # Athoo Final Connected Deployment
 
-Use `ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip` as the only release baseline. Do not merge files from older ZIPs.
+Use `ATHOO_PHASE28_5_2_RELEASE_METADATA_FIXED.zip` as the only release baseline. Do not merge files from older ZIPs.
 
 ## 1. Certify the exact source
 
@@ -24,10 +24,10 @@ Commit the exact source and record the complete Git SHA and ZIP checksum:
 ```powershell
 git status --short
 git add .
-git commit -m "Athoo Phase 24.8 device acceptance integrity"
+git commit -m "Athoo Phase 28.5 device acceptance integrity"
 git push origin main
 $Commit = git rev-parse HEAD
-Get-FileHash .\ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip -Algorithm SHA256
+Get-FileHash .\ATHOO_PHASE28_5_2_RELEASE_METADATA_FIXED.zip -Algorithm SHA256
 ```
 
 Use one release version and the same `$Commit` for Render, Vercel and EAS.
@@ -80,7 +80,7 @@ QUEUE_PROVIDER=postgres
 CACHE_PROVIDER=memory
 ```
 
-Do not scale to multiple API instances while using memory cache. Phase 24.8 verification rejects horizontal scaling unless the active cache reports `horizontalScaleSafe=true`.
+Do not scale to multiple API instances while using memory cache. Phase 28.5 verification rejects horizontal scaling unless the active cache reports `horizontalScaleSafe=true`.
 
 ## 4. Verify Neon before API rollout
 
@@ -95,7 +95,7 @@ pnpm db:integrity
 The expected latest migration is:
 
 ```text
-20260719_broadcast_delivery_configuration_integrity.sql
+20260720_release_phase28_professional_workflow_integrity.sql
 ```
 
 Do not start the updated API when migration verification or integrity checks fail.
@@ -172,16 +172,16 @@ Fresh native builds are mandatory for notification sounds, Android channels, bio
 
 ## 8. Complete physical-device evidence
 
-Use the exact Phase 24.8 ZIP and the same release commit used by Render, Vercel and EAS:
+Use the exact Phase 28.5 ZIP and the same release commit used by Render, Vercel and EAS:
 
 ```powershell
-pnpm device:evidence:init -- --artifact .\ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip --release-version <release-version> --commit <full-git-sha>
+pnpm device:evidence:init -- --artifact .\ATHOO_PHASE28_5_2_RELEASE_METADATA_FIXED.zip --release-version <release-version> --commit <full-git-sha>
 ```
 
 Complete both build records and every case in `device-acceptance-evidence.json`, then validate:
 
 ```powershell
-pnpm device:evidence:validate -- .\device-acceptance-evidence.json .\ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip
+pnpm device:evidence:validate -- .\device-acceptance-evidence.json .\ATHOO_PHASE28_5_2_RELEASE_METADATA_FIXED.zip
 ```
 
 The validator binds the evidence to the active candidate name, real non-zero ZIP checksum, exact Git commit, both native build IDs and both physical devices. Cross-role cases must identify the Android and iPhone used. It rejects generic evidence such as “OK” or “Passed”, stale timestamps, missing cases, unknown cases and build/commit mismatches.

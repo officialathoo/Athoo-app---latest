@@ -238,9 +238,9 @@ export function Sidebar({ admin, onLogout }: SidebarProps) {
     );
   }
 
-  // Preserve nav scroll position across route changes.
-  // SidebarContent is defined inside Sidebar, so location changes cause it to
-  // remount — we save/restore scrollTop to prevent the list jumping to the top.
+  // Preserve nav scroll position across route changes. The sidebar is rendered
+  // as stable JSX rather than an inline component type, avoiding a full subtree
+  // remount whenever Sidebar rerenders.
   const navScrollRef = useRef<HTMLElement | null>(null);
   const savedScrollTop = useRef(0);
 
@@ -250,13 +250,13 @@ export function Sidebar({ admin, onLogout }: SidebarProps) {
     }
   }, [location]);
 
-  const SidebarContent = () => (
+  const sidebarContent = (
     <div className="flex flex-col h-full bg-slate-900 text-white">
       {/* Logo */}
       <div className="px-5 py-4 border-b border-slate-700/60 shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 flex items-center justify-center shrink-0 bg-white rounded-xl overflow-hidden shadow-sm p-0.5">
-            <img src="/admin/logo.png" alt="Athoo" className="w-full h-full object-contain" />
+            <img src="/logo.png" alt="Athoo" className="w-full h-full object-contain" />
           </div>
           <div className="flex-1 min-w-0">
             <h1 className="text-sm font-bold tracking-wide text-white">Athoo Admin</h1>
@@ -373,7 +373,7 @@ export function Sidebar({ admin, onLogout }: SidebarProps) {
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         } lg:static lg:h-screen`}
       >
-        <SidebarContent />
+        {sidebarContent}
       </aside>
     </>
   );

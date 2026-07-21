@@ -27,6 +27,7 @@ export default function CallScreen() {
     setSpeaker,
     mediaState,
     transportLabel,
+    transportDetails,
   } = useCall();
   const [keypadVisible, setKeypadVisible] = useState(false);
   const pulseAnimation = useRef(new Animated.Value(1)).current;
@@ -134,6 +135,15 @@ export default function CallScreen() {
           </Text>
         </View>
 
+        {transportDetails ? (
+          <Text style={styles.transportDetails}>
+            {[
+              transportDetails.candidateType ? transportDetails.candidateType.toUpperCase() : null,
+              transportDetails.protocol ? transportDetails.protocol.toUpperCase() : null,
+              transportDetails.roundTripMs !== undefined ? `${transportDetails.roundTripMs} ms RTT` : null,
+            ].filter(Boolean).join(" · ")}
+          </Text>
+        ) : null}
         <Text style={styles.privacyBadge}>Phone number hidden · Athoo secure call</Text>
       </View>
 
@@ -242,6 +252,7 @@ function createStyles(theme: AthooTheme) {
       borderColor: "rgba(254,202,202,0.28)",
     },
     transportText: { fontSize: 11, color: mutedWhite, fontWeight: "600" },
+    transportDetails: { fontSize: 10, color: "rgba(255,255,255,0.68)", fontWeight: "600", textAlign: "center" },
     privacyBadge: { fontSize: 11, color: "rgba(255,255,255,0.60)", marginTop: 3, textAlign: "center" },
     keypadGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 12, paddingHorizontal: 40, paddingBottom: 16 },
     keypadButton: { width: 70, height: 60, borderRadius: 16, backgroundColor: glass, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)" },

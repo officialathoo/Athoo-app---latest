@@ -464,7 +464,7 @@ const notificationConfiguration = {
 const mapTileUrl = readEnv(
   "EXPO_PUBLIC_MAP_TILE_URL",
   apiBaseUrl
-    ? `${apiBaseUrl}/api/geo/tiles/{z}/{x}/{y}.png`
+    ? `${apiBaseUrl}/api/geo/tiles/{z}/{x}/{y}.png?v=2`
     : "",
 );
 

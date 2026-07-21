@@ -63,9 +63,20 @@ if (fs.existsSync(ciPath)) {
 const seedPath = path.join(root, "scripts/src/seed.ts");
 if (fs.existsSync(seedPath)) {
   const seed = fs.readFileSync(seedPath, "utf8");
-  if (/Admin@123/.test(seed)) errors.push("Fixed Super Admin password remains in seed source");
+  if (/Admin@123|Demo@123/.test(seed)) errors.push("Fixed development password remains in seed source");
   if (!seed.includes('NODE_ENV === "production"')) errors.push("Seed script is not blocked in production");
+  if (!seed.includes('ALLOW_DEVELOPMENT_SEED !== "1"')) errors.push("Seed script does not require explicit development opt-in");
   if (!seed.includes("SEED_ADMIN_PASSWORD")) errors.push("Seed script does not require an explicit admin password");
+  if (/accountNumber:\s*["'](?:0|03|PK)/.test(seed) && /isActive:\s*true/.test(seed)) {
+    errors.push("Seed script contains an active sample payment destination");
+  }
+}
+const sqlSeedPath = path.join(root, "sql/seed.sql");
+if (fs.existsSync(sqlSeedPath)) {
+  const sqlSeed = fs.readFileSync(sqlSeedPath, "utf8");
+  if (/Admin@123|Demo@123|03XX-XXXXXXX|01234567890123|PK36HABB/.test(sqlSeed)) {
+    errors.push("SQL seed contains credential or payment placeholders");
+  }
 }
 
 const forbiddenFiles = ["package-lock.json", "yarn.lock"];

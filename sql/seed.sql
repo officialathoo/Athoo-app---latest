@@ -1,11 +1,10 @@
 -- ============================================================
--- ATHOO SEED DATA — Demo Accounts + Default Configuration
+-- ATHOO REFERENCE SEED — Non-sensitive default configuration only
 -- ============================================================
--- Passwords below are bcrypt-hashed.
--- Plaintext credentials are shown in comments.
---   admin@athoo.com   / 03000000001  / Admin@123
---   customer (demo)   / 03000000002  / Demo@123
---   provider (demo)   / 03000000004  / Demo@123
+-- This file does not create users, credentials, or payment destinations.
+-- Use scripts/src/seed.ts only with ALLOW_DEVELOPMENT_SEED=1 on an isolated
+-- development database. Create production administrators through the secure
+-- bootstrap command and payment destinations through the admin panel.
 -- ============================================================
 
 -- ─── SERVICE CATEGORIES ──────────────────────────────────────────────────────
@@ -43,12 +42,8 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- ─── PAYMENT ACCOUNTS ────────────────────────────────────────────────────────
-INSERT INTO payment_accounts (id, label, bank_name, account_title, account_number, iban, instructions, is_active, sort_order)
-VALUES
-  ('pac-hbl',       'HBL Main Account',       'Habib Bank Limited', 'ATHOO Technologies',  '01234567890123',   'PK36HABB0000000123456701', 'Transfer exact amount. Use your phone number as reference.', TRUE, 1),
-  ('pac-jazz',      'JazzCash',               NULL,                 'ATHOO Technologies',  '03XX-XXXXXXX',     NULL,                       'Send to mobile account. Screenshot required.',               TRUE, 2),
-  ('pac-easypaisa', 'Easypaisa',              NULL,                 'ATHOO Technologies',  '03XX-XXXXXXX',     NULL,                       'Send to mobile account. Screenshot required.',               TRUE, 3)
-ON CONFLICT (id) DO NOTHING;
+-- Intentionally empty. Never place sample bank/mobile-wallet details in an
+-- active payment table. Configure verified destinations in the admin panel.
 
 -- ─── EMERGENCY CONTACTS ──────────────────────────────────────────────────────
 INSERT INTO emergency_contacts (id, name, number, description, icon, sort_order, is_active)
@@ -103,13 +98,33 @@ VALUES (
     "providerAutoApprove": false,
     "bookingCancellationWindowHours": 1,
     "broadcastTTLMinutes": 30,
-    "broadcastExpandIntervalMinutes": 5,
-    "defaultServiceRadiusKm": 15,
+    "broadcastInitialRadiusKm": 30,
+    "broadcastExpansionRadiusKm": 50,
+    "broadcastExpandAfterMinutes": 5,
+    "defaultServiceRadiusKm": 25,
     "maxNegotiationRounds": 3,
     "premiumProfileBadgeEnabled": true,
+    "premiumPriorityBoost": true,
     "customerCancellationFee": 0,
     "providerCancellationPenalty": 0,
-    "premiumCommissionDiscountPercent": 10
+    "premiumCommissionDiscountPercent": 0,
+    "inactivityLifecycleEnabled": true,
+    "inactivityWarningDays": 60,
+    "inactivityRestrictionDays": 90,
+    "inactivityReviewDays": 180,
+    "mapRuntimeConfigurationEnabled": false,
+    "mapPrimaryProvider": "environment",
+    "mapTileProvider": "environment",
+    "mapSearchProvider": "environment",
+    "mapReverseProvider": "environment",
+    "mapDirectionsProvider": "environment",
+    "mapProviderFallbackEnabled": false,
+    "mapSearchFallbackProvider": "environment",
+    "mapReverseFallbackProvider": "environment",
+    "mapDirectionsFallbackProvider": "environment",
+    "communicationRuntimeConfigurationEnabled": false,
+    "emailProvider": "environment",
+    "pushProvider": "environment"
   }',
   NOW()
 )
@@ -129,11 +144,6 @@ VALUES
   ('nt-9', 'broadcast_response',  'Provider Responded',       'push', 'customer', NULL, '{{providerName}} responded to your broadcast request with PKR {{amount}}.', TRUE)
 ON CONFLICT (key) DO NOTHING;
 
--- ─── DEMO USERS ──────────────────────────────────────────────────────────────
--- NOTE: Passwords are bcrypt hashed. Run scripts/src/seed.ts for proper hashing,
--- or use the API /auth/login endpoint. These INSERT stmts are for reference only —
--- the actual seed runs via: pnpm db:seed
---
--- Super Admin:   phone=03000000001  password=Admin@123
--- Demo Customer: phone=03000000002  password=Demo@123
--- Demo Provider: phone=03000000004  password=Demo@123
+-- ─── USERS ────────────────────────────────────────────────────────────────────
+-- Intentionally empty. No credential-bearing accounts are stored in SQL seed
+-- material. Use the secure bootstrap command for the first administrator.

@@ -5,6 +5,8 @@ import path from "node:path";
 const root = path.resolve(import.meta.dirname, "../..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 const errors = [];
+const releaseStatus = JSON.parse(read("docs/qa/current-release-status.json"));
+const activeCandidatePattern = new RegExp(String(releaseStatus.candidate).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 
 function requireText(file, pattern, message) {
   if (!pattern.test(read(file))) errors.push(`${file}: ${message}`);
@@ -81,8 +83,8 @@ requireText(".github/workflows/connected-runtime.yml", /pnpm db:status[\s\S]*pnp
 requireText(".github/workflows/connected-runtime.yml", /CONNECTED_ADMIN_ORIGIN/, "deployed admin verification is not wired");
 requireText("scripts/tools/connected-runtime-verify.mjs", /admin release manifest/, "connected verification does not compare admin release identity");
 requireText("scripts/tools/connected-runtime-verify.mjs", /storage provider connectivity/, "connected verification does not test object storage");
-requireText("docs/runbooks/FINAL_CONNECTED_DEPLOYMENT.md", /ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY\.zip/, "current baseline is not documented");
-requireText("docs/runbooks/FINAL_CONNECTED_DEPLOYMENT.md", /20260719_broadcast_delivery_configuration_integrity\.sql/, "latest migration is not documented");
+requireText("docs/runbooks/FINAL_CONNECTED_DEPLOYMENT.md", activeCandidatePattern, "active candidate is not documented");
+requireText("docs/runbooks/FINAL_CONNECTED_DEPLOYMENT.md", /20260720_release_phase28_professional_workflow_integrity\.sql/, "latest migration is not documented");
 requireText("docs/runbooks/PRODUCTION_LAUNCH_RUNBOOK.md", /calls\.productionReady=true|TURN/, "TURN production gate is not documented");
 
 if (errors.length) {

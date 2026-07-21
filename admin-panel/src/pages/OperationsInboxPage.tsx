@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { api, formatDate } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -23,6 +23,8 @@ interface InboxResponse {
   items: WorkItem[];
   summary: { totalOpen: number; unseen: number; critical: number; high: number };
   generatedAt: string;
+  degradedSources?: string[];
+  durationMs?: number;
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -54,9 +56,23 @@ export function OperationsInboxPage() {
   const [to, setTo] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [marking, setMarking] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [degradedSources, setDegradedSources] = useState<string[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [durationMs, setDurationMs] = useState<number | null>(null);
+  const requestSequence = useRef(0);
+  const hasLoaded = useRef(false);
+  const requestController = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    requestController.current?.abort();
+    const controller = new AbortController();
+    requestController.current = controller;
+    const requestId = ++requestSequence.current;
+    if (hasLoaded.current) setRefreshing(true);
+    else setLoading(true);
+    setLoadError(null);
+
     try {
       const response = await api<InboxResponse>("/api/admin/operations-inbox", {
         params: {
@@ -65,22 +81,40 @@ export function OperationsInboxPage() {
           visibility: visibility === "all" ? undefined : visibility,
           from: from || undefined,
           to: to || undefined,
+          perTypeLimit: 20,
         },
+        signal: controller.signal,
+        timeoutMs: 15_000,
       });
+      if (requestId !== requestSequence.current) return;
       setItems(response.items || []);
       setSummary(response.summary || { totalOpen: 0, unseen: 0, critical: 0, high: 0 });
+      setDegradedSources(response.degradedSources || []);
+      setDurationMs(typeof response.durationMs === "number" && Number.isFinite(response.durationMs) ? response.durationMs : null);
       setSelected(new Set());
+      hasLoaded.current = true;
     } catch (error) {
-      toast({ title: "Operations inbox unavailable", description: (error as Error).message, variant: "destructive" });
+      if (controller.signal.aborted || (error as Error)?.name === "AbortError") return;
+      if (requestId !== requestSequence.current) return;
+      setLoadError((error as Error).message || "Failed to load operations inbox");
     } finally {
-      setLoading(false);
+      if (requestController.current === controller) requestController.current = null;
+      if (requestId === requestSequence.current && !controller.signal.aborted) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [from, search, to, type, visibility]);
 
   useEffect(() => {
-    const timer = window.setTimeout(load, 250);
+    const timer = window.setTimeout(load, search.trim() ? 400 : 150);
     return () => window.clearTimeout(timer);
-  }, [load]);
+  }, [load, search]);
+
+  useEffect(() => () => {
+    requestController.current?.abort();
+    requestController.current = null;
+  }, []);
 
   const selectedItems = useMemo(() => items.filter((item) => selected.has(`${item.resourceType}:${item.id}`)), [items, selected]);
 
@@ -128,9 +162,23 @@ export function OperationsInboxPage() {
           <button disabled={marking || summary.unseen === 0} onClick={() => markSeen(items)} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 disabled:opacity-40">
             <CheckCheck size={16} /> Mark visible seen
           </button>
-          <button onClick={load} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white"><RefreshCw size={16} /> Refresh</button>
+          <button disabled={refreshing} onClick={() => void load()} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"><RefreshCw size={16} className={refreshing ? "animate-spin" : ""} /> {refreshing ? "Refreshing" : "Refresh"}</button>
         </div>
       </div>
+
+      {loadError ? (
+        <div className="flex flex-col gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 sm:flex-row sm:items-center sm:justify-between">
+          <div><p className="font-semibold">Operations inbox could not be refreshed</p><p className="mt-0.5 text-red-700">{loadError}{items.length ? " Existing results are still shown below." : ""}</p></div>
+          <button onClick={() => void load()} className="shrink-0 rounded-lg bg-red-700 px-3 py-2 text-xs font-semibold text-white">Try again</button>
+        </div>
+      ) : null}
+
+      {degradedSources.length ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-semibold">Some work sources are temporarily unavailable</p>
+          <p className="mt-0.5 text-amber-800">Available queues are shown. Pending sources: {degradedSources.map((source) => TYPE_LABELS[source] || source.replace(/_/g, " ")).join(", ")}.</p>
+        </div>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map(({ label, value, icon: Icon, className }) => (
@@ -153,7 +201,7 @@ export function OperationsInboxPage() {
         {selectedItems.length > 0 ? <div className="flex items-center justify-between border-b border-blue-100 bg-blue-50 px-4 py-3 text-sm"><span className="font-medium text-blue-900">{selectedItems.length} selected</span><button disabled={marking} onClick={() => markSeen(selectedItems)} className="rounded-lg bg-blue-600 px-3 py-1.5 font-medium text-white disabled:opacity-50">Mark selected seen</button></div> : null}
 
         <div className="divide-y divide-slate-100">
-          {loading ? <div className="p-10 text-center text-sm text-slate-500">Loading operations workload…</div> : items.length === 0 ? <div className="p-12 text-center"><CheckCheck className="mx-auto text-green-600" size={32} /><p className="mt-3 font-semibold text-slate-800">No matching unresolved work</p><p className="mt-1 text-sm text-slate-500">Every item in this filtered queue is currently clear.</p></div> : items.map((item) => {
+          {loading ? <div className="p-10 text-center text-sm text-slate-500">Loading operations workload…</div> : loadError && items.length === 0 ? <div className="p-12 text-center"><AlertTriangle className="mx-auto text-red-600" size={32} /><p className="mt-3 font-semibold text-slate-800">Operations data is unavailable</p><p className="mt-1 text-sm text-slate-500">Retry after the API connection recovers.</p></div> : items.length === 0 ? <div className="p-12 text-center"><CheckCheck className="mx-auto text-green-600" size={32} /><p className="mt-3 font-semibold text-slate-800">No matching unresolved work</p><p className="mt-1 text-sm text-slate-500">Every item in this filtered queue is currently clear.</p>{durationMs != null ? <p className="mt-2 text-xs text-slate-400">Loaded in {durationMs} ms</p> : null}</div> : items.map((item) => {
             const key = `${item.resourceType}:${item.id}`;
             return <div key={key} className={`flex gap-3 p-4 ${item.seen ? "bg-white" : "bg-orange-50/50"}`}>
               <input type="checkbox" aria-label={`Select ${item.title}`} checked={selected.has(key)} onChange={() => setSelected((current) => { const next = new Set(current); next.has(key) ? next.delete(key) : next.add(key); return next; })} className="mt-1" />

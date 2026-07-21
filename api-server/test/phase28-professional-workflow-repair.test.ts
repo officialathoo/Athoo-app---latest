@@ -100,8 +100,8 @@ test("Phase 28.3 keeps Cloudflare TURN primary and never downgrades configured c
   assert.match(mobile, /noiseSuppression: true/);
   assert.match(mobile, /autoGainControl: true/);
   assert.match(mobile, /current\.direction === "outgoing"/);
-  assert.match(mobile, /connectionState === "connected" && remoteTrackReceivedRef\.current/);
-  assert.match(mobile, /Cloudflare TURN connected/);
+  assert.match(mobile, /peerIsConnected\(pc\) && remoteTrackReceivedRef\.current/);
+  assert.match(mobile, /Cloudflare TURN relay verified/);
   assert.match(mobile, /else if \(!rtcProductionReadyRef\.current\)/);
   assert.match(mobile, /Do not switch a TURN-capable call to the chunked HTTP transport/);
   assert.doesNotMatch(mobile, /WebRTC carried no inbound audio; activating authenticated audio fallback/);

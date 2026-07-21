@@ -76,6 +76,8 @@ export type MapProviderConfiguration = {
     mapStyle: string;
     mapView: string;
     tileSize: 256 | 512;
+    rasterApi: "orbis-v2" | "legacy-v1";
+    orbisStyle: "street-light" | "street-dark";
     routeType: string;
     travelMode: string;
     trafficEnabled: boolean;
@@ -116,9 +118,9 @@ export type MapConfigurationStatus = {
   customConfigured: boolean;
 };
 
-function normalizeProvider<T extends string>(value: unknown, fallback: T): T {
+function normalizeProvider(value: unknown, fallback: string): string {
   const provider = normalized(value).toLowerCase();
-  return (provider || fallback) as T;
+  return provider || fallback;
 }
 
 function isHttpsUrl(value: string): boolean {
@@ -189,11 +191,33 @@ function resolveMapboxTileTemplate(config: MapProviderConfiguration): string {
   return `https://api.mapbox.com/styles/v1/${encodeURIComponent(styleOwner)}/${encodeURIComponent(styleId)}/tiles/${tileSize}/{z}/{x}/{y}${tileScale}?access_token={apiKey}`;
 }
 
-function resolveTomTomTileTemplate(config: MapProviderConfiguration): string {
+function resolveTomTomLegacyTileTemplate(config: MapProviderConfiguration): string {
   if (!config.tomtom.configured) return "";
   const { baseUrl, mapLayer, mapStyle, mapView, tileSize } = config.tomtom;
   const params = new URLSearchParams({ tileSize: String(tileSize), view: mapView, key: "{apiKey}" });
   return `${baseUrl}/map/1/tile/${encodeURIComponent(mapLayer)}/${encodeURIComponent(mapStyle)}/{z}/{x}/{y}.png?${params.toString().replace("%7BapiKey%7D", "{apiKey}")}`;
+}
+
+function resolveTomTomOrbisTileTemplate(config: MapProviderConfiguration): string {
+  if (!config.tomtom.configured) return "";
+  const { baseUrl, mapView, tileSize, orbisStyle } = config.tomtom;
+  const params = new URLSearchParams({
+    apiVersion: "2",
+    style: orbisStyle,
+    tileSize: String(tileSize),
+    geopoliticalView: mapView,
+    key: "{apiKey}",
+  });
+  return `${baseUrl}/maps/orbis/display/raster/tile/{z}/{x}/{y}?${params.toString().replace("%7BapiKey%7D", "{apiKey}")}`;
+}
+
+function resolveTomTomTileTemplates(config: MapProviderConfiguration): Array<{ id: string; template: string }> {
+  const orbis = resolveTomTomOrbisTileTemplate(config);
+  const legacy = resolveTomTomLegacyTileTemplate(config);
+  const ordered = config.tomtom.rasterApi === "legacy-v1"
+    ? [{ id: "tomtom-legacy-v1", template: legacy }, { id: "tomtom-orbis-v2", template: orbis }]
+    : [{ id: "tomtom-orbis-v2", template: orbis }, { id: "tomtom-legacy-v1", template: legacy }];
+  return ordered.filter((candidate) => Boolean(candidate.template));
 }
 
 function resolveTileTemplate(config: MapProviderConfiguration): {
@@ -204,7 +228,7 @@ function resolveTileTemplate(config: MapProviderConfiguration): {
   if (configuredTemplate) return { template: configuredTemplate, source: "configured" };
 
   if (config.tileProvider === "tomtom") {
-    const template = resolveTomTomTileTemplate(config);
+    const template = resolveTomTomTileTemplates(config)[0]?.template || "";
     return { template, source: template ? "provider-default" : "missing" };
   }
   if (config.tileProvider === "mapbox") {
@@ -238,9 +262,12 @@ export function getMapProviderConfiguration(overrides: MapProviderRuntimeOverrid
   const mapboxToken = normalized(process.env.MAPBOX_ACCESS_TOKEN);
   const tomtomApiKey = normalized(process.env.TOMTOM_API_KEY);
 
+  const configuredTileFallback: MapTileProvider = normalized(process.env.MAP_TILE_UPSTREAM_URL)
+    ? (primaryProvider === "tomtom" || primaryProvider === "mapbox" ? defaults.tile : "custom")
+    : defaults.tile;
   const tileProvider = allowedProvider<MapTileProvider>(
     (runtimeEnabled ? runtimeValue(overrides.tileProvider) : "") || process.env.MAP_TILE_PROVIDER,
-    normalized(process.env.MAP_TILE_UPSTREAM_URL) ? "custom" : defaults.tile,
+    configuredTileFallback,
     TILE_PROVIDERS,
   );
   const searchProvider = allowedProvider<MapSearchProvider>(
@@ -320,6 +347,8 @@ export function getMapProviderConfiguration(overrides: MapProviderRuntimeOverrid
       mapStyle: normalized(process.env.TOMTOM_MAP_STYLE) || "main",
       mapView: normalized(process.env.TOMTOM_MAP_VIEW) || "Unified",
       tileSize: tomtomTileSize,
+      rasterApi: normalized(process.env.TOMTOM_RASTER_API).toLowerCase() === "legacy-v1" ? "legacy-v1" : "orbis-v2",
+      orbisStyle: normalized(process.env.TOMTOM_ORBIS_STYLE).toLowerCase() === "street-dark" ? "street-dark" : "street-light",
       routeType: normalized(process.env.TOMTOM_ROUTE_TYPE) || "fastest",
       travelMode: normalized(process.env.TOMTOM_TRAVEL_MODE) || "car",
       trafficEnabled: envBool("TOMTOM_TRAFFIC_ENABLED", true),
@@ -454,21 +483,55 @@ function resolveTileApiKey(config: MapProviderConfiguration): string {
   return normalized(process.env.MAP_TILE_API_KEY || process.env.MAP_CUSTOM_API_KEY);
 }
 
-export function buildMapTileUpstreamUrl(
-  z: number,
-  x: number,
-  y: number,
-  overrides: MapProviderRuntimeOverrides = {},
-): string {
-  const config = getMapProviderConfiguration(overrides);
-  const status = getMapConfigurationStatus(overrides);
-  if (!status.configured) throw new Error(status.error || "Map tile provider is not configured");
-  const { template } = resolveTileTemplate(config);
-  const apiKey = resolveTileApiKey(config);
+export type MapTileUpstreamCandidate = { id: string; url: string };
+
+function materializeTileTemplate(template: string, apiKey: string, z: number, x: number, y: number): string {
   if (template.includes("{apiKey}") && !apiKey) throw new Error("An API key is required by the configured tile URL");
   return template
     .replaceAll("{z}", String(z))
     .replaceAll("{x}", String(x))
     .replaceAll("{y}", String(y))
     .replaceAll("{apiKey}", encodeURIComponent(apiKey));
+}
+
+export function buildMapTileUpstreamCandidates(
+  z: number,
+  x: number,
+  y: number,
+  overrides: MapProviderRuntimeOverrides = {},
+): MapTileUpstreamCandidate[] {
+  const config = getMapProviderConfiguration(overrides);
+  const status = getMapConfigurationStatus(overrides);
+  if (!status.configured) throw new Error(status.error || "Map tile provider is not configured");
+  const apiKey = resolveTileApiKey(config);
+  const configuredTemplate = normalized(process.env.MAP_TILE_UPSTREAM_URL);
+  const providerTemplates = config.tileProvider === "tomtom"
+    ? resolveTomTomTileTemplates(config)
+    : [{ id: String(config.tileProvider || "configured"), template: resolveTileTemplate(config).template }];
+  const templates = [
+    ...(configuredTemplate ? [{ id: "configured-upstream", template: configuredTemplate }] : []),
+    ...providerTemplates,
+  ];
+  const seen = new Set<string>();
+  return templates
+    .filter((candidate) => {
+      if (!candidate.template || seen.has(candidate.template)) return false;
+      seen.add(candidate.template);
+      return true;
+    })
+    .map((candidate) => ({
+      id: candidate.id,
+      url: materializeTileTemplate(candidate.template, apiKey, z, x, y),
+    }));
+}
+
+export function buildMapTileUpstreamUrl(
+  z: number,
+  x: number,
+  y: number,
+  overrides: MapProviderRuntimeOverrides = {},
+): string {
+  const first = buildMapTileUpstreamCandidates(z, x, y, overrides)[0];
+  if (!first) throw new Error("Map tile provider did not produce an upstream URL");
+  return first.url;
 }
