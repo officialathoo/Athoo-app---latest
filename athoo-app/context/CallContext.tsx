@@ -28,7 +28,7 @@ try {
   _RTCIceCandidate = w.RTCIceCandidate;
   WebRTCAvailable = true;
 } catch {
-  appLogger.debug("calls", "[CallContext] react-native-webrtc unavailable – using WS audio");
+  appLogger.debug("calls", "[CallContext] react-native-webrtc unavailable – using authenticated audio fallback");
 }
 
 
@@ -60,9 +60,27 @@ const CHUNK_OPTIONS = {
 // The backend owns fallback-audio tuning so deployments can adjust it without
 // rebuilding the mobile app. These limits are only safe client-side guards.
 const DEFAULT_FALLBACK_CHUNK_MS = 800;
-const DEFAULT_FALLBACK_ACTIVATION_MS = 3_000;
+const DEFAULT_FALLBACK_ACTIVATION_MS = 8_000;
 const MIN_FALLBACK_CHUNK_MS = 400;
 const MAX_FALLBACK_CHUNK_MS = 2_000;
+const MIN_RTC_MEDIA_WATCHDOG_MS = 7_000;
+const RTC_MEDIA_WATCHDOG_RETRY_MS = 2_500;
+const MAX_RTC_MEDIA_WATCHDOG_ATTEMPTS = 3;
+
+// WebRTC owns production voice processing. The native engine applies acoustic
+// echo cancellation, noise suppression and automatic gain control. The HTTP
+// chunk transport is emergency-only because it cannot provide comparable
+// full-duplex acoustic processing.
+const VOICE_MEDIA_CONSTRAINTS = {
+  audio: {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+    channelCount: 1,
+    sampleRate: 48_000,
+  },
+  video: false,
+};
 
 function normalizeFallbackChunkMs(value: unknown): number {
   const parsed = Number(value);
@@ -72,6 +90,13 @@ function normalizeFallbackChunkMs(value: unknown): number {
 
 function fallbackPollIntervalMs(chunkMs: number): number {
   return Math.min(500, Math.max(100, Math.floor(chunkMs / 3)));
+}
+
+function callStartedAtMs(value: unknown, fallback = Date.now()): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (value instanceof Date) return value.getTime();
+  const parsed = Date.parse(String(value || ""));
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 // Outgoing call timeout — auto-cancel if receiver doesn't answer within 35s.
@@ -84,6 +109,7 @@ const OUTGOING_CALL_TIMEOUT_MS = 35_000;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type CallState = "idle" | "incoming" | "outgoing" | "active" | "ended";
+export type CallMediaState = "idle" | "connecting" | "webrtc" | "fallback" | "failed";
 
 export interface ActiveCall {
   callId: string;
@@ -103,6 +129,8 @@ interface CallContextType {
   callDuration: number;
   isMuted: boolean;
   isSpeaker: boolean;
+  mediaState: CallMediaState;
+  transportLabel: string;
   setMuted: (v: boolean) => void;
   setSpeaker: (v: boolean) => Promise<void>;
   startOutgoingCall: (receiverId: string, receiverName: string, service?: string, receiverColor?: string) => Promise<void>;
@@ -226,6 +254,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setMutedState] = useState(false);
   const [isSpeaker, setIsSpeaker] = useState(false);
+  const [mediaState, setMediaState] = useState<CallMediaState>("idle");
+  const [transportLabel, setTransportLabel] = useState("Checking secure audio");
+  const configuredCallProviderRef = useRef("unknown");
+  const remoteAnswerAppliedRef = useRef(false);
+  const mediaFailureAlertedRef = useRef(false);
 
   // Wrap setMuted so it always updates both the ref (used in recording loop) and state.
   const setMuted = useCallback((v: boolean) => {
@@ -309,6 +342,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       });
       if (outgoingTimeoutRef.current) clearTimeout(outgoingTimeoutRef.current);
       if (rtcFallbackTimerRef.current) clearTimeout(rtcFallbackTimerRef.current);
+      if (rtcDisconnectTimerRef.current) clearTimeout(rtcDisconnectTimerRef.current);
       if (iceRefreshTimerRef.current) clearTimeout(iceRefreshTimerRef.current);
       soundService.stopRingtone();
       closePeerConnection();
@@ -326,23 +360,46 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       soundService.stopRingtone().catch(() => {});
     }
     if (state === "active") {
-      setCallDuration(0);
-      timerRef.current = setInterval(() => setCallDuration((p) => p + 1), 1000);
+      // This effect can rerun when the authoritative server startedAt arrives.
+      // Always replace existing timers so both devices share one synchronized
+      // duration clock and one remote-hangup watcher.
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+      if (activeCallWatcherRef.current) { clearInterval(activeCallWatcherRef.current); activeCallWatcherRef.current = null; }
+
+      const updateDuration = () => {
+        const startedAt = activeCallRef.current?.startedAt ?? Date.now();
+        setCallDuration(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+      };
+      updateDuration();
+      timerRef.current = setInterval(updateDuration, 1000);
       const callId = activeCall?.callId;
-      appLogger.debug("calls", "[CallContext] Call active, starting voice streaming for:", callId);
+      appLogger.debug("calls", "[CallContext] Call active, preparing secure media for:", callId);
       if (callId) {
-        void soundService.setCallSpeakerMode(isSpeaker);
-        // WebRTC owns the microphone when available. Start the authenticated
-        // HTTP fallback only when RTC is unavailable or fails to connect.
-        if (!canUseWebRtc() || !pcRef.current) {
+        // WebRTC owns the microphone and native acoustic processing whenever
+        // production TURN is available. The HTTP transport is reserved only
+        // for deployments where TURN is genuinely unavailable. Never replace
+        // a configured Cloudflare call with delayed chunked audio.
+        if (canUseWebRtc() && pcRef.current) {
+          setMediaState("connecting");
+          scheduleRtcMediaWatchdog(callId, fallbackActivationMsRef.current);
+        } else if (!rtcProductionReadyRef.current) {
+          setMediaState("fallback");
+          setTransportLabel("Emergency fallback audio");
           startVoiceStreaming(callId);
         } else {
-          scheduleRtcMediaWatchdog(callId, fallbackActivationMsRef.current);
+          setMediaState("failed");
+          setTransportLabel("Secure audio could not start");
+          if (!mediaFailureAlertedRef.current) {
+            mediaFailureAlertedRef.current = true;
+            Alert.alert(
+              "Audio Connection Issue",
+              "Cloudflare TURN is configured, but the secure audio session could not start. End the call and try again.",
+            );
+          }
         }
       }
 
       // Poll every second to detect when the remote side ends the call and stop audio promptly.
-      if (activeCallWatcherRef.current) clearInterval(activeCallWatcherRef.current);
       if (callId) {
         activeCallWatcherRef.current = setInterval(async () => {
           try {
@@ -365,9 +422,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       if (activeCallWatcherRef.current) { clearInterval(activeCallWatcherRef.current); activeCallWatcherRef.current = null; }
       if (state !== "incoming" && state !== "outgoing") {
         stopVoiceStreaming();
+        setMediaState("idle");
       }
     }
-  }, [activeCall?.state]);
+  }, [activeCall?.state, activeCall?.startedAt]);
 
   async function hasInboundAudioMedia(pc: any): Promise<boolean> {
     try {
@@ -402,46 +460,93 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (activeCallRef.current?.state !== "active" || activeCallRef.current.callId !== callId) return;
         const pc = pcRef.current;
         const inboundAudioUsable = Boolean(pc) && await hasInboundAudioMedia(pc);
-        if (inboundAudioUsable) {
+        const connectionState = String(pc?.connectionState || "new");
+        const iceState = String(pc?.iceConnectionState || "new");
+        // A user may stay silent for the first seconds of a call and Opus may
+        // send no measurable payload. A connected peer plus a received remote
+        // audio track is therefore a valid secure-media state; inbound RTP
+        // counters remain an additional confirmation, not a fallback trigger.
+        const secureMediaReady = inboundAudioUsable || (
+          connectionState === "connected" && remoteTrackReceivedRef.current
+        );
+        if (secureMediaReady) {
           rtcConnectedRef.current = true;
           if (isStreamingRef.current) stopVoiceStreaming();
-          void soundService.setCallSpeakerMode(isSpeaker);
-          appLogger.debug("calls", "[CallContext] inbound WebRTC audio packets confirmed", {
+          setMediaState("webrtc");
+          setTransportLabel(
+            configuredCallProviderRef.current === "cloudflare-turn"
+              ? "Cloudflare TURN connected"
+              : "Secure relay connected",
+          );
+          appLogger.info("calls", "[CallContext] secure WebRTC audio established", {
+            provider: configuredCallProviderRef.current,
+            transportPolicy: iceConfigurationRef.current.iceTransportPolicy,
+            connectionState,
+            iceState,
+            remoteTrackReceived: remoteTrackReceivedRef.current,
+            inboundPacketsConfirmed: inboundAudioUsable,
             bytesReceived: inboundAudioBytesRef.current,
             packetsReceived: inboundAudioPacketsRef.current,
           });
           return;
         }
 
-        const connectionState = String(pc?.connectionState || "new");
-        const iceState = String(pc?.iceConnectionState || "new");
-        const stillNegotiating = ["new", "connecting"].includes(connectionState)
-          || ["new", "checking"].includes(iceState);
-        if (stillNegotiating && rtcMediaWatchdogAttemptRef.current < 1) {
-          rtcMediaWatchdogAttemptRef.current += 1;
-          appLogger.debug("calls", "[CallContext] WebRTC audio is not flowing yet; extending media watchdog", {
+        const attempt = rtcMediaWatchdogAttemptRef.current + 1;
+        rtcMediaWatchdogAttemptRef.current = attempt;
+
+        if (pc && attempt < MAX_RTC_MEDIA_WATCHDOG_ATTEMPTS) {
+          setMediaState("connecting");
+          setTransportLabel(
+            configuredCallProviderRef.current === "cloudflare-turn"
+              ? "Connecting Cloudflare TURN…"
+              : "Connecting secure audio…",
+          );
+          appLogger.warn("calls", "[CallContext] WebRTC audio is not flowing yet; keeping the secure relay alive", {
+            provider: configuredCallProviderRef.current,
             connectionState,
             iceState,
             remoteTrackReceived: remoteTrackReceivedRef.current,
-            attempt: rtcMediaWatchdogAttemptRef.current,
+            attempt,
           });
-          scheduleRtcMediaWatchdog(callId, 1_500);
+          scheduleRtcMediaWatchdog(callId, RTC_MEDIA_WATCHDOG_RETRY_MS);
           return;
         }
 
-        appLogger.warn("calls", "[CallContext] WebRTC carried no inbound audio; activating authenticated audio fallback", {
-          connected: rtcConnectedRef.current,
-          remoteTrackReceived: remoteTrackReceivedRef.current,
-          bytesReceived: inboundAudioBytesRef.current,
-          packetsReceived: inboundAudioPacketsRef.current,
+        // Do not switch a TURN-capable call to the chunked HTTP transport. That
+        // transport cannot provide native full-duplex echo cancellation and was
+        // the source of delayed, chopped and self-echoing audio on real devices.
+        if (rtcProductionReadyRef.current) {
+          setMediaState("failed");
+          setTransportLabel("Secure audio needs reconnection");
+          appLogger.error("calls", "[CallContext] production WebRTC did not establish usable inbound audio", {
+            provider: configuredCallProviderRef.current,
+            connectionState,
+            iceState,
+            remoteTrackReceived: remoteTrackReceivedRef.current,
+            bytesReceived: inboundAudioBytesRef.current,
+            packetsReceived: inboundAudioPacketsRef.current,
+          });
+          if (!mediaFailureAlertedRef.current) {
+            mediaFailureAlertedRef.current = true;
+            Alert.alert(
+              "Audio Connection Issue",
+              "The secure audio relay did not connect correctly. End the call and try again after switching between Wi-Fi and mobile data.",
+            );
+          }
+          return;
+        }
+
+        appLogger.warn("calls", "[CallContext] TURN is unavailable; activating authenticated emergency audio fallback", {
           connectionState,
           iceState,
         });
         if (activeCallRef.current?.state !== "active" || activeCallRef.current.callId !== callId) return;
         closePeerConnection();
+        setMediaState("fallback");
+        setTransportLabel("Emergency fallback audio");
         startVoiceStreaming(callId);
       })();
-    }, Math.max(1_000, delayMs));
+    }, Math.max(MIN_RTC_MEDIA_WATCHDOG_MS, delayMs));
   }
 
   function canUseWebRtc(): boolean {
@@ -474,12 +579,30 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             })
           : [];
         rtcProductionReadyRef.current = Boolean(configuration.productionReady && iceServers.length > 0);
+        configuredCallProviderRef.current = String(configuration.provider || "unknown");
         const iceTransportPolicy = configuration.iceTransportPolicy === "relay" ? "relay" : "all";
         iceConfigurationRef.current = rtcProductionReadyRef.current
           ? { iceServers, iceTransportPolicy }
           : { iceServers: [], iceTransportPolicy: "all" };
         fallbackChunkMsRef.current = normalizeFallbackChunkMs(configuration.audio?.fallbackChunkMs);
-        fallbackActivationMsRef.current = Math.min(15_000, Math.max(3_000, Number(configuration.audio?.fallbackActivationMs || DEFAULT_FALLBACK_ACTIVATION_MS)));
+        fallbackActivationMsRef.current = Math.min(20_000, Math.max(
+          MIN_RTC_MEDIA_WATCHDOG_MS,
+          Number(configuration.audio?.fallbackActivationMs || DEFAULT_FALLBACK_ACTIVATION_MS),
+        ));
+        setTransportLabel(
+          rtcProductionReadyRef.current
+            ? configuredCallProviderRef.current === "cloudflare-turn"
+              ? "Cloudflare TURN ready"
+              : "Secure TURN ready"
+            : "Emergency fallback available",
+        );
+        appLogger.info("calls", "[CallContext] call transport configuration loaded", {
+          provider: configuredCallProviderRef.current,
+          productionReady: rtcProductionReadyRef.current,
+          credentialMode: configuration.credentialMode,
+          iceTransportPolicy,
+          iceServerCount: iceServers.length,
+        });
 
         const parsedExpiry = configuration.expiresAt ? Date.parse(configuration.expiresAt) : Number.NaN;
         iceConfigurationExpiresAtRef.current = Number.isFinite(parsedExpiry)
@@ -513,6 +636,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       .catch((error) => {
         appLogger.warn("calls", "[CallContext] Unable to load ICE configuration; using authenticated audio fallback", error);
         rtcProductionReadyRef.current = false;
+        configuredCallProviderRef.current = "unavailable";
+        setTransportLabel("Emergency fallback available");
         iceConfigurationRef.current = { iceServers: [], iceTransportPolicy: "all" };
         iceConfigurationExpiresAtRef.current = 0;
         fallbackChunkMsRef.current = DEFAULT_FALLBACK_CHUNK_MS;
@@ -530,6 +655,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user) {
       rtcProductionReadyRef.current = false;
+      configuredCallProviderRef.current = "unknown";
+      setTransportLabel("Checking secure audio");
       iceConfigurationRef.current = { iceServers: [], iceTransportPolicy: "all" };
       iceConfigurationExpiresAtRef.current = 0;
       fallbackChunkMsRef.current = DEFAULT_FALLBACK_CHUNK_MS;
@@ -555,6 +682,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     inboundAudioBytesRef.current = 0;
     inboundAudioPacketsRef.current = 0;
     rtcMediaWatchdogAttemptRef.current = 0;
+    remoteAnswerAppliedRef.current = false;
     signalingCallIdRef.current = null;
     pendingLocalCandidatesRef.current = [];
     appliedCalleeCandRef.current = 0;
@@ -598,40 +726,119 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       remoteStreamRef.current = event.streams?.[0] || remoteStreamRef.current;
       remoteTrackReceivedRef.current = true;
       try { if (event.track) event.track.enabled = true; } catch {}
-      // Track creation alone is not proof that audio is flowing. The media
-      // watchdog confirms inbound RTP bytes before cancelling fallback.
+      // A received audio track plus a connected peer is enough to keep the
+      // native WebRTC path. RTP counters are observed by the watchdog as extra
+      // diagnostics, but user silence must never trigger chunked fallback.
       void soundService.setCallSpeakerMode(isSpeaker);
-      appLogger.debug("calls", "[CallContext] remote audio track received; waiting for inbound packets");
+      if (pc.connectionState === "connected") {
+        setMediaState("webrtc");
+        setTransportLabel(
+          configuredCallProviderRef.current === "cloudflare-turn"
+            ? "Cloudflare TURN connected"
+            : "Secure relay connected",
+        );
+      } else {
+        setMediaState("connecting");
+      }
+      appLogger.debug("calls", "[CallContext] remote audio track received", {
+        connectionState: pc.connectionState,
+        provider: configuredCallProviderRef.current,
+      });
     };
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState;
       if (state === "connected") {
         rtcConnectedRef.current = true;
-        // A connected ICE state and a remote track can still carry zero audio.
-        // Keep the watchdog active until inbound RTP packets are confirmed.
         if (rtcDisconnectTimerRef.current) { clearTimeout(rtcDisconnectTimerRef.current); rtcDisconnectTimerRef.current = null; }
         void soundService.setCallSpeakerMode(isSpeaker);
+        if (remoteTrackReceivedRef.current) {
+          setMediaState("webrtc");
+          setTransportLabel(
+            configuredCallProviderRef.current === "cloudflare-turn"
+              ? "Cloudflare TURN connected"
+              : "Secure relay connected",
+          );
+        } else {
+          setMediaState("connecting");
+        }
       } else if (state === "disconnected") {
         rtcConnectedRef.current = false;
+        setMediaState("connecting");
+        setTransportLabel(
+          configuredCallProviderRef.current === "cloudflare-turn"
+            ? "Reconnecting Cloudflare TURN…"
+            : "Reconnecting secure audio…",
+        );
         if (rtcDisconnectTimerRef.current) clearTimeout(rtcDisconnectTimerRef.current);
         rtcDisconnectTimerRef.current = setTimeout(() => {
           if (pcRef.current !== pc || pc.connectionState !== "disconnected") return;
           try { pc.restartIce?.(); } catch {}
           rtcDisconnectTimerRef.current = setTimeout(() => {
             if (pcRef.current !== pc || pc.connectionState === "connected") return;
-            const callIdForFallback = activeCallRef.current?.callId;
-            closePeerConnection();
-            if (callIdForFallback && activeCallRef.current?.state === "active") startVoiceStreaming(callIdForFallback);
-          }, 2_500);
+            const active = activeCallRef.current;
+            if (!active || active.state !== "active") return;
+            if (!rtcProductionReadyRef.current) {
+              closePeerConnection();
+              setMediaState("fallback");
+              setTransportLabel("Emergency fallback audio");
+              startVoiceStreaming(active.callId);
+              return;
+            }
+            setMediaState("failed");
+            setTransportLabel("Secure audio disconnected");
+            if (!mediaFailureAlertedRef.current) {
+              mediaFailureAlertedRef.current = true;
+              Alert.alert(
+                "Call Audio Disconnected",
+                "The secure relay lost its connection. End the call and try again after switching between Wi-Fi and mobile data.",
+              );
+            }
+          }, 3_500);
         }, 2_000);
-      } else if (state === "failed" || state === "closed") {
+      } else if (state === "failed") {
         rtcConnectedRef.current = false;
-        const callIdForFallback = activeCallRef.current?.callId;
-        closePeerConnection();
-        if (state === "failed" && callIdForFallback && activeCallRef.current?.state === "active") startVoiceStreaming(callIdForFallback);
+        const active = activeCallRef.current;
+        if (!active || active.state !== "active") {
+          closePeerConnection();
+          return;
+        }
+        if (!rtcProductionReadyRef.current) {
+          closePeerConnection();
+          setMediaState("fallback");
+          setTransportLabel("Emergency fallback audio");
+          startVoiceStreaming(active.callId);
+          return;
+        }
+        setMediaState("failed");
+        setTransportLabel("Secure audio connection failed");
+        if (!mediaFailureAlertedRef.current) {
+          mediaFailureAlertedRef.current = true;
+          Alert.alert(
+            "Call Audio Failed",
+            "Cloudflare TURN could not establish media for this call. End the call and try again.",
+          );
+        }
+      } else if (state === "closed") {
+        rtcConnectedRef.current = false;
       }
     };
     return pc;
+  }
+
+  async function applyRemoteAnswer(callId: string, callData: any): Promise<boolean> {
+    if (remoteAnswerAppliedRef.current || !callData?.answer || !pcRef.current || !canUseWebRtc()) {
+      return remoteAnswerAppliedRef.current;
+    }
+    try {
+      await pcRef.current.setRemoteDescription(new _RTCSessionDescription(JSON.parse(callData.answer)));
+      remoteAnswerAppliedRef.current = true;
+      startCandidatePolling(callId, "caller");
+      appLogger.debug("calls", "[CallContext] remote SDP answer applied");
+      return true;
+    } catch (error) {
+      appLogger.warn("calls", "[CallContext] unable to apply remote SDP answer", error);
+      return false;
+    }
   }
 
   function startCandidatePolling(callId: string, role: "caller" | "callee") {
@@ -664,6 +871,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     // Reset the per-call queue/index without toggling the native audio mode off
     // and back on, which can itself introduce one-way audio on some Android OEMs.
     activeCallIdRef.current = callId;
+    setMediaState("fallback");
+    setTransportLabel("Emergency fallback audio");
+    setIsSpeaker(false);
     nextFetchIndexRef.current = 0;
     isStreamingRef.current = true;
     playQueueRef.current = [];
@@ -699,7 +909,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         appLogger.warn("calls", "[Voice] Permission error:", e);
       }
 
-      try { await soundService.setRecordingMode(true); } catch {}
+      try { await soundService.setRecordingMode(true, false); } catch {}
       recordNextChunk(callId);
     }
 
@@ -736,8 +946,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // ── Record + upload loop ─────────────────────────────────────────────────────
   async function recordNextChunk(callId: string) {
     if (!isStreamingRef.current || activeCallIdRef.current !== callId) return;
-    if (mutedRef.current) {
-      recordingRetryTimerRef.current = setTimeout(() => recordNextChunk(callId), 250);
+    if (mutedRef.current || isPlayingRef.current) {
+      // Emergency fallback is deliberately half-duplex while remote audio is
+      // playing. This prevents the speaker output from being re-recorded and
+      // sent back as a loud self-echo. Production calls stay on native WebRTC.
+      recordingRetryTimerRef.current = setTimeout(() => recordNextChunk(callId), 160);
       return;
     }
 
@@ -914,8 +1127,38 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user) return;
     return realtime.on((message) => {
-      if (message.type !== "call:incoming") return;
-      presentIncomingCall(message.payload?.call);
+      if (message.type === "call:incoming") {
+        presentIncomingCall(message.payload?.call);
+        return;
+      }
+
+      const callData = message.payload?.call as any;
+      const current = activeCallRef.current;
+      if (!callData?.id || !current || current.callId !== callData.id) return;
+
+      if (message.type === "call:accepted") {
+        // The same event is emitted to both participants. Only the caller may
+        // apply the callee's SDP answer; applying it on the receiver would set
+        // its own answer as a remote description and break media negotiation.
+        if (current.direction === "outgoing") {
+          void applyRemoteAnswer(callData.id, callData);
+        }
+        const startedAt = callStartedAtMs(callData.startedAt, current.startedAt ?? Date.now());
+        setActiveCall((previous) => previous ? { ...previous, state: "active", startedAt } : null);
+        if (outgoingTimeoutRef.current) { clearTimeout(outgoingTimeoutRef.current); outgoingTimeoutRef.current = null; }
+        return;
+      }
+
+      if (message.type === "call:rejected" || message.type === "call:ended") {
+        if (outgoingStatusPollRef.current) { clearInterval(outgoingStatusPollRef.current); outgoingStatusPollRef.current = null; }
+        if (candidatePollRef.current) { clearInterval(candidatePollRef.current); candidatePollRef.current = null; }
+        closePeerConnection();
+        stopVoiceStreaming();
+        setActiveCall(null);
+        setCallDuration(0);
+        setMediaState("idle");
+        if (message.type === "call:rejected") Alert.alert("Call Declined", "The other person declined the call.");
+      }
     });
   }, [user, presentIncomingCall]);
 
@@ -989,13 +1232,26 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const receiverInitials = receiverName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 
     await refreshCallConfiguration();
+    mediaFailureAlertedRef.current = false;
+    remoteAnswerAppliedRef.current = false;
+    setMediaState("connecting");
+    if (rtcProductionReadyRef.current && !canUseWebRtc()) {
+      setMediaState("failed");
+      setTransportLabel("Secure audio unavailable");
+      Alert.alert(
+        "Secure Call Unavailable",
+        "Cloudflare TURN is configured, but this app build could not start WebRTC. Please install the latest Athoo build.",
+      );
+      return;
+    }
+
     let offerSdp: string | undefined;
     if (canUseWebRtc()) {
       try {
         const pc = await createPeerConnection(null, "caller");
         if (pc) {
           await soundService.setCallSpeakerMode(isSpeaker);
-          const stream = await (require("react-native-webrtc").mediaDevices.getUserMedia)({ audio: true, video: false });
+          const stream = await (require("react-native-webrtc").mediaDevices.getUserMedia)(VOICE_MEDIA_CONSTRAINTS);
           if (!stream) throw new Error("Microphone stream was not created");
           localStreamRef.current = stream;
           stream.getTracks().forEach((track: any) => pc.addTrack(track, stream));
@@ -1004,9 +1260,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           offerSdp = JSON.stringify(offer);
         }
       } catch (error) {
-        appLogger.warn("calls", "[CallContext] WebRTC setup failed before dialing; using authenticated audio fallback", error);
+        appLogger.error("calls", "[CallContext] secure WebRTC setup failed before dialing", error);
         closePeerConnection();
-        offerSdp = undefined;
+        setMediaState("failed");
+        setTransportLabel("Secure audio could not start");
+        Alert.alert(
+          "Call Could Not Start",
+          "Athoo could not prepare the microphone and secure audio relay. Check microphone permission and try again.",
+        );
+        return;
       }
     }
 
@@ -1035,8 +1297,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       try { router.push("/call" as any); } catch {}
 
       if (outgoingStatusPollRef.current) clearInterval(outgoingStatusPollRef.current);
-      let answerApplied = false;
-
       // Auto-cancel if receiver doesn't answer within timeout
       if (outgoingTimeoutRef.current) clearTimeout(outgoingTimeoutRef.current);
       outgoingTimeoutRef.current = setTimeout(async () => {
@@ -1046,6 +1306,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           closePeerConnection();
           setActiveCall(null);
           setCallDuration(0);
+          setMediaState("idle");
           Alert.alert("No Answer", "The other person didn't pick up. Please try again.");
         }
       }, OUTGOING_CALL_TIMEOUT_MS);
@@ -1056,35 +1317,38 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           const callData = statusRes.call as any;
           const status = callData?.status;
 
-          if (!answerApplied && callData?.answer && pcRef.current && canUseWebRtc()) {
-            try {
-              await pcRef.current.setRemoteDescription(new _RTCSessionDescription(JSON.parse(callData.answer)));
-              answerApplied = true;
-              startCandidatePolling(call.id, "caller");
-            } catch {}
-          }
+          await applyRemoteAnswer(call.id, callData);
 
           if (status === "active") {
             if (outgoingTimeoutRef.current) { clearTimeout(outgoingTimeoutRef.current); outgoingTimeoutRef.current = null; }
-            setActiveCall((p) => p ? { ...p, state: "active", startedAt: Date.now() } : null);
-            clearInterval(outgoingStatusPollRef.current!);
+            const startedAt = callStartedAtMs(callData?.startedAt);
+            setActiveCall((p) => p ? { ...p, state: "active", startedAt } : null);
+            // Keep signaling alive until the SDP answer is applied. The realtime
+            // event is primary; this bounded poll is recovery for sleeping sockets.
+            if (!canUseWebRtc() || remoteAnswerAppliedRef.current) {
+              clearInterval(outgoingStatusPollRef.current!);
+              outgoingStatusPollRef.current = null;
+            }
           } else if (status === "rejected" || status === "ended") {
             if (outgoingTimeoutRef.current) { clearTimeout(outgoingTimeoutRef.current); outgoingTimeoutRef.current = null; }
             setActiveCall(null);
             setCallDuration(0);
+            setMediaState("idle");
             clearInterval(outgoingStatusPollRef.current!);
             if (candidatePollRef.current) clearInterval(candidatePollRef.current);
             closePeerConnection();
             if (status === "rejected") Alert.alert("Call Declined", "The other person declined the call.");
           }
         } catch {}
-      }, 1000);
+      }, 500);
 
     } catch (err) {
       closePeerConnection();
+      setMediaState("failed");
+      setTransportLabel("Call setup failed");
       Alert.alert("Call Failed", apiErrorToMessage(err, "Unable to connect the call. Please check your connection and try again."));
     }
-  }, [user]);
+  }, [user, isSpeaker]);
 
   // ── Accept incoming call ────────────────────────────────────────────────────
   const acceptCall = useCallback(async () => {
@@ -1092,6 +1356,20 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (!current) return;
 
     await refreshCallConfiguration();
+    mediaFailureAlertedRef.current = false;
+    setMediaState("connecting");
+    if (rtcProductionReadyRef.current && (!canUseWebRtc() || !current.offer)) {
+      setMediaState("failed");
+      setTransportLabel("Secure audio unavailable");
+      try { await api.rejectCall(current.callId); } catch {}
+      setActiveCall(null);
+      Alert.alert(
+        "Call Could Not Connect",
+        "The secure call offer was unavailable. Ask the caller to try again.",
+      );
+      return;
+    }
+
     let answerSdp: string | undefined;
     if (canUseWebRtc() && current.offer) {
       try {
@@ -1099,7 +1377,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (pc) {
           await pc.setRemoteDescription(new _RTCSessionDescription(JSON.parse(current.offer)));
           await soundService.setCallSpeakerMode(isSpeaker);
-          const stream = await (require("react-native-webrtc").mediaDevices.getUserMedia)({ audio: true, video: false });
+          const stream = await (require("react-native-webrtc").mediaDevices.getUserMedia)(VOICE_MEDIA_CONSTRAINTS);
           if (!stream) throw new Error("Microphone stream was not created");
           localStreamRef.current = stream;
           stream.getTracks().forEach((track: any) => pc.addTrack(track, stream));
@@ -1110,23 +1388,34 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           startCandidatePolling(current.callId, "callee");
         }
       } catch (error) {
-        appLogger.warn("calls", "[CallContext] WebRTC setup failed while answering; using authenticated audio fallback", error);
+        appLogger.error("calls", "[CallContext] secure WebRTC setup failed while answering", error);
         closePeerConnection();
-        answerSdp = undefined;
+        setMediaState("failed");
+        setTransportLabel("Secure audio could not start");
+        try { await api.rejectCall(current.callId); } catch {}
+        setActiveCall(null);
+        Alert.alert(
+          "Call Could Not Connect",
+          "Athoo could not prepare the microphone and secure audio relay. Check microphone permission and ask the caller to try again.",
+        );
+        return;
       }
     }
 
+    let acceptedCall: any;
     try {
-      await api.acceptCall(current.callId, { answer: answerSdp });
+      const response = await api.acceptCall(current.callId, { answer: answerSdp });
+      acceptedCall = response.call;
     } catch (error) {
       closePeerConnection();
       Alert.alert("Call Failed", apiErrorToMessage(error, "The call could not be accepted."));
       return;
     }
 
-    setActiveCall((p) => p ? { ...p, state: "active", startedAt: Date.now() } : null);
+    const startedAt = callStartedAtMs(acceptedCall?.startedAt);
+    setActiveCall((p) => p ? { ...p, state: "active", startedAt } : null);
     try { router.push("/call" as any); } catch {}
-  }, []);
+  }, [isSpeaker]);
 
   // ── Reject call ─────────────────────────────────────────────────────────────
   const rejectCall = useCallback(async () => {
@@ -1138,6 +1427,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     stopVoiceStreaming();
     setActiveCall(null);
     setCallDuration(0);
+    setMediaState("idle");
   }, []);
 
   // ── End call ─────────────────────────────────────────────────────────────────
@@ -1158,11 +1448,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
     setActiveCall(null);
     setCallDuration(0);
+    setMediaState("idle");
+    mediaFailureAlertedRef.current = false;
     soundService.playSuccess();
   }, []);
 
   return (
-    <CallContext.Provider value={{ activeCall, callDuration, isMuted, isSpeaker, setMuted, setSpeaker, startOutgoingCall, simulateIncomingCall, acceptCall, rejectCall, endCall }}>
+    <CallContext.Provider value={{ activeCall, callDuration, isMuted, isSpeaker, mediaState, transportLabel, setMuted, setSpeaker, startOutgoingCall, simulateIncomingCall, acceptCall, rejectCall, endCall }}>
       {children}
       {activeCall?.state === "incoming" && (
         <IncomingCallOverlay call={activeCall} onAccept={acceptCall} onReject={rejectCall} />

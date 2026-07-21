@@ -12,11 +12,14 @@ test("native WebRTC is attempted only when authenticated TURN is production-read
   assert.doesNotMatch(calls, /if \(WebRTCAvailable && current\.offer\)/);
 });
 
-test("microphone or SDP setup failure closes RTC and falls back cleanly", () => {
+test("microphone or SDP setup failure closes RTC instead of starting a broken production call", () => {
   const calls = readRepo("athoo-app/context/CallContext.tsx");
-  assert.match(calls, /WebRTC setup failed before dialing; using authenticated audio fallback/);
-  assert.match(calls, /WebRTC setup failed while answering; using authenticated audio fallback/);
+  assert.match(calls, /secure WebRTC setup failed before dialing/);
+  assert.match(calls, /secure WebRTC setup failed while answering/);
   assert.match(calls, /if \(!stream\) throw new Error\("Microphone stream was not created"\)/);
-  assert.match(calls, /closePeerConnection\(\);[\s\S]*?offerSdp = undefined/);
-  assert.match(calls, /closePeerConnection\(\);[\s\S]*?answerSdp = undefined/);
+  assert.match(calls, /Call Could Not Start/);
+  assert.match(calls, /Call Could Not Connect/);
+  assert.match(calls, /closePeerConnection\(\);[\s\S]*?setMediaState\("failed"\)/);
+  assert.match(calls, /try \{ await api\.rejectCall\(current\.callId\); \} catch \{\}/);
+  assert.doesNotMatch(calls, /WebRTC setup failed before dialing; using authenticated audio fallback/);
 });

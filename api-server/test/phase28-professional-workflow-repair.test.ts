@@ -86,26 +86,33 @@ test("Phase 28 fixes time selection visibility and document renewal navigation",
   assert.match(providerProfile, /user\?\.publicId/);
 });
 
-test("Phase 28 keeps TURN primary but activates audio fallback only when remote media is absent", () => {
+test("Phase 28.3 keeps Cloudflare TURN primary and never downgrades configured calls to delayed chunk audio", () => {
   const mobile = readRepo("athoo-app/context/CallContext.tsx");
+  const callScreen = readRepo("athoo-app/app/call.tsx");
+  const sound = readRepo("athoo-app/services/SoundService.ts");
   const calls = readRepo("api-server/src/routes/calls.ts");
   const env = readRepo(".env.production.example");
   const render = readRepo("render.yaml");
 
-  assert.match(mobile, /DEFAULT_FALLBACK_ACTIVATION_MS = 3_000/);
-  assert.match(mobile, /remoteTrackReceivedRef/);
-  assert.match(mobile, /inboundAudioBytesRef/);
-  assert.match(mobile, /getStats/);
-  assert.match(mobile, /inbound WebRTC audio packets confirmed/);
-  assert.match(mobile, /iceTransportPolicy/);
-  assert.match(mobile, /WebRTC carried no inbound audio; activating authenticated audio fallback/);
-  assert.match(mobile, /scheduleRtcMediaWatchdog\(callId, 1_500\)/);
-  assert.match(mobile, /event\.track\.enabled = true/);
-  assert.match(calls, /CALL_FALLBACK_ACTIVATION_MS, 3_000, 3_000, 15_000/);
+  assert.match(mobile, /DEFAULT_FALLBACK_ACTIVATION_MS = 8_000/);
+  assert.match(mobile, /VOICE_MEDIA_CONSTRAINTS/);
+  assert.match(mobile, /echoCancellation: true/);
+  assert.match(mobile, /noiseSuppression: true/);
+  assert.match(mobile, /autoGainControl: true/);
+  assert.match(mobile, /current\.direction === "outgoing"/);
+  assert.match(mobile, /connectionState === "connected" && remoteTrackReceivedRef\.current/);
+  assert.match(mobile, /Cloudflare TURN connected/);
+  assert.match(mobile, /else if \(!rtcProductionReadyRef\.current\)/);
+  assert.match(mobile, /Do not switch a TURN-capable call to the chunked HTTP transport/);
+  assert.doesNotMatch(mobile, /WebRTC carried no inbound audio; activating authenticated audio fallback/);
+  assert.match(callScreen, /transportLabel/);
+  assert.match(callScreen, /Preparing secure audio/);
+  assert.match(sound, /interruptionModeIOS: InterruptionModeIOS\.DoNotMix/);
+  assert.match(calls, /CALL_FALLBACK_ACTIVATION_MS, 8_000, 7_000, 20_000/);
   assert.match(env, /CALL_PROVIDER=cloudflare-turn/);
-  assert.match(env, /CALL_FALLBACK_ACTIVATION_MS=3000/);
+  assert.match(env, /CALL_FALLBACK_ACTIVATION_MS=8000/);
   assert.match(env, /CALL_ICE_TRANSPORT_POLICY=relay/);
-  assert.match(render, /CALL_FALLBACK_ACTIVATION_MS[\s\S]*value: "3000"/);
+  assert.match(render, /CALL_FALLBACK_ACTIVATION_MS[\s\S]*value: "8000"/);
 });
 
 test("Phase 28 makes first-run authentication role selection explicit", () => {

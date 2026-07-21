@@ -9,7 +9,8 @@ const requiredFiles = [
   'docs/runbooks/MOBILE_BETA_RELEASE_RUNBOOK.md',
 ];
 const requiredMarkers = {
-  'athoo-app/app/auth/welcome.tsx': ['welcome-screen','welcome-customer-sign-in','welcome-provider-sign-in'],
+  'athoo-app/app/auth/welcome.tsx': ['welcome-screen','welcome-sign-in','welcome-sign-up'],
+  'athoo-app/app/auth/choose-role.tsx': ['auth-${mode}-customer','auth-${mode}-provider'],
   'athoo-app/app/auth/login.tsx': ['login-password-tab','login-identifier','login-password','login-submit'],
   'admin-panel/src/pages/LoginPage.tsx': ['admin-login-identifier','admin-login-password','admin-login-submit'],
 };

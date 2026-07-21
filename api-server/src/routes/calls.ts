@@ -159,7 +159,7 @@ router.get("/config", requireAuth, async (req: AuthRequest, res: Response) => {
     audio: {
       preferredCodec: process.env.CALL_PREFERRED_CODEC || "opus",
       fallbackChunkMs: boundedInteger(process.env.CALL_FALLBACK_CHUNK_MS, 800, 400, 2_000),
-      fallbackActivationMs: boundedInteger(process.env.CALL_FALLBACK_ACTIVATION_MS, 3_000, 3_000, 15_000),
+      fallbackActivationMs: boundedInteger(process.env.CALL_FALLBACK_ACTIVATION_MS, 8_000, 7_000, 20_000),
     },
   });
 });

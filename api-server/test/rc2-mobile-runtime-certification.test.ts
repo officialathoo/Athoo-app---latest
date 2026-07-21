@@ -9,7 +9,8 @@ const read = (file: string) => fs.readFileSync(path.join(root, file), "utf8");
 test("incoming calls use realtime delivery with a conservative recovery poll", () => {
   const calls = read("athoo-app/context/CallContext.tsx");
   const api = read("athoo-app/services/api.ts");
-  assert.match(calls, /message\.type !== "call:incoming"/);
+  assert.match(calls, /message\.type === "call:incoming"/);
+  assert.match(calls, /message\.type === "call:accepted"/);
   assert.match(calls, /setInterval\(checkIncoming, 30_000\)/);
   assert.doesNotMatch(calls, /setInterval\(checkIncoming, 2000\)/);
   assert.match(api, /\| "call:incoming"/);

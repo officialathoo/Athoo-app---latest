@@ -6,7 +6,9 @@ name: Provider password login
 - assertVisible:
     id: welcome-screen
 - tapOn:
-    id: welcome-provider-sign-in
+    id: welcome-sign-in
+- tapOn:
+    id: auth-signin-provider
 - tapOn:
     id: login-password-tab
 - tapOn:

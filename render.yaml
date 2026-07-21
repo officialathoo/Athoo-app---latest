@@ -410,7 +410,7 @@ services:
       - key: CALL_FALLBACK_CHUNK_MS
         value: "800"
       - key: CALL_FALLBACK_ACTIVATION_MS
-        value: "3000"
+        value: "8000"
       - key: CALL_PREFERRED_CODEC
         value: opus
       - key: COMMISSION_INCLUDES_VISIT_CHARGE

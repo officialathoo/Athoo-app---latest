@@ -180,7 +180,7 @@ class SoundService {
           staysActiveInBackground: true,
           shouldDuckAndroid: false,
           playThroughEarpieceAndroid: !speaker,
-          interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
+          interruptionModeIOS: InterruptionModeIOS.DoNotMix,
           interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
         });
       } else {

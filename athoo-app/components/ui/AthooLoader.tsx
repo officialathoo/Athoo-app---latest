@@ -94,7 +94,7 @@ export function AthooLoader({ tagline }: AthooLoaderProps) {
         <Animated.View style={[styles.ring, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]} />
         <Animated.View style={[styles.glowCircle, { opacity: glowOpacity }]} />
         <View style={styles.logoCard}>
-          <Image source={brandConfig.assets.mark} style={styles.logo} resizeMode="contain" />
+          <Image source={brandConfig.assets.mark} style={styles.logo} resizeMode="cover" />
         </View>
       </Animated.View>
 
@@ -145,7 +145,7 @@ function createStyles(theme: AthooTheme) {
       elevation: 20,
       overflow: "hidden",
     },
-    logo: { width: 96, height: 96 },
+    logo: { width: "100%", height: "100%", borderRadius: 27 },
     textBlock: { alignItems: "center", marginTop: 30, gap: 6 },
     brandName: { fontSize: 38, fontWeight: "800", color: theme.colors.white, letterSpacing: 1.5 },
     tagline: { fontSize: 13, color: "rgba(255,255,255,0.78)", letterSpacing: 0.8, fontWeight: "500" },

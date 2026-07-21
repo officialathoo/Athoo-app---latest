@@ -6,7 +6,9 @@ name: Customer password login
 - assertVisible:
     id: welcome-screen
 - tapOn:
-    id: welcome-customer-sign-in
+    id: welcome-sign-in
+- tapOn:
+    id: auth-signin-customer
 - tapOn:
     id: login-password-tab
 - tapOn:

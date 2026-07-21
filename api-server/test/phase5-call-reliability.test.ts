@@ -10,12 +10,14 @@ test("caller buffers ICE candidates until the real call id exists", () => {
   assert.doesNotMatch(calls, /createPeerConnection\("pending"/);
 });
 
-test("WebRTC and fallback audio do not record simultaneously", () => {
+test("WebRTC and emergency fallback audio do not record simultaneously", () => {
   const calls = read("athoo-app/context/CallContext.tsx");
-  assert.match(calls, /if \(!canUseWebRtc\(\) \|\| !pcRef\.current\)/);
-  assert.match(calls, /WebRTC carried no inbound audio; activating authenticated audio fallback/);
+  assert.match(calls, /if \(canUseWebRtc\(\) && pcRef\.current\)/);
+  assert.match(calls, /else if \(!rtcProductionReadyRef\.current\)/);
   assert.match(calls, /if \(isStreamingRef\.current\) stopVoiceStreaming\(\)/);
   assert.match(calls, /remoteTrackReceivedRef\.current = true/);
+  assert.match(calls, /Emergency fallback is deliberately half-duplex/);
+  assert.doesNotMatch(calls, /WebRTC carried no inbound audio; activating authenticated audio fallback/);
 });
 
 test("native microphone mute and remote track handling are wired", () => {

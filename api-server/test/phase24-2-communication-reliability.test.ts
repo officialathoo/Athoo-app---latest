@@ -14,10 +14,11 @@ test("broadcast delivery is bounded instead of unbounded Promise.all fanout", ()
   assert.doesNotMatch(broadcast, /Promise\.all\(\s*matchedProviders\.map/);
 });
 
-test("calls avoid unreliable STUN-only WebRTC and use fallback until TURN is ready", () => {
+test("calls avoid unreliable STUN-only WebRTC and reserve fallback for missing TURN", () => {
   const calls = readRepo("athoo-app/context/CallContext.tsx");
   assert.match(calls, /rtcProductionReadyRef\.current = Boolean\(configuration\.productionReady && iceServers\.length > 0\)/);
-  assert.match(calls, /if \(!canUseWebRtc\(\) \|\| !pcRef\.current\)/);
+  assert.match(calls, /if \(canUseWebRtc\(\) && pcRef\.current\)/);
+  assert.match(calls, /else if \(!rtcProductionReadyRef\.current\)/);
   assert.match(calls, /if \(!canUseWebRtc\(\)\) return null/);
   assert.match(calls, /TURN is not production-ready; using authenticated audio fallback/);
 });

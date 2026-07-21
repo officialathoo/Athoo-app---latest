@@ -17,7 +17,17 @@ const KEYPAD_NUMBERS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "
 export default function CallScreen() {
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const { activeCall, callDuration, endCall, isMuted, setMuted, isSpeaker, setSpeaker } = useCall();
+  const {
+    activeCall,
+    callDuration,
+    endCall,
+    isMuted,
+    setMuted,
+    isSpeaker,
+    setSpeaker,
+    mediaState,
+    transportLabel,
+  } = useCall();
   const [keypadVisible, setKeypadVisible] = useState(false);
   const pulseAnimation = useRef(new Animated.Value(1)).current;
   const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
@@ -54,6 +64,16 @@ export default function CallScreen() {
   if (!activeCall) return null;
 
   const connecting = activeCall.state === "outgoing";
+  const mediaFailed = mediaState === "failed";
+  const mediaReady = mediaState === "webrtc";
+  const mediaFallback = mediaState === "fallback";
+  const mediaDotColor = connecting || mediaState === "connecting"
+    ? theme.colors.warning
+    : mediaFailed
+      ? theme.colors.danger
+      : mediaFallback
+        ? theme.colors.warning
+        : theme.colors.success;
   const gradient = theme.dark
     ? [theme.colors.background, theme.colors.surfaceAlt, theme.colors.primaryPressed] as const
     : [theme.colors.primaryPressed, theme.colors.primary, theme.colors.secondaryPressed] as const;
@@ -89,13 +109,32 @@ export default function CallScreen() {
         {activeCall.service ? <Text style={styles.callerService}>{activeCall.service}</Text> : null}
 
         <View style={styles.statusRow}>
-          <View style={[styles.statusDot, { backgroundColor: connecting ? theme.colors.warning : theme.colors.success }]} />
-          <Text style={[styles.statusText, !connecting && { color: theme.colors.success }]}>
-            {connecting ? "Connecting…" : formatDuration(callDuration)}
+          <View style={[styles.statusDot, { backgroundColor: mediaDotColor }]} />
+          <Text style={[styles.statusText, !connecting && styles.activeDuration]}>
+            {connecting ? "Calling…" : formatDuration(callDuration)}
           </Text>
         </View>
 
-        <Text style={styles.privacyBadge}>🔒 Phone number hidden · via Athoo only</Text>
+        <View style={[
+          styles.transportBadge,
+          mediaReady && styles.transportBadgeReady,
+          mediaFailed && styles.transportBadgeFailed,
+        ]}>
+          <Icon
+            name={mediaFailed ? "alert-circle" : mediaReady ? "shield-check" : "radio"}
+            size={13}
+            color={mediaFailed ? theme.colors.danger : mediaReady ? theme.colors.success : theme.colors.white}
+          />
+          <Text style={[
+            styles.transportText,
+            mediaReady && { color: theme.colors.success },
+            mediaFailed && { color: theme.colors.danger },
+          ]}>
+            {connecting ? "Preparing secure audio" : transportLabel}
+          </Text>
+        </View>
+
+        <Text style={styles.privacyBadge}>Phone number hidden · Athoo secure call</Text>
       </View>
 
       {keypadVisible ? (
@@ -181,8 +220,29 @@ function createStyles(theme: AthooTheme) {
     callerService: { fontSize: 15, color: mutedWhite, fontWeight: "500", textAlign: "center" },
     statusRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
     statusDot: { width: 8, height: 8, borderRadius: 4 },
-    statusText: { fontSize: 18, fontWeight: "700", color: mutedWhite, letterSpacing: 2 },
-    privacyBadge: { fontSize: 11, color: "rgba(255,255,255,0.60)", marginTop: 8, textAlign: "center" },
+    statusText: { fontSize: 17, fontWeight: "700", color: mutedWhite, letterSpacing: 0.3 },
+    activeDuration: { color: theme.colors.white, letterSpacing: 1.6 },
+    transportBadge: {
+      minHeight: 30,
+      borderRadius: 999,
+      paddingHorizontal: 11,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      backgroundColor: "rgba(255,255,255,0.12)",
+      borderWidth: 1,
+      borderColor: "rgba(255,255,255,0.16)",
+    },
+    transportBadgeReady: {
+      backgroundColor: "rgba(22,163,74,0.16)",
+      borderColor: "rgba(134,239,172,0.30)",
+    },
+    transportBadgeFailed: {
+      backgroundColor: "rgba(220,38,38,0.16)",
+      borderColor: "rgba(254,202,202,0.28)",
+    },
+    transportText: { fontSize: 11, color: mutedWhite, fontWeight: "600" },
+    privacyBadge: { fontSize: 11, color: "rgba(255,255,255,0.60)", marginTop: 3, textAlign: "center" },
     keypadGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 12, paddingHorizontal: 40, paddingBottom: 16 },
     keypadButton: { width: 70, height: 60, borderRadius: 16, backgroundColor: glass, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)" },
     keypadNumber: { fontSize: 22, fontWeight: "700", color: theme.colors.white },
