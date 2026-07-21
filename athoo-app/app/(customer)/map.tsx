@@ -72,9 +72,10 @@ export default function CustomerMapScreen() {
         const [locationResult, providerResponse, addressResponse] = await Promise.all([
           getFastForegroundLocation({
             timeoutMs: 12_000,
-            maxCacheAgeMs: 5 * 60 * 1000,
+            maxCacheAgeMs: 2 * 60 * 1000,
             requiredAccuracy: 60,
             freshAccuracy: "highest",
+            preferFresh: true,
             rationaleTitle: tr("Location permission"),
             rationaleBody: tr("Athoo uses your location to show nearby providers and let you choose an accurate service address."),
           }),
@@ -100,7 +101,13 @@ export default function CustomerMapScreen() {
 
         setProviders(mapped);
         const requestedProvider = providerId ? mapped.find((provider) => provider.id === providerId) || null : null;
-        setSelectedProvider(requestedProvider || mapped[0] || null);
+        const nearestProvider = currentCoords
+          ? [...mapped].sort((a, b) => (
+              getDistanceKm(currentCoords.latitude, currentCoords.longitude, a.latitude, a.longitude)
+              - getDistanceKm(currentCoords.latitude, currentCoords.longitude, b.latitude, b.longitude)
+            ))[0] || null
+          : null;
+        setSelectedProvider(requestedProvider || nearestProvider);
         setSavedLocations(
           Array.isArray((addressResponse as any)?.addresses)
             ? (addressResponse as any).addresses.map((address: any) => ({
@@ -152,6 +159,10 @@ export default function CustomerMapScreen() {
   }, [providersWithDistance, selectedProvider?.id]);
 
   const selectedCategory = getCategoryBySlug(serviceId || "");
+  const mapCenter = pickedLocation
+    || (providerId ? selectedProvider : userLocation)
+    || selectedProvider
+    || userLocation;
 
   const resolveAddress = useCallback(async (latitude: number, longitude: number) => {
     setResolving(true);
@@ -260,8 +271,8 @@ export default function CustomerMapScreen() {
           </View>
         ) : (
           <OpenStreetMapPreview
-            latitude={pickedLocation?.latitude ?? selectedProvider?.latitude ?? userLocation?.latitude}
-            longitude={pickedLocation?.longitude ?? selectedProvider?.longitude ?? userLocation?.longitude}
+            latitude={mapCenter?.latitude}
+            longitude={mapCenter?.longitude}
             markers={[
               ...visibleProviders.map((provider) => ({
                 id: `provider-${provider.id}`,
