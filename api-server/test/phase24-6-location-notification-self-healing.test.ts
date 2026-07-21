@@ -11,10 +11,11 @@ test("forced provider sync requests a fresh GPS fix instead of accepting a recen
   const auth = read("athoo-app/context/AuthContext.tsx");
 
   assert.match(location, /preferFresh\?: boolean/);
-  assert.match(location, /!options\.preferFresh && bestCached\?\.accuracy != null/);
+  assert.match(location, /!options\.preferFresh && !options\.requireFresh && bestCached\?\.accuracy != null/);
   assert.match(location, /preferUsableFreshLocation\(fresh, bestCached, requiredAccuracy\)/);
   assert.match(location, /if \(fresh\.accuracy == null \|\| fresh\.accuracy <= usableFreshAccuracy\) return fresh/);
-  assert.match(auth, /preferFresh: force/);
+  assert.match(location, /requireFresh\?: boolean/);
+  assert.match(auth, /preferFresh: force,\s*requireFresh: true/);
 });
 
 test("notification permission and native initialization recover after temporary failure or settings changes", () => {

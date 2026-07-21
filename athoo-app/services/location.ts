@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
 import { ensureForegroundLocation, type PermissionResult } from "@/lib/permissions";
 
-const LOCATION_CACHE_KEY = "athoo:last-known-location:v1";
+const LOCATION_CACHE_KEY = "athoo:last-known-location:v2";
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_CACHE_AGE_MS = 10 * 60 * 1000;
 
@@ -26,6 +26,8 @@ type Options = {
   rationaleBody?: string;
   /** Skip the early cached-location return and actively request a new GPS fix. */
   preferFresh?: boolean;
+  /** Require a newly acquired GPS fix; never return device or application cache. */
+  requireFresh?: boolean;
 };
 
 function isValidCoordinate(latitude: number, longitude: number): boolean {
@@ -195,7 +197,7 @@ export async function getFastForegroundLocation(options: Options = {}): Promise<
 
   // Use cached coordinates only when they satisfy this flow's accuracy requirement.
   const cachedAccuracyThreshold = Math.min(75, Math.max(20, requiredAccuracy));
-  if (!options.preferFresh && bestCached?.accuracy != null && bestCached.accuracy <= cachedAccuracyThreshold) {
+  if (!options.preferFresh && !options.requireFresh && bestCached?.accuracy != null && bestCached.accuracy <= cachedAccuracyThreshold) {
     void writeAppCache(bestCached);
     return { permission, location: bestCached, stale: false };
   }
@@ -228,13 +230,28 @@ export async function getFastForegroundLocation(options: Options = {}): Promise<
     );
   }
 
-  const best = preferUsableFreshLocation(fresh, bestCached, requiredAccuracy);
-  // Do not silently accept a point hundreds of metres away. A poor fix is
-  // worse than asking the user to search the address or place the pin manually.
+  // Current-location, booking and provider-live-location workflows must never
+  // silently substitute an old device or application cache for a new GPS fix.
   const maximumAcceptedAccuracy = Math.min(200, Math.max(75, requiredAccuracy * 2));
+
+  if (options.requireFresh) {
+    if (!fresh || fresh.accuracy == null || fresh.accuracy > maximumAcceptedAccuracy) {
+      return { permission, location: null, stale: Boolean(fresh) };
+    }
+
+    await writeAppCache(fresh);
+    return {
+      permission,
+      location: fresh,
+      stale: fresh.accuracy > requiredAccuracy,
+    };
+  }
+
+  const best = preferUsableFreshLocation(fresh, bestCached, requiredAccuracy);
   if (best?.accuracy != null && best.accuracy > maximumAcceptedAccuracy) {
     return { permission, location: null, stale: true };
   }
+
   if (best) {
     await writeAppCache(best);
     return {

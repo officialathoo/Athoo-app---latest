@@ -171,6 +171,7 @@ export function LocationSearchPicker({
         requiredAccuracy: 60,
         freshAccuracy: "highest",
         preferFresh: true,
+        requireFresh: true,
         rationaleTitle: tr("Location permission"),
         rationaleBody: tr("Athoo uses your location so providers can find the correct service address."),
       });

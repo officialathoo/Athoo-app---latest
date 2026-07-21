@@ -76,6 +76,7 @@ export default function CustomerMapScreen() {
             requiredAccuracy: 60,
             freshAccuracy: "highest",
             preferFresh: true,
+            requireFresh: true,
             rationaleTitle: tr("Location permission"),
             rationaleBody: tr("Athoo uses your location to show nearby providers and let you choose an accurate service address."),
           }),
@@ -159,10 +160,7 @@ export default function CustomerMapScreen() {
   }, [providersWithDistance, selectedProvider?.id]);
 
   const selectedCategory = getCategoryBySlug(serviceId || "");
-  const mapCenter = pickedLocation
-    || (providerId ? selectedProvider : userLocation)
-    || selectedProvider
-    || userLocation;
+  const mapCenter = pickedLocation || userLocation;
 
   const resolveAddress = useCallback(async (latitude: number, longitude: number) => {
     setResolving(true);
@@ -274,13 +272,13 @@ export default function CustomerMapScreen() {
             latitude={mapCenter?.latitude}
             longitude={mapCenter?.longitude}
             markers={[
-              ...visibleProviders.map((provider) => ({
+              ...(mapCenter ? visibleProviders.map((provider) => ({
                 id: `provider-${provider.id}`,
                 latitude: provider.latitude,
                 longitude: provider.longitude,
                 kind: "provider" as const,
                 label: provider.name,
-              })),
+              })) : []),
               ...(userLocation ? [{ id: "customer-location", ...userLocation, kind: "customer" as const }] : []),
               ...(pickedLocation ? [{ id: "picked-location", ...pickedLocation, kind: "selected" as const }] : []),
             ]}

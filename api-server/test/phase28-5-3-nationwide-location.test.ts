@@ -11,11 +11,17 @@ const mapSource = fs.readFileSync(
 
 test("customer map uses fresh nationwide GPS instead of the first provider location", () => {
   assert.match(mapSource, /preferFresh:\s*true/);
+  assert.match(mapSource, /requireFresh:\s*true/);
   assert.match(mapSource, /maxCacheAgeMs:\s*2\s*\*\s*60\s*\*\s*1000/);
 
   assert.match(
     mapSource,
-    /const mapCenter = pickedLocation[\s\S]*?\(providerId \? selectedProvider : userLocation\)/,
+    /const mapCenter = pickedLocation \|\| userLocation;/,
+  );
+
+  assert.doesNotMatch(
+    mapSource,
+    /providerId \? selectedProvider : userLocation/,
   );
 
   assert.match(
@@ -28,6 +34,7 @@ test("customer map uses fresh nationwide GPS instead of the first provider locat
     /setSelectedProvider\(requestedProvider \|\| mapped\[0\]/,
   );
 
+  assert.match(mapSource, /\.\.\.\(mapCenter \? visibleProviders\.map/);
   assert.match(mapSource, /latitude=\{mapCenter\?\.latitude\}/);
   assert.match(mapSource, /longitude=\{mapCenter\?\.longitude\}/);
 });

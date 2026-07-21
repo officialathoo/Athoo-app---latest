@@ -222,6 +222,7 @@ export default function BookServiceScreen() {
         requiredAccuracy: 60,
         freshAccuracy: "highest",
         preferFresh: true,
+        requireFresh: true,
         rationaleTitle: "Location permission",
         rationaleBody: "ATHOO uses your location to auto-detect your address so the provider can find you.",
       });

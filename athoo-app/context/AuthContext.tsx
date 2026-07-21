@@ -310,6 +310,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         rationaleTitle: "Allow precise location",
         rationaleBody: "Athoo uses your current location while the app is open so nearby customers can send you suitable jobs.",
         preferFresh: force,
+        requireFresh: true,
       });
       if (result.permission !== "granted" || !result.location) return;
 
