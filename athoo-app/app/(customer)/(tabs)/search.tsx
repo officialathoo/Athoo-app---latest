@@ -29,6 +29,7 @@ import { api } from "@/services/api";
 import { getDistanceKm } from "@/utils/distance";
 import { matchingCategories, normalizeDiscoveryText, providerRecommendationScore } from "@/utils/discovery";
 import { useTheme } from "@/context/ThemeContext";
+import { useToast } from "@/context/ToastContext";
 import type { AthooTheme } from "@/design/theme";
 import { getCategoryAppearance } from "@/utils/categoryAppearance";
 
@@ -61,6 +62,7 @@ export default function SearchScreen() {
   const { providerId, providerRate, pickAddress } = useLocalSearchParams<{ providerId?: string; providerRate?: string; pickAddress?: string }>();
   const { t, isUrdu, translate: tr, textAlign, writingDirection } = useLang();
   const { theme } = useTheme();
+  const { showError } = useToast();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const localizedText = { textAlign, writingDirection } as const;
   const insets = useSafeAreaInsets();
@@ -78,6 +80,8 @@ export default function SearchScreen() {
   const [userLat, setUserLat] = useState<number | undefined>(undefined);
   const [userLng, setUserLng] = useState<number | undefined>(undefined);
   const [locating, setLocating] = useState(false);
+  const [locationAccuracyMeters, setLocationAccuracyMeters] = useState<number | null>(null);
+  const [locationError, setLocationError] = useState("");
   const [loadingProviders, setLoadingProviders] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<ExtendedProvider | null>(null);
 
@@ -86,6 +90,7 @@ export default function SearchScreen() {
     longitude: number;
   } | null>(null);
   const [pickedAddress, setPickedAddress] = useState("");
+  const [pickedLocationSource, setPickedLocationSource] = useState<LocationSelection["source"] | null>(null);
   const [resolvingAddress, setResolvingAddress] = useState(false);
   const [locationPickerVisible, setLocationPickerVisible] = useState(false);
   const [savedLocations, setSavedLocations] = useState<SavedLocationOption[]>([]);
@@ -150,35 +155,63 @@ export default function SearchScreen() {
     }, [pickAddress, providerId])
   );
 
-  const handleLocateMe = async () => {
-    if (Platform.OS === "web") return;
+  const handleLocateMe = async (notifyOnFailure = false) => {
+    if (Platform.OS === "web" || locating) return;
 
     setLocating(true);
+    setLocationError("");
     try {
       const result = await getFastForegroundLocation({
-        timeoutMs: 12_000,
-        maxCacheAgeMs: 5 * 60 * 1000,
-        requiredAccuracy: 60,
-        freshAccuracy: "highest",
+        timeoutMs: 20_000,
+        maxCacheAgeMs: 0,
+        requiredAccuracy: 35,
+        minimumFreshSamples: 2,
+        maximumAcceptedAccuracy: 80,
+        freshAccuracy: "navigation",
+        preferFresh: true,
+        requireFresh: true,
         rationaleTitle: tr("Location permission"),
-        rationaleBody: tr("Athoo uses your location to show nearby providers and choose an address."),
+        rationaleBody: tr("Athoo uses your precise live location to show nearby providers and choose the correct service address."),
       });
-      if (!result.location) return;
 
+      if (!result.location) {
+        setUserLat(undefined);
+        setUserLng(undefined);
+        setLocationAccuracyMeters(null);
+        if (pickedLocationSource === "current") {
+          setPickedLocation(null);
+          setPickedAddress("");
+          setPickedLocationSource(null);
+        }
+        const message = tr("Athoo could not obtain a precise live GPS fix. Enable Precise Location, move near an open area, or search and pin the address manually.");
+        setLocationError(message);
+        if (notifyOnFailure) showError(tr("Location not accurate enough"), message);
+        return;
+      }
+
+      setLocationAccuracyMeters(result.location.accuracy);
       setUserLat(result.location.latitude);
       setUserLng(result.location.longitude);
       setPickedLocation({ latitude: result.location.latitude, longitude: result.location.longitude });
-      void resolveAddressFromCoords(result.location.latitude, result.location.longitude);
-    } catch (e) {
-      // locate error — silently ignore, user can proceed without GPS
+      setPickedLocationSource("current");
+      const resolved = await resolveAddressFromCoords(result.location.latitude, result.location.longitude);
+      if (!resolved) {
+        const message = tr("GPS was found, but the street address could not be resolved. Confirm the pin before continuing.");
+        setLocationError(message);
+        if (notifyOnFailure) showError(tr("Address not resolved"), message);
+      }
+    } catch {
+      setLocationAccuracyMeters(null);
+      const message = tr("Athoo could not obtain your live location. Check GPS and Precise Location, or choose the address manually.");
+      setLocationError(message);
+      if (notifyOnFailure) showError(tr("Location unavailable"), message);
+    } finally {
+      setLocating(false);
     }
-    setLocating(false);
-  };
-
-  useFocusEffect(
+  };  useFocusEffect(
     useCallback(() => {
       if (userLat !== undefined && userLng !== undefined) return;
-      handleLocateMe();
+      void handleLocateMe(false);
     }, [userLat, userLng])
   );
 
@@ -274,10 +307,9 @@ export default function SearchScreen() {
   }, [filtered, sortBy]);
 
   const focusProvider = (provider: ExtendedProvider) => {
+    // Selecting a worker must never replace the customer's service address with
+    // the provider's profile coordinates.
     setSelectedProvider(provider);
-    if (typeof provider.latitude === "number" && typeof provider.longitude === "number") {
-      setPickedLocation({ latitude: provider.latitude, longitude: provider.longitude });
-    }
   };
 
   const resolveAddressFromCoords = async (
@@ -316,6 +348,7 @@ export default function SearchScreen() {
   };
 
   const handleCoordinateChange = async (latitude: number, longitude: number) => {
+    setLocationAccuracyMeters(null);
     setPickedLocation({ latitude, longitude });
     setUserLat(latitude);
     setUserLng(longitude);
@@ -324,6 +357,7 @@ export default function SearchScreen() {
   };
 
   const applyLocationSelection = (selection: LocationSelection) => {
+    setLocationAccuracyMeters(selection.accuracy ?? null);
     setPickedLocation({ latitude: selection.latitude, longitude: selection.longitude });
     setPickedAddress(selection.address);
     setUserLat(selection.latitude);
@@ -368,21 +402,6 @@ export default function SearchScreen() {
     } as any);
   };
 
-  const initialRegion =
-    userLat !== undefined && userLng !== undefined
-      ? {
-          latitude: userLat,
-          longitude: userLng,
-          latitudeDelta: 0.12,
-          longitudeDelta: 0.12,
-        }
-      : {
-          latitude: 33.6844,
-          longitude: 73.0479,
-          latitudeDelta: 0.18,
-          longitudeDelta: 0.18,
-        };
-
   return (
     <View style={[styles.container, { paddingTop: topPad, backgroundColor: theme.colors.background }]}>
       <LocationSearchPicker
@@ -394,6 +413,11 @@ export default function SearchScreen() {
         title="Choose service location"
         onChooseOnMap={() => setShowMap(true)}
       />
+      {locationError ? (
+        <View style={{ marginHorizontal: 12, marginBottom: 8, borderWidth: 1, borderColor: theme.colors.danger, backgroundColor: theme.colors.dangerSoft, borderRadius: 12, padding: 10 }}>
+          <Text style={{ color: theme.colors.danger, fontSize: 12, fontWeight: "700" }}>{locationError}</Text>
+        </View>
+      ) : null}
       <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
         <View style={styles.searchRow}>
           <View style={[styles.searchBar, { backgroundColor: theme.colors.input, borderColor: theme.colors.border }]}>
@@ -479,7 +503,11 @@ export default function SearchScreen() {
               <Text numberOfLines={1} style={[styles.mapLocationSearchText, localizedText, { color: pickedAddress ? theme.colors.text : theme.colors.textMuted }]}>
                 {pickedAddress || tr("Search street, area, landmark or city")}
               </Text>
-              <Text style={[styles.mapLocationSearchHint, localizedText, { color: theme.colors.textSecondary }]}>{tr("GPS, saved places and map pin")}</Text>
+              <Text style={[styles.mapLocationSearchHint, localizedText, { color: theme.colors.textSecondary }]}>
+                {locationAccuracyMeters != null
+                  ? `${tr("GPS accuracy")} Â±${Math.round(locationAccuracyMeters)} m`
+                  : tr("GPS, saved places and map pin")}
+              </Text>
             </View>
             <Icon name="chevron-right" size={17} color={theme.colors.textMuted} />
           </Pressable>
@@ -520,7 +548,7 @@ export default function SearchScreen() {
                 onCoordinateChange={(latitude, longitude) => void handleCoordinateChange(latitude, longitude)}
               />
 
-              <Pressable style={styles.locateMeBtn} onPress={handleLocateMe}>
+              <Pressable style={styles.locateMeBtn} onPress={() => void handleLocateMe(true)}>
                 {locating ? (
                   <ActivityIndicator size="small" color={theme.colors.primary} />
                 ) : (

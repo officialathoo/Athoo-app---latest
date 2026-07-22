@@ -57,7 +57,7 @@ import { createAdminNotification } from "../lib/adminNotifications";
 import { sendEmail, renderVerificationEmail } from "../lib/email";
 import { ADMIN_ROLES, validateAdminPermissions, hasAdminPermission } from "../lib/adminPermissions";
 import { revokeAllUserSessions } from "../lib/session";
-import { emitToRole, emitToUser } from "../lib/eventBus";
+import { emitToRole, emitToUser, emitToUsers } from "../lib/eventBus";
 import { getProviderActiveWorkBlock } from "../lib/businessRules";
 import { getProviderSchedule, saveProviderSchedule, validateProviderSchedule, validateTravelRadius, providerScheduleAllows, providerWithinRadius } from "../lib/providerAvailability";
 import { buildMapTileUpstreamUrl, getMapConfigurationStatus, getMapProviderConfiguration } from "../lib/mapConfiguration";
@@ -79,6 +79,33 @@ function isStrongAdminPassword(value: string): boolean {
 }
 const router = Router();
 router.use(requireAuth, requireAdmin);
+
+async function propagateChatProfileIdentity(userId: string, name: string): Promise<void> {
+  const relatedChats = await db
+    .select({
+      participant1Id: chatsTable.participant1Id,
+      participant2Id: chatsTable.participant2Id,
+    })
+    .from(chatsTable)
+    .where(or(
+      eq(chatsTable.participant1Id, userId),
+      eq(chatsTable.participant2Id, userId),
+    ))
+    .limit(5_000);
+
+  await Promise.all([
+    db.update(chatsTable).set({ participant1Name: name }).where(eq(chatsTable.participant1Id, userId)),
+    db.update(chatsTable).set({ participant2Name: name }).where(eq(chatsTable.participant2Id, userId)),
+  ]);
+
+  const recipients = new Set<string>([userId]);
+  for (const chat of relatedChats) {
+    if (chat.participant1Id !== userId) recipients.add(chat.participant1Id);
+    if (chat.participant2Id !== userId) recipients.add(chat.participant2Id);
+  }
+
+  emitToUsers([...recipients], "profile:updated", { userId, name });
+}
 
 router.get("/me", async (req: AuthRequest, res) => {
   try {
@@ -663,6 +690,7 @@ router.patch("/customers/:id/profile", requirePermission("users.write"), async (
   const customer = await findCustomer(String(req.params.id));
   if (!customer) return res.status(404).json({ error: "Customer not found" });
   await db.update(usersTable).set({ name, location, bio, updatedAt: new Date() }).where(eq(usersTable.id, customer.id));
+  await propagateChatProfileIdentity(customer.id, name);
   await logAdminAction(req, "customer_profile_corrected", "user", customer.id, { reason, before: { name: customer.name, location: customer.location, bio: customer.bio }, after: { name, location, bio } });
   return res.json({ success: true });
 });
@@ -1736,6 +1764,7 @@ router.patch("/users/:id/profile", requirePermission("users.write"), async (req:
     if (bio && bio.length > 500) return res.status(400).json({ error: "Bio must be 500 characters or fewer" });
     await db.update(usersTable).set({ name, location, bio, updatedAt: new Date() }).where(eq(usersTable.id, providerId));
     const updated = await db.query.usersTable.findFirst({ where: eq(usersTable.id, providerId) });
+    if (updated) await propagateChatProfileIdentity(providerId, updated.name);
     await notifyUser({ userId: providerId, title: "Provider profile updated", body: reason, type: "system", link: "/provider/profile", data: { source: "admin" } }).catch(() => undefined);
     await logAdminAction(req, "provider_profile_updated", "user", providerId, { fields: ["name", "location", "bio"], reason, providerName: updated?.name });
     return res.json({ user: toSafeUser(updated) });

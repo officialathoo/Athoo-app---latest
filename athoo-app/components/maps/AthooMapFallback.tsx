@@ -27,16 +27,21 @@ export function AthooMapFallback({
   draggable = false,
   onCoordinateChange,
 }: Props) {
-  const coordinate = useMemo(() => ({
-    latitude: validCoordinate(latitude, -90, 90) ? latitude : 30.3753,
-    longitude: validCoordinate(longitude, -180, 180) ? longitude : 69.3451,
-  }), [latitude, longitude]);
+  const coordinate = useMemo(() => {
+    if (
+      !validCoordinate(latitude, -90, 90) ||
+      !validCoordinate(longitude, -180, 180)
+    ) {
+      return null;
+    }
+    return { latitude, longitude };
+  }, [latitude, longitude]);
 
   return (
     <OpenStreetMapPreview
-      latitude={coordinate.latitude}
-      longitude={coordinate.longitude}
-      markers={[{ ...coordinate, kind: "selected", id: "selected-location" }]}
+      latitude={coordinate?.latitude}
+      longitude={coordinate?.longitude}
+      markers={coordinate ? [{ ...coordinate, kind: "selected", id: "selected-location" }] : []}
       interactive={draggable}
       onCoordinateChange={onCoordinateChange}
     />

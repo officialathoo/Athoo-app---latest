@@ -29,6 +29,10 @@ export interface Chat {
   participant2Id: string;
   participant1Name: string;
   participant2Name: string;
+  participant1ProfileImage?: string | null;
+  participant2ProfileImage?: string | null;
+  participant1ProfileColor?: string | null;
+  participant2ProfileColor?: string | null;
   lastMessage?: string;
   lastMessageAt?: string;
   bookingId?: string;
@@ -287,6 +291,35 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user) return;
     const off = realtime.on((msg) => {
+      if (msg.type === "profile:updated") {
+        const profile = (msg.payload || {}) as {
+          userId?: string;
+          name?: string;
+          profileImage?: string | null;
+          profileColor?: string | null;
+        };
+        if (!profile.userId || !profile.name) return;
+
+        setChats((prev) => prev.map((chat) => ({
+          ...chat,
+          ...(chat.participant1Id === profile.userId
+            ? {
+                participant1Name: profile.name,
+                participant1ProfileImage: profile.profileImage ?? chat.participant1ProfileImage,
+                participant1ProfileColor: profile.profileColor ?? chat.participant1ProfileColor,
+              }
+            : {}),
+          ...(chat.participant2Id === profile.userId
+            ? {
+                participant2Name: profile.name,
+                participant2ProfileImage: profile.profileImage ?? chat.participant2ProfileImage,
+                participant2ProfileColor: profile.profileColor ?? chat.participant2ProfileColor,
+              }
+            : {}),
+        })));
+        return;
+      }
+
       if (msg.type === "chat:delivered") {
         const chatId = (msg.payload as any)?.chatId as string | undefined;
         const messageId = (msg.payload as any)?.messageId as string | undefined;

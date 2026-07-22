@@ -20,7 +20,7 @@ type Options = {
   timeoutMs?: number;
   maxCacheAgeMs?: number;
   requiredAccuracy?: number;
-  freshAccuracy?: "balanced" | "high" | "highest";
+  freshAccuracy?: "balanced" | "high" | "highest" | "navigation";
   requestPermission?: boolean;
   rationaleTitle?: string;
   rationaleBody?: string;
@@ -28,6 +28,10 @@ type Options = {
   preferFresh?: boolean;
   /** Require a newly acquired GPS fix; never return device or application cache. */
   requireFresh?: boolean;
+  /** Try to observe multiple stable fresh readings before accepting the fix. */
+  minimumFreshSamples?: number;
+  /** Reject a fresh result whose reported accuracy radius exceeds this value. */
+  maximumAcceptedAccuracy?: number;
 };
 
 function isValidCoordinate(latitude: number, longitude: number): boolean {
@@ -74,6 +78,7 @@ async function writeAppCache(location: AthooLocation): Promise<void> {
 
 
 function resolveExpoAccuracy(value: Options["freshAccuracy"]): Location.Accuracy {
+  if (value === "navigation") return Location.Accuracy.BestForNavigation;
   if (value === "highest") return Location.Accuracy.Highest;
   if (value === "high") return Location.Accuracy.High;
   return Location.Accuracy.Balanced;
@@ -107,17 +112,35 @@ function preferUsableFreshLocation(
   return betterLocation(fresh, cached);
 }
 
+function distanceMeters(a: AthooLocation, b: AthooLocation): number {
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const radius = 6_371_000;
+  const lat1 = toRadians(a.latitude);
+  const lat2 = toRadians(b.latitude);
+  const dLat = toRadians(b.latitude - a.latitude);
+  const dLng = toRadians(b.longitude - a.longitude);
+  const value =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return radius * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
+}
+
 async function watchForBetterLocation(
   timeoutMs: number,
   requiredAccuracy: number,
   accuracy: Location.Accuracy,
   initial: AthooLocation | null,
+  minimumFreshSamples: number,
 ): Promise<AthooLocation | null> {
   if (timeoutMs <= 0) return initial;
   return await new Promise<AthooLocation | null>((resolve) => {
     let settled = false;
     let best = initial;
     let subscription: Location.LocationSubscription | null = null;
+    let lastAcceptable =
+      initial?.accuracy != null && initial.accuracy <= requiredAccuracy ? initial : null;
+    let acceptableSamples = lastAcceptable ? 1 : 0;
+
     const finish = () => {
       if (settled) return;
       settled = true;
@@ -125,13 +148,28 @@ async function watchForBetterLocation(
       subscription?.remove();
       resolve(best);
     };
+
     const timer = setTimeout(finish, timeoutMs);
     void Location.watchPositionAsync(
       { accuracy, timeInterval: 700, distanceInterval: 0 },
       (value) => {
         const candidate = fromLocationObject(value, "fresh");
         best = betterLocation(best, candidate);
-        if (candidate && candidate.accuracy != null && candidate.accuracy <= requiredAccuracy) finish();
+        if (!candidate || candidate.accuracy == null || candidate.accuracy > requiredAccuracy) return;
+
+        const stabilityRadius = Math.max(
+          20,
+          candidate.accuracy,
+          lastAcceptable?.accuracy ?? requiredAccuracy,
+        );
+        const stable = !lastAcceptable || distanceMeters(lastAcceptable, candidate) <= stabilityRadius;
+        acceptableSamples = stable ? acceptableSamples + 1 : 1;
+        lastAcceptable = candidate;
+
+        const excellentAccuracy = Math.max(8, Math.min(15, requiredAccuracy / 2));
+        if (candidate.accuracy <= excellentAccuracy || acceptableSamples >= minimumFreshSamples) {
+          finish();
+        }
       },
     ).then((value) => {
       subscription = value;
@@ -170,6 +208,10 @@ export async function getFastForegroundLocation(options: Options = {}): Promise<
   // 80 metres is a realistic foreground target for marketplace matching.
   // Callers can request stricter accuracy for live-job screens.
   const requiredAccuracy = options.requiredAccuracy ?? 50;
+  const minimumFreshSamples = Math.max(
+    1,
+    Math.min(4, Math.trunc(options.minimumFreshSamples ?? 1)),
+  );
 
   let permission: PermissionResult = "granted";
   if (options.requestPermission !== false) {
@@ -221,18 +263,30 @@ export async function getFastForegroundLocation(options: Options = {}): Promise<
 
   const elapsed = Date.now() - startedAt;
   const remainingMs = Math.max(0, timeoutMs - elapsed);
-  if (remainingMs >= 1_000 && (!fresh || fresh.accuracy == null || fresh.accuracy > requiredAccuracy)) {
+  if (
+    remainingMs >= 1_000 &&
+    (
+      minimumFreshSamples > 1 ||
+      !fresh ||
+      fresh.accuracy == null ||
+      fresh.accuracy > requiredAccuracy
+    )
+  ) {
     fresh = await watchForBetterLocation(
       remainingMs,
       requiredAccuracy,
       requestedAccuracy === Location.Accuracy.Balanced ? Location.Accuracy.High : requestedAccuracy,
       fresh,
+      minimumFreshSamples,
     );
   }
 
   // Current-location, booking and provider-live-location workflows must never
   // silently substitute an old device or application cache for a new GPS fix.
-  const maximumAcceptedAccuracy = Math.min(200, Math.max(75, requiredAccuracy * 2));
+  const requestedMaximumAccuracy = Number(options.maximumAcceptedAccuracy);
+  const maximumAcceptedAccuracy = Number.isFinite(requestedMaximumAccuracy)
+    ? Math.max(requiredAccuracy, Math.min(200, requestedMaximumAccuracy))
+    : Math.min(200, Math.max(75, requiredAccuracy * 2));
 
   if (options.requireFresh) {
     if (!fresh || fresh.accuracy == null || fresh.accuracy > maximumAcceptedAccuracy) {

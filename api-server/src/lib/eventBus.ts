@@ -34,6 +34,7 @@ export type EventName =
   | "chat:message"
   | "chat:read"
   | "chat:delivered"
+  | "profile:updated"
   | "notification:new"
   | "notification:push-failed"
   | "account:inactivity-cleared"

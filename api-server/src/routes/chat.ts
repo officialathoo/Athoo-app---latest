@@ -17,6 +17,38 @@ function isParticipant(chat: typeof chatsTable.$inferSelect, userId: string) {
   return chat.participant1Id === userId || chat.participant2Id === userId;
 }
 
+async function hydrateChatParticipants<T extends typeof chatsTable.$inferSelect>(chats: T[]) {
+  if (!chats.length) return [];
+
+  const participantIds = Array.from(new Set(
+    chats.flatMap((chat) => [chat.participant1Id, chat.participant2Id]),
+  ));
+  const participants = await db
+    .select({
+      id: usersTable.id,
+      name: usersTable.name,
+      profileImage: usersTable.profileImage,
+      profileColor: usersTable.profileColor,
+    })
+    .from(usersTable)
+    .where(inArray(usersTable.id, participantIds));
+  const byId = new Map(participants.map((participant) => [participant.id, participant]));
+
+  return chats.map((chat) => {
+    const participant1 = byId.get(chat.participant1Id);
+    const participant2 = byId.get(chat.participant2Id);
+    return {
+      ...chat,
+      participant1Name: participant1?.name || chat.participant1Name,
+      participant2Name: participant2?.name || chat.participant2Name,
+      participant1ProfileImage: participant1?.profileImage || null,
+      participant2ProfileImage: participant2?.profileImage || null,
+      participant1ProfileColor: participant1?.profileColor || null,
+      participant2ProfileColor: participant2?.profileColor || null,
+    };
+  });
+}
+
 router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
@@ -44,7 +76,8 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
           .groupBy(messagesTable.chatId)
       : [];
     const unreadByChat = new Map(unreadRows.map((row) => [row.chatId, Number(row.unreadCount) || 0]));
-    const chats = visibleChats.map((chat) => ({ ...chat, unreadCount: unreadByChat.get(chat.id) || 0 }));
+    const hydratedChats = await hydrateChatParticipants(visibleChats);
+    const chats = hydratedChats.map((chat) => ({ ...chat, unreadCount: unreadByChat.get(chat.id) || 0 }));
     const nextCursor = hasMore && visibleChats.length ? visibleChats[visibleChats.length - 1]?.lastMessageAt?.toISOString() || null : null;
     return res.json({ chats, hasMore, nextCursor });
   } catch (error) {
@@ -91,7 +124,9 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
         updatedAt: new Date(),
       };
       const [updated] = await db.update(chatsTable).set(update).where(eq(chatsTable.id, existing.id)).returning();
-      return res.json({ chat: updated || { ...existing, ...update } });
+      const candidate = updated || { ...existing, ...update };
+      const [hydrated] = await hydrateChatParticipants([candidate]);
+      return res.json({ chat: hydrated || candidate });
     }
 
     const chat = {
@@ -99,12 +134,18 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       participant1Name: me.name, participant2Name: other.name, bookingId, service,
     };
     const inserted = await db.insert(chatsTable).values(chat).onConflictDoNothing({ target: chatsTable.pairKey }).returning();
-    if (inserted[0]) return res.status(201).json({ chat: inserted[0] });
+    if (inserted[0]) {
+      const [hydrated] = await hydrateChatParticipants([inserted[0]]);
+      return res.status(201).json({ chat: hydrated || inserted[0] });
+    }
 
     // A concurrent profile/booking open may win the unique-pair race. Return
     // that canonical chat instead of exposing a transient conflict to mobile.
     const canonical = await db.query.chatsTable.findFirst({ where: eq(chatsTable.pairKey, pairKey) });
-    if (canonical) return res.json({ chat: canonical });
+    if (canonical) {
+      const [hydrated] = await hydrateChatParticipants([canonical]);
+      return res.json({ chat: hydrated || canonical });
+    }
     return res.status(409).json({ error: "Conversation could not be created" });
   } catch (error) {
     logger.error({ err: error }, "chat create error");
@@ -159,9 +200,18 @@ router.post("/:chatId/messages", requireAuth, async (req: AuthRequest, res: Resp
     ) });
     if (existing) return res.json({ message: existing, duplicate: true });
 
+    const [currentSender] = await db
+      .select({ name: usersTable.name })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    const senderName =
+      currentSender?.name ||
+      (chat.participant1Id === userId ? chat.participant1Name : chat.participant2Name);
+
     const message = {
       id: generateId(), chatId, senderId: userId,
-      senderName: chat.participant1Id === userId ? chat.participant1Name : chat.participant2Name,
+      senderName,
       text: normalizedText || "Attachment", mediaUrl: mediaUrl || null,
       mediaType: req.body?.mediaType || null, fileName: req.body?.fileName || null,
       deliveryStatus: "sent", clientMessageId,
@@ -179,7 +229,9 @@ router.post("/:chatId/messages", requireAuth, async (req: AuthRequest, res: Resp
     await db.update(chatsTable).set({
       lastMessage: normalizedText || "Attachment", lastMessageAt: new Date(), updatedAt: new Date(),
       ...(chat.participant1Id === recipientId ? { participant1HiddenAt: null } : { participant2HiddenAt: null }),
-      ...(chat.participant1Id === userId ? { participant1HiddenAt: null } : { participant2HiddenAt: null }),
+      ...(chat.participant1Id === userId
+        ? { participant1HiddenAt: null, participant1Name: senderName }
+        : { participant2HiddenAt: null, participant2Name: senderName }),
     }).where(eq(chatsTable.id, chatId));
 
     const liveRecipientConnections = emitToUser(recipientId, "chat:message", { message, chatId });
