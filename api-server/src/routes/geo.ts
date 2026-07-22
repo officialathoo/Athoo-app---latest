@@ -74,6 +74,30 @@ function setCached(key: string, value: unknown, ttlMs: number): void {
   geoCache.set(key, { value, expiresAt: now + ttlMs, touchedAt: now });
 }
 
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (!items.length) return [];
+
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(items.length, Math.max(1, Math.trunc(concurrency)));
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      const item = items[index];
+      if (item === undefined) return;
+      results[index] = await mapper(item, index);
+    }
+  }));
+
+  return results;
+}
+
 function mergeResults(...groups: GeoResult[][]): GeoResult[] {
   const seen = new Set<string>();
   const output: GeoResult[] = [];
@@ -323,6 +347,135 @@ router.get("/reverse", requireAuth, async (req: AuthRequest, res: Response) => {
     logger.warn({ err: error, provider: config.reverseProvider, operation: "reverse" }, "geo reverse upstream unavailable");
     res.json({ address: `${lat.toFixed(5)}, ${lng.toFixed(5)}`, source: "coords", cacheable: true });
   }
+});
+
+router.post("/route-metrics", requireAuth, async (req: AuthRequest, res: Response) => {
+  const originLat = Number(req.body?.originLat);
+  const originLng = Number(req.body?.originLng);
+  if (!validCoordinate(originLat, originLng)) {
+    res.status(400).json({ error: "Valid origin coordinates are required" });
+    return;
+  }
+
+  const maximumDestinations = Math.max(
+    1,
+    Math.min(20, Math.trunc(Number(process.env.GEO_ROUTE_METRICS_MAX_DESTINATIONS || 12))),
+  );
+  const concurrency = Math.max(
+    1,
+    Math.min(6, Math.trunc(Number(process.env.GEO_ROUTE_METRICS_CONCURRENCY || 3))),
+  );
+  const rawDestinations = Array.isArray(req.body?.destinations) ? req.body.destinations : [];
+
+  if (!rawDestinations.length) {
+    res.json({ routes: [], source: "empty" });
+    return;
+  }
+  if (rawDestinations.length > maximumDestinations) {
+    res.status(400).json({
+      error: `A maximum of ${maximumDestinations} route destinations is allowed`,
+      code: "ROUTE_METRICS_LIMIT_EXCEEDED",
+    });
+    return;
+  }
+
+  const seen = new Set<string>();
+  const destinations: Array<{ id: string; lat: number; lng: number }> = [];
+  for (const raw of rawDestinations) {
+    const id = String(raw?.id || "").trim().slice(0, 120);
+    const lat = Number(raw?.lat);
+    const lng = Number(raw?.lng);
+    if (!id || !validCoordinate(lat, lng)) {
+      res.status(400).json({ error: "Every destination requires a valid id, lat, and lng" });
+      return;
+    }
+    if (seen.has(id)) continue;
+    seen.add(id);
+    destinations.push({ id, lat, lng });
+  }
+
+  const runtimeOverrides = await getRuntimeMapOverrides();
+  const config = getMapProviderConfiguration(runtimeOverrides);
+
+  const routes = await mapWithConcurrency(destinations, concurrency, async (destination) => {
+    const cacheKey =
+      `route-metric:${config.directionsProvider}:` +
+      `${originLat.toFixed(4)},${originLng.toFixed(4)}:` +
+      `${destination.lat.toFixed(4)},${destination.lng.toFixed(4)}`;
+    const cached = getCached<{
+      distanceKm: number;
+      durationMin: number | null;
+      source: string;
+      routed: true;
+    }>(cacheKey);
+    if (cached) return { id: destination.id, ...cached, source: `${cached.source}-cache` };
+
+    const request = {
+      originLat,
+      originLng,
+      destLat: destination.lat,
+      destLng: destination.lng,
+    };
+
+    try {
+      const primary = getMapOperationProvider(config.directionsProvider);
+      let result = primary?.directions ? await primary.directions(request) : null;
+
+      if (
+        !result &&
+        config.fallbackEnabled &&
+        config.directionsFallbackProvider !== config.directionsProvider
+      ) {
+        const fallback = getMapOperationProvider(config.directionsFallbackProvider);
+        if (fallback?.directions) result = await fallback.directions(request);
+      }
+
+      const distanceKm = Number(result?.distanceKm);
+      const durationValue = result?.durationMin == null ? null : Number(result.durationMin);
+      const durationMin = durationValue != null && Number.isFinite(durationValue) && durationValue >= 0
+        ? durationValue
+        : null;
+      const isRealRoute =
+        result &&
+        result.source !== "straight_line" &&
+        Number.isFinite(distanceKm) &&
+        distanceKm >= 0 &&
+        Array.isArray(result.polyline) &&
+        result.polyline.length >= 2;
+
+      if (isRealRoute && result) {
+        const metric = {
+          distanceKm: Math.round(distanceKm * 10) / 10,
+          durationMin: durationMin == null ? null : Math.max(1, Math.round(durationMin)),
+          source: result.source,
+          routed: true as const,
+        };
+        setCached(cacheKey, metric, 5 * 60 * 1000);
+        return { id: destination.id, ...metric };
+      }
+    } catch (error) {
+      logger.warn({
+        err: error,
+        provider: config.directionsProvider,
+        operation: "route-metrics",
+        destinationId: destination.id,
+      }, "route metric upstream unavailable");
+    }
+
+    return {
+      id: destination.id,
+      distanceKm: null,
+      durationMin: null,
+      source: "unavailable",
+      routed: false as const,
+    };
+  });
+
+  res.json({
+    routes,
+    source: config.directionsProvider,
+    maximumDestinations,
+  });
 });
 
 router.get("/directions", requireAuth, async (req: AuthRequest, res: Response) => {

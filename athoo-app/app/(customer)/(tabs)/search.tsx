@@ -16,7 +16,7 @@ import {
   AppState,
 } from "react-native";
 import { PrivateImage } from "@/services/storage";
-import { reverseGeocode } from "@/services/maps";
+import { getRouteMetricsBatch, reverseGeocode } from "@/services/maps";
 import { getFastForegroundLocation } from "@/services/location";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnimatedCard } from "@/components/ui/AnimatedCard";
@@ -41,7 +41,13 @@ const DEFAULT_CITIES = ["All Areas"];
 type ExtendedProvider = Provider & {
   latitude?: number;
   longitude?: number;
+  /** Real road-route distance returned by the configured routing provider. */
   distanceKm?: number;
+  routeDurationMin?: number | null;
+  routeSource?: string;
+  routeStatus?: "pending" | "routed" | "unavailable";
+  /** Internal prefilter only. Never display this straight-line approximation. */
+  straightLineDistanceKm?: number;
 };
 
 function getInitials(name: string) {
@@ -240,7 +246,7 @@ export default function SearchScreen() {
             const latitude = hasRealCoords ? parsedLat : undefined;
             const longitude = hasRealCoords ? parsedLng : undefined;
 
-            const distanceKm =
+            const straightLineDistanceKm =
               hasRealCoords && userLat !== undefined && userLng !== undefined
                 ? getDistanceKm(userLat, userLng, parsedLat, parsedLng)
                 : undefined;
@@ -249,7 +255,11 @@ export default function SearchScreen() {
               ...(p as ExtendedProvider),
               latitude,
               longitude,
-              distanceKm,
+              distanceKm: undefined,
+              routeDurationMin: null,
+              routeSource: undefined,
+              routeStatus: hasRealCoords ? "pending" : undefined,
+              straightLineDistanceKm,
             };
           });
 
@@ -268,6 +278,86 @@ export default function SearchScreen() {
       };
     }, [userLat, userLng])
   );
+
+  const routeCandidateKey = useMemo(() => {
+    if (userLat === undefined || userLng === undefined) return "";
+    return allProviders
+      .filter((provider) => isValidMapCoord(provider.latitude, provider.longitude))
+      .sort((a, b) =>
+        (a.straightLineDistanceKm ?? Number.POSITIVE_INFINITY) -
+        (b.straightLineDistanceKm ?? Number.POSITIVE_INFINITY),
+      )
+      .slice(0, 12)
+      .map((provider) =>
+        `${provider.id}:${provider.latitude!.toFixed(5)},${provider.longitude!.toFixed(5)}`,
+      )
+      .join("|");
+  }, [allProviders, userLat, userLng]);
+
+  useEffect(() => {
+    if (userLat === undefined || userLng === undefined || !routeCandidateKey) return;
+
+    let active = true;
+    const candidateIds = new Set(routeCandidateKey.split("|").map((entry) => entry.split(":")[0]));
+    const candidates = allProviders
+      .filter((provider) =>
+        candidateIds.has(provider.id) &&
+        isValidMapCoord(provider.latitude, provider.longitude),
+      )
+      .map((provider) => ({
+        id: provider.id,
+        lat: provider.latitude!,
+        lng: provider.longitude!,
+      }));
+
+    setAllProviders((current) => current.map((provider) =>
+      candidateIds.has(provider.id)
+        ? {
+            ...provider,
+            distanceKm: undefined,
+            routeDurationMin: null,
+            routeSource: undefined,
+            routeStatus: "pending",
+          }
+        : provider,
+    ));
+
+    void getRouteMetricsBatch(userLat, userLng, candidates).then((metrics) => {
+      if (!active) return;
+      const byId = new Map(metrics.map((metric) => [metric.id, metric]));
+
+      setAllProviders((current) => current.map((provider) => {
+        if (!candidateIds.has(provider.id)) return provider;
+        const metric = byId.get(provider.id);
+        if (!metric?.routed || metric.distanceKm == null) {
+          return {
+            ...provider,
+            distanceKm: undefined,
+            routeDurationMin: null,
+            routeSource: metric?.source || "unavailable",
+            routeStatus: "unavailable",
+          };
+        }
+        return {
+          ...provider,
+          distanceKm: metric.distanceKm,
+          routeDurationMin: metric.durationMin,
+          routeSource: metric.source,
+          routeStatus: "routed",
+        };
+      }));
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [routeCandidateKey, userLat, userLng]);
+
+  useEffect(() => {
+    if (!selectedProvider) return;
+    const refreshed = allProviders.find((provider) => provider.id === selectedProvider.id);
+    if (refreshed && refreshed !== selectedProvider) setSelectedProvider(refreshed);
+  }, [allProviders, selectedProvider]);
 
   const categoryMatches = useMemo(() => matchingCategories(query, categories), [query, categories]);
   const inferredServiceSlugs = useMemo(() => new Set(categoryMatches.map((category) => category.slug)), [categoryMatches]);
@@ -300,7 +390,7 @@ export default function SearchScreen() {
       if (sortBy === "recommended") return providerRecommendationScore(b) - providerRecommendationScore(a);
       if (sortBy === "rating") return (b.rating || 0) - (a.rating || 0);
       if (sortBy === "jobs") return (b.totalJobs || 0) - (a.totalJobs || 0);
-      return (a.distanceKm || 9999) - (b.distanceKm || 9999);
+      return (a.distanceKm ?? Number.POSITIVE_INFINITY) - (b.distanceKm ?? Number.POSITIVE_INFINITY);
     });
 
     return list;
@@ -589,9 +679,15 @@ export default function SearchScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.selectedProviderName}>{selectedProvider.name}</Text>
                   <Text style={styles.selectedProviderMeta}>
-                    {selectedProvider.distanceKm
-                      ? `${selectedProvider.distanceKm.toFixed(1)} km away`
-                      : "Nearby provider"}
+                    {selectedProvider.routeStatus === "pending"
+                      ? "Calculating road routeâ€¦"
+                      : typeof selectedProvider.distanceKm === "number"
+                        ? `${selectedProvider.distanceKm.toFixed(1)} km by road${
+                            selectedProvider.routeDurationMin != null
+                              ? ` â€¢ ${Math.round(selectedProvider.routeDurationMin)} min`
+                              : ""
+                          }`
+                        : "Road route unavailable"}
                   </Text>
                 </View>
 
@@ -655,11 +751,14 @@ export default function SearchScreen() {
 
                         <Text style={styles.mapProviderPrice}>{rateLabel}</Text>
 
-                        {typeof p.distanceKm === "number" && (
+                        {p.routeStatus === "pending" ? (
+                          <Text style={styles.mapProviderDistance}>Routeâ€¦</Text>
+                        ) : typeof p.distanceKm === "number" ? (
                           <Text style={styles.mapProviderDistance}>
-                            {p.distanceKm.toFixed(1)} km
+                            {p.distanceKm.toFixed(1)} km road
+                            {p.routeDurationMin != null ? ` â€¢ ${Math.round(p.routeDurationMin)} min` : ""}
                           </Text>
-                        )}
+                        ) : null}
                       </Pressable>
                     );
                   })}
@@ -763,14 +862,20 @@ export default function SearchScreen() {
             sorted.map((p, i) => (
               <AnimatedCard key={p.id} delay={80 + i * 50}>
                 <View style={styles.listCardWrap}>
-                  {typeof p.distanceKm === "number" && (
+                  {p.routeStatus === "pending" ? (
+                    <View style={styles.distanceBadge}>
+                      <ActivityIndicator size="small" color={theme.colors.primary} />
+                      <Text style={styles.distanceBadgeText}>Calculating routeâ€¦</Text>
+                    </View>
+                  ) : typeof p.distanceKm === "number" ? (
                     <View style={styles.distanceBadge}>
                       <Icon name="navigation" size={11} color={theme.colors.primary} />
                       <Text style={styles.distanceBadgeText}>
-                        {p.distanceKm.toFixed(1)} km
+                        {p.distanceKm.toFixed(1)} km by road
+                        {p.routeDurationMin != null ? ` â€¢ ${Math.round(p.routeDurationMin)} min` : ""}
                       </Text>
                     </View>
-                  )}
+                  ) : null}
 
                   <ProviderCard
                     provider={p}
