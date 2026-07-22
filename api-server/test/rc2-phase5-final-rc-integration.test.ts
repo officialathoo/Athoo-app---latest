@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const read = (relative: string) => fs.readFileSync(path.join(root, relative), "utf8");
+const read = (relative: string) => fs.readFileSync(path.join(root, relative), "utf8").replace(/\r\n?/g, "\n");
 
 test("authentication OTP delivery is provider-neutral, configurable, and production observable", () => {
   const delivery = read("api-server/src/lib/otpDelivery.ts");

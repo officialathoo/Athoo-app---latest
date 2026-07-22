@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
-const read = (relative: string) => fs.readFileSync(path.join(root, relative), "utf8");
+const read = (relative: string) => fs.readFileSync(path.join(root, relative), "utf8").replace(/\r\n?/g, "\n");
 const json = (relative: string) => JSON.parse(read(relative));
 
 test("production call readiness requires valid TURN URLs and credentials", () => {

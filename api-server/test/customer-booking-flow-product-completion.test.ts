@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const read = (file: string) => fs.readFileSync(path.join(root, file), "utf8");
+const read = (file: string) => fs.readFileSync(path.join(root, file), "utf8").replace(/\r\n?/g, "\n");
 
 describe("Stage 1 customer booking flow product completion", () => {
   it("requires and persists a client request id for idempotent booking creation", () => {
