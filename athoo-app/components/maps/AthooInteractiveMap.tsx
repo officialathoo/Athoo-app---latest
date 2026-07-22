@@ -1,5 +1,5 @@
 import { isRunningInExpoGo } from "expo";
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { Component, useEffect, useMemo, useRef, type ErrorInfo, type ReactNode } from "react";
 import {
   Platform,
   Pressable,
@@ -96,6 +96,69 @@ function fallbackMarkers(
   return markers;
 }
 
+type NativeMapBoundaryProps = {
+  fallback: ReactNode;
+  children: ReactNode;
+};
+
+type NativeMapBoundaryState = {
+  failed: boolean;
+};
+
+class NativeMapErrorBoundary extends Component<
+  NativeMapBoundaryProps,
+  NativeMapBoundaryState
+> {
+  state: NativeMapBoundaryState = { failed: false };
+
+  static getDerivedStateFromError(): NativeMapBoundaryState {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    if (__DEV__) {
+      console.warn(
+        "Athoo native map is unavailable in this installed binary; using the compatible map preview.",
+        error,
+        info.componentStack,
+      );
+    }
+  }
+
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
+let cachedNativeMapLibre: any | null | undefined;
+
+function resolveNativeMapLibre(): any | null {
+  if (Platform.OS === "web" || isRunningInExpoGo()) return null;
+  if (cachedNativeMapLibre !== undefined) return cachedNativeMapLibre;
+
+  try {
+    const candidate = require("@maplibre/maplibre-react-native");
+    const requiredExports = [
+      "Map",
+      "Camera",
+      "RasterSource",
+      "GeoJSONSource",
+      "Layer",
+      "ViewAnnotation",
+    ];
+
+    cachedNativeMapLibre = requiredExports.every(
+      (exportName) => Boolean(candidate?.[exportName]),
+    )
+      ? candidate
+      : null;
+  } catch {
+    cachedNativeMapLibre = null;
+  }
+
+  return cachedNativeMapLibre;
+}
+
 export function AthooInteractiveMap({
   focusCoordinate,
   selectedCoordinate,
@@ -132,12 +195,10 @@ export function AthooInteractiveMap({
   const styles = useMemo(() => createStyles(theme), [theme]);
   const fallbackHeight = height ?? Math.max(320, Math.round(windowHeight * 0.58));
 
-  // MapLibre is native code and is intentionally not loaded inside Expo Go or
-  // the web bundle. Those environments retain the honest static preview.
-  const NativeMapLibre: any =
-    Platform.OS !== "web" && !isRunningInExpoGo()
-      ? require("@maplibre/maplibre-react-native")
-      : null;
+  // The JavaScript package may arrive through EAS Update before an installed
+  // binary contains MapLibre. Resolve it defensively and retain the compatible
+  // preview instead of crashing an older native runtime.
+  const NativeMapLibre = resolveNativeMapLibre();
 
   const cameraSignature = useMemo(() => {
     const routeStart = safeRoute[0];
@@ -183,26 +244,31 @@ export function AthooInteractiveMap({
     });
   };
 
-  if (!NativeMapLibre || !tileConfigured) {
-    const notice = NativeMapLibre
-      ? "Map tiles are temporarily unavailable. Your selected location remains saved."
-      : "Full pan, pinch zoom and draggable pins require the Athoo native build.";
-    return (
-      <View style={{ height: fallbackHeight }}>
-        <OpenStreetMapPreview
-          latitude={resolvedFocus.latitude}
-          longitude={resolvedFocus.longitude}
-          height={fallbackHeight}
-          markers={fallbackMarkers(selectedCoordinate, userCoordinate, safeProviders)}
-          polyline={safeRoute}
-          interactive={editable}
-          onCoordinateChange={onCoordinateChange}
-        />
-        <View pointerEvents="none" style={[styles.nativeNotice, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.nativeNoticeText, { color: theme.colors.textSecondary }]}>{notice}</Text>
-        </View>
+  const fallbackNotice = !tileConfigured
+    ? "Map tiles are temporarily unavailable. Your selected location remains saved."
+    : "This installed Athoo version is using the compatible map preview. Update the native app for full pan, pinch zoom and draggable pins.";
+
+  const fallbackMap = (
+    <View style={{ height: fallbackHeight }}>
+      <OpenStreetMapPreview
+        latitude={resolvedFocus.latitude}
+        longitude={resolvedFocus.longitude}
+        height={fallbackHeight}
+        markers={fallbackMarkers(selectedCoordinate, userCoordinate, safeProviders)}
+        polyline={safeRoute}
+        interactive={editable}
+        onCoordinateChange={onCoordinateChange}
+      />
+      <View pointerEvents="none" style={[styles.nativeNotice, { backgroundColor: theme.colors.surface }]}>
+        <Text style={[styles.nativeNoticeText, { color: theme.colors.textSecondary }]}>
+          {fallbackNotice}
+        </Text>
       </View>
-    );
+    </View>
+  );
+
+  if (!NativeMapLibre || !tileConfigured) {
+    return fallbackMap;
   }
 
   const {
@@ -249,7 +315,8 @@ export function AthooInteractiveMap({
   };
 
   return (
-    <View style={[styles.container, height ? { height } : null]}>
+    <NativeMapErrorBoundary fallback={fallbackMap}>
+      <View style={[styles.container, height ? { height } : null]}>
       <Map
         style={styles.map}
         mapStyle={mapStyle}
@@ -419,7 +486,8 @@ export function AthooInteractiveMap({
       <View pointerEvents="none" style={[styles.attribution, { backgroundColor: theme.colors.surface }]}>
         <Text style={[styles.attributionText, { color: theme.colors.textMuted }]}>{attribution}</Text>
       </View>
-    </View>
+      </View>
+    </NativeMapErrorBoundary>
   );
 }
 

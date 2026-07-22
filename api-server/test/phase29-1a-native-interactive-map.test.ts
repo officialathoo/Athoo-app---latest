@@ -30,7 +30,8 @@ test("Phase 29.1A installs a vendor-neutral native interactive map with route an
   assert.match(nativeMap, /onDragEnd=\{handleDragEnd\}/);
   assert.match(nativeMap, /fitBounds/);
   assert.match(nativeMap, /OpenStreetMapPreview/);
-  assert.match(nativeMap, /Full pan, pinch zoom and draggable pins require the Athoo native build/);
+  assert.match(nativeMap, /compatible map preview/i);
+  assert.match(nativeMap, /full pan, pinch zoom and draggable pins/i);
 
   assert.match(search, /AthooInteractiveMap/);
   assert.match(search, /providerMarkers=\{mapProviderMarkers\}/);
