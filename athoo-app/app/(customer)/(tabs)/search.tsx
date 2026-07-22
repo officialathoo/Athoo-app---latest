@@ -1,4 +1,8 @@
-import { AthooMapFallback } from "@/components/maps/AthooMapFallback";
+import {
+  AthooInteractiveMap,
+  type AthooInteractiveMarker,
+  type AthooMapCoordinate,
+} from "@/components/maps/AthooInteractiveMap";
 import { LocationSearchPicker, type LocationSelection, type SavedLocationOption } from "@/components/maps/LocationSearchPicker";
 import { Icon } from "@/components/ui/Icon";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -16,7 +20,7 @@ import {
   AppState,
 } from "react-native";
 import { PrivateImage } from "@/services/storage";
-import { getRouteMetricsBatch, reverseGeocode } from "@/services/maps";
+import { getDirections, getRouteMetricsBatch, reverseGeocode } from "@/services/maps";
 import { getFastForegroundLocation } from "@/services/location";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnimatedCard } from "@/components/ui/AnimatedCard";
@@ -85,11 +89,13 @@ export default function SearchScreen() {
   const [allProviders, setAllProviders] = useState<ExtendedProvider[]>([]);
   const [userLat, setUserLat] = useState<number | undefined>(undefined);
   const [userLng, setUserLng] = useState<number | undefined>(undefined);
+  const [liveGpsCoordinate, setLiveGpsCoordinate] = useState<AthooMapCoordinate | null>(null);
   const [locating, setLocating] = useState(false);
   const [locationAccuracyMeters, setLocationAccuracyMeters] = useState<number | null>(null);
   const [locationError, setLocationError] = useState("");
   const [loadingProviders, setLoadingProviders] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<ExtendedProvider | null>(null);
+  const [selectedRoute, setSelectedRoute] = useState<AthooMapCoordinate[]>([]);
 
   const [pickedLocation, setPickedLocation] = useState<{
     latitude: number;
@@ -183,6 +189,7 @@ export default function SearchScreen() {
       if (!result.location) {
         setUserLat(undefined);
         setUserLng(undefined);
+        setLiveGpsCoordinate(null);
         setLocationAccuracyMeters(null);
         if (pickedLocationSource === "current") {
           setPickedLocation(null);
@@ -196,6 +203,10 @@ export default function SearchScreen() {
       }
 
       setLocationAccuracyMeters(result.location.accuracy);
+      setLiveGpsCoordinate({
+        latitude: result.location.latitude,
+        longitude: result.location.longitude,
+      });
       setUserLat(result.location.latitude);
       setUserLng(result.location.longitude);
       setPickedLocation({ latitude: result.location.latitude, longitude: result.location.longitude });
@@ -397,10 +408,94 @@ export default function SearchScreen() {
   }, [filtered, sortBy]);
 
   const focusProvider = (provider: ExtendedProvider) => {
-    // Selecting a worker must never replace the customer's service address with
-    // the provider's profile coordinates.
+    // Selecting a worker moves only the map camera. It must never replace the
+    // customer's service address with the provider's profile coordinates.
     setSelectedProvider(provider);
   };
+
+  const mapProviderMarkers = useMemo<AthooInteractiveMarker[]>(
+    () => sorted
+      .filter((provider) => isValidMapCoord(provider.latitude, provider.longitude))
+      .slice(0, 30)
+      .map((provider) => ({
+        id: provider.id,
+        label: provider.name,
+        latitude: provider.latitude!,
+        longitude: provider.longitude!,
+        kind: "provider",
+        color: provider.profileColor,
+      })),
+    [sorted],
+  );
+
+  const mapFocusCoordinate = useMemo<AthooMapCoordinate | null>(() => {
+    if (selectedProvider && isValidMapCoord(selectedProvider.latitude, selectedProvider.longitude)) {
+      return {
+        latitude: selectedProvider.latitude!,
+        longitude: selectedProvider.longitude!,
+      };
+    }
+    if (pickedLocation) return pickedLocation;
+    if (userLat !== undefined && userLng !== undefined) {
+      return { latitude: userLat, longitude: userLng };
+    }
+    return null;
+  }, [
+    pickedLocation,
+    selectedProvider?.id,
+    selectedProvider?.latitude,
+    selectedProvider?.longitude,
+    userLat,
+    userLng,
+  ]);
+
+  useEffect(() => {
+    const origin = pickedLocation || (
+      userLat !== undefined && userLng !== undefined
+        ? { latitude: userLat, longitude: userLng }
+        : null
+    );
+    const destination =
+      selectedProvider && isValidMapCoord(selectedProvider.latitude, selectedProvider.longitude)
+        ? {
+            latitude: selectedProvider.latitude!,
+            longitude: selectedProvider.longitude!,
+          }
+        : null;
+
+    if (!origin || !destination) {
+      setSelectedRoute([]);
+      return;
+    }
+
+    let active = true;
+    setSelectedRoute([]);
+    void getDirections(
+      origin.latitude,
+      origin.longitude,
+      destination.latitude,
+      destination.longitude,
+    ).then((route) => {
+      if (!active) return;
+      const isRealRoute =
+        route.source !== "straight_line" &&
+        Array.isArray(route.polyline) &&
+        route.polyline.length >= 2;
+      setSelectedRoute(isRealRoute ? route.polyline : []);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    pickedLocation?.latitude,
+    pickedLocation?.longitude,
+    selectedProvider?.id,
+    selectedProvider?.latitude,
+    selectedProvider?.longitude,
+    userLat,
+    userLng,
+  ]);
 
   const resolveAddressFromCoords = async (
     latitude: number,
@@ -439,6 +534,7 @@ export default function SearchScreen() {
 
   const handleCoordinateChange = async (latitude: number, longitude: number) => {
     setLocationAccuracyMeters(null);
+    setPickedLocationSource("map");
     setPickedLocation({ latitude, longitude });
     setUserLat(latitude);
     setUserLng(longitude);
@@ -448,6 +544,13 @@ export default function SearchScreen() {
 
   const applyLocationSelection = (selection: LocationSelection) => {
     setLocationAccuracyMeters(selection.accuracy ?? null);
+    setPickedLocationSource(selection.source);
+    if (selection.source === "current") {
+      setLiveGpsCoordinate({
+        latitude: selection.latitude,
+        longitude: selection.longitude,
+      });
+    }
     setPickedLocation({ latitude: selection.latitude, longitude: selection.longitude });
     setPickedAddress(selection.address);
     setUserLat(selection.latitude);
@@ -621,7 +724,7 @@ export default function SearchScreen() {
                   paddingHorizontal: 24,
                 }}
               >
-                Open Athoo in the Expo Go app on your phone to view the map
+                Open Athoo in the Android or iOS native app to use the interactive map
               </Text>
             </View>
           ) : loadingProviders ? (
@@ -631,11 +734,19 @@ export default function SearchScreen() {
             </View>
           ) : (
             <View style={{ flex: 1 }}>
-              <AthooMapFallback
-                latitude={pickedLocation?.latitude ?? userLat}
-                longitude={pickedLocation?.longitude ?? userLng}
-                draggable={pickAddress === "1" || Boolean(providerId)}
+              <AthooInteractiveMap
+                focusCoordinate={mapFocusCoordinate}
+                selectedCoordinate={pickedLocation}
+                userCoordinate={liveGpsCoordinate}
+                providerMarkers={mapProviderMarkers}
+                selectedProviderId={selectedProvider?.id || null}
+                routePolyline={selectedRoute}
+                editable={pickAddress === "1" || Boolean(providerId)}
                 onCoordinateChange={(latitude, longitude) => void handleCoordinateChange(latitude, longitude)}
+                onProviderPress={(markerProviderId) => {
+                  const provider = allProviders.find((candidate) => candidate.id === markerProviderId);
+                  if (provider) focusProvider(provider);
+                }}
               />
 
               <Pressable style={styles.locateMeBtn} onPress={() => void handleLocateMe(true)}>

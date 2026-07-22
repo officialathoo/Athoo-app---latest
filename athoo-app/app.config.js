@@ -650,6 +650,10 @@ module.exports = {
     slug: appSlug,
     owner: expoOwner,
     version: appVersion,
+    // MapLibre React Native v11 requires React Native's New Architecture.
+    // Expo SDK 54 defaults to it, but keeping this explicit prevents a future
+    // deployment override from silently producing an incompatible native build.
+    newArchEnabled: true,
 
     orientation: "portrait",
     icon: appIconPath,
@@ -735,6 +739,7 @@ module.exports = {
       "expo-router",
       "expo-font",
       "expo-web-browser",
+      "@maplibre/maplibre-react-native",
 
       [
         "expo-splash-screen",
