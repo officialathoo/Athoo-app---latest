@@ -739,6 +739,7 @@ module.exports = {
       "expo-router",
       "expo-font",
       "expo-web-browser",
+      "expo-system-ui",
       "@maplibre/maplibre-react-native",
 
       [
