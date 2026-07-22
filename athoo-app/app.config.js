@@ -129,7 +129,7 @@ const appScheme = readEnv(
 
 const appVersion = readEnv(
   "APP_VERSION",
-  "1.0.0",
+  "1.1.0",
 );
 
 const expoOwner = readEnv(

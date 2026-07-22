@@ -29,11 +29,14 @@
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "APP_ENV": "staging"
+        "APP_ENV": "staging",
+        "APP_VERSION": "1.1.0",
+        "EXPO_PUBLIC_RELEASE_VERSION": "1.1.0"
       },
       "android": {
         "buildType": "apk"
-      }
+      },
+      "autoIncrement": true
     },
     "production": {
       "extends": "base",
