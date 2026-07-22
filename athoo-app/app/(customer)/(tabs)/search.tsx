@@ -269,7 +269,9 @@ export default function SearchScreen() {
               distanceKm: undefined,
               routeDurationMin: null,
               routeSource: undefined,
-              routeStatus: hasRealCoords ? "pending" : undefined,
+              // A provider is pending only while an actual batch request includes
+              // that provider. Everyone else must remain honestly unavailable.
+              routeStatus: hasRealCoords ? "unavailable" : undefined,
               straightLineDistanceKm,
             };
           });
@@ -290,9 +292,32 @@ export default function SearchScreen() {
     }, [userLat, userLng])
   );
 
+  const categoryMatches = useMemo(() => matchingCategories(query, categories), [query, categories]);
+  const inferredServiceSlugs = useMemo(() => new Set(categoryMatches.map((category) => category.slug)), [categoryMatches]);
+
+  const filtered = useMemo(() => {
+    const normalizedQuery = normalizeDiscoveryText(query);
+    return allProviders.filter((p) => {
+      const providerServices = (p.services || []).map((service) => getCategoryBySlug(service)).filter(Boolean);
+      const providerSearchText = normalizeDiscoveryText([
+        p.name,
+        (p as any).location,
+        (p as any).address,
+        (p as any).city,
+        ...providerServices.flatMap((category) => [category?.name, category?.nameUrdu, category?.description, ...(category?.searchKeywords || [])]),
+      ].filter(Boolean).join(" "));
+
+      const matchesQuery = !normalizedQuery || providerSearchText.includes(normalizedQuery) ||
+        (p.services || []).some((service) => inferredServiceSlugs.has(service));
+      const matchesService = !selectedService || (p.services || []).some((service) => getCategoryBySlug(service)?.slug === selectedService || service === selectedService);
+      const locationText = normalizeDiscoveryText(`${(p as any).location || ""} ${(p as any).address || ""} ${(p as any).city || ""}`);
+      const matchesCity = selectedCity === "All Areas" || locationText.includes(normalizeDiscoveryText(selectedCity));
+      return matchesQuery && matchesService && matchesCity;
+    });
+  }, [allProviders, query, selectedService, selectedCity, getCategoryBySlug, inferredServiceSlugs]);
   const routeCandidateKey = useMemo(() => {
     if (userLat === undefined || userLng === undefined) return "";
-    return allProviders
+    return filtered
       .filter((provider) => isValidMapCoord(provider.latitude, provider.longitude))
       .sort((a, b) =>
         (a.straightLineDistanceKm ?? Number.POSITIVE_INFINITY) -
@@ -303,10 +328,26 @@ export default function SearchScreen() {
         `${provider.id}:${provider.latitude!.toFixed(5)},${provider.longitude!.toFixed(5)}`,
       )
       .join("|");
-  }, [allProviders, userLat, userLng]);
+  }, [filtered, userLat, userLng]);
 
   useEffect(() => {
-    if (userLat === undefined || userLng === undefined || !routeCandidateKey) return;
+    if (userLat === undefined || userLng === undefined || !routeCandidateKey) {
+      // No active origin or no eligible visible provider means there is no
+      // route request in flight. Clear stale road metrics and never leave an
+      // endless "Calculating route..." label behind.
+      setAllProviders((current) => current.map((provider) =>
+        isValidMapCoord(provider.latitude, provider.longitude)
+          ? {
+              ...provider,
+              distanceKm: undefined,
+              routeDurationMin: null,
+              routeSource: "unavailable",
+              routeStatus: "unavailable",
+            }
+          : provider,
+      ));
+      return;
+    }
 
     let active = true;
     const candidateIds = new Set(routeCandidateKey.split("|").map((entry) => entry.split(":")[0]));
@@ -321,17 +362,29 @@ export default function SearchScreen() {
         lng: provider.longitude!,
       }));
 
-    setAllProviders((current) => current.map((provider) =>
-      candidateIds.has(provider.id)
-        ? {
-            ...provider,
-            distanceKm: undefined,
-            routeDurationMin: null,
-            routeSource: undefined,
-            routeStatus: "pending",
-          }
-        : provider,
-    ));
+    setAllProviders((current) => current.map((provider) => {
+      if (candidateIds.has(provider.id)) {
+        return {
+          ...provider,
+          distanceKm: undefined,
+          routeDurationMin: null,
+          routeSource: undefined,
+          routeStatus: "pending",
+        };
+      }
+
+      if (isValidMapCoord(provider.latitude, provider.longitude)) {
+        return {
+          ...provider,
+          distanceKm: undefined,
+          routeDurationMin: null,
+          routeSource: "unavailable",
+          routeStatus: "unavailable",
+        };
+      }
+
+      return provider;
+    }));
 
     void getRouteMetricsBatch(userLat, userLng, candidates).then((metrics) => {
       if (!active) return;
@@ -370,29 +423,6 @@ export default function SearchScreen() {
     if (refreshed && refreshed !== selectedProvider) setSelectedProvider(refreshed);
   }, [allProviders, selectedProvider]);
 
-  const categoryMatches = useMemo(() => matchingCategories(query, categories), [query, categories]);
-  const inferredServiceSlugs = useMemo(() => new Set(categoryMatches.map((category) => category.slug)), [categoryMatches]);
-
-  const filtered = useMemo(() => {
-    const normalizedQuery = normalizeDiscoveryText(query);
-    return allProviders.filter((p) => {
-      const providerServices = (p.services || []).map((service) => getCategoryBySlug(service)).filter(Boolean);
-      const providerSearchText = normalizeDiscoveryText([
-        p.name,
-        (p as any).location,
-        (p as any).address,
-        (p as any).city,
-        ...providerServices.flatMap((category) => [category?.name, category?.nameUrdu, category?.description, ...(category?.searchKeywords || [])]),
-      ].filter(Boolean).join(" "));
-
-      const matchesQuery = !normalizedQuery || providerSearchText.includes(normalizedQuery) ||
-        (p.services || []).some((service) => inferredServiceSlugs.has(service));
-      const matchesService = !selectedService || (p.services || []).some((service) => getCategoryBySlug(service)?.slug === selectedService || service === selectedService);
-      const locationText = normalizeDiscoveryText(`${(p as any).location || ""} ${(p as any).address || ""} ${(p as any).city || ""}`);
-      const matchesCity = selectedCity === "All Areas" || locationText.includes(normalizeDiscoveryText(selectedCity));
-      return matchesQuery && matchesService && matchesCity;
-    });
-  }, [allProviders, query, selectedService, selectedCity, getCategoryBySlug, inferredServiceSlugs]);
 
   const sorted = useMemo(() => {
     const list = [...filtered];

@@ -74,6 +74,21 @@ function setCached(key: string, value: unknown, ttlMs: number): void {
   geoCache.set(key, { value, expiresAt: now + ttlMs, touchedAt: now });
 }
 
+function readBoundedIntegerEnvironment(
+  name: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const raw = String(process.env[name] ?? "").trim();
+  if (!raw) return fallback;
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+
+  return Math.max(minimum, Math.min(maximum, Math.trunc(parsed)));
+}
+
 async function mapWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
@@ -357,13 +372,17 @@ router.post("/route-metrics", requireAuth, async (req: AuthRequest, res: Respons
     return;
   }
 
-  const maximumDestinations = Math.max(
+  const maximumDestinations = readBoundedIntegerEnvironment(
+    "GEO_ROUTE_METRICS_MAX_DESTINATIONS",
+    12,
     1,
-    Math.min(20, Math.trunc(Number(process.env.GEO_ROUTE_METRICS_MAX_DESTINATIONS || 12))),
+    20,
   );
-  const concurrency = Math.max(
+  const concurrency = readBoundedIntegerEnvironment(
+    "GEO_ROUTE_METRICS_CONCURRENCY",
+    3,
     1,
-    Math.min(6, Math.trunc(Number(process.env.GEO_ROUTE_METRICS_CONCURRENCY || 3))),
+    6,
   );
   const rawDestinations = Array.isArray(req.body?.destinations) ? req.body.destinations : [];
 
