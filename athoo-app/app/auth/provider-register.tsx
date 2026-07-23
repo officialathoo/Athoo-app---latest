@@ -132,6 +132,7 @@ export default function ProviderRegisterScreen() {
 
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [sendingOtp, setSendingOtp] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [emailVerificationParams, setEmailVerificationParams] = useState<Record<string, string> | null>(null);
@@ -262,6 +263,62 @@ export default function ProviderRegisterScreen() {
       }
     } catch (err: any) {
       Alert.alert(tr("Gallery Error"), tr(apiErrorToMessage(err, "Could not open photo library. Please try again.")));
+    }
+  };
+
+  const handleSendRegistrationOtp = async () => {
+    if (sendingOtp) return;
+    if (!form.phone) {
+      Alert.alert(tr("Enter phone number first"));
+      return;
+    }
+
+    const cleaned = form.phone.trim().replace(/\D/g, "");
+    const isPakistani = /^(92|0)?3\d{9}$/.test(cleaned);
+    if (!isPakistani) {
+      Alert.alert(
+        tr("Invalid Phone"),
+        tr("Please enter a valid Pakistani mobile number (e.g. 03XX-XXXXXXX).")
+      );
+      return;
+    }
+
+    setSendingOtp(true);
+    try {
+      const res = await sendOtp(
+        form.phone,
+        "registration",
+        "provider",
+        form.email || undefined
+      );
+
+      if (!res.success || res.error) {
+        Alert.alert(
+          tr("Failed"),
+          tr(
+            apiErrorToMessage(
+              res.error || res.message,
+              "Unable to send OTP. Please try again."
+            )
+          )
+        );
+        return;
+      }
+
+      if (__DEV__) setOtpHint(res.code || "");
+      setShowOtp(true);
+
+      if (__DEV__ && res.code) {
+        Alert.alert(
+          tr("Your OTP Code"),
+          tr("Code: {{code}}\n\nEnter this code in the field below.", {
+            code: res.code,
+          }),
+          [{ text: "OK" }]
+        );
+      }
+    } finally {
+      setSendingOtp(false);
     }
   };
 
@@ -506,21 +563,17 @@ export default function ProviderRegisterScreen() {
                 </View>
               )}
               {!otpVerified && (
-                <Pressable style={styles.sendOtpBtn} onPress={async () => {
-                  if (!form.phone) { Alert.alert(tr("Enter phone number first")); return; }
-                  const cleaned = form.phone.trim().replace(/\D/g, "");
-                  const isPakistani = /^(92|0)?3\d{9}$/.test(cleaned);
-                  if (!isPakistani) { Alert.alert(tr("Invalid Phone"), tr("Please enter a valid Pakistani mobile number (e.g. 03XX-XXXXXXX).")); return; }
-                  const res = await sendOtp(form.phone, "registration", "provider", form.email || undefined);
-                  if (!res.success || res.error) {
-                    Alert.alert(tr("Failed"), tr(apiErrorToMessage(res.error || res.message, "Unable to send OTP. Please try again.")));
-                    return;
-                  }
-                  if (__DEV__) setOtpHint(res.code || "");
-                  setShowOtp(true);
-                  if (__DEV__ && res.code) Alert.alert(tr("Your OTP Code"), tr("Code: {{code}}\n\nEnter this code in the field below.", { code: res.code }), [{ text: "OK" }]);
-                }}>
-                  <Text style={[styles.sendOtpText, localizedText]}>{tr("Send Verification Code")}</Text>
+                <Pressable
+                  style={[styles.sendOtpBtn, sendingOtp && styles.btnDisabled]}
+                  onPress={() => void handleSendRegistrationOtp()}
+                  disabled={sendingOtp}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: sendingOtp }}
+                  testID="provider-registration-send-otp"
+                >
+                  <Text style={[styles.sendOtpText, localizedText]}>
+                    {sendingOtp ? tr("Sending...") : tr("Send Verification Code")}
+                  </Text>
                 </Pressable>
               )}
               {otpHint ? (
