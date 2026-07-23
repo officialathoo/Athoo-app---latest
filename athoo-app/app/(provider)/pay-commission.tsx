@@ -64,6 +64,8 @@ function statusLabel(s: string) {
   return "Pending Review";
 }
 
+const COMMISSION_DETAILS_BACKGROUND_REFRESH_MS = 60_000;
+
 export default function PayCommissionScreen() {
   const { theme } = useTheme();
   const { isUrdu, formatCurrency, formatDate: formatLocalizedDate, translate: tr } = useLang();
@@ -87,14 +89,30 @@ export default function PayCommissionScreen() {
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const [availableToSubmit, setAvailableToSubmit] = useState(0);
   const requestIdRef = useRef<string | null>(null);
+  const loadRequestInFlightRef = useRef(false);
+  const detailsLoadedRef = useRef(false);
+  const detailsLastLoadedAtRef = useRef(0);
 
   const pendingDues = user?.pendingCommission ?? 0;
   const commissionLimit = platformSettings.defaultCommissionLimit || user?.commissionLimit || 5000;
   const duesProgress = Math.min(1, pendingDues / commissionLimit);
 
-  async function load(showRefreshing = false) {
-    if (showRefreshing) setRefreshing(true);
-    setLoadError(null);
+  const load = useCallback(async (
+    mode: "initial" | "refresh" | "background" | "mutation" = "initial"
+  ) => {
+    if (loadRequestInFlightRef.current) return;
+
+    loadRequestInFlightRef.current = true;
+    if (mode === "initial" && !detailsLoadedRef.current) {
+      setLoading(true);
+    } else if (mode === "refresh") {
+      setRefreshing(true);
+    }
+
+    if (mode !== "background") {
+      setLoadError(null);
+    }
+
     try {
       const [acctRes, payRes] = await Promise.all([
         api.getPaymentAccounts(),
@@ -104,15 +122,37 @@ export default function PayCommissionScreen() {
       setAccounts((acctRes?.accounts || []) as PaymentAccount[]);
       setHistory((payRes?.payments || []) as SubmittedPayment[]);
       setAvailableToSubmit(Number(payRes?.availableToSubmit || 0));
+      detailsLoadedRef.current = true;
+      detailsLastLoadedAtRef.current = Date.now();
     } catch (error) {
-      setLoadError(apiErrorToMessage(error, tr("We couldn't load commission payment details. Please try again.")));
+      if (mode !== "background") {
+        setLoadError(
+          apiErrorToMessage(
+            error,
+            tr("We couldn't load commission payment details. Please try again.")
+          )
+        );
+      }
     } finally {
+      loadRequestInFlightRef.current = false;
       setLoading(false);
       setRefreshing(false);
     }
-  }
+  }, [refreshUser, tr]);
 
-  useFocusEffect(useCallback(() => { load(); }, []));
+  useFocusEffect(useCallback(() => {
+    if (!detailsLoadedRef.current) {
+      void load("initial");
+      return;
+    }
+
+    if (
+      Date.now() - detailsLastLoadedAtRef.current >=
+      COMMISSION_DETAILS_BACKGROUND_REFRESH_MS
+    ) {
+      void load("background");
+    }
+  }, [load]));
 
   async function pickScreenshot() {
     await new Promise<void>((resolve) => setTimeout(resolve, 200));
@@ -171,7 +211,7 @@ export default function PayCommissionScreen() {
       requestIdRef.current = null;
       showSuccess(tr("Payment Submitted"), tr("Your commission payment is under review. You'll be notified once approved."));
       resetForm();
-      load();
+      void load("mutation");
     } catch (e) {
       showError(tr("Submission Failed"), apiErrorToMessage(e, tr("We couldn't submit this payment. Please try again.")));
     } finally {
@@ -240,13 +280,13 @@ export default function PayCommissionScreen() {
           contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 40 }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={theme.colors.primary} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load("refresh")} tintColor={theme.colors.primary} />}
         >
           {loadError ? (
             <View style={styles.errorCard} accessibilityRole="alert">
               <Icon name="alert-circle" size={20} color={theme.colors.danger} />
               <View style={{ flex: 1 }}><Text style={styles.errorTitle}>{tr("Payment details unavailable")}</Text><Text style={styles.errorText}>{loadError}</Text></View>
-              <Pressable onPress={() => load()} style={styles.retryBtn}><Text style={styles.retryText}>{tr("Retry")}</Text></Pressable>
+              <Pressable onPress={() => void load("refresh")} style={styles.retryBtn}><Text style={styles.retryText}>{tr("Retry")}</Text></Pressable>
             </View>
           ) : null}
           {pendingDues === 0 ? (
