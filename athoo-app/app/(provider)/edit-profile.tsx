@@ -1,7 +1,7 @@
 import { Icon } from "@/components/ui/Icon";
 import { router } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
@@ -42,31 +42,66 @@ export default function EditProfileScreen() {
   const [pendingRateRequest, setPendingRateRequest] = useState<ProviderRateRequest | null>(null);
   const [latestRateRequest, setLatestRateRequest] = useState<ProviderRateRequest | null>(null);
   const [saving, setSaving] = useState(false);
+  const [approvalLoading, setApprovalLoading] = useState(true);
+  const [approvalError, setApprovalError] = useState("");
+  const approvalRequestInFlightRef = useRef(false);
   const ratePending = Boolean(pendingRateRequest);
+  const approvalUnavailable = approvalLoading || Boolean(approvalError);
 
-  const loadApprovalStatus = useCallback(async () => {
+  const loadApprovalStatus = useCallback(async (
+    mode: "initial" | "refresh" | "event" = "initial"
+  ) => {
+    if (approvalRequestInFlightRef.current) return;
+
+    approvalRequestInFlightRef.current = true;
+    if (mode !== "event") {
+      setApprovalLoading(true);
+      setApprovalError("");
+    }
+
     try {
-      const [services, rates] = await Promise.all([api.getMyServiceRequests(), api.getMyRateRequests()]);
-      setPendingServiceIds((services.requests || []).filter((item: any) => item.status === "pending").map((item: any) => item.serviceCategoryId).filter(Boolean));
+      const [services, rates] = await Promise.all([
+        api.getMyServiceRequests(),
+        api.getMyRateRequests(),
+      ]);
+      setPendingServiceIds(
+        (services.requests || [])
+          .filter((item: any) => item.status === "pending")
+          .map((item: any) => item.serviceCategoryId)
+          .filter(Boolean)
+      );
       const rateRequests = ((rates.requests || []) as ProviderRateRequest[]);
       const pending = rateRequests.find((item) => item.status === "pending") || null;
       setPendingRateRequest(pending);
       setLatestRateRequest(rateRequests[0] || null);
       if (pending) setRequestedRate(String(pending.requestedRate));
       else setRequestedRate(provider?.ratePerHour ? String(provider.ratePerHour) : "");
-    } catch {
-      // Keep the last visible approval state when temporarily offline.
+      setApprovalError("");
+    } catch (error) {
+      if (mode !== "event") {
+        setApprovalError(
+          apiErrorToMessage(
+            error,
+            "Could not load your pending service and rate requests. Retry before saving changes."
+          )
+        );
+      }
+    } finally {
+      approvalRequestInFlightRef.current = false;
+      if (mode !== "event") {
+        setApprovalLoading(false);
+      }
     }
   }, [provider?.ratePerHour]);
 
   useEffect(() => {
-    void loadApprovalStatus();
+    void loadApprovalStatus("initial");
   }, [loadApprovalStatus]);
 
   useEffect(() => realtime.on((message) => {
     const payload = (message.payload || {}) as Record<string, unknown>;
     if (message.type === "admin:event" && payload.resource === "providers" && payload.providerId === user?.id) {
-      void refreshUser().then(() => loadApprovalStatus());
+      void refreshUser().then(() => loadApprovalStatus("event"));
     }
   }), [loadApprovalStatus, refreshUser, user?.id]);
 
@@ -133,11 +168,53 @@ export default function EditProfileScreen() {
         <View style={styles.header}>
           <Pressable style={styles.backBtn} onPress={() => router.back()} accessibilityLabel="Go back"><Icon name="arrow-left" size={20} color={theme.colors.text} /></Pressable>
           <Text style={styles.title}>Edit Provider Profile</Text>
-          <Pressable style={[styles.saveBtn, saving && styles.disabled]} onPress={handleSave} disabled={saving} testID="provider-profile-save"><Text style={styles.saveBtnText}>{saving ? "Saving..." : "Save"}</Text></Pressable>
+          <Pressable
+            style={[styles.saveBtn, (saving || approvalUnavailable) && styles.disabled]}
+            onPress={handleSave}
+            disabled={saving || approvalUnavailable}
+            accessibilityState={{ disabled: saving || approvalUnavailable, busy: saving || approvalLoading }}
+            testID="provider-profile-save"
+          >
+            <Text style={styles.saveBtnText}>
+              {approvalLoading ? "Loading..." : saving ? "Saving..." : "Save"}
+            </Text>
+          </Pressable>
         </View>
 
         <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 60 }]}>
           <View style={styles.notice}><Icon name="shield-check" size={16} color={theme.colors.primary} /><Text style={styles.noticeText}>Bio, experience, and location update immediately. New services and hourly-rate changes require Athoo approval.</Text></View>
+
+          {approvalLoading ? (
+            <View style={styles.notice} accessibilityRole="progressbar">
+              <ActivityIndicator size="small" color={theme.colors.primary} />
+              <Text style={styles.noticeText}>Loading pending service and rate requests...</Text>
+            </View>
+          ) : approvalError ? (
+            <View
+              style={[
+                styles.notice,
+                {
+                  backgroundColor: theme.colors.dangerSoft,
+                  borderColor: theme.colors.danger,
+                },
+              ]}
+              accessibilityRole="alert"
+            >
+              <Icon name="alert-circle" size={16} color={theme.colors.danger} />
+              <View style={{ flex: 1, gap: 6 }}>
+                <Text style={[styles.noticeText, { color: theme.colors.danger }]}>
+                  {approvalError}
+                </Text>
+                <Pressable
+                  onPress={() => void loadApprovalStatus("refresh")}
+                  accessibilityRole="button"
+                  testID="provider-profile-approval-retry"
+                >
+                  <Text style={{ color: theme.colors.primary, fontWeight: "800" }}>Retry</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
 
           <Field label="Approved Services" hint="These services are visible to customers.">
             <View style={styles.chips}>{approvedServices.map((slug) => { const category = categories.find((item) => item.slug === slug); return <View key={slug} style={styles.approvedChip}><Icon name="check-circle" size={13} color={theme.colors.success} /><Text style={styles.chipText}>{category?.name || slug}</Text></View>; })}</View>
