@@ -34,6 +34,8 @@ import { apiErrorToMessage } from "@/lib/apiError";
 import { runtimeConfig } from "@/config/runtime";
 
 
+const PROVIDER_PROFILE_BACKGROUND_REFRESH_MS = 60_000;
+
 export default function ProviderProfileScreen() {
   const { user, logout, updateUser, refreshUser } = useAuth();
   const { getMyBookings } = useBookings();
@@ -59,6 +61,26 @@ export default function ProviderProfileScreen() {
   const [togglingAvail, setTogglingAvail] = useState(false);
   const availabilityProgress = useRef(new Animated.Value(user?.isAvailable ? 1 : 0)).current;
   const [uploadingPhoto, setUploadingPhoto] = React.useState(false);
+  const profileRefreshInFlightRef = useRef(false);
+  const profileLoadedRef = useRef(false);
+  const profileLastLoadedAtRef = useRef(0);
+
+  const refreshProfile = useCallback(async (
+    mode: "initial" | "background" | "event" = "initial"
+  ) => {
+    if (profileRefreshInFlightRef.current) return;
+
+    profileRefreshInFlightRef.current = true;
+    try {
+      await refreshUser();
+      profileLoadedRef.current = true;
+      profileLastLoadedAtRef.current = Date.now();
+    } catch {
+      // Keep the currently visible profile when a background refresh fails.
+    } finally {
+      profileRefreshInFlightRef.current = false;
+    }
+  }, [refreshUser]);
 
   const toggleAvailability = async (val: boolean) => {
     const previous = isAvailable;
@@ -78,8 +100,18 @@ export default function ProviderProfileScreen() {
   };
 
   useFocusEffect(useCallback(() => {
-    refreshUser().catch(() => {});
-  }, []));
+    if (!profileLoadedRef.current) {
+      void refreshProfile("initial");
+      return;
+    }
+
+    if (
+      Date.now() - profileLastLoadedAtRef.current >=
+      PROVIDER_PROFILE_BACKGROUND_REFRESH_MS
+    ) {
+      void refreshProfile("background");
+    }
+  }, [refreshProfile]));
 
   useEffect(() => {
     setIsAvailable(!!user?.isAvailable);

@@ -1,0 +1,49 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import test from "node:test";
+
+const root = path.resolve(import.meta.dirname, "../..");
+
+const read = (relative: string) =>
+  fs.readFileSync(path.join(root, relative), "utf8").replace(/\r\n?/g, "\n");
+
+test("Phase 30.1I deduplicates provider profile focus refreshes", () => {
+  const screen = read("athoo-app/app/(provider)/(tabs)/profile.tsx");
+
+  assert.match(
+    screen,
+    /const PROVIDER_PROFILE_BACKGROUND_REFRESH_MS = 60_000/,
+  );
+  assert.match(screen, /const profileRefreshInFlightRef = useRef\(false\)/);
+  assert.match(screen, /const profileLoadedRef = useRef\(false\)/);
+  assert.match(screen, /const profileLastLoadedAtRef = useRef\(0\)/);
+  assert.match(screen, /if \(profileRefreshInFlightRef\.current\) return/);
+  assert.match(
+    screen,
+    /mode: "initial" \| "background" \| "event"/,
+  );
+  assert.match(
+    screen,
+    /Date\.now\(\) - profileLastLoadedAtRef\.current >=/,
+  );
+  assert.match(screen, /void refreshProfile\("initial"\)/);
+  assert.match(screen, /void refreshProfile\("background"\)/);
+  assert.doesNotMatch(
+    screen,
+    /refreshUser\(\)\.catch\(\(\) => \{\}\)/,
+  );
+});
+
+test("Phase 30.1I preserves provider profile mutations and media workflow", () => {
+  const screen = read("athoo-app/app/(provider)/(tabs)/profile.tsx");
+
+  assert.match(screen, /api\.updateAvailability\(val\)/);
+  assert.match(screen, /updateUser\(\{ isAvailable: next \}\)/);
+  assert.match(screen, /pickFromCamera/);
+  assert.match(screen, /pickFromGallery/);
+  assert.match(screen, /uploadPickedImage/);
+  assert.match(screen, /updateUser\(\{ profileImage: objectPath \}\)/);
+  assert.match(screen, /api\.deactivateMe\(\)/);
+  assert.match(screen, /api\.requestAccountDeletion/);
+});
