@@ -1,6 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -22,11 +22,9 @@ import { useCategories } from "@/context/CategoriesContext";
 import { api, realtime } from "@/services/api";
 import { getFastForegroundLocation } from "@/services/location";
 import { useAuth } from "@/context/AuthContext";
-import { getDistanceKm } from "@/utils/distance";
+
 
 type ExtendedProvider = Provider & {
-  latitude?: number;
-  longitude?: number;
   distanceKm?: number;
 };
 
@@ -34,10 +32,9 @@ type ExtendedProvider = Provider & {
 // /api/service-areas below so this filter list always matches the
 // admin-managed, Pakistan-wide service_areas reference table.
 const DEFAULT_CITY_FILTERS = ["All"];
+const PROVIDER_PAGE_SIZE = 25;
+const PROVIDER_SEARCH_DEBOUNCE_MS = 350;
 
-function isValidMapCoord(latitude?: number, longitude?: number) {
-  return typeof latitude === "number" && Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 && typeof longitude === "number" && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
-}
 
 
 export default function ServiceProvidersScreen() {
@@ -51,15 +48,24 @@ export default function ServiceProvidersScreen() {
   const [onlyAvailable, setOnlyAvailable] = useState(false);
   const [providers, setProviders] = useState<ExtendedProvider[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [providerRefreshVersion, setProviderRefreshVersion] = useState(0);
 
   const [cityFilter, setCityFilter] = useState("All");
   const [cityFilters, setCityFilters] = useState<string[]>(DEFAULT_CITY_FILTERS);
   const [areaQuery, setAreaQuery] = useState("");
+  const [debouncedAreaQuery, setDebouncedAreaQuery] = useState("");
+  const [locationReady, setLocationReady] = useState(false);
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
     longitude: number;
   } | null>(null);
+
+  const requestVersionRef = useRef(0);
+  const loadingMoreRef = useRef(false);
 
   const { user, toggleSaved } = useAuth();
   const { getCategoryBySlug } = useCategories();
@@ -75,18 +81,24 @@ export default function ServiceProvidersScreen() {
           rationaleTitle: "Location permission",
           rationaleBody: "Athoo uses your location to sort nearby providers.",
         });
-        if (!result.location) return;
+
+        if (!result.location) {
+          setSortBy("rating");
+          return;
+        }
 
         setUserLocation({
           latitude: result.location.latitude,
           longitude: result.location.longitude,
         });
-      } catch (e) {
-        // silent fail — GPS unavailable, continue without location
+      } catch {
+        setSortBy("rating");
+      } finally {
+        setLocationReady(true);
       }
     };
 
-    loadLocation();
+    void loadLocation();
   }, []);
 
   useEffect(() => {
@@ -100,6 +112,14 @@ export default function ServiceProvidersScreen() {
         // silent fail — keep the "All" sentinel only
       });
   }, []);
+  useEffect(() => {
+    const timer = setTimeout(
+      () => setDebouncedAreaQuery(areaQuery.trim()),
+      PROVIDER_SEARCH_DEBOUNCE_MS,
+    );
+
+    return () => clearTimeout(timer);
+  }, [areaQuery]);
 
   useEffect(() => realtime.on((message) => {
     const payload = (message.payload || {}) as Record<string, unknown>;
@@ -114,57 +134,110 @@ export default function ServiceProvidersScreen() {
     setProviderRefreshVersion((version) => version + 1);
   }), []);
 
-  useEffect(() => {
-    const load = async () => {
+  const loadProviders = useCallback(async (
+    mode: "initial" | "more",
+    cursor?: string,
+  ) => {
+    if (!locationReady) return;
+    if (sortBy === "nearby" && !userLocation) return;
+    if (mode === "more" && loadingMoreRef.current) return;
+
+    const requestVersion = ++requestVersionRef.current;
+
+    if (mode === "initial") {
+      loadingMoreRef.current = false;
       setLoading(true);
-      try {
-        const sid = serviceId === "all" ? undefined : serviceId;
-        const res = await api.getProviders(sid);
+      setLoadingMore(false);
+      setLoadError(null);
+      setProviders([]);
+      setHasMore(false);
+      setNextCursor(null);
+    } else {
+      loadingMoreRef.current = true;
+      setLoadingMore(true);
+      setLoadError(null);
+    }
 
-        const mapped = ((res.providers as Provider[]) || []).map((p) => {
-          const locationText =
-            (p as any).location ||
-            (p as any).address ||
-            (p as any).city ||
-            "";
+    try {
+      const sid = serviceId === "all" ? undefined : serviceId;
+      const serverSort = sortBy === "rating" ? "top" : sortBy;
 
-          const rawLat = (p as any).latitude ?? (p as any).lat;
-          const rawLng = (p as any).longitude ?? (p as any).lng;
-          const parsedLat = typeof rawLat === "number" ? rawLat : typeof rawLat === "string" ? Number(rawLat) : NaN;
-          const parsedLng = typeof rawLng === "number" ? rawLng : typeof rawLng === "string" ? Number(rawLng) : NaN;
-          const hasRealCoords = isValidMapCoord(parsedLat, parsedLng);
-          const latitude = hasRealCoords ? parsedLat : undefined;
-          const longitude = hasRealCoords ? parsedLng : undefined;
+      const res = await api.getProviderDiscovery(sid, {
+        limit: PROVIDER_PAGE_SIZE,
+        sort: serverSort,
+        cursor,
+        available: onlyAvailable,
+        city: cityFilter === "All" ? undefined : cityFilter,
+        query: debouncedAreaQuery || undefined,
+        latitude: serverSort === "nearby" ? userLocation?.latitude : undefined,
+        longitude: serverSort === "nearby" ? userLocation?.longitude : undefined,
+      });
 
-          const distanceKm =
-            userLocation && hasRealCoords
-              ? getDistanceKm(
-                  userLocation.latitude,
-                  userLocation.longitude,
-                  parsedLat,
-                  parsedLng
-                )
-              : undefined;
+      if (requestVersion !== requestVersionRef.current) return;
 
-          return {
-            ...(p as ExtendedProvider),
-            latitude,
-            longitude,
-            distanceKm,
-          };
-        });
+      const mapped = ((res.providers as Provider[]) || []).map((provider) => ({
+        ...(provider as ExtendedProvider),
+        distanceKm:
+          typeof (provider as ExtendedProvider).distanceKm === "number"
+            ? (provider as ExtendedProvider).distanceKm
+            : undefined,
+      }));
 
-        setProviders(mapped);
-      } catch (e) {
-        // silent fail — show empty state
+      setProviders((current) => {
+        if (mode === "initial") return mapped;
+
+        const byId = new Map(current.map((provider) => [provider.id, provider]));
+        mapped.forEach((provider) => byId.set(provider.id, provider));
+        return Array.from(byId.values());
+      });
+      setHasMore(Boolean(res.hasMore));
+      setNextCursor(res.nextCursor || null);
+    } catch {
+      if (requestVersion !== requestVersionRef.current) return;
+      setLoadError("We couldn't load workers right now. Check your connection and try again.");
+      if (mode === "initial") {
         setProviders([]);
-      } finally {
-        setLoading(false);
+        setHasMore(false);
+        setNextCursor(null);
       }
-    };
+    } finally {
+      if (requestVersion === requestVersionRef.current) {
+        if (mode === "initial") setLoading(false);
+        else setLoadingMore(false);
+      }
+      if (mode === "more") loadingMoreRef.current = false;
+    }
+  }, [
+    cityFilter,
+    debouncedAreaQuery,
+    locationReady,
+    onlyAvailable,
+    serviceId,
+    sortBy,
+    userLocation,
+  ]);
 
-    load();
-  }, [serviceId, userLocation, providerRefreshVersion]);
+  useEffect(() => {
+    if (!locationReady) return;
+    void loadProviders("initial");
+  }, [loadProviders, locationReady, providerRefreshVersion]);
+
+  const loadMoreProviders = () => {
+    if (!hasMore || !nextCursor || loadingMoreRef.current) return;
+    void loadProviders("more", nextCursor);
+  };
+
+  const handleSortChange = (nextSort: "rating" | "jobs" | "nearby") => {
+    if (nextSort === "nearby" && !userLocation) {
+      Alert.alert(
+        "Location Required",
+        "Turn on location access to sort workers by nearest distance.",
+      );
+      return;
+    }
+
+    setSortBy(nextSort);
+  };
 
   const isSaved = (id: string) => {
     return !!user?.savedProviders?.includes(id);
@@ -178,47 +251,6 @@ export default function ServiceProvidersScreen() {
 
     await toggleSaved(providerId);
   };
-
-  const filtered = useMemo(() => {
-    return providers.filter((p) => {
-      if (onlyAvailable && !p.isAvailable) return false;
-
-      const locationText = (
-        ((p as any).location as string) ||
-        ((p as any).address as string) ||
-        ""
-      ).toLowerCase();
-
-      if (cityFilter !== "All" && !locationText.includes(cityFilter.toLowerCase())) {
-        return false;
-      }
-
-      if (
-        areaQuery.trim() &&
-        !locationText.includes(areaQuery.trim().toLowerCase()) &&
-        !p.name.toLowerCase().includes(areaQuery.trim().toLowerCase())
-      ) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [providers, onlyAvailable, cityFilter, areaQuery]);
-
-  const sorted = useMemo(() => {
-    const list = [...filtered];
-
-    list.sort((a, b) => {
-      if (sortBy === "rating") return (b.rating || 0) - (a.rating || 0);
-      if (sortBy === "jobs") return (b.totalJobs || 0) - (a.totalJobs || 0);
-      if (sortBy === "nearby") {
-        return (a.distanceKm ?? 999999) - (b.distanceKm ?? 999999);
-      }
-      return 0;
-    });
-
-    return list;
-  }, [filtered, sortBy]);
 
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
@@ -259,7 +291,7 @@ export default function ServiceProvidersScreen() {
             <Text style={styles.title}>
               {category ? category.name : "All Workers"}
             </Text>
-            <Text style={styles.subtitle}>{sorted.length} workers found</Text>
+            <Text style={styles.subtitle}>{providers.length}{hasMore ? "+" : ""} workers loaded</Text>
           </View>
         </View>
       </View>
@@ -315,7 +347,7 @@ export default function ServiceProvidersScreen() {
                   styles.sortChip,
                   sortBy === item.value && styles.sortChipActive,
                 ]}
-                onPress={() => setSortBy(item.value)}
+                onPress={() => handleSortChange(item.value)}
               >
                 <Text
                   style={[
@@ -358,12 +390,24 @@ export default function ServiceProvidersScreen() {
           <ActivityIndicator size="large" color={theme.colors.primary} />
           <Text style={styles.loadingText}>Finding workers...</Text>
         </View>
-      ) : sorted.length === 0 ? (
+      ) : loadError && providers.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Icon name="alert-circle" size={40} color={theme.colors.textMuted} />
+          <Text style={styles.emptyTitle}>Couldn't load workers</Text>
+          <Text style={styles.emptySubtitle}>{loadError}</Text>
+          <Pressable
+            style={styles.retryButton}
+            onPress={() => void loadProviders("initial")}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </Pressable>
+        </View>
+      ) : providers.length === 0 ? (
         <View style={styles.emptyState}>
           <Icon name="users" size={40} color={theme.colors.textMuted} />
           <Text style={styles.emptyTitle}>No workers found</Text>
           <Text style={styles.emptySubtitle}>
-            Try changing area or city filter.
+            Try changing area, city, availability, or sort filters.
           </Text>
         </View>
       ) : (
@@ -372,7 +416,7 @@ export default function ServiceProvidersScreen() {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
         >
-          {sorted.map((p) => (
+          {providers.map((p) => (
             <View key={p.id} style={styles.cardWrap}>
               <Pressable onPress={() => handleToggleSaved(p.id)} style={styles.saveBtn}>
                 <Icon
@@ -405,6 +449,26 @@ export default function ServiceProvidersScreen() {
               />
             </View>
           ))}
+
+          {loadError && providers.length > 0 && (
+            <View style={styles.inlineError}>
+              <Text style={styles.emptySubtitle}>{loadError}</Text>
+            </View>
+          )}
+
+          {hasMore && nextCursor && (
+            <Pressable
+              style={[styles.loadMoreButton, loadingMore && styles.loadMoreButtonDisabled]}
+              onPress={loadMoreProviders}
+              disabled={loadingMore}
+            >
+              {loadingMore ? (
+                <ActivityIndicator size="small" color={theme.colors.onBrand} />
+              ) : (
+                <Text style={styles.loadMoreText}>Load more workers</Text>
+              )}
+            </Pressable>
+          )}
         </ScrollView>
       )}
     </View>
@@ -624,6 +688,46 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     color: theme.colors.textSecondary,
     textAlign: "center",
     lineHeight: 20,
+  },
+
+  retryButton: {
+    marginTop: 4,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: theme.colors.primary,
+  },
+
+  retryButtonText: {
+    color: theme.colors.onBrand,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  inlineError: {
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+
+  loadMoreButton: {
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 14,
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+  },
+
+  loadMoreButtonDisabled: {
+    opacity: 0.7,
+  },
+
+  loadMoreText: {
+    color: theme.colors.onBrand,
+    fontSize: 13,
+    fontWeight: "800",
   },
 
   list: {

@@ -38,6 +38,6 @@ test("Phase 30.1B bounds only the customer Home provider query", () => {
   );
 
   assert.match(map, /api\.getProviders\(serviceId && serviceId !== "all" \? serviceId : undefined\)/);
-  assert.match(providerList, /api\.getProviders\(sid\)/);
+  assert.match(providerList, /api\.getProviderDiscovery\(sid, \{/);
   assert.match(search, /api\.getProviders\(\)/);
 });
