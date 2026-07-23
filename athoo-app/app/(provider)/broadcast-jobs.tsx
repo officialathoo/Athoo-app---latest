@@ -52,6 +52,7 @@ export default function BroadcastJobsScreen() {
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   const [respondingId, setRespondingId] = useState<string | null>(null);
   const [offerInput, setOfferInput] = useState<{ [id: string]: string }>({});
@@ -61,9 +62,25 @@ export default function BroadcastJobsScreen() {
   const [playingVideoUrl, setPlayingVideoUrl] = useState<string | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const loadRequestInFlightRef = useRef(false);
+  const requestsLoadedRef = useRef(false);
 
-  const load = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
+  const load = useCallback(async (
+    mode: "initial" | "refresh" | "silent" | "mutation" = "initial"
+  ) => {
+    if (loadRequestInFlightRef.current) return;
+
+    loadRequestInFlightRef.current = true;
+    if (mode === "initial" && !requestsLoadedRef.current) {
+      setLoading(true);
+    } else if (mode === "refresh") {
+      setRefreshing(true);
+    }
+
+    if (mode !== "silent") {
+      setLoadError("");
+    }
+
     try {
       const res = await api.getBroadcastRequests({ status: "open" });
       const next = Array.isArray(res.requests) ? [...res.requests] : [];
@@ -71,25 +88,47 @@ export default function BroadcastJobsScreen() {
         next.sort((a, b) => Number(b?.id === requestId) - Number(a?.id === requestId));
       }
       setRequests(next);
+      requestsLoadedRef.current = true;
+      setLoadError("");
     } catch (e: any) {
-      if (!silent) showError("Unable to load requests", apiErrorToMessage(e, "We couldn't load broadcast requests. Please try again."));
+      if (mode !== "silent") {
+        setLoadError(
+          apiErrorToMessage(
+            e,
+            "We couldn't load broadcast requests. Please try again."
+          )
+        );
+      }
     } finally {
+      loadRequestInFlightRef.current = false;
       setLoading(false);
       setRefreshing(false);
     }
-  }, [requestId, showError]);
+  }, [requestId]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    if (!requestsLoadedRef.current) {
+      void load("initial");
+    } else {
+      void load("silent");
+    }
 
-  useEffect(() => {
-    pollRef.current = setInterval(() => load(true), 5000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [load]);
+    pollRef.current = setInterval(() => {
+      void load("silent");
+    }, 5000);
+
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [load]));
 
   useEffect(() => {
     const off = realtime.on((msg) => {
       if (msg.type === "broadcast:new" || msg.type === "broadcast:cancelled" || msg.type === "broadcast:accepted") {
-        load(true);
+        void load("silent");
       }
     });
     return off;
@@ -122,7 +161,7 @@ export default function BroadcastJobsScreen() {
       setOfferInput((p) => ({ ...p, [requestId]: "" }));
       setMessageInput((p) => ({ ...p, [requestId]: "" }));
       setTravelInput((p) => ({ ...p, [requestId]: "" }));
-      load(true);
+      void load("mutation");
     } catch (e: any) {
       showError("Unable to submit response", apiErrorToMessage(e, "We couldn't submit your response. Please try again."));
     } finally {
@@ -139,7 +178,7 @@ export default function BroadcastJobsScreen() {
         onPress: async () => {
           try {
             await api.withdrawBroadcastResponse(requestId);
-            load(true);
+            void load("mutation");
           } catch (e: any) {
             showError("Unable to withdraw", apiErrorToMessage(e, "We couldn't withdraw your response. Please try again."));
           }
@@ -153,6 +192,28 @@ export default function BroadcastJobsScreen() {
       <View style={[styles.container, { paddingTop: topPad, alignItems: "center", justifyContent: "center" }]}>
         <ActivityIndicator size="large" color={theme.colors.secondary} />
         <Text style={{ color: theme.colors.textSecondary, marginTop: 12 }}>Loading broadcast requests...</Text>
+      </View>
+    );
+  }
+
+  if (loadError && !requestsLoadedRef.current) {
+    return (
+      <View style={[styles.container, { paddingTop: topPad, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 }]}>
+        <Icon name="alert-circle" size={40} color={theme.colors.danger} />
+        <Text style={{ color: theme.colors.text, fontSize: 16, marginTop: 12, fontWeight: "700", textAlign: "center" }}>
+          Unable to load broadcast jobs
+        </Text>
+        <Text style={{ color: theme.colors.textSecondary, fontSize: 13, marginTop: 8, textAlign: "center" }}>
+          {loadError}
+        </Text>
+        <Pressable
+          onPress={() => void load("refresh")}
+          style={{ marginTop: 16, paddingVertical: 10, paddingHorizontal: 20 }}
+          accessibilityRole="button"
+          testID="provider-broadcast-jobs-load-retry"
+        >
+          <Text style={{ color: theme.colors.secondary, fontWeight: "700" }}>Retry</Text>
+        </Pressable>
       </View>
     );
   }
@@ -201,12 +262,23 @@ export default function BroadcastJobsScreen() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => { setRefreshing(true); load(); }}
+            onRefresh={() => void load("refresh")}
             tintColor={theme.colors.secondary}
           />
         }
       >
-        {requests.length === 0 && (
+        {loadError && requestsLoadedRef.current ? (
+          <View style={[styles.emptyCard, { borderColor: theme.colors.danger }]}>
+            <Icon name="alert-circle" size={28} color={theme.colors.danger} />
+            <Text style={[styles.emptyTitle, { color: theme.colors.danger }]}>Refresh Failed</Text>
+            <Text style={styles.emptyText}>{loadError}</Text>
+            <Pressable onPress={() => void load("refresh")} accessibilityRole="button">
+              <Text style={{ color: theme.colors.secondary, fontWeight: "700" }}>Retry</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {requests.length === 0 && !loadError && (
           <View style={styles.emptyCard}>
             <Icon name="radio" size={36} color={theme.colors.textMuted} />
             <Text style={styles.emptyTitle}>No Open Requests</Text>
