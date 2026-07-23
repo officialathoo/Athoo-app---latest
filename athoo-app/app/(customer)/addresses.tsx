@@ -10,7 +10,7 @@ import { apiErrorToMessage } from "@/lib/apiError";
 import { api } from "@/services/api";
 import { reverseGeocode } from "@/services/maps";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -35,6 +35,8 @@ type SavedAddress = {
   createdAt: string;
 };
 
+const ADDRESSES_BACKGROUND_REFRESH_MS = 60_000;
+
 export default function AddressesScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -47,6 +49,9 @@ export default function AddressesScreen() {
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const requestInFlightRef = useRef(false);
+  const loadedRef = useRef(false);
+  const lastLoadedAtRef = useRef(0);
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
   const [resolving, setResolving] = useState(false);
@@ -57,20 +62,55 @@ export default function AddressesScreen() {
   const [newLatitude, setNewLatitude] = useState<number | undefined>(undefined);
   const [newLongitude, setNewLongitude] = useState<number | undefined>(undefined);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setLoadError("");
+  const load = useCallback(async (
+    mode: "initial" | "refresh" | "background" = "initial"
+  ) => {
+    if (requestInFlightRef.current) return;
+
+    requestInFlightRef.current = true;
+    if (mode === "initial" && !loadedRef.current) {
+      setLoading(true);
+    } else if (mode === "refresh") {
+      setLoading(true);
+    }
+
+    if (mode !== "background") {
+      setLoadError("");
+    }
+
     try {
       const res = await api.getAddresses();
       setAddresses(res.addresses || []);
+      loadedRef.current = true;
+      lastLoadedAtRef.current = Date.now();
     } catch (error) {
-      setLoadError(apiErrorToMessage(error, tr("We could not load your saved addresses. Please try again.")));
+      if (mode !== "background") {
+        setLoadError(
+          apiErrorToMessage(
+            error,
+            tr("We could not load your saved addresses. Please try again.")
+          )
+        );
+      }
     } finally {
+      requestInFlightRef.current = false;
       setLoading(false);
     }
   }, [tr]);
 
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    if (!loadedRef.current) {
+      void load("initial");
+      return;
+    }
+
+    if (
+      Date.now() - lastLoadedAtRef.current >=
+      ADDRESSES_BACKGROUND_REFRESH_MS
+    ) {
+      void load("background");
+    }
+  }, [load]));
 
   const savedOptions = useMemo(
     () => addresses.map((address) => ({
@@ -292,7 +332,7 @@ export default function AddressesScreen() {
         {loadError ? (
           <View style={[styles.errorState, { backgroundColor: theme.colors.dangerSoft, borderColor: theme.colors.danger }]}> 
             <Text style={[styles.errorText, { color: theme.colors.danger, textAlign, writingDirection }]}>{loadError}</Text>
-            <Pressable accessibilityRole="button" style={styles.retryButton} onPress={() => void load()}>
+            <Pressable accessibilityRole="button" style={styles.retryButton} onPress={() => void load("refresh")}>
               <Text style={[styles.retryText, { color: theme.colors.danger }]}>{tr("Retry")}</Text>
             </Pressable>
           </View>
