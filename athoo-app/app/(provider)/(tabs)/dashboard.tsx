@@ -26,6 +26,8 @@ import { useBroadcast } from "@/context/BroadcastContext";
 import { api, realtime } from "@/services/api";
 import { apiErrorToMessage } from "@/lib/apiError";
 
+const PROVIDER_DASHBOARD_BACKGROUND_REFRESH_MS = 60_000;
+
 export default function ProviderDashboard() {
   const { user, refreshUser } = useAuth();
   const { getMyBookings, pendingAlerts, consumeAlerts } = useBookings();
@@ -42,25 +44,64 @@ export default function ProviderDashboard() {
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [dashboardRefreshing, setDashboardRefreshing] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const dashboardRequestInFlightRef = useRef(false);
+  const dashboardLoadedRef = useRef(false);
+  const dashboardLastLoadedAtRef = useRef(0);
 
-  const loadDashboard = useCallback(async (refresh = false) => {
-    refresh ? setDashboardRefreshing(true) : setDashboardLoading(true);
-    setDashboardError(null);
+  const loadDashboard = useCallback(async (
+    mode: "initial" | "refresh" | "background" | "event" = "initial"
+  ) => {
+    if (dashboardRequestInFlightRef.current) return;
+
+    dashboardRequestInFlightRef.current = true;
+    if (mode === "refresh") {
+      setDashboardRefreshing(true);
+    } else if (mode === "initial" && !dashboardLoadedRef.current) {
+      setDashboardLoading(true);
+    }
+
+    if (mode === "initial" || mode === "refresh") {
+      setDashboardError(null);
+    }
+
     try {
       const response = await api.getProviderDashboard();
       setDashboard(response.dashboard);
+      dashboardLoadedRef.current = true;
+      dashboardLastLoadedAtRef.current = Date.now();
+
       if (typeof response.dashboard?.provider?.isAvailable === "boolean") {
         setIsAvailable(response.dashboard.provider.isAvailable);
       }
     } catch (error: any) {
-      setDashboardError(apiErrorToMessage(error, "Could not load provider dashboard. Please try again."));
+      if (mode === "initial" || mode === "refresh") {
+        setDashboardError(
+          apiErrorToMessage(
+            error,
+            "Could not load provider dashboard. Please try again."
+          )
+        );
+      }
     } finally {
+      dashboardRequestInFlightRef.current = false;
       setDashboardLoading(false);
       setDashboardRefreshing(false);
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { loadDashboard(false); }, [loadDashboard]));
+  useFocusEffect(useCallback(() => {
+    if (!dashboardLoadedRef.current) {
+      void loadDashboard("initial");
+      return;
+    }
+
+    if (
+      Date.now() - dashboardLastLoadedAtRef.current >=
+      PROVIDER_DASHBOARD_BACKGROUND_REFRESH_MS
+    ) {
+      void loadDashboard("background");
+    }
+  }, [loadDashboard]));
 
   useEffect(() => {
     if (latestBroadcast && latestBroadcast.id !== prevBroadcastId.current) {
@@ -111,7 +152,7 @@ export default function ProviderDashboard() {
         if (typeof next === "boolean") {
           setIsAvailable(next);
           refreshUser().catch(() => undefined);
-          loadDashboard(true).catch(() => undefined);
+          loadDashboard("event").catch(() => undefined);
         }
       }
       if (event?.type === "booking:updated" && event?.payload?.booking?.providerId === user?.id) {
@@ -119,12 +160,12 @@ export default function ProviderDashboard() {
         if (["accepted", "on_the_way", "arrived", "started", "in_progress"].includes(status)) {
           setIsAvailable(false);
           refreshUser().catch(() => undefined);
-          loadDashboard(true).catch(() => undefined);
+          loadDashboard("event").catch(() => undefined);
         }
         if (["completed", "cancelled"].includes(status)) {
           setIsAvailable(true);
           refreshUser().catch(() => undefined);
-          loadDashboard(true).catch(() => undefined);
+          loadDashboard("event").catch(() => undefined);
         }
       }
     });
@@ -234,10 +275,10 @@ export default function ProviderDashboard() {
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 80 }]}
-        refreshControl={<RefreshControl refreshing={dashboardRefreshing} onRefresh={() => loadDashboard(true)} />}
+        refreshControl={<RefreshControl refreshing={dashboardRefreshing} onRefresh={() => void loadDashboard("refresh")} />}
       >
         {dashboardError ? (
-          <Pressable style={styles.dashboardError} onPress={() => loadDashboard(true)} accessibilityRole="button" testID="provider-dashboard-retry">
+          <Pressable style={styles.dashboardError} onPress={() => void loadDashboard("refresh")} accessibilityRole="button" testID="provider-dashboard-retry">
             <Icon name="alert-circle" size={16} color={theme.colors.danger} />
             <Text style={styles.dashboardErrorText}>{tr(dashboardError)}. {tr("Tap to retry.")}</Text>
           </Pressable>
@@ -287,7 +328,7 @@ export default function ProviderDashboard() {
                 const next = !!res?.user?.isAvailable;
                 setIsAvailable(next);
                 await refreshUser();
-                await loadDashboard(true);
+                await loadDashboard("event");
               } catch (e: any) {
                 setIsAvailable(user?.isAvailable !== false);
                 Alert.alert("Availability", apiErrorToMessage(e, "You cannot turn available while busy on an active job."));
