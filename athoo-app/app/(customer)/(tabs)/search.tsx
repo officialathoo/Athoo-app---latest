@@ -36,11 +36,13 @@ import { useTheme } from "@/context/ThemeContext";
 import { useToast } from "@/context/ToastContext";
 import type { AthooTheme } from "@/design/theme";
 import { getCategoryAppearance } from "@/utils/categoryAppearance";
+import { apiErrorToMessage } from "@/lib/apiError";
 
 // Only the "All Areas" sentinel is hardcoded here — actual city names are
 // loaded live from /api/service-areas below so this list always matches the
 // admin-managed, Pakistan-wide service_areas reference table.
 const DEFAULT_CITIES = ["All Areas"];
+const SEARCH_PROVIDERS_BACKGROUND_REFRESH_MS = 60_000;
 
 type ExtendedProvider = Provider & {
   latitude?: number;
@@ -94,6 +96,10 @@ export default function SearchScreen() {
   const [locationAccuracyMeters, setLocationAccuracyMeters] = useState<number | null>(null);
   const [locationError, setLocationError] = useState("");
   const [loadingProviders, setLoadingProviders] = useState(false);
+  const [providerLoadError, setProviderLoadError] = useState("");
+  const providerLoadRequestInFlightRef = useRef(false);
+  const providersLoadedRef = useRef(false);
+  const providersLastLoadedAtRef = useRef(0);
   const [selectedProvider, setSelectedProvider] = useState<ExtendedProvider | null>(null);
   const [selectedRoute, setSelectedRoute] = useState<AthooMapCoordinate[]>([]);
 
@@ -232,65 +238,96 @@ export default function SearchScreen() {
     }, [userLat, userLng])
   );
 
+  const loadProviders = useCallback(async (
+    mode: "initial" | "refresh" | "background" = "initial"
+  ) => {
+    if (providerLoadRequestInFlightRef.current) return;
+
+    providerLoadRequestInFlightRef.current = true;
+    if (mode === "initial" && !providersLoadedRef.current) {
+      setLoadingProviders(true);
+    }
+
+    if (mode !== "background") {
+      setProviderLoadError("");
+    }
+
+    try {
+      const res = await api.getProviders();
+      const raw = (res.providers as Provider[]) || [];
+
+      const mapped: ExtendedProvider[] = raw.map((p) => {
+        const rawLat = (p as any).latitude ?? (p as any).lat;
+        const rawLng = (p as any).longitude ?? (p as any).lng;
+        const parsedLat = typeof rawLat === "number" ? rawLat : typeof rawLat === "string" ? Number(rawLat) : NaN;
+        const parsedLng = typeof rawLng === "number" ? rawLng : typeof rawLng === "string" ? Number(rawLng) : NaN;
+        const hasRealCoords = isValidMapCoord(parsedLat, parsedLng);
+
+        return {
+          ...(p as ExtendedProvider),
+          latitude: hasRealCoords ? parsedLat : undefined,
+          longitude: hasRealCoords ? parsedLng : undefined,
+          distanceKm: undefined,
+          routeDurationMin: null,
+          routeSource: undefined,
+          routeStatus: hasRealCoords ? "unavailable" : undefined,
+          straightLineDistanceKm: undefined,
+        };
+      });
+
+      setAllProviders(mapped);
+      providersLoadedRef.current = true;
+      providersLastLoadedAtRef.current = Date.now();
+      setProviderLoadError("");
+    } catch (error) {
+      setProviderLoadError(
+        apiErrorToMessage(
+          error,
+          "We couldn't load providers. Please try again."
+        )
+      );
+    } finally {
+      providerLoadRequestInFlightRef.current = false;
+      setLoadingProviders(false);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      let alive = true;
+      if (!providersLoadedRef.current) {
+        void loadProviders("initial");
+        return;
+      }
 
-      const load = async () => {
-        setLoadingProviders(true);
-        try {
-          const res = await api.getProviders();
-          const raw = (res.providers as Provider[]) || [];
-
-          const mapped: ExtendedProvider[] = raw.map((p) => {
-            const locationText =
-              ((p as any).location as string) ||
-              ((p as any).address as string) ||
-              ((p as any).city as string) ||
-              "";
-
-            const rawLat = (p as any).latitude ?? (p as any).lat;
-            const rawLng = (p as any).longitude ?? (p as any).lng;
-            const parsedLat = typeof rawLat === "number" ? rawLat : typeof rawLat === "string" ? Number(rawLat) : NaN;
-            const parsedLng = typeof rawLng === "number" ? rawLng : typeof rawLng === "string" ? Number(rawLng) : NaN;
-            const hasRealCoords = isValidMapCoord(parsedLat, parsedLng);
-            const latitude = hasRealCoords ? parsedLat : undefined;
-            const longitude = hasRealCoords ? parsedLng : undefined;
-
-            const straightLineDistanceKm =
-              hasRealCoords && userLat !== undefined && userLng !== undefined
-                ? getDistanceKm(userLat, userLng, parsedLat, parsedLng)
-                : undefined;
-
-            return {
-              ...(p as ExtendedProvider),
-              latitude,
-              longitude,
-              distanceKm: undefined,
-              routeDurationMin: null,
-              routeSource: undefined,
-              // A provider is pending only while an actual batch request includes
-              // that provider. Everyone else must remain honestly unavailable.
-              routeStatus: hasRealCoords ? "unavailable" : undefined,
-              straightLineDistanceKm,
-            };
-          });
-
-          if (alive) setAllProviders(mapped);
-        } catch {
-          if (alive) setAllProviders([]);
-        } finally {
-          if (alive) setLoadingProviders(false);
-        }
-      };
-
-      load();
-
-      return () => {
-        alive = false;
-      };
-    }, [userLat, userLng])
+      if (
+        Date.now() - providersLastLoadedAtRef.current >=
+        SEARCH_PROVIDERS_BACKGROUND_REFRESH_MS
+      ) {
+        void loadProviders("background");
+      }
+    }, [loadProviders])
   );
+
+  useEffect(() => {
+    setAllProviders((current) =>
+      current.map((provider) => {
+        const hasProviderCoords = isValidMapCoord(provider.latitude, provider.longitude);
+        const straightLineDistanceKm =
+          hasProviderCoords && userLat !== undefined && userLng !== undefined
+            ? getDistanceKm(userLat, userLng, provider.latitude!, provider.longitude!)
+            : undefined;
+
+        if (provider.straightLineDistanceKm === straightLineDistanceKm) {
+          return provider;
+        }
+
+        return {
+          ...provider,
+          straightLineDistanceKm,
+        };
+      })
+    );
+  }, [userLat, userLng]);
 
   const categoryMatches = useMemo(() => matchingCategories(query, categories), [query, categories]);
   const inferredServiceSlugs = useMemo(() => new Set(categoryMatches.map((category) => category.slug)), [categoryMatches]);
@@ -762,6 +799,21 @@ export default function SearchScreen() {
               <ActivityIndicator size="large" color={theme.colors.primary} />
               <Text style={styles.mapLoaderText}>Loading nearby workers...</Text>
             </View>
+          ) : providerLoadError && !providersLoadedRef.current ? (
+            <View style={[styles.mapBg, styles.mapLoader, { paddingHorizontal: 24 }]}>
+              <Icon name="alert-circle" size={36} color={theme.colors.danger} />
+              <Text style={[styles.mapLoaderText, { color: theme.colors.danger, textAlign: "center" }]}>
+                {providerLoadError}
+              </Text>
+              <Pressable
+                onPress={() => void loadProviders("refresh")}
+                accessibilityRole="button"
+                testID="search-provider-load-retry-map"
+                style={{ marginTop: 12, paddingVertical: 10, paddingHorizontal: 18 }}
+              >
+                <Text style={{ color: theme.colors.primary, fontWeight: "800" }}>Retry</Text>
+              </Pressable>
+            </View>
           ) : (
             <View style={{ flex: 1 }}>
               <AthooInteractiveMap
@@ -966,6 +1018,18 @@ export default function SearchScreen() {
             </AnimatedCard>
           )}
 
+          {providerLoadError && providersLoadedRef.current ? (
+            <View style={{ marginBottom: 10, borderWidth: 1, borderColor: theme.colors.danger, backgroundColor: theme.colors.dangerSoft, borderRadius: 12, padding: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Icon name="alert-circle" size={16} color={theme.colors.danger} />
+              <Text style={{ color: theme.colors.danger, fontSize: 12, fontWeight: "700", flex: 1 }}>
+                Provider refresh failed. Showing the last loaded results.
+              </Text>
+              <Pressable onPress={() => void loadProviders("refresh")} accessibilityRole="button">
+                <Text style={{ color: theme.colors.primary, fontSize: 12, fontWeight: "800" }}>Retry</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
           <View style={styles.resultsHeader}>
             <Text style={styles.sectionLabel}>
               {selectedService
@@ -991,6 +1055,22 @@ export default function SearchScreen() {
               <ActivityIndicator size="large" color={theme.colors.primary} />
               <Text style={styles.loadingListText}>Loading workers...</Text>
             </View>
+          ) : providerLoadError && !providersLoadedRef.current ? (
+            <AnimatedCard>
+              <View style={styles.emptyState}>
+                <Icon name="alert-circle" size={36} color={theme.colors.danger} />
+                <Text style={[styles.emptyTitle, { color: theme.colors.danger }]}>Unable to load workers</Text>
+                <Text style={styles.emptySubtitle}>{providerLoadError}</Text>
+                <Pressable
+                  onPress={() => void loadProviders("refresh")}
+                  accessibilityRole="button"
+                  testID="search-provider-load-retry-list"
+                  style={{ marginTop: 10, paddingVertical: 10, paddingHorizontal: 18 }}
+                >
+                  <Text style={{ color: theme.colors.primary, fontWeight: "800" }}>Retry</Text>
+                </Pressable>
+              </View>
+            </AnimatedCard>
           ) : sorted.length === 0 ? (
             <AnimatedCard>
               <View style={styles.emptyState}>
