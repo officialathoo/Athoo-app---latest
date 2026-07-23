@@ -6,7 +6,7 @@ import { api } from "@/services/api";
 import { uploadPickedImage } from "@/services/storage";
 import * as ImagePicker from "expo-image-picker";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -83,6 +83,8 @@ function formatDate(value?: string | null): string {
   return Number.isNaN(parsed.getTime()) ? dateOnly(value) : parsed.toLocaleDateString("en-PK");
 }
 
+const VERIFICATION_DOCUMENTS_BACKGROUND_REFRESH_MS = 60_000;
+
 export default function VerificationDocumentsScreen() {
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -92,25 +94,66 @@ export default function VerificationDocumentsScreen() {
   const [requests, setRequests] = useState<RenewalRequest[]>([]);
   const [compliance, setCompliance] = useState<Compliance | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [uploadingType, setUploadingType] = useState<string | null>(null);
+  const loadRequestInFlightRef = useRef(false);
+  const documentsLoadedRef = useRef(false);
+  const documentsLastLoadedAtRef = useRef(0);
   const [validityDraft, setValidityDraft] = useState<ValidityDraft | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (
+    mode: "initial" | "refresh" | "background" | "mutation" = "initial"
+  ) => {
+    if (loadRequestInFlightRef.current) return;
+
+    loadRequestInFlightRef.current = true;
+    if (
+      (mode === "initial" && !documentsLoadedRef.current) ||
+      mode === "refresh"
+    ) {
+      setLoading(true);
+    }
+
+    if (mode !== "background") {
+      setLoadError("");
+    }
+
     try {
       const result = await api.getDocumentRenewals();
       setDocuments(result.documents || []);
       setRequests(result.requests || []);
       setCompliance(result.compliance || null);
-      await refreshUser();
+      documentsLoadedRef.current = true;
+      documentsLastLoadedAtRef.current = Date.now();
+      await refreshUser().catch(() => undefined);
     } catch (error) {
-      Alert.alert("Could not load documents", apiErrorToMessage(error, "We couldn't load your documents. Please try again."));
+      if (mode !== "background") {
+        setLoadError(
+          apiErrorToMessage(
+            error,
+            "We couldn't load your documents. Please try again."
+          )
+        );
+      }
     } finally {
+      loadRequestInFlightRef.current = false;
       setLoading(false);
     }
   }, [refreshUser]);
 
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    if (!documentsLoadedRef.current) {
+      void load("initial");
+      return;
+    }
+
+    if (
+      Date.now() - documentsLastLoadedAtRef.current >=
+      VERIFICATION_DOCUMENTS_BACKGROUND_REFRESH_MS
+    ) {
+      void load("background");
+    }
+  }, [load]));
 
   const byType = useMemo(() => new Map(documents.map((doc) => [doc.type, doc])), [documents]);
   const pendingByType = useMemo(() => {
@@ -199,7 +242,7 @@ export default function VerificationDocumentsScreen() {
       } else {
         await api.postDocument({ type: item.type, label: item.label, url: objectPath, ...validityPayload });
       }
-      await load();
+      await load("mutation");
       Alert.alert("Submitted", `${item.label} was sent for administrator review.`);
     } catch (error) {
       Alert.alert("Upload failed", apiErrorToMessage(error, "We couldn't upload this document. Please try again."));
@@ -239,7 +282,7 @@ export default function VerificationDocumentsScreen() {
         onPress: async () => {
           try {
             await api.cancelDocumentRenewal(request.id);
-            await load();
+            await load("mutation");
           } catch (error) {
             Alert.alert("Could not cancel", apiErrorToMessage(error, "Please try again."));
           }
@@ -287,7 +330,36 @@ export default function VerificationDocumentsScreen() {
           </View>
         ) : null}
 
-        {REQUIRED.map((item) => {
+        {loading && !documentsLoadedRef.current ? (
+          <View style={styles.policyBox} accessibilityRole="progressbar">
+            <ActivityIndicator size="small" color={theme.colors.primary} />
+            <Text style={styles.policyText}>Loading verification documents and review status...</Text>
+          </View>
+        ) : loadError && !documentsLoadedRef.current ? (
+          <View
+            style={[
+              styles.policyBox,
+              {
+                backgroundColor: theme.colors.dangerSoft,
+                borderColor: theme.colors.danger,
+              },
+            ]}
+            accessibilityRole="alert"
+          >
+            <Icon name="alert-circle" size={17} color={theme.colors.danger} />
+            <View style={{ flex: 1, gap: 8 }}>
+              <Text style={[styles.policyText, { color: theme.colors.danger }]}>{loadError}</Text>
+              <Pressable
+                onPress={() => void load("refresh")}
+                accessibilityRole="button"
+                testID="provider-verification-load-retry"
+              >
+                <Text style={{ color: theme.colors.primary, fontWeight: "800" }}>Retry</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : (
+          REQUIRED.map((item) => {
           const document = byType.get(item.type);
           const pending = pendingByType.get(item.type);
           const rejectedRequest = requests.find((request) => request.documentType === item.type && request.status === "rejected");
@@ -335,7 +407,24 @@ export default function VerificationDocumentsScreen() {
               )}
             </View>
           );
-        })}
+        })
+        )}
+
+        {loadError && documentsLoadedRef.current ? (
+          <View
+            style={[
+              styles.policyBox,
+              {
+                backgroundColor: theme.colors.dangerSoft,
+                borderColor: theme.colors.danger,
+              },
+            ]}
+            accessibilityRole="alert"
+          >
+            <Icon name="alert-circle" size={17} color={theme.colors.danger} />
+            <Text style={[styles.policyText, { color: theme.colors.danger, flex: 1 }]}>{loadError}</Text>
+          </View>
+        ) : null}
 
         <View style={styles.policyBox}>
           <Icon name="info" size={17} color={theme.colors.primary} />
@@ -344,7 +433,7 @@ export default function VerificationDocumentsScreen() {
           </Text>
         </View>
 
-        <Pressable onPress={() => void load()} disabled={loading} style={styles.refreshButton} testID="provider-verification-refresh">
+        <Pressable onPress={() => void load("refresh")} disabled={loading} style={styles.refreshButton} testID="provider-verification-refresh">
           {loading ? <ActivityIndicator size="small" color={theme.colors.primary} /> : <Icon name="refresh-cw" size={16} color={theme.colors.primary} />}
           <Text style={styles.refreshText}>{loading ? "Refreshing…" : "Refresh review status"}</Text>
         </Pressable>
