@@ -8,7 +8,7 @@ import { api } from "@/services/api";
 import { apiErrorToMessage } from "@/lib/apiError";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type Preferences = {
@@ -34,15 +34,21 @@ export default function EmailPreferencesScreen() {
   const insets = useSafeAreaInsets();
   const [preferences, setPreferences] = useState<Preferences>(DEFAULTS);
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [savingKey, setSavingKey] = useState<keyof Preferences | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError("");
     try {
       const response = await api.getEmailPreferences();
       setPreferences({ ...DEFAULTS, ...response.preferences });
+      setLoaded(true);
     } catch (error) {
-      Alert.alert(tr("Could not load settings"), tr(apiErrorToMessage(error, "Please try again.")));
+      setLoadError(
+        tr(apiErrorToMessage(error, "Please try again."))
+      );
     } finally {
       setLoading(false);
     }
@@ -96,6 +102,32 @@ export default function EmailPreferencesScreen() {
         ) : null}
       </View>
 
+      {loading && !loaded ? (
+        <View style={styles.stateCard} testID="email-preferences-loading">
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+          <Text style={[styles.stateTitle, localizedText]}>{tr("Loading email settings...")}</Text>
+        </View>
+      ) : null}
+
+      {!loading && loadError && !loaded ? (
+        <View style={styles.stateCard}>
+          <Icon name="alert-circle" size={30} color={theme.colors.danger} />
+          <Text style={[styles.stateTitle, localizedText, { color: theme.colors.danger }]}>
+            {tr("Could not load settings")}
+          </Text>
+          <Text style={[styles.stateText, localizedText]}>{loadError}</Text>
+          <Pressable
+            style={styles.retryButton}
+            onPress={() => void load()}
+            accessibilityRole="button"
+            testID="email-preferences-load-retry"
+          >
+            <Text style={styles.retryText}>{tr("Retry")}</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {loaded ? (
       <View style={styles.listCard}>
         {rows.map((row, index) => (
           <View key={row.key} style={[styles.row, index < rows.length - 1 && styles.rowBorder, direction === "rtl" && styles.rowReverse]}>
@@ -114,6 +146,7 @@ export default function EmailPreferencesScreen() {
           </View>
         ))}
       </View>
+      ) : null}
 
       <View style={styles.noteCard}>
         <Icon name="lock" size={17} color={theme.colors.info} />
@@ -139,6 +172,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   cardDescription: { color: theme.colors.textSecondary, fontSize: 12 },
   verifyButton: { borderRadius: 10, backgroundColor: theme.colors.primary + "18", paddingHorizontal: 12, paddingVertical: 8 },
   verifyText: { color: theme.colors.primary, fontWeight: "700", fontSize: 13 },
+  stateCard: { borderRadius: 16, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border, padding: 22, alignItems: "center", gap: 10 },
+  stateTitle: { color: theme.colors.text, fontSize: 14, fontWeight: "800", textAlign: "center" },
+  stateText: { color: theme.colors.textSecondary, fontSize: 12, lineHeight: 18, textAlign: "center" },
+  retryButton: { borderRadius: 10, backgroundColor: theme.colors.primary + "18", paddingHorizontal: 18, paddingVertical: 10, marginTop: 2 },
+  retryText: { color: theme.colors.primary, fontWeight: "800", fontSize: 13 },
   listCard: { borderRadius: 16, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border, overflow: "hidden" },
   row: { flexDirection: "row", alignItems: "center", gap: 12, padding: 15 },
   rowBorder: { borderBottomWidth: 1, borderBottomColor: theme.colors.border },
