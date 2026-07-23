@@ -640,13 +640,18 @@ export const api = {
   // Providers
   getProviders(
     serviceId?: string,
-    options: { limit?: number; sort?: "top" } = {}
+    options: { limit?: number; sort?: "top"; cursor?: string } = {}
   ) {
-    return request<{ providers: any[] }>("/api/providers", {
+    return request<{
+      providers: any[];
+      hasMore?: boolean;
+      nextCursor?: string | null;
+    }>("/api/providers", {
       params: {
         serviceId,
         limit: options.limit,
         sort: options.sort,
+        cursor: options.cursor,
       },
       method: "GET",
     });

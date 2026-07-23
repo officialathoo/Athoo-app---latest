@@ -19,14 +19,14 @@ test("Phase 30.1B bounds only the customer Home provider query", () => {
   assert.match(providersRoute, /const rawLimit = req\.query\.limit/);
   assert.match(providersRoute, /limit = Math\.min\(50, parsedLimit\)/);
   assert.match(providersRoute, /req\.query\.sort === "top"/);
-  assert.match(providersRoute, /desc\(usersTable\.rating\)/);
-  assert.match(providersRoute, /desc\(usersTable\.ratingCount\)/);
-  assert.match(providersRoute, /\.limit\(limit\)/);
+  assert.match(providersRoute, /desc\(providerRatingOrder\)/);
+  assert.match(providersRoute, /desc\(providerRatingCountOrder\)/);
+  assert.match(providersRoute, /\.limit\(fetchLimit\)/);
   assert.match(providersRoute, /limit must be a positive integer/);
 
   assert.match(
     mobileApi,
-    /options: \{ limit\?: number; sort\?: "top" \} = \{\}/,
+    /options: \{ limit\?: number; sort\?: "top"; cursor\?: string \} = \{\}/,
   );
   assert.match(mobileApi, /limit: options\.limit/);
   assert.match(mobileApi, /sort: options\.sort/);

@@ -95,11 +95,73 @@ router.get("/nearest", async (req, res) => {
   }
 });
 
+type ProviderListSort = "default" | "top";
+
+type ProviderListCursor = {
+  v: 1;
+  sort: ProviderListSort;
+  id: string;
+  updatedAt: string;
+  rating?: number;
+  ratingCount?: number;
+};
+
+function encodeProviderListCursor(provider: typeof usersTable.$inferSelect, sort: ProviderListSort): string {
+  const payload: ProviderListCursor = {
+    v: 1,
+    sort,
+    id: provider.id,
+    updatedAt: (provider.updatedAt ?? new Date(0)).toISOString(),
+    ...(sort === "top"
+      ? {
+          rating: Number(provider.rating || 0),
+          ratingCount: Number(provider.ratingCount || 0),
+        }
+      : {}),
+  };
+
+  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+}
+
+function decodeProviderListCursor(value: string): ProviderListCursor | null {
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as Partial<ProviderListCursor>;
+    if (
+      parsed.v !== 1 ||
+      (parsed.sort !== "default" && parsed.sort !== "top") ||
+      typeof parsed.id !== "string" ||
+      !parsed.id ||
+      typeof parsed.updatedAt !== "string" ||
+      !parsed.updatedAt ||
+      Number.isNaN(new Date(parsed.updatedAt).getTime())
+    ) {
+      return null;
+    }
+
+    if (
+      parsed.sort === "top" &&
+      (
+        typeof parsed.rating !== "number" ||
+        !Number.isFinite(parsed.rating) ||
+        typeof parsed.ratingCount !== "number" ||
+        !Number.isFinite(parsed.ratingCount)
+      )
+    ) {
+      return null;
+    }
+
+    return parsed as ProviderListCursor;
+  } catch {
+    return null;
+  }
+}
+
 router.get("/", async (req, res) => {
   try {
     const serviceId = req.query.serviceId ? String(req.query.serviceId) : undefined;
-    const sort = req.query.sort === "top" ? "top" : "default";
+    const sort: ProviderListSort = req.query.sort === "top" ? "top" : "default";
     const rawLimit = req.query.limit;
+    const rawCursor = typeof req.query.cursor === "string" ? req.query.cursor.trim() : "";
 
     let limit: number | null = null;
     if (rawLimit !== undefined) {
@@ -111,13 +173,23 @@ router.get("/", async (req, res) => {
       limit = Math.min(50, parsedLimit);
     }
 
+    if (rawCursor && limit === null) {
+      res.status(400).json({ error: "cursor requires limit" });
+      return;
+    }
+
+    const cursor = rawCursor ? decodeProviderListCursor(rawCursor) : null;
+    if (rawCursor && (!cursor || cursor.sort !== sort)) {
+      res.status(400).json({ error: "invalid provider cursor" });
+      return;
+    }
+
     const providerFilter = serviceId
       ? and(
           eq(usersTable.role, "provider"),
           eq(usersTable.isDeactivated, false),
           eq(usersTable.isBlocked, false),
           eq(usersTable.verificationStatus, "approved"),
-          // Case-insensitive service match: handles slugs ('plumber') or display names ('Plumber')
           sql`lower(${serviceId}) = ANY(SELECT lower(unnest(${usersTable.services})))`
         )
       : and(
@@ -127,31 +199,84 @@ router.get("/", async (req, res) => {
           eq(usersTable.verificationStatus, "approved")
         );
 
-    const providerQuery = db.select().from(usersTable).where(providerFilter);
+    const providerRatingOrder = sql<number>`COALESCE(${usersTable.rating}, 0)`;
+    const providerRatingCountOrder = sql<number>`COALESCE(${usersTable.ratingCount}, 0)`;
+    const providerUpdatedAtOrder = sql<Date>`COALESCE(${usersTable.updatedAt}, ${new Date(0)})`;
+
+    const cursorFilter = cursor
+      ? sort === "top"
+        ? sql`(
+            ${providerRatingOrder},
+            ${providerRatingCountOrder},
+            ${providerUpdatedAtOrder},
+            ${usersTable.id}
+          ) < (
+            ${cursor.rating ?? 0},
+            ${cursor.ratingCount ?? 0},
+            ${new Date(cursor.updatedAt)},
+            ${cursor.id}
+          )`
+        : sql`(
+            ${providerUpdatedAtOrder},
+            ${usersTable.id}
+          ) < (
+            ${new Date(cursor.updatedAt)},
+            ${cursor.id}
+          )`
+      : undefined;
+
+    const pageFilter = cursorFilter ? and(providerFilter, cursorFilter) : providerFilter;
+    const providerQuery = db.select().from(usersTable).where(pageFilter);
+    const fetchLimit = limit === null ? null : limit + 1;
+
     const providers = sort === "top"
-      ? limit === null
+      ? fetchLimit === null
         ? await providerQuery.orderBy(
-            desc(usersTable.rating),
-            desc(usersTable.ratingCount),
-            desc(usersTable.updatedAt)
+            desc(providerRatingOrder),
+            desc(providerRatingCountOrder),
+            desc(providerUpdatedAtOrder),
+            desc(usersTable.id)
           )
         : await providerQuery
             .orderBy(
-              desc(usersTable.rating),
-              desc(usersTable.ratingCount),
-              desc(usersTable.updatedAt)
+              desc(providerRatingOrder),
+              desc(providerRatingCountOrder),
+              desc(providerUpdatedAtOrder),
+              desc(usersTable.id)
             )
-            .limit(limit)
-      : limit === null
+            .limit(fetchLimit)
+      : fetchLimit === null
         ? await providerQuery
-        : await providerQuery.limit(limit);
+        : await providerQuery
+            .orderBy(
+              desc(providerUpdatedAtOrder),
+              desc(usersTable.id)
+            )
+            .limit(fetchLimit);
 
-    res.json({ providers: providers.map((provider) => toPublicProvider(provider)) });
+    if (limit === null) {
+      res.json({ providers: providers.map((provider) => toPublicProvider(provider)) });
+      return;
+    }
+
+    const hasMore = providers.length > limit;
+    const pageProviders = hasMore ? providers.slice(0, limit) : providers;
+    const lastProvider = pageProviders.at(-1);
+    const nextCursor = hasMore && lastProvider
+      ? encodeProviderListCursor(lastProvider, sort)
+      : null;
+
+    res.json({
+      providers: pageProviders.map((provider) => toPublicProvider(provider)),
+      hasMore,
+      nextCursor,
+    });
   } catch (e) {
     logger.error({ err: e }, "providers list error");
     res.status(500).json({ error: "Failed to load providers" });
   }
 });
+
 router.get("/dashboard", requireAuth, async (req: AuthRequest, res) => {
   try {
     const providerId = req.user!.userId;
