@@ -20,7 +20,7 @@ import {
   AppState,
 } from "react-native";
 import { PrivateImage } from "@/services/storage";
-import { getDirections, getRouteMetricsBatch, reverseGeocode } from "@/services/maps";
+import { getDirections, getProviderRouteMetricsBatch, reverseGeocode } from "@/services/maps";
 import { getFastForegroundLocation } from "@/services/location";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnimatedCard } from "@/components/ui/AnimatedCard";
@@ -361,9 +361,7 @@ export default function SearchScreen() {
         (b.straightLineDistanceKm ?? Number.POSITIVE_INFINITY),
       )
       .slice(0, 12)
-      .map((provider) =>
-        `${provider.id}:${provider.latitude!.toFixed(5)},${provider.longitude!.toFixed(5)}`,
-      )
+      .map((provider) => provider.id)
       .join("|");
   }, [filtered, userLat, userLng]);
 
@@ -387,17 +385,8 @@ export default function SearchScreen() {
     }
 
     let active = true;
-    const candidateIds = new Set(routeCandidateKey.split("|").map((entry) => entry.split(":")[0]));
-    const candidates = allProviders
-      .filter((provider) =>
-        candidateIds.has(provider.id) &&
-        isValidMapCoord(provider.latitude, provider.longitude),
-      )
-      .map((provider) => ({
-        id: provider.id,
-        lat: provider.latitude!,
-        lng: provider.longitude!,
-      }));
+    const candidateIds = new Set(routeCandidateKey.split("|").filter(Boolean));
+    const candidates = Array.from(candidateIds);
 
     setAllProviders((current) => current.map((provider) => {
       if (candidateIds.has(provider.id)) {
@@ -423,7 +412,7 @@ export default function SearchScreen() {
       return provider;
     }));
 
-    void getRouteMetricsBatch(userLat, userLng, candidates).then((metrics) => {
+    void getProviderRouteMetricsBatch(userLat, userLng, candidates).then((metrics) => {
       if (!active) return;
       const byId = new Map(metrics.map((metric) => [metric.id, metric]));
 
