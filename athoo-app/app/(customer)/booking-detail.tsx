@@ -2,8 +2,9 @@ import { AthooMapFallback } from "@/components/maps/AthooMapFallback";
 import { BookingTrustPanel, PostServiceCare } from "@/components/design";
 import { Icon } from "@/components/ui/Icon";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   AppState,
@@ -205,7 +206,7 @@ export default function BookingDetailScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
   const { user } = useAuth();
-  const { bookings, updateBookingStatus, rateBooking, loadBookings } = useBookings();
+  const { bookings, isLoading: bookingsLoading, updateBookingStatus, rateBooking, loadBookings } = useBookings();
   const { getOrCreateChat } = useChat();
   const { startOutgoingCall } = useCall();
   const insets = useSafeAreaInsets();
@@ -227,6 +228,8 @@ export default function BookingDetailScreen() {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [realtimeProviderCoords, setRealtimeProviderCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [isUpdatingJobLocation, setIsUpdatingJobLocation] = useState(false);
+  const [bookingLoadAttempted, setBookingLoadAttempted] = useState(false);
+  const [bookingRetrying, setBookingRetrying] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const providerAnimCoords = useRef({
@@ -238,17 +241,34 @@ export default function BookingDetailScreen() {
 
   const booking = bookings.find((b) => b.id === bookingId) as Booking | undefined;
 
+  const refreshBooking = useCallback(async (mode: "background" | "retry" = "background") => {
+    if (!bookingId) return;
+
+    if (mode === "retry") {
+      setBookingRetrying(true);
+    }
+
+    try {
+      await loadBookings();
+    } finally {
+      setBookingLoadAttempted(true);
+      if (mode === "retry") {
+        setBookingRetrying(false);
+      }
+    }
+  }, [bookingId, loadBookings]);
+
   useEffect(() => {
     if (!bookingId) return;
 
     const tick = () => {
       if (AppState.currentState === "active") {
-        loadBookings().catch(() => undefined);
+        void refreshBooking("background");
       }
     };
 
-    // Realtime booking events are the primary update path. Refresh once on
-    // entry and keep a conservative fallback poll for missed connections.
+    // Realtime booking events remain the primary update path. The detail
+    // screen keeps a conservative fallback poll for missed connections.
     tick();
     const shouldPoll = !booking || !["completed", "cancelled"].includes(booking.status);
     if (shouldPoll) {
@@ -266,7 +286,7 @@ export default function BookingDetailScreen() {
         pollRef.current = null;
       }
     };
-  }, [bookingId, booking?.status, loadBookings]);
+  }, [bookingId, booking?.status, refreshBooking]);
 
   useEffect(() => {
     if (!bookingId) return;
@@ -449,9 +469,48 @@ export default function BookingDetailScreen() {
   }, [customerCoords, providerCoords]);
 
   if (!booking) {
+    const stillLoading = bookingsLoading || !bookingLoadAttempted;
+
     return (
       <View style={styles.notFound}>
-        <Text>Loading...</Text>
+        {stillLoading ? (
+          <>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
+            <Text style={{ color: theme.colors.textSecondary, marginTop: 12 }}>
+              Loading booking...
+            </Text>
+          </>
+        ) : (
+          <>
+            <Icon name="alert-circle" size={42} color={theme.colors.danger} />
+            <Text style={{ color: theme.colors.text, fontSize: 18, fontWeight: "800", marginTop: 12 }}>
+              Booking unavailable
+            </Text>
+            <Text style={{ color: theme.colors.textSecondary, marginTop: 8, textAlign: "center", paddingHorizontal: 28 }}>
+              This booking could not be found or loaded. Check your connection and try again.
+            </Text>
+            <Pressable
+              onPress={() => void refreshBooking("retry")}
+              disabled={bookingRetrying}
+              accessibilityRole="button"
+              testID="customer-booking-detail-retry"
+              style={{ marginTop: 16, paddingVertical: 10, paddingHorizontal: 20 }}
+            >
+              {bookingRetrying ? (
+                <ActivityIndicator size="small" color={theme.colors.primary} />
+              ) : (
+                <Text style={{ color: theme.colors.primary, fontWeight: "800" }}>Retry</Text>
+              )}
+            </Pressable>
+            <Pressable
+              onPress={() => router.back()}
+              accessibilityRole="button"
+              style={{ marginTop: 8, paddingVertical: 8, paddingHorizontal: 16 }}
+            >
+              <Text style={{ color: theme.colors.textSecondary, fontWeight: "700" }}>Go Back</Text>
+            </Pressable>
+          </>
+        )}
       </View>
     );
   }
