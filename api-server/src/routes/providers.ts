@@ -2,7 +2,7 @@ import { Router } from "express";
 import { logger } from "../lib/logger";
 import { db } from "@workspace/db";
 import { usersTable, bookingsTable, serviceCategoriesTable, reviewsTable, notificationsTable, negotiationsTable } from "@workspace/db/schema";
-import { eq, and, or, arrayContains, isNotNull, isNull, desc, gt, lt, ne, sql, inArray, gte } from "drizzle-orm";
+import { eq, and, or, arrayContains, isNotNull, isNull, asc, desc, gt, lt, ne, sql, inArray, gte, getTableColumns } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../middlewares/auth";
 import { toPublicProvider, toSafeUser } from "../lib/admin";
 import { getProviderActiveWorkBlock, activeWorkHttpPayload } from "../lib/businessRules";
@@ -95,7 +95,7 @@ router.get("/nearest", async (req, res) => {
   }
 });
 
-type ProviderListSort = "default" | "top";
+type ProviderListSort = "default" | "top" | "jobs" | "nearby";
 
 type ProviderListCursor = {
   v: 1;
@@ -104,9 +104,17 @@ type ProviderListCursor = {
   updatedAt: string;
   rating?: number;
   ratingCount?: number;
+  totalJobs?: number;
+  distanceKm?: number;
 };
 
-function encodeProviderListCursor(provider: typeof usersTable.$inferSelect, sort: ProviderListSort): string {
+type ProviderListRow = typeof usersTable.$inferSelect & {
+  discoveryDistanceKm: number;
+};
+
+const PROVIDER_DISTANCE_SENTINEL_KM = 1_000_000_000;
+
+function encodeProviderListCursor(provider: ProviderListRow, sort: ProviderListSort): string {
   const payload: ProviderListCursor = {
     v: 1,
     sort,
@@ -116,6 +124,16 @@ function encodeProviderListCursor(provider: typeof usersTable.$inferSelect, sort
       ? {
           rating: Number(provider.rating || 0),
           ratingCount: Number(provider.ratingCount || 0),
+        }
+      : {}),
+    ...(sort === "jobs"
+      ? {
+          totalJobs: Number(provider.totalJobs || 0),
+        }
+      : {}),
+    ...(sort === "nearby"
+      ? {
+          distanceKm: Number(provider.discoveryDistanceKm),
         }
       : {}),
   };
@@ -128,7 +146,12 @@ function decodeProviderListCursor(value: string): ProviderListCursor | null {
     const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as Partial<ProviderListCursor>;
     if (
       parsed.v !== 1 ||
-      (parsed.sort !== "default" && parsed.sort !== "top") ||
+      (
+        parsed.sort !== "default" &&
+        parsed.sort !== "top" &&
+        parsed.sort !== "jobs" &&
+        parsed.sort !== "nearby"
+      ) ||
       typeof parsed.id !== "string" ||
       !parsed.id ||
       typeof parsed.updatedAt !== "string" ||
@@ -150,6 +173,27 @@ function decodeProviderListCursor(value: string): ProviderListCursor | null {
       return null;
     }
 
+    if (
+      parsed.sort === "jobs" &&
+      (
+        typeof parsed.totalJobs !== "number" ||
+        !Number.isFinite(parsed.totalJobs)
+      )
+    ) {
+      return null;
+    }
+
+    if (
+      parsed.sort === "nearby" &&
+      (
+        typeof parsed.distanceKm !== "number" ||
+        !Number.isFinite(parsed.distanceKm) ||
+        parsed.distanceKm < 0
+      )
+    ) {
+      return null;
+    }
+
     return parsed as ProviderListCursor;
   } catch {
     return null;
@@ -159,9 +203,28 @@ function decodeProviderListCursor(value: string): ProviderListCursor | null {
 router.get("/", async (req, res) => {
   try {
     const serviceId = req.query.serviceId ? String(req.query.serviceId) : undefined;
-    const sort: ProviderListSort = req.query.sort === "top" ? "top" : "default";
+    const sort: ProviderListSort =
+      req.query.sort === "top"
+        ? "top"
+        : req.query.sort === "jobs"
+          ? "jobs"
+          : req.query.sort === "nearby"
+            ? "nearby"
+            : "default";
+
     const rawLimit = req.query.limit;
     const rawCursor = typeof req.query.cursor === "string" ? req.query.cursor.trim() : "";
+    const city = typeof req.query.city === "string" ? req.query.city.trim() : "";
+    const search = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    const availableValue = typeof req.query.available === "string"
+      ? req.query.available.trim().toLowerCase()
+      : "";
+    const onlyAvailable = availableValue === "1" || availableValue === "true";
+
+    const rawLatitude = req.query.latitude;
+    const rawLongitude = req.query.longitude;
+    const latitude = rawLatitude === undefined ? null : Number(rawLatitude);
+    const longitude = rawLongitude === undefined ? null : Number(rawLongitude);
 
     let limit: number | null = null;
     if (rawLimit !== undefined) {
@@ -171,6 +234,60 @@ router.get("/", async (req, res) => {
         return;
       }
       limit = Math.min(50, parsedLimit);
+    }
+
+    if (city.length > 80) {
+      res.status(400).json({ error: "city filter is too long" });
+      return;
+    }
+
+    if (search.length > 100) {
+      res.status(400).json({ error: "provider search is too long" });
+      return;
+    }
+
+    if (
+      rawLatitude !== undefined &&
+      (
+        latitude === null ||
+        !Number.isFinite(latitude) ||
+        latitude < -90 ||
+        latitude > 90
+      )
+    ) {
+      res.status(400).json({ error: "latitude must be between -90 and 90" });
+      return;
+    }
+
+    if (
+      rawLongitude !== undefined &&
+      (
+        longitude === null ||
+        !Number.isFinite(longitude) ||
+        longitude < -180 ||
+        longitude > 180
+      )
+    ) {
+      res.status(400).json({ error: "longitude must be between -180 and 180" });
+      return;
+    }
+
+    if (
+      sort === "nearby" &&
+      (
+        latitude === null ||
+        longitude === null ||
+        !Number.isFinite(latitude) ||
+        !Number.isFinite(longitude)
+      )
+    ) {
+      res.status(400).json({ error: "nearby sort requires latitude and longitude" });
+      return;
+    }
+
+    if ((sort === "jobs" || sort === "nearby" || onlyAvailable || city || search) && limit === null) {
+      res.status(400).json({ error: "provider discovery filters require limit" });
+      return;
     }
 
     if (rawCursor && limit === null) {
@@ -184,24 +301,71 @@ router.get("/", async (req, res) => {
       return;
     }
 
-    const providerFilter = serviceId
-      ? and(
-          eq(usersTable.role, "provider"),
-          eq(usersTable.isDeactivated, false),
-          eq(usersTable.isBlocked, false),
-          eq(usersTable.verificationStatus, "approved"),
-          sql`lower(${serviceId}) = ANY(SELECT lower(unnest(${usersTable.services})))`
-        )
-      : and(
-          eq(usersTable.role, "provider"),
-          eq(usersTable.isDeactivated, false),
-          eq(usersTable.isBlocked, false),
-          eq(usersTable.verificationStatus, "approved")
-        );
+    const cityPattern = city ? `%${city.toLowerCase()}%` : "";
+    const searchPattern = search ? `%${search.toLowerCase()}%` : "";
+
+    const providerFilter = and(
+      eq(usersTable.role, "provider"),
+      eq(usersTable.isDeactivated, false),
+      eq(usersTable.isBlocked, false),
+      eq(usersTable.verificationStatus, "approved"),
+      serviceId
+        ? sql`lower(${serviceId}) = ANY(SELECT lower(unnest(${usersTable.services})))`
+        : undefined,
+      onlyAvailable ? eq(usersTable.isAvailable, true) : undefined,
+      city
+        ? sql`lower(COALESCE(${usersTable.location}, '')) LIKE ${cityPattern}`
+        : undefined,
+      search
+        ? or(
+            sql`lower(COALESCE(${usersTable.location}, '')) LIKE ${searchPattern}`,
+            sql`lower(${usersTable.name}) LIKE ${searchPattern}`
+          )
+        : undefined
+    );
 
     const providerRatingOrder = sql<number>`COALESCE(${usersTable.rating}, 0)`;
     const providerRatingCountOrder = sql<number>`COALESCE(${usersTable.ratingCount}, 0)`;
+    const providerTotalJobsOrder = sql<number>`COALESCE(${usersTable.totalJobs}, 0)`;
     const providerUpdatedAtOrder = sql<Date>`COALESCE(${usersTable.updatedAt}, ${new Date(0)})`;
+
+    const providerLatitudeNumber = sql<number | null>`CASE
+      WHEN ${usersTable.latitude} ~ '^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)$'
+        THEN CASE
+          WHEN (${usersTable.latitude})::double precision BETWEEN -90 AND 90
+            THEN (${usersTable.latitude})::double precision
+          ELSE NULL
+        END
+      ELSE NULL
+    END`;
+
+    const providerLongitudeNumber = sql<number | null>`CASE
+      WHEN ${usersTable.longitude} ~ '^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)$'
+        THEN CASE
+          WHEN (${usersTable.longitude})::double precision BETWEEN -180 AND 180
+            THEN (${usersTable.longitude})::double precision
+          ELSE NULL
+        END
+      ELSE NULL
+    END`;
+
+    const providerDistanceOrder = sort === "nearby"
+      ? sql<number>`CASE
+          WHEN ${providerLatitudeNumber} IS NULL OR ${providerLongitudeNumber} IS NULL
+            THEN ${PROVIDER_DISTANCE_SENTINEL_KM}
+          ELSE 6371.0 * acos(
+            LEAST(
+              1.0,
+              GREATEST(
+                -1.0,
+                sin(radians(${latitude ?? 0})) * sin(radians(${providerLatitudeNumber})) +
+                cos(radians(${latitude ?? 0})) * cos(radians(${providerLatitudeNumber})) *
+                cos(radians(${providerLongitudeNumber}) - radians(${longitude ?? 0}))
+              )
+            )
+          )
+        END`
+      : sql<number>`${PROVIDER_DISTANCE_SENTINEL_KM}`;
 
     const cursorFilter = cursor
       ? sort === "top"
@@ -216,17 +380,43 @@ router.get("/", async (req, res) => {
             ${new Date(cursor.updatedAt)},
             ${cursor.id}
           )`
-        : sql`(
-            ${providerUpdatedAtOrder},
-            ${usersTable.id}
-          ) < (
-            ${new Date(cursor.updatedAt)},
-            ${cursor.id}
-          )`
+        : sort === "jobs"
+          ? sql`(
+              ${providerTotalJobsOrder},
+              ${providerUpdatedAtOrder},
+              ${usersTable.id}
+            ) < (
+              ${cursor.totalJobs ?? 0},
+              ${new Date(cursor.updatedAt)},
+              ${cursor.id}
+            )`
+          : sort === "nearby"
+            ? sql`(
+                ${providerDistanceOrder},
+                ${usersTable.id}
+              ) > (
+                ${cursor.distanceKm ?? PROVIDER_DISTANCE_SENTINEL_KM},
+                ${cursor.id}
+              )`
+            : sql`(
+                ${providerUpdatedAtOrder},
+                ${usersTable.id}
+              ) < (
+                ${new Date(cursor.updatedAt)},
+                ${cursor.id}
+              )`
       : undefined;
 
     const pageFilter = cursorFilter ? and(providerFilter, cursorFilter) : providerFilter;
-    const providerQuery = db.select().from(usersTable).where(pageFilter);
+    const providerColumns = getTableColumns(usersTable);
+    const providerQuery = db
+      .select({
+        ...providerColumns,
+        discoveryDistanceKm: providerDistanceOrder,
+      })
+      .from(usersTable)
+      .where(pageFilter);
+
     const fetchLimit = limit === null ? null : limit + 1;
 
     const providers = sort === "top"
@@ -245,14 +435,43 @@ router.get("/", async (req, res) => {
               desc(usersTable.id)
             )
             .limit(fetchLimit)
-      : fetchLimit === null
+      : sort === "jobs"
         ? await providerQuery
-        : await providerQuery
             .orderBy(
+              desc(providerTotalJobsOrder),
               desc(providerUpdatedAtOrder),
               desc(usersTable.id)
             )
-            .limit(fetchLimit);
+            .limit(fetchLimit ?? 51)
+        : sort === "nearby"
+          ? await providerQuery
+              .orderBy(
+                asc(providerDistanceOrder),
+                asc(usersTable.id)
+              )
+              .limit(fetchLimit ?? 51)
+          : fetchLimit === null
+            ? await providerQuery
+            : await providerQuery
+                .orderBy(
+                  desc(providerUpdatedAtOrder),
+                  desc(usersTable.id)
+                )
+                .limit(fetchLimit);
+
+    const serializeProvider = (provider: ProviderListRow) => {
+      const publicProvider = toPublicProvider(provider)!;
+      const discoveredDistance = Number(provider.discoveryDistanceKm);
+
+      return sort === "nearby" &&
+        Number.isFinite(discoveredDistance) &&
+        discoveredDistance < PROVIDER_DISTANCE_SENTINEL_KM
+        ? {
+            ...publicProvider,
+            distanceKm: discoveredDistance,
+          }
+        : publicProvider;
+    };
 
     if (limit === null) {
       res.json({ providers: providers.map((provider) => toPublicProvider(provider)) });
@@ -267,7 +486,7 @@ router.get("/", async (req, res) => {
       : null;
 
     res.json({
-      providers: pageProviders.map((provider) => toPublicProvider(provider)),
+      providers: pageProviders.map((provider) => serializeProvider(provider)),
       hasMore,
       nextCursor,
     });

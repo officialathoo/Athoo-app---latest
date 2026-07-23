@@ -657,6 +657,39 @@ export const api = {
     });
   },
 
+  getProviderDiscovery(
+    serviceId: string | undefined,
+    options: {
+      limit: number;
+      sort: "top" | "jobs" | "nearby";
+      cursor?: string;
+      available?: boolean;
+      city?: string;
+      query?: string;
+      latitude?: number;
+      longitude?: number;
+    }
+  ) {
+    return request<{
+      providers: any[];
+      hasMore: boolean;
+      nextCursor: string | null;
+    }>("/api/providers", {
+      params: {
+        serviceId,
+        limit: options.limit,
+        sort: options.sort,
+        cursor: options.cursor,
+        available: options.available ? "true" : undefined,
+        city: options.city,
+        q: options.query,
+        latitude: options.latitude,
+        longitude: options.longitude,
+      },
+      method: "GET",
+    });
+  },
+
   getSavedProviders() {
     return request<{ providers: any[]; ids: string[] }>("/api/me/saved-providers", {
       method: "GET",
