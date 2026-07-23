@@ -46,6 +46,8 @@ function getStatusConfig(theme: AthooTheme): Record<string, { label: string; col
   };
 }
 
+const WITHDRAWALS_BACKGROUND_REFRESH_MS = 60_000;
+
 export default function WithdrawalRequestsScreen() {
   const { theme } = useTheme();
   const { isUrdu, formatCurrency, formatDate: formatLocalizedDate, translate: tr } = useLang();
@@ -65,21 +67,63 @@ export default function WithdrawalRequestsScreen() {
   const [iban, setIban] = useState("");
   const [note, setNote] = useState("");
   const requestIdRef = useRef<string | null>(null);
+  const loadRequestInFlightRef = useRef(false);
+  const withdrawalsLoadedRef = useRef(false);
+  const withdrawalsLastLoadedAtRef = useRef(0);
 
-  async function load() {
-    setError(null);
+  const load = useCallback(async (
+    mode: "initial" | "refresh" | "retry" | "background" | "mutation" = "initial"
+  ) => {
+    if (loadRequestInFlightRef.current) return;
+
+    loadRequestInFlightRef.current = true;
+    if (
+      mode === "initial" ||
+      (mode === "retry" && !withdrawalsLoadedRef.current)
+    ) {
+      setLoading(true);
+    } else if (mode === "refresh") {
+      setRefreshing(true);
+    }
+
+    if (mode !== "background") {
+      setError(null);
+    }
+
     try {
       const res = await api.getMyWithdrawals();
       setWithdrawals(res.withdrawals || []);
+      withdrawalsLoadedRef.current = true;
+      withdrawalsLastLoadedAtRef.current = Date.now();
     } catch (e: any) {
-      setError(apiErrorToMessage(e, tr("We couldn't load your withdrawal requests. Please try again.")));
+      if (mode !== "background") {
+        setError(
+          apiErrorToMessage(
+            e,
+            tr("We couldn't load your withdrawal requests. Please try again.")
+          )
+        );
+      }
     } finally {
+      loadRequestInFlightRef.current = false;
       setLoading(false);
       setRefreshing(false);
     }
-  }
+  }, [tr]);
 
-  useFocusEffect(useCallback(() => { load(); }, []));
+  useFocusEffect(useCallback(() => {
+    if (!withdrawalsLoadedRef.current) {
+      void load("initial");
+      return;
+    }
+
+    if (
+      Date.now() - withdrawalsLastLoadedAtRef.current >=
+      WITHDRAWALS_BACKGROUND_REFRESH_MS
+    ) {
+      void load("background");
+    }
+  }, [load]));
 
   async function handleSubmit() {
     const amt = parseFloat(amount);
@@ -116,7 +160,7 @@ export default function WithdrawalRequestsScreen() {
       setBankName("");
       setIban("");
       setNote("");
-      load();
+      void load("mutation");
     } catch (e: any) {
       Alert.alert(tr("Unable to submit request"), apiErrorToMessage(e, tr("We couldn't submit your withdrawal request. Please try again.")));
     } finally {
@@ -142,7 +186,7 @@ export default function WithdrawalRequestsScreen() {
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 24 }]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={[theme.colors.primary]} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load("refresh")} colors={[theme.colors.primary]} />}
         >
           {!showForm ? (
             <Pressable
@@ -255,7 +299,7 @@ export default function WithdrawalRequestsScreen() {
               </View>
               <Text style={[styles.emptyTitle, { color: theme.colors.danger }]}>{tr("Failed to Load")}</Text>
               <Text style={styles.emptySub}>{error}</Text>
-              <Pressable onPress={load} style={{ marginTop: 14, paddingVertical: 10, paddingHorizontal: 28, backgroundColor: theme.colors.primary, borderRadius: 12 }}>
+              <Pressable onPress={() => void load("retry")} style={{ marginTop: 14, paddingVertical: 10, paddingHorizontal: 28, backgroundColor: theme.colors.primary, borderRadius: 12 }}>
                 <Text style={{ color: theme.colors.white, fontWeight: "600", fontSize: 14 }}>{tr("Retry")}</Text>
               </Pressable>
             </View>
