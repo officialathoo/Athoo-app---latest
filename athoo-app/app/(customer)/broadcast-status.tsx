@@ -78,42 +78,83 @@ export default function BroadcastStatusScreen() {
   const [request, setRequest] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [selecting, setSelecting] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [showExpireModal, setShowExpireModal] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const requestInFlightRef = useRef(false);
+  const requestLoadedRef = useRef(false);
+  const requestStatusRef = useRef<string | null>(null);
 
-  const load = useCallback(async (silent = false) => {
-    if (!requestId) return;
-    if (!silent) setLoading(true);
+  const load = useCallback(async (
+    mode: "initial" | "refresh" | "silent" = "initial"
+  ) => {
+    if (!requestId || requestInFlightRef.current) return;
+
+    requestInFlightRef.current = true;
+    if (mode === "initial" && !requestLoadedRef.current) {
+      setLoading(true);
+    } else if (mode === "refresh") {
+      setRefreshing(true);
+    }
+
+    if (mode !== "silent") {
+      setLoadError("");
+    }
+
     try {
       const res = await api.getBroadcastRequest(requestId);
       setRequest(res.request);
+      requestLoadedRef.current = true;
+      requestStatusRef.current = res.request?.status ?? null;
     } catch (e: any) {
-      if (!silent) showError("Unable to load request", apiErrorToMessage(e, "We couldn't load this request. Please try again."));
+      if (mode !== "silent") {
+        setLoadError(
+          apiErrorToMessage(
+            e,
+            "We couldn't load this broadcast request. Please try again."
+          )
+        );
+      }
     } finally {
+      requestInFlightRef.current = false;
       setLoading(false);
       setRefreshing(false);
     }
   }, [requestId]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    if (!requestLoadedRef.current) {
+      void load("initial");
+    } else {
+      void load("silent");
+    }
 
-  useEffect(() => {
-    pollRef.current = setInterval(() => load(true), 5000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [load]);
+    pollRef.current = setInterval(() => {
+      if (requestStatusRef.current === "open") {
+        void load("silent");
+      }
+    }, 5000);
+
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [load]));
 
   useEffect(() => {
     const off = realtime.on((msg) => {
       if (msg.type === "broadcast:response" && msg.payload?.requestId === requestId) {
-        load(true);
+        void load("silent");
         const resp = msg.payload?.response;
         const providerName = resp?.providerName ?? "A provider";
         const priceText = resp?.providerOffer ? `Rs. ${resp.providerOffer}` : "open price";
       }
       if (msg.type === "broadcast:accepted" || msg.type === "broadcast:cancelled") {
-        load(true);
+        void load("silent");
       }
     });
     return off;
@@ -125,6 +166,7 @@ export default function BroadcastStatusScreen() {
     try {
       const res = await api.selectBroadcastResponse(requestId, responseId);
       setRequest({ ...request, status: "accepted" });
+      requestStatusRef.current = "accepted";
       Alert.alert(
         "Booking Confirmed! 🎉",
         "Your provider has been notified and your booking is confirmed.",
@@ -158,6 +200,7 @@ export default function BroadcastStatusScreen() {
           try {
             await api.cancelBroadcastRequest(requestId);
             setRequest((p: any) => ({ ...p, status: "cancelled" }));
+            requestStatusRef.current = "cancelled";
           } catch (e: any) {
             showError("Unable to cancel", apiErrorToMessage(e, "We couldn't cancel this request. Please try again."));
           } finally {
@@ -179,12 +222,30 @@ export default function BroadcastStatusScreen() {
 
   if (!request) {
     return (
-      <View style={[styles.container, { paddingTop: topPad, alignItems: "center", justifyContent: "center" }]}>
+      <View style={[styles.container, { paddingTop: topPad, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 }]}>
         <Icon name="alert-circle" size={40} color={theme.colors.danger} />
-        <Text style={{ color: theme.colors.text, fontSize: 16, marginTop: 12 }}>Request not found</Text>
-        <Pressable onPress={() => router.back()} style={{ marginTop: 16 }}>
-          <Text style={{ color: theme.colors.primary, fontWeight: "700" }}>Go Back</Text>
-        </Pressable>
+        <Text style={{ color: theme.colors.text, fontSize: 16, marginTop: 12, fontWeight: "700", textAlign: "center" }}>
+          {loadError ? "Unable to load broadcast" : "Request not found"}
+        </Text>
+        {loadError ? (
+          <>
+            <Text style={{ color: theme.colors.textSecondary, fontSize: 13, marginTop: 8, textAlign: "center" }}>
+              {loadError}
+            </Text>
+            <Pressable
+              onPress={() => void load("refresh")}
+              style={{ marginTop: 16, paddingVertical: 10, paddingHorizontal: 20 }}
+              accessibilityRole="button"
+              testID="broadcast-status-load-retry"
+            >
+              <Text style={{ color: theme.colors.primary, fontWeight: "700" }}>Retry</Text>
+            </Pressable>
+          </>
+        ) : (
+          <Pressable onPress={() => router.back()} style={{ marginTop: 16 }}>
+            <Text style={{ color: theme.colors.primary, fontWeight: "700" }}>Go Back</Text>
+          </Pressable>
+        )}
       </View>
     );
   }
@@ -263,7 +324,7 @@ export default function BroadcastStatusScreen() {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 60 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => void load("refresh")} />
         }
       >
         {/* Status banner */}
