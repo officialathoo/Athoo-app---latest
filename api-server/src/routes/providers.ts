@@ -97,27 +97,54 @@ router.get("/nearest", async (req, res) => {
 
 router.get("/", async (req, res) => {
   try {
-    const { serviceId } = req.query as { serviceId?: string };
-    const providers = await db
-      .select()
-      .from(usersTable)
-      .where(
-        serviceId
-          ? and(
-              eq(usersTable.role, "provider"),
-              eq(usersTable.isDeactivated, false),
-              eq(usersTable.isBlocked, false),
-              eq(usersTable.verificationStatus, "approved"),
-              // Case-insensitive service match: handles slugs ('plumber') or display names ('Plumber')
-              sql`lower(${serviceId}) = ANY(SELECT lower(unnest(${usersTable.services})))`
+    const serviceId = req.query.serviceId ? String(req.query.serviceId) : undefined;
+    const sort = req.query.sort === "top" ? "top" : "default";
+    const rawLimit = req.query.limit;
+
+    let limit: number | null = null;
+    if (rawLimit !== undefined) {
+      const parsedLimit = Number(rawLimit);
+      if (!Number.isInteger(parsedLimit) || parsedLimit < 1) {
+        res.status(400).json({ error: "limit must be a positive integer" });
+        return;
+      }
+      limit = Math.min(50, parsedLimit);
+    }
+
+    const providerFilter = serviceId
+      ? and(
+          eq(usersTable.role, "provider"),
+          eq(usersTable.isDeactivated, false),
+          eq(usersTable.isBlocked, false),
+          eq(usersTable.verificationStatus, "approved"),
+          // Case-insensitive service match: handles slugs ('plumber') or display names ('Plumber')
+          sql`lower(${serviceId}) = ANY(SELECT lower(unnest(${usersTable.services})))`
+        )
+      : and(
+          eq(usersTable.role, "provider"),
+          eq(usersTable.isDeactivated, false),
+          eq(usersTable.isBlocked, false),
+          eq(usersTable.verificationStatus, "approved")
+        );
+
+    const providerQuery = db.select().from(usersTable).where(providerFilter);
+    const providers = sort === "top"
+      ? limit === null
+        ? await providerQuery.orderBy(
+            desc(usersTable.rating),
+            desc(usersTable.ratingCount),
+            desc(usersTable.updatedAt)
+          )
+        : await providerQuery
+            .orderBy(
+              desc(usersTable.rating),
+              desc(usersTable.ratingCount),
+              desc(usersTable.updatedAt)
             )
-          : and(
-              eq(usersTable.role, "provider"),
-              eq(usersTable.isDeactivated, false),
-              eq(usersTable.isBlocked, false),
-              eq(usersTable.verificationStatus, "approved")
-            )
-      );
+            .limit(limit)
+      : limit === null
+        ? await providerQuery
+        : await providerQuery.limit(limit);
 
     res.json({ providers: providers.map((provider) => toPublicProvider(provider)) });
   } catch (e) {
@@ -125,7 +152,6 @@ router.get("/", async (req, res) => {
     res.status(500).json({ error: "Failed to load providers" });
   }
 });
-
 router.get("/dashboard", requireAuth, async (req: AuthRequest, res) => {
   try {
     const providerId = req.user!.userId;

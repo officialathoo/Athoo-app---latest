@@ -77,6 +77,7 @@ const SHOWN_ANNOUNCEMENTS_KEY = "shown_announcements";
 let customerHomeLoadedThisSession = false;
 let customerHomeLastLoadedAt = 0;
 const HOME_BACKGROUND_REFRESH_MS = 60_000;
+const HOME_PROVIDER_FETCH_LIMIT = 50;
 
 const HOME_CONTENT_CACHE_KEY = "athoo.admin.home.content.cache.v2";
 
@@ -218,7 +219,11 @@ export default function HomeScreen() {
         setBannersStatus("error");
         throw error;
       }),
-      api.getProviders().then((res) => { const next = res.providers as Provider[]; setTopProviders(next); void cacheHomePart({ providers: next }); }),
+      api.getProviders(undefined, { limit: HOME_PROVIDER_FETCH_LIMIT, sort: "top" }).then((res) => {
+        const next = res.providers as Provider[];
+        setTopProviders(next);
+        void cacheHomePart({ providers: next });
+      }),
       api.getPlatformStats().then((data) => {
         const next = { providerCount: data.providerCount || 0, categoryCount: data.categoryCount || 0, avgRating: data.avgRating || 0 };
         setPlatformStats(next);
