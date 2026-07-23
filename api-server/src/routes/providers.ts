@@ -8,6 +8,7 @@ import { toPublicProvider, toSafeUser } from "../lib/admin";
 import { getProviderActiveWorkBlock, activeWorkHttpPayload } from "../lib/businessRules";
 import { ReviewSubmissionError, submitBookingReview } from "../domain/reviews";
 import { emitToUser } from "../lib/eventBus";
+import { getPlatformSettings } from "../lib/admin";
 import { providerWithinRadius, validateTravelRadius } from "../lib/providerAvailability";
 
 const router = Router();
@@ -737,6 +738,449 @@ router.patch("/availability", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+type ProviderSearchSort = "recommended" | "rating" | "jobs" | "nearby";
+
+type ProviderSearchCursor = {
+  v: 1;
+  sort: ProviderSearchSort;
+  id: string;
+  updatedAt?: string;
+  recommendedScore?: number;
+  rating?: number;
+  ratingCount?: number;
+  totalJobs?: number;
+  distanceKm?: number;
+};
+
+type ProviderSearchRow = typeof usersTable.$inferSelect & {
+  discoveryDistanceKm: number;
+  discoveryRecommendedScore: number;
+};
+
+const SEARCH_DISTANCE_SENTINEL_KM = 1_000_000_000;
+
+function encodeProviderSearchCursor(
+  provider: ProviderSearchRow,
+  sort: ProviderSearchSort,
+): string {
+  const payload: ProviderSearchCursor = {
+    v: 1,
+    sort,
+    id: provider.id,
+    ...(sort === "recommended"
+      ? {
+          recommendedScore: Number(provider.discoveryRecommendedScore),
+          updatedAt: (provider.updatedAt ?? new Date(0)).toISOString(),
+        }
+      : {}),
+    ...(sort === "rating"
+      ? {
+          rating: Number(provider.rating || 0),
+          ratingCount: Number(provider.ratingCount || 0),
+          updatedAt: (provider.updatedAt ?? new Date(0)).toISOString(),
+        }
+      : {}),
+    ...(sort === "jobs"
+      ? {
+          totalJobs: Number(provider.totalJobs || 0),
+          updatedAt: (provider.updatedAt ?? new Date(0)).toISOString(),
+        }
+      : {}),
+    ...(sort === "nearby"
+      ? {
+          distanceKm: Number(provider.discoveryDistanceKm),
+        }
+      : {}),
+  };
+
+  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+}
+
+function decodeProviderSearchCursor(value: string): ProviderSearchCursor | null {
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(value, "base64url").toString("utf8"),
+    ) as Partial<ProviderSearchCursor>;
+
+    if (
+      parsed.v !== 1 ||
+      (
+        parsed.sort !== "recommended" &&
+        parsed.sort !== "rating" &&
+        parsed.sort !== "jobs" &&
+        parsed.sort !== "nearby"
+      ) ||
+      typeof parsed.id !== "string" ||
+      !parsed.id
+    ) {
+      return null;
+    }
+
+    if (
+      parsed.sort === "recommended" &&
+      (
+        typeof parsed.recommendedScore !== "number" ||
+        !Number.isFinite(parsed.recommendedScore) ||
+        typeof parsed.updatedAt !== "string" ||
+        !Number.isFinite(new Date(parsed.updatedAt).getTime())
+      )
+    ) {
+      return null;
+    }
+
+    if (
+      parsed.sort === "rating" &&
+      (
+        typeof parsed.rating !== "number" ||
+        !Number.isFinite(parsed.rating) ||
+        typeof parsed.ratingCount !== "number" ||
+        !Number.isFinite(parsed.ratingCount) ||
+        typeof parsed.updatedAt !== "string" ||
+        !Number.isFinite(new Date(parsed.updatedAt).getTime())
+      )
+    ) {
+      return null;
+    }
+
+    if (
+      parsed.sort === "jobs" &&
+      (
+        typeof parsed.totalJobs !== "number" ||
+        !Number.isFinite(parsed.totalJobs) ||
+        typeof parsed.updatedAt !== "string" ||
+        !Number.isFinite(new Date(parsed.updatedAt).getTime())
+      )
+    ) {
+      return null;
+    }
+
+    if (
+      parsed.sort === "nearby" &&
+      (
+        typeof parsed.distanceKm !== "number" ||
+        !Number.isFinite(parsed.distanceKm) ||
+        parsed.distanceKm < 0
+      )
+    ) {
+      return null;
+    }
+
+    return parsed as ProviderSearchCursor;
+  } catch {
+    return null;
+  }
+}
+
+router.get("/search", async (req, res) => {
+  try {
+    const sort: ProviderSearchSort =
+      req.query.sort === "rating"
+        ? "rating"
+        : req.query.sort === "jobs"
+          ? "jobs"
+          : req.query.sort === "nearby"
+            ? "nearby"
+            : "recommended";
+
+    const rawLimit = req.query.limit;
+    const parsedLimit = rawLimit === undefined ? 25 : Number(rawLimit);
+    if (!Number.isInteger(parsedLimit) || parsedLimit < 1) {
+      res.status(400).json({ error: "limit must be a positive integer" });
+      return;
+    }
+    const limit = Math.min(50, parsedLimit);
+
+    const serviceId =
+      typeof req.query.serviceId === "string" ? req.query.serviceId.trim() : "";
+    const city = typeof req.query.city === "string" ? req.query.city.trim() : "";
+    const search = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    const rawCursor =
+      typeof req.query.cursor === "string" ? req.query.cursor.trim() : "";
+
+    if (serviceId.length > 80) {
+      res.status(400).json({ error: "service filter is too long" });
+      return;
+    }
+    if (city.length > 80) {
+      res.status(400).json({ error: "city filter is too long" });
+      return;
+    }
+    if (search.length > 100) {
+      res.status(400).json({ error: "provider search is too long" });
+      return;
+    }
+
+    const rawMatchServices =
+      typeof req.query.matchServices === "string"
+        ? req.query.matchServices
+            .split(",")
+            .map((value) => value.trim().toLowerCase())
+            .filter(Boolean)
+        : [];
+
+    if (
+      rawMatchServices.length > 30 ||
+      rawMatchServices.some((value) => value.length > 60)
+    ) {
+      res.status(400).json({ error: "matched service filters are invalid" });
+      return;
+    }
+
+    const matchServices = Array.from(new Set(rawMatchServices));
+
+    const hasLatitude = req.query.latitude !== undefined;
+    const hasLongitude = req.query.longitude !== undefined;
+    if (hasLatitude !== hasLongitude) {
+      res.status(400).json({ error: "latitude and longitude must be provided together" });
+      return;
+    }
+
+    const latitude = hasLatitude ? Number(req.query.latitude) : null;
+    const longitude = hasLongitude ? Number(req.query.longitude) : null;
+    const hasOrigin =
+      latitude !== null &&
+      longitude !== null &&
+      Number.isFinite(latitude) &&
+      Number.isFinite(longitude) &&
+      latitude >= -90 &&
+      latitude <= 90 &&
+      longitude >= -180 &&
+      longitude <= 180;
+
+    if ((hasLatitude || hasLongitude) && !hasOrigin) {
+      res.status(400).json({ error: "valid latitude and longitude are required" });
+      return;
+    }
+
+    if (sort === "nearby" && !hasOrigin) {
+      res.status(400).json({ error: "nearby sort requires latitude and longitude" });
+      return;
+    }
+
+    const cursor = rawCursor ? decodeProviderSearchCursor(rawCursor) : null;
+    if (rawCursor && (!cursor || cursor.sort !== sort)) {
+      res.status(400).json({ error: "invalid provider search cursor" });
+      return;
+    }
+
+    const cityPattern = city ? `%${city.toLowerCase()}%` : "";
+    const searchPattern = search ? `%${search.toLowerCase()}%` : "";
+
+    const matchedServiceFilter = matchServices.length
+      ? or(
+          ...matchServices.map(
+            (matchedService) =>
+              sql`lower(${matchedService}) = ANY(SELECT lower(unnest(${usersTable.services})))`,
+          ),
+        )
+      : undefined;
+
+    const searchFilter =
+      search || matchServices.length
+        ? or(
+            search
+              ? sql`lower(COALESCE(${usersTable.name}, '')) LIKE ${searchPattern}`
+              : undefined,
+            search
+              ? sql`lower(COALESCE(${usersTable.location}, '')) LIKE ${searchPattern}`
+              : undefined,
+            matchedServiceFilter,
+          )
+        : undefined;
+
+    const providerFilter = and(
+      eq(usersTable.role, "provider"),
+      eq(usersTable.accountStatus, "active"),
+      eq(usersTable.isDeactivated, false),
+      eq(usersTable.isBlocked, false),
+      eq(usersTable.verificationStatus, "approved"),
+      serviceId
+        ? sql`lower(${serviceId}) = ANY(SELECT lower(unnest(${usersTable.services})))`
+        : undefined,
+      city
+        ? sql`lower(COALESCE(${usersTable.location}, '')) LIKE ${cityPattern}`
+        : undefined,
+      searchFilter,
+    );
+
+    const providerRatingOrder = sql<number>`COALESCE(${usersTable.rating}, 0)`;
+    const providerRatingCountOrder = sql<number>`COALESCE(${usersTable.ratingCount}, 0)`;
+    const providerTotalJobsOrder = sql<number>`COALESCE(${usersTable.totalJobs}, 0)`;
+    const providerUpdatedAtOrder =
+      sql<Date>`COALESCE(${usersTable.updatedAt}, ${new Date(0)})`;
+
+    const providerLatitudeNumber = sql<number | null>`CASE
+      WHEN ${usersTable.latitude} ~ '^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)$'
+        THEN CASE
+          WHEN CAST(${usersTable.latitude} AS double precision) BETWEEN -90 AND 90
+            THEN CAST(${usersTable.latitude} AS double precision)
+          ELSE NULL
+        END
+      ELSE NULL
+    END`;
+
+    const providerLongitudeNumber = sql<number | null>`CASE
+      WHEN ${usersTable.longitude} ~ '^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)$'
+        THEN CASE
+          WHEN CAST(${usersTable.longitude} AS double precision) BETWEEN -180 AND 180
+            THEN CAST(${usersTable.longitude} AS double precision)
+          ELSE NULL
+        END
+      ELSE NULL
+    END`;
+
+    const providerDistanceOrder = hasOrigin
+      ? sql<number>`CASE
+          WHEN ${providerLatitudeNumber} IS NULL OR ${providerLongitudeNumber} IS NULL
+            THEN ${SEARCH_DISTANCE_SENTINEL_KM}
+          ELSE 6371.0 * acos(
+            LEAST(
+              1.0,
+              GREATEST(
+                -1.0,
+                sin(radians(${latitude!})) * sin(radians(${providerLatitudeNumber})) +
+                cos(radians(${latitude!})) * cos(radians(${providerLatitudeNumber})) *
+                cos(radians(${providerLongitudeNumber}) - radians(${longitude!}))
+              )
+            )
+          )
+        END`
+      : sql<number>`${SEARCH_DISTANCE_SENTINEL_KM}`;
+
+    const normalizedRatingOrder = sql<number>`CASE
+      WHEN ${providerRatingOrder} > 5
+        THEN ${providerRatingOrder} / 10.0
+      ELSE ${providerRatingOrder}
+    END`;
+
+    const premiumPriorityBoost =
+      sort === "recommended"
+        ? (await getPlatformSettings()).premiumPriorityBoost
+        : false;
+
+    const premiumScore = premiumPriorityBoost
+      ? sql<number>`CASE WHEN ${usersTable.isPremium} = true THEN 4 ELSE 0 END`
+      : sql<number>`0`;
+
+    const providerRecommendedScore = sql<number>`(
+      CASE WHEN ${usersTable.isAvailable} = true THEN 35 ELSE 0 END
+      + 25
+      + (${normalizedRatingOrder} * 6.0)
+      + (LEAST(${providerTotalJobsOrder}, 200) * 0.08)
+      + GREATEST(0.0, 20.0 - ${providerDistanceOrder})
+      + ${premiumScore}
+    )`;
+
+    const cursorFilter = cursor
+      ? sort === "recommended"
+        ? sql`(
+            ${providerRecommendedScore},
+            ${providerUpdatedAtOrder},
+            ${usersTable.id}
+          ) < (
+            ${cursor.recommendedScore ?? 0},
+            ${new Date(cursor.updatedAt!)},
+            ${cursor.id}
+          )`
+        : sort === "rating"
+          ? sql`(
+              ${providerRatingOrder},
+              ${providerRatingCountOrder},
+              ${providerUpdatedAtOrder},
+              ${usersTable.id}
+            ) < (
+              ${cursor.rating ?? 0},
+              ${cursor.ratingCount ?? 0},
+              ${new Date(cursor.updatedAt!)},
+              ${cursor.id}
+            )`
+          : sort === "jobs"
+            ? sql`(
+                ${providerTotalJobsOrder},
+                ${providerUpdatedAtOrder},
+                ${usersTable.id}
+              ) < (
+                ${cursor.totalJobs ?? 0},
+                ${new Date(cursor.updatedAt!)},
+                ${cursor.id}
+              )`
+            : sql`(
+                ${providerDistanceOrder},
+                ${usersTable.id}
+              ) > (
+                ${cursor.distanceKm ?? SEARCH_DISTANCE_SENTINEL_KM},
+                ${cursor.id}
+              )`
+      : undefined;
+
+    const pageFilter = cursorFilter
+      ? and(providerFilter, cursorFilter)
+      : providerFilter;
+
+    const providerColumns = getTableColumns(usersTable);
+    const providerQuery = db
+      .select({
+        ...providerColumns,
+        discoveryDistanceKm: providerDistanceOrder,
+        discoveryRecommendedScore: providerRecommendedScore,
+      })
+      .from(usersTable)
+      .where(pageFilter);
+
+    const fetchLimit = limit + 1;
+
+    const providers =
+      sort === "recommended"
+        ? await providerQuery
+            .orderBy(
+              desc(providerRecommendedScore),
+              desc(providerUpdatedAtOrder),
+              desc(usersTable.id),
+            )
+            .limit(fetchLimit)
+        : sort === "rating"
+          ? await providerQuery
+              .orderBy(
+                desc(providerRatingOrder),
+                desc(providerRatingCountOrder),
+                desc(providerUpdatedAtOrder),
+                desc(usersTable.id),
+              )
+              .limit(fetchLimit)
+          : sort === "jobs"
+            ? await providerQuery
+                .orderBy(
+                  desc(providerTotalJobsOrder),
+                  desc(providerUpdatedAtOrder),
+                  desc(usersTable.id),
+                )
+                .limit(fetchLimit)
+            : await providerQuery
+                .orderBy(
+                  asc(providerDistanceOrder),
+                  asc(usersTable.id),
+                )
+                .limit(fetchLimit);
+
+    const hasMore = providers.length > limit;
+    const pageProviders = hasMore ? providers.slice(0, limit) : providers;
+    const lastProvider = pageProviders.at(-1);
+    const nextCursor =
+      hasMore && lastProvider
+        ? encodeProviderSearchCursor(lastProvider, sort)
+        : null;
+
+    res.json({
+      providers: pageProviders.map((provider) => toPublicProvider(provider)),
+      hasMore,
+      nextCursor,
+      sort,
+    });
+  } catch (error) {
+    logger.error({ err: error }, "provider search discovery error");
+    res.status(500).json({ error: "Failed to search providers" });
+  }
+});
 router.get("/:id", async (req, res) => {
   try {
     const provider = await db.query.usersTable.findFirst({
