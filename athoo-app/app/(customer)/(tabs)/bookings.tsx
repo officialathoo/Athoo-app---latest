@@ -23,13 +23,12 @@ import { useNegotiation } from "@/context/NegotiationContext";
 import { useLang } from "@/context/LanguageContext";
 import { useNotifications } from "@/context/NotificationContext";
 import { buildRepeatBookingParams } from "@/utils/repeatBooking";
-import { ServiceHistoryInsights } from "@/components/design/ServiceHistoryInsights";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
 
 export default function BookingsScreen() {
   const { user } = useAuth();
-  const { getMyBookings, pendingAlerts, consumeAlerts, rateBooking } = useBookings();
+  const { getMyBookings, pendingAlerts, consumeAlerts, rateBooking, hasMore, isLoadingMore, loadMoreBookings } = useBookings();
   const { getOrCreateChat } = useChat();
   const { push } = useNotifications();
   const [rateTarget, setRateTarget] = useState<Booking | null>(null);
@@ -106,11 +105,13 @@ export default function BookingsScreen() {
   const localizedText = { textAlign, writingDirection } as const;
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const [activeFilter, setActiveFilter] = useState<BookingStatus | "all">("all");
+  type BookingFilter = BookingStatus | "all" | "scheduled";
+  const [activeFilter, setActiveFilter] = useState<BookingFilter>("all");
   const [mainTab, setMainTab] = useState<"bookings" | "offers">("bookings");
 
-  const FILTERS: { label: string; value: BookingStatus | "all"; icon: string; color: string }[] = [
+  const FILTERS: { label: string; value: BookingFilter; icon: string; color: string }[] = [
     { label: isUrdu ? "سب" : "All", value: "all", icon: "list", color: theme.colors.primary },
+    { label: tr("Scheduled"), value: "scheduled", icon: "calendar", color: theme.colors.secondary },
     { label: t.pending, value: "pending", icon: "clock", color: theme.colors.warning },
     { label: t.active, value: "accepted", icon: "check-circle", color: theme.colors.info },
     { label: t.inProgress, value: "in_progress", icon: "play-circle", color: theme.colors.accent },
@@ -119,15 +120,34 @@ export default function BookingsScreen() {
   ];
 
   const myNegotiations = user ? getMyNegotiations(user.id) : [];
-  const allBookings = user ? getMyBookings(user.id, "customer") : [];
+  const activeNegotiations = myNegotiations.filter(
+    (neg) => neg.status === "customer_offer" || neg.status === "provider_counter"
+  );
+  const allBookings = useMemo(() => {
+    const rows = user ? getMyBookings(user.id, "customer") : [];
+    const unique = new Map<string, Booking>();
+    for (const booking of rows) unique.set(booking.id, booking);
+    return Array.from(unique.values()).sort(
+      (a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()
+    );
+  }, [user, getMyBookings]);
+  const now = new Date();
+  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const isScheduledBooking = (booking: Booking) =>
+    (booking.status === "pending" || booking.status === "accepted") &&
+    Boolean(booking.scheduledDate) &&
+    booking.scheduledDate >= todayKey;
   const filtered = activeFilter === "all"
     ? allBookings
-    : allBookings.filter((b) => b.status === activeFilter);
+    : activeFilter === "scheduled"
+      ? allBookings.filter(isScheduledBooking)
+      : allBookings.filter((b) => b.status === activeFilter && !isScheduledBooking(b));
 
   const counts = {
     all: allBookings.length,
-    pending: allBookings.filter(b => b.status === "pending").length,
-    accepted: allBookings.filter(b => b.status === "accepted").length,
+    scheduled: allBookings.filter(isScheduledBooking).length,
+    pending: allBookings.filter(b => b.status === "pending" && !isScheduledBooking(b)).length,
+    accepted: allBookings.filter(b => b.status === "accepted" && !isScheduledBooking(b)).length,
     in_progress: allBookings.filter(b => b.status === "in_progress").length,
     completed: allBookings.filter(b => b.status === "completed").length,
     cancelled: allBookings.filter(b => b.status === "cancelled").length,
@@ -149,7 +169,7 @@ export default function BookingsScreen() {
         <View>
           <Text style={[styles.title, isUrdu && styles.urduText]}>{mainTab === "bookings" ? t.myBookings : t.myOffers}</Text>
           <Text style={[styles.subtitle, isUrdu && styles.urduText]}>
-            {mainTab === "bookings" ? `${allBookings.length} ${t.totalBookings}` : `${myNegotiations.length} ${t.priceNegotiations}`}
+            {mainTab === "bookings" ? `${allBookings.length} ${t.totalBookings}` : `${activeNegotiations.length} ${t.priceNegotiations}`}
           </Text>
         </View>
         <Pressable
@@ -177,15 +197,15 @@ export default function BookingsScreen() {
         >
           <Icon name="dollar-sign" size={14} color={mainTab === "offers" ? theme.colors.secondary : theme.colors.textMuted} />
           <Text style={[styles.mainTabText, mainTab === "offers" && { color: theme.colors.secondary }, isUrdu && styles.urduText]}>{t.myOffers}</Text>
-          {myNegotiations.length > 0 && <View style={[styles.tabBadge, mainTab === "offers" && { backgroundColor: theme.colors.secondary }]}>
-            <Text style={[styles.tabBadgeText, mainTab === "offers" && { color: theme.colors.onBrand }]}>{myNegotiations.length}</Text>
+          {activeNegotiations.length > 0 && <View style={[styles.tabBadge, mainTab === "offers" && { backgroundColor: theme.colors.secondary }]}>
+            <Text style={[styles.tabBadgeText, mainTab === "offers" && { color: theme.colors.onBrand }]}>{activeNegotiations.length}</Text>
           </View>}
         </Pressable>
       </View>
 
       {mainTab === "offers" ? (
         <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 80 }]} showsVerticalScrollIndicator={false}>
-          {myNegotiations.length === 0 ? (
+          {activeNegotiations.length === 0 ? (
             <View style={styles.empty}>
               <View style={styles.emptyIcon}><Icon name="dollar-sign" size={30} color={theme.colors.textMuted} /></View>
               <Text style={[styles.emptyTitle, localizedText]}>{tr("No price offers yet")}</Text>
@@ -194,7 +214,7 @@ export default function BookingsScreen() {
                 <Text style={styles.findBtnText}>{tr("Browse Services")}</Text>
               </Pressable>
             </View>
-          ) : myNegotiations.map((neg, i) => {
+          ) : activeNegotiations.map((neg, i) => {
             const st = getNegStatus(neg.status);
             return (
               <AnimatedCard key={`${neg.id}-${i}`} delay={i * 50}>
@@ -287,21 +307,6 @@ export default function BookingsScreen() {
                     </View>
                   )}
 
-                  {neg.status === "accepted" && neg.finalPrice !== undefined && (
-                    <View style={styles.negActions}>
-                      <Pressable
-                        style={styles.negBookNowBtn}
-                        onPress={() => router.push({
-                          pathname: "/(customer)/book-service",
-                          params: { providerId: neg.providerId, negotiatedPrice: String(neg.finalPrice) },
-                        })}
-                      >
-                        <Icon name="check-circle" size={14} color={theme.colors.onBrand} />
-                        <Text style={styles.negBookNowText}>Complete Booking · {formatCurrency(neg.finalPrice)}</Text>
-                      </Pressable>
-                    </View>
-                  )}
-
                   {neg.messages.length > 0 && (
                     <View style={styles.negLastMsg}>
                       <Icon name="message-circle" size={12} color={theme.colors.textMuted} />
@@ -367,12 +372,6 @@ export default function BookingsScreen() {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 80 }]}
         showsVerticalScrollIndicator={false}
       >
-        {activeFilter === "all" && (
-          <ServiceHistoryInsights
-            bookings={allBookings}
-            onBookAgain={(booking) => router.push({ pathname: "/(customer)/book-service" as any, params: buildRepeatBookingParams(booking) } as any)}
-          />
-        )}
         {filtered.length === 0 ? (
           <AnimatedCard>
             <View style={styles.empty}>
@@ -381,7 +380,7 @@ export default function BookingsScreen() {
               </View>
               <Text style={styles.emptyTitle}>No bookings</Text>
               <Text style={styles.emptySubtitle}>
-                {activeFilter === "all" ? "Book a service to get started" : `No ${activeFilter} bookings`}
+                {activeFilter === "all" ? "Book a service to get started" : activeFilter === "scheduled" ? tr("No scheduled bookings") : `No ${activeFilter} bookings`}
               </Text>
               {activeFilter === "all" && (
                 <Pressable style={styles.findBtn} onPress={() => router.push("/(customer)/(tabs)/search")}>
@@ -411,6 +410,18 @@ export default function BookingsScreen() {
             </AnimatedCard>
           ))
         )}
+
+        {mainTab === "bookings" && hasMore ? (
+          <Pressable
+            accessibilityRole="button"
+            disabled={isLoadingMore}
+            style={styles.billingLink}
+            onPress={() => void loadMoreBookings()}
+          >
+            <Icon name="chevrons-down" size={15} color={theme.colors.primary} />
+            <Text style={styles.billingLinkText}>{isLoadingMore ? tr("Loading older bookings...") : tr("Load older bookings")}</Text>
+          </Pressable>
+        ) : null}
 
         {filtered.length > 0 && (
           <AnimatedCard delay={filtered.length * 40 + 60}>

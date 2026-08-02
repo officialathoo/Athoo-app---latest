@@ -1,12 +1,34 @@
 import { db } from "@workspace/db";
 import { bookingsTable, usersTable, negotiationsTable, userSubscriptionsTable } from "@workspace/db/schema";
-import { and, eq, isNull, isNotNull, lt, ne, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, isNotNull, lt, ne, sql } from "drizzle-orm";
 import { emitToUser } from "./eventBus";
 import { notifyUser } from "./notifications";
 import { logger } from "./logger";
 import { sweepInactiveAccounts } from "./inactivityLifecycle";
+import { getBookingTimeZone, getNoShowEligibleAt, parseScheduledDateTime } from "../domain/booking-schedule";
 
-const NO_SHOW_GRACE_MS = 30 * 60 * 1000;
+function boundedIntegerFromEnv(name: string, fallback: number, minimum: number, maximum: number): number {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isInteger(value) || value < minimum || value > maximum) {
+    throw new Error(`${name} must be an integer between ${minimum} and ${maximum}`);
+  }
+  return value;
+}
+
+function booleanFromEnv(name: string, fallback: boolean): boolean {
+  const raw = String(process.env[name] ?? fallback).trim().toLowerCase();
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  throw new Error(`${name} must be true or false`);
+}
+
+// Current Athoo policy does not automatically cancel an accepted job merely
+// because the arrival button was not pressed. Operations may opt in later, but
+// the safe path remains schedule-aware, bounded, and race-protected.
+const NO_SHOW_AUTO_CANCEL_ENABLED = booleanFromEnv("BOOKING_NO_SHOW_AUTO_CANCEL_ENABLED", false);
+const NO_SHOW_GRACE_MS = boundedIntegerFromEnv("BOOKING_NO_SHOW_GRACE_MINUTES", 30, 5, 240) * 60 * 1000;
+const NO_SHOW_SWEEP_BATCH_SIZE = boundedIntegerFromEnv("BOOKING_NO_SHOW_SWEEP_BATCH_SIZE", 100, 1, 500);
+const BOOKING_TIME_ZONE = getBookingTimeZone();
 // Pending bookings (no provider has accepted) auto-cancel after 10 minutes.
 const PENDING_GRACE_MS = 10 * 60 * 1000;
 // Push the rating reminder 30 minutes after a job completes (only once).
@@ -56,13 +78,14 @@ export async function applyNoShowPenalty(providerId: string): Promise<void> {
 }
 
 async function sweepStuckAcceptedBookings(): Promise<number> {
-  const cutoff = new Date(Date.now() - NO_SHOW_GRACE_MS);
+  if (!NO_SHOW_AUTO_CANCEL_ENABLED) return 0;
 
-  // Use updatedAt and a longer grace window. The previous createdAt-based check
-  // could cancel an already-accepted job immediately when the customer/provider
-  // took more than a few minutes to accept and then the provider tapped
-  // "I have arrived". Arrival must never race with the sweeper.
-  const stale = await db
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - NO_SHOW_GRACE_MS);
+
+  // Only read a bounded set of old accepted rows. The final decision is based
+  // on the configured local scheduled start, never just record age.
+  const candidates = await db
     .select()
     .from(bookingsTable)
     .where(
@@ -71,53 +94,89 @@ async function sweepStuckAcceptedBookings(): Promise<number> {
         isNull(bookingsTable.providerArrivedAt),
         lt(bookingsTable.updatedAt, cutoff)
       )
-    );
+    )
+    .orderBy(
+      asc(bookingsTable.scheduledDate),
+      asc(bookingsTable.scheduledTime),
+      asc(bookingsTable.updatedAt),
+    )
+    .limit(NO_SHOW_SWEEP_BATCH_SIZE);
 
-  if (stale.length === 0) return 0;
+  if (candidates.length === 0) return 0;
 
-  for (const booking of stale) {
+  let cancelledCount = 0;
+  for (const booking of candidates) {
     try {
-      await db
-        .update(bookingsTable)
-        .set({ status: "cancelled", updatedAt: new Date() })
-        .where(eq(bookingsTable.id, booking.id));
+      const eligibleAt = getNoShowEligibleAt({
+        scheduledDate: booking.scheduledDate,
+        scheduledTime: booking.scheduledTime,
+        acceptedOrLastActivityAt: booking.updatedAt,
+        graceMs: NO_SHOW_GRACE_MS,
+        timeZone: BOOKING_TIME_ZONE,
+      });
+      if (!eligibleAt) {
+        logger.warn({ bookingId: booking.id }, "bookingSweeper: invalid schedule; skipped no-show cancellation");
+        continue;
+      }
+      if (eligibleAt.getTime() > now.getTime()) continue;
 
-      if (booking.providerId) {
+      // Re-check status, arrival and activity in the write itself. An arrival or
+      // any concurrent booking update wins instead of being overwritten.
+      const [cancelled] = await db
+        .update(bookingsTable)
+        .set({ status: "cancelled", updatedAt: now })
+        .where(and(
+          eq(bookingsTable.id, booking.id),
+          eq(bookingsTable.status, "accepted"),
+          isNull(bookingsTable.providerArrivedAt),
+          lt(bookingsTable.updatedAt, cutoff),
+        ))
+        .returning();
+      if (!cancelled) continue;
+
+      cancelledCount += 1;
+
+      if (cancelled.providerId) {
         await db
           .update(usersTable)
           .set({ isAvailable: true, updatedAt: new Date() })
-          .where(eq(usersTable.id, booking.providerId));
-        emitToUser(booking.providerId, "provider:availability", { isAvailable: true, reason: "auto_cancelled" });
-        await applyNoShowPenalty(booking.providerId);
+          .where(eq(usersTable.id, cancelled.providerId));
+        emitToUser(cancelled.providerId, "provider:availability", { isAvailable: true, reason: "auto_cancelled" });
+        await applyNoShowPenalty(cancelled.providerId);
       }
 
-      const payload = { bookingId: booking.id, reason: "no_show" };
-      emitToUser(booking.customerId, "booking:cancelled", payload);
-      emitToUser(booking.providerId, "booking:cancelled", payload);
+      const payload = { bookingId: cancelled.id, reason: "no_show" };
+      emitToUser(cancelled.customerId, "booking:cancelled", payload);
+      emitToUser(cancelled.providerId, "booking:cancelled", payload);
 
       notifyUser({
-        userId: booking.customerId,
+        userId: cancelled.customerId,
         title: "Booking auto-cancelled",
-        body: `${booking.providerName} has not been marked arrived within the allowed time. You can re-request the service.`,
+        body: `${cancelled.providerName} has not been marked arrived after the scheduled time and grace period. You can re-request the service.`,
         type: "booking",
-        link: `/bookings/${booking.id}`,
-        data: { bookingId: booking.id, reason: "no_show" },
+        link: `/bookings/${cancelled.id}`,
+        data: { bookingId: cancelled.id, reason: "no_show" },
       }).catch(() => undefined);
       notifyUser({
-        userId: booking.providerId,
+        userId: cancelled.providerId,
         title: "Booking auto-cancelled",
-        body: `Your accepted ${booking.service} booking was cancelled because no arrival was confirmed within the allowed time.`,
+        body: `Your accepted ${cancelled.service} booking was cancelled because no arrival was confirmed after the scheduled time and grace period.`,
         type: "booking",
-        link: `/bookings/${booking.id}`,
-        data: { bookingId: booking.id, reason: "no_show" },
+        link: `/bookings/${cancelled.id}`,
+        data: { bookingId: cancelled.id, reason: "no_show" },
       }).catch(() => undefined);
     } catch (e) {
       logger.error({ err: e, bookingId: booking.id }, "bookingSweeper: failed to auto-cancel");
     }
   }
 
-  logger.info({ count: stale.length }, "bookingSweeper: auto-cancelled stale accepted bookings");
-  return stale.length;
+  if (cancelledCount > 0) {
+    logger.info(
+      { count: cancelledCount, examined: candidates.length, timeZone: BOOKING_TIME_ZONE },
+      "bookingSweeper: auto-cancelled schedule-eligible no-show bookings",
+    );
+  }
+  return cancelledCount;
 }
 
 // Pending bookings that no provider has picked up after the grace period
@@ -135,12 +194,31 @@ async function sweepStalePendingBookings(): Promise<number> {
       )
     );
   if (stale.length === 0) return 0;
+  let expiredCount = 0;
   for (const booking of stale) {
     try {
-      await db
+      const scheduledAt = parseScheduledDateTime(
+        booking.scheduledDate,
+        booking.scheduledTime,
+        BOOKING_TIME_ZONE,
+      );
+      const createdAtMs = booking.createdAt ? new Date(booking.createdAt).getTime() : Date.now();
+      const expiryAtMs = Math.max(
+        Number.isFinite(createdAtMs) ? createdAtMs + PENDING_GRACE_MS : Date.now(),
+        scheduledAt ? scheduledAt.getTime() + PENDING_GRACE_MS : 0,
+      );
+      // Future scheduled work must remain available until after its scheduled
+      // start. The old created-at-only rule cancelled tomorrow's jobs in ten
+      // minutes even though the provider still had time to accept.
+      if (expiryAtMs > Date.now()) continue;
+
+      const [cancelled] = await db
         .update(bookingsTable)
         .set({ status: "cancelled", updatedAt: new Date() })
-        .where(eq(bookingsTable.id, booking.id));
+        .where(and(eq(bookingsTable.id, booking.id), eq(bookingsTable.status, "pending")))
+        .returning({ id: bookingsTable.id });
+      if (!cancelled) continue;
+      expiredCount += 1;
       const payload = { bookingId: booking.id, reason: "no_provider" };
       emitToUser(booking.customerId, "booking:cancelled", payload);
       notifyUser({
@@ -155,8 +233,10 @@ async function sweepStalePendingBookings(): Promise<number> {
       logger.error({ err: e, bookingId: booking.id }, "bookingSweeper: failed to expire pending booking");
     }
   }
-  logger.info({ count: stale.length }, "bookingSweeper: expired stale pending bookings");
-  return stale.length;
+  if (expiredCount > 0) {
+    logger.info({ count: expiredCount, examined: stale.length }, "bookingSweeper: expired stale pending bookings");
+  }
+  return expiredCount;
 }
 
 // 30 minutes after a job completes, ping the customer to leave a rating —
@@ -210,22 +290,77 @@ async function clearExpiredCooldowns(): Promise<number> {
   return 0;
 }
 
-// 60 minutes before a scheduled booking, send a reminder to both customer
-// and provider (stamped on the booking to prevent double-firing).
-const PRE_JOB_REMINDER_WINDOW_MS = 60 * 60 * 1000; // 1 hour ahead
-const PRE_JOB_REMINDER_MIN_MS = 25 * 60 * 1000;   // min 25 min ahead
+// Scheduled-job reminders are sent to both parties on the job day and again
+// five hours before start. Persisted stamps and conditional updates make these
+// safe across multiple API instances and restarts.
+const PRE_JOB_REMINDER_WINDOW_MS = 5 * 60 * 60 * 1000;
+const PRE_JOB_REMINDER_MIN_MS = 15 * 60 * 1000;
+const PRE_JOB_REMINDER_BATCH_SIZE = boundedIntegerFromEnv("PRE_JOB_REMINDER_BATCH_SIZE", 200, 1, 500);
 
-function parseScheduledDateTime(date: string, time: string): Date | null {
-  try {
-    // date: "2024-05-03", time: "10:00 AM" or "14:00"
-    const combined = `${date} ${time}`;
-    const d = new Date(combined);
-    if (!isNaN(d.getTime())) return d;
-    // fallback: 24h format
-    const d2 = new Date(`${date}T${time}`);
-    if (!isNaN(d2.getTime())) return d2;
-    return null;
-  } catch { return null; }
+function localDateKey(date: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+async function sweepScheduledDayReminders(): Promise<number> {
+  const now = new Date();
+  const today = localDateKey(now, BOOKING_TIME_ZONE);
+  const due = await db
+    .select()
+    .from(bookingsTable)
+    .where(and(
+      eq(bookingsTable.status, "accepted"),
+      isNull(bookingsTable.scheduledDayReminderSentAt),
+      eq(bookingsTable.scheduledDate, today),
+      isNotNull(bookingsTable.scheduledTime),
+    ))
+    .orderBy(asc(bookingsTable.scheduledTime))
+    .limit(PRE_JOB_REMINDER_BATCH_SIZE);
+
+  let sent = 0;
+  for (const booking of due) {
+    try {
+      const scheduledAt = parseScheduledDateTime(booking.scheduledDate || "", booking.scheduledTime || "");
+      if (!scheduledAt) continue;
+      const msUntil = scheduledAt.getTime() - now.getTime();
+      // Do not emit two reminders together when the first sweep happens inside
+      // the five-hour window; the five-hour reminder below is more useful.
+      if (msUntil <= PRE_JOB_REMINDER_WINDOW_MS) continue;
+      const claimed = await db.update(bookingsTable)
+        .set({ scheduledDayReminderSentAt: now })
+        .where(and(eq(bookingsTable.id, booking.id), isNull(bookingsTable.scheduledDayReminderSentAt)))
+        .returning({ id: bookingsTable.id });
+      if (!claimed.length) continue;
+
+      notifyUser({
+        userId: booking.customerId,
+        title: "Scheduled job today",
+        body: `${booking.providerName} is scheduled for ${booking.service} today at ${booking.scheduledTime}.`,
+        type: "booking",
+        link: `/bookings/${booking.id}`,
+        data: { bookingId: booking.id, reminder: "scheduled_day" },
+      }).catch(() => undefined);
+      notifyUser({
+        userId: booking.providerId,
+        title: "Scheduled job today",
+        body: `You have a ${booking.service} job today at ${booking.scheduledTime}, ${booking.address}.`,
+        type: "booking",
+        link: `/jobs/${booking.id}`,
+        data: { bookingId: booking.id, reminder: "scheduled_day" },
+      }).catch(() => undefined);
+      sent += 1;
+    } catch (error) {
+      logger.error({ err: error, bookingId: booking.id }, "bookingSweeper: scheduled-day reminder failed");
+    }
+  }
+  if (sent) logger.info({ count: sent }, "bookingSweeper: sent scheduled-day reminders");
+  return sent;
 }
 
 async function sweepPreJobReminders(): Promise<number> {
@@ -233,60 +368,50 @@ async function sweepPreJobReminders(): Promise<number> {
   const due = await db
     .select()
     .from(bookingsTable)
-    .where(
-      and(
-        eq(bookingsTable.status, "accepted"),
-        isNull(bookingsTable.preJobReminderSentAt),
-        isNotNull(bookingsTable.scheduledDate),
-        isNotNull(bookingsTable.scheduledTime),
-      )
-    );
-
-  if (due.length === 0) return 0;
+    .where(and(
+      eq(bookingsTable.status, "accepted"),
+      isNull(bookingsTable.preJobReminderSentAt),
+      isNotNull(bookingsTable.scheduledDate),
+      isNotNull(bookingsTable.scheduledTime),
+    ))
+    .orderBy(asc(bookingsTable.scheduledDate), asc(bookingsTable.scheduledTime))
+    .limit(PRE_JOB_REMINDER_BATCH_SIZE);
 
   let sent = 0;
   for (const booking of due) {
     try {
-      const dt = parseScheduledDateTime(
-        booking.scheduledDate || "",
-        booking.scheduledTime || "",
-      );
-      if (!dt) continue;
-
-      const msUntil = dt.getTime() - now.getTime();
+      const scheduledAt = parseScheduledDateTime(booking.scheduledDate || "", booking.scheduledTime || "");
+      if (!scheduledAt) continue;
+      const msUntil = scheduledAt.getTime() - now.getTime();
       if (msUntil < PRE_JOB_REMINDER_MIN_MS || msUntil > PRE_JOB_REMINDER_WINDOW_MS) continue;
-
-      await db
-        .update(bookingsTable)
+      const claimed = await db.update(bookingsTable)
         .set({ preJobReminderSentAt: now })
-        .where(eq(bookingsTable.id, booking.id));
+        .where(and(eq(bookingsTable.id, booking.id), isNull(bookingsTable.preJobReminderSentAt)))
+        .returning({ id: bookingsTable.id });
+      if (!claimed.length) continue;
 
-      const timeLabel = booking.scheduledTime || "";
       notifyUser({
         userId: booking.customerId,
-        title: "Upcoming booking reminder",
-        body: `${booking.providerName} is scheduled to arrive at ${timeLabel}. Be ready!`,
+        title: "Job starts within five hours",
+        body: `${booking.providerName} is scheduled for ${booking.service} at ${booking.scheduledTime}.`,
         type: "booking",
         link: `/bookings/${booking.id}`,
-        data: { bookingId: booking.id },
+        data: { bookingId: booking.id, reminder: "five_hours" },
       }).catch(() => undefined);
-
       notifyUser({
         userId: booking.providerId,
-        title: "Job reminder",
-        body: `You have a ${booking.service} job at ${timeLabel}. Head over to ${booking.address} on time!`,
+        title: "Job starts within five hours",
+        body: `${booking.service} is scheduled at ${booking.scheduledTime}. Review the route to ${booking.address}.`,
         type: "booking",
         link: `/jobs/${booking.id}`,
-        data: { bookingId: booking.id },
+        data: { bookingId: booking.id, reminder: "five_hours" },
       }).catch(() => undefined);
-
-      sent++;
-    } catch (e) {
-      logger.error({ err: e, bookingId: booking.id }, "bookingSweeper: pre-job reminder failed");
+      sent += 1;
+    } catch (error) {
+      logger.error({ err: error, bookingId: booking.id }, "bookingSweeper: five-hour reminder failed");
     }
   }
-
-  if (sent > 0) logger.info({ count: sent }, "bookingSweeper: sent pre-job reminders");
+  if (sent) logger.info({ count: sent }, "bookingSweeper: sent five-hour reminders");
   return sent;
 }
 
@@ -473,6 +598,7 @@ async function runAllSweeps(): Promise<void> {
     sweepStuckAcceptedBookings(),
     sweepStalePendingBookings(),
     sweepRatingReminders(),
+    sweepScheduledDayReminders(),
     sweepPreJobReminders(),
     clearExpiredCooldowns(),
     sweepExpiredPremiumPlans(),
@@ -501,6 +627,10 @@ export function bookingSweeperStats() {
   return {
     running: sweepRunning,
     intervalMs: SWEEP_INTERVAL_MS,
+    bookingTimeZone: BOOKING_TIME_ZONE,
+    noShowAutoCancelEnabled: NO_SHOW_AUTO_CANCEL_ENABLED,
+    noShowGraceMs: NO_SHOW_GRACE_MS,
+    noShowBatchSize: NO_SHOW_SWEEP_BATCH_SIZE,
     lastStartedAt: lastStartedAt?.toISOString() || null,
     lastCompletedAt: lastCompletedAt?.toISOString() || null,
     lastDurationMs,
@@ -527,4 +657,3 @@ export function startBookingSweeper(): NodeJS.Timeout {
   sweeperHandle = handle;
   return handle;
 }
-

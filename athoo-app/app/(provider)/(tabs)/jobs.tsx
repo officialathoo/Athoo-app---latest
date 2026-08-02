@@ -40,7 +40,7 @@ export default function ProviderJobsScreen() {
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { t, translate: tr } = useLang();
-  const { getMyBookings, loadBookings, isLoading } = useBookings();
+  const { getMyBookings, loadBookings, isLoading, hasMore, isLoadingMore, loadMoreBookings } = useBookings();
   const { getMyNegotiations } = useNegotiation();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -318,6 +318,19 @@ export default function ProviderJobsScreen() {
             />
           ))
         )}
+        {activeFilter !== "negotiations" && hasMore ? (
+          <Pressable
+            accessibilityRole="button"
+            disabled={isLoadingMore}
+            style={[styles.loadMoreButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+            onPress={() => void loadMoreBookings()}
+          >
+            <Icon name="chevrons-down" size={16} color={theme.colors.primary} />
+            <Text style={[styles.loadMoreText, { color: theme.colors.primary }]}>
+              {isLoadingMore ? tr("Loading older jobs...") : tr("Load older jobs")}
+            </Text>
+          </Pressable>
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -325,6 +338,8 @@ export default function ProviderJobsScreen() {
 
 const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
+  loadMoreButton: { minHeight: 48, borderWidth: 1, borderRadius: 14, marginTop: 12, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  loadMoreText: { fontSize: 14, fontWeight: "800" },
 
   header: {
     flexDirection: "row",

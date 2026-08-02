@@ -1,6 +1,7 @@
 import { queueStats } from "./queue";
 import { getMapConfigurationStatus, type MapProviderRuntimeOverrides } from "./mapConfiguration";
 import { getCallConfigurationStatus } from "./callConfiguration";
+import { getUploadScannerStatus } from "./uploadScanner";
 
 export type ReadinessIssue = { area: string; severity: "critical" | "high" | "medium"; message: string; fix: string };
 
@@ -15,6 +16,10 @@ export function productionReadinessSnapshot(mapOverrides: MapProviderRuntimeOver
   if (process.env.NODE_ENV === "production" && String(process.env.CORS_ORIGIN || "").trim() === "*") issues.push({ area: "security", severity: "critical", message: "CORS_ORIGIN cannot be wildcard in production", fix: "Set an explicit comma-separated admin/app origin allowlist." });
   if (process.env.NODE_ENV === "production" && ["local", "dev", "filesystem"].includes(String(process.env.STORAGE_PROVIDER || "").toLowerCase())) issues.push({ area: "storage", severity: "critical", message: "Local storage is not allowed in production", fix: "Configure a supported private S3-compatible or Google Cloud Storage provider." });
   if (!process.env.PUBLIC_OBJECT_SEARCH_PATHS) issues.push({ area: "storage", severity: "medium", message: "Public object prefix is using the default", fix: "Set PUBLIC_OBJECT_SEARCH_PATHS to explicit public-only prefixes." });
+  const uploadScanner = getUploadScannerStatus();
+  if (process.env.NODE_ENV === "production" && !uploadScanner.productionSafe) {
+    issues.push({ area: "upload-security", severity: "critical", message: "Malware scanning is not production-ready", fix: "Configure UPLOAD_SCAN_MODE=required, an authenticated HTTPS UPLOAD_SCANNER_URL, and UPLOAD_SCANNER_TOKEN." });
+  }
   if (String(process.env.QUEUE_PROVIDER || "postgres").toLowerCase() !== "postgres") issues.push({ area: "scaling", severity: "high", message: "Unsupported queue provider configured", fix: "Use QUEUE_PROVIDER=postgres for the built-in durable queue." });
   const callStatus = getCallConfigurationStatus();
   if (!callStatus.productionReady) issues.push({ area: "calls", severity: "high", message: callStatus.warning || "Production voice calling is not ready", fix: "Set valid TURN_URLS (or legacy TURN_URL), TURN_USERNAME, and TURN_CREDENTIAL for reliable calls." });

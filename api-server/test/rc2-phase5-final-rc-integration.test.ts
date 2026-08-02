@@ -48,12 +48,15 @@ test("health responses expose a safe release identity and deployment readiness",
   assert.match(storage, /getStorageConfigurationStatus/);
 });
 
-test("connected verification proves release identity, storage, OTP, maps, email, and CORS", () => {
+test("connected verification proves release identity, storage, malware scanning, OTP, maps, email, and CORS", () => {
   const verifier = read("scripts/tools/connected-runtime-verify.mjs");
   assert.match(verifier, /CONNECTED_EXPECTED_RELEASE_VERSION/);
   assert.match(verifier, /CONNECTED_EXPECTED_COMMIT_SHA/);
   assert.match(verifier, /CONNECTED_ADMIN_ORIGIN/);
   assert.match(verifier, /deepChecks\.storage\?\.configured/);
+  assert.match(verifier, /deepChecks\.uploadScanner\?\.productionSafe === true/);
+  assert.match(verifier, /upload malware scanner connectivity/);
+  assert.match(verifier, /eicarProbeRejected === true/);
   assert.match(verifier, /deepChecks\.otpDelivery\?\.configured/);
   assert.match(verifier, /phoneRegistrationConfigured/);
   assert.match(verifier, /CONNECTED_OTP_TEST_PHONE/);
@@ -88,7 +91,11 @@ test("release governance requires real Android, iOS, cross-role, theme, and soun
   assert.ok(ci.indexOf("pnpm/action-setup@v6") < ci.indexOf("cache: pnpm"), "pnpm must be installed before setup-node resolves the pnpm cache");
   assert.match(connectedWorkflow, /runtime:verify:connected/);
   assert.match(connectedWorkflow, /pnpm\/action-setup@v6/);
-  assert.match(connectedWorkflow, /package-manager-cache: false/);
+  assert.match(connectedWorkflow, /cache: pnpm/);
+  assert.match(connectedWorkflow, /cache-dependency-path: pnpm-lock\.yaml/);
+  assert.ok(connectedWorkflow.indexOf("pnpm/action-setup@v6") < connectedWorkflow.indexOf("cache: pnpm"), "pnpm must be installed before setup-node resolves the pnpm cache");
+  assert.match(connectedWorkflow, /CONNECTED_VERIFY_UPLOAD_SCANNER: "true"/);
+  assert.match(connectedWorkflow, /athoo-v2-connected-production-evidence/);
   assert.match(connectedWorkflow, /upload-artifact@v4/);
 });
 

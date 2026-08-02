@@ -25,9 +25,9 @@ export function ProviderMetricCard({ label, value, tone = "primary", testID }: P
       testID={testID}
       elevated={false}
       padding="sm"
-      style={{ flex: 1, minHeight: 74, backgroundColor: selected.background, borderColor: "transparent" }}
+      style={{ flex: 1, minHeight: 58, backgroundColor: selected.background, borderColor: "transparent" }}
     >
-      <View style={{ alignItems: "center", justifyContent: "center", flex: 1, gap: theme.spacing.xs }}>
+      <View style={{ alignItems: "center", justifyContent: "center", flex: 1, gap: 2 }}>
         <AppText variant="h3" style={{ color: selected.foreground }}>{value}</AppText>
         <AppText variant="caption" tone="secondary" align="center">{label}</AppText>
       </View>

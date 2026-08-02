@@ -30,16 +30,16 @@ test("available providers refresh location on activation and a bounded interval"
   assert.match(env, /^EXPO_PUBLIC_PROVIDER_LOCATION_SYNC_INTERVAL_MS=120000$/m);
 });
 
-test("active release metadata points to Phase 24.8 and remains NO-GO", () => {
+test("active release metadata points to Athoo App V2 and remains NO-GO", () => {
   const status = json("docs/qa/current-release-status.json");
   const connected = read("docs/runbooks/FINAL_CONNECTED_DEPLOYMENT.md");
   const launch = read("docs/runbooks/PRODUCTION_LAUNCH_RUNBOOK.md");
-  assert.equal(status.candidate, "ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip");
-  assert.equal(status.status, "SOURCE-VERIFIED-STRICT-DEVICE-EVIDENCE-PENDING");
+  assert.equal(status.candidate, "ATHOO_APP_V2_1_CONNECTED_CERTIFICATION_HARDENED.zip");
+  assert.equal(status.status, "V2.1-SOURCE-VERIFIED-CONNECTED-CERTIFICATION-HARDENED-EXTERNAL-EVIDENCE-PENDING");
   assert.match(status.launchDecision, /^NO-GO-/);
   assert.equal(status.externalVerification.connectedRuntime, "pending");
-  assert.match(connected, /ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY\.zip/);
-  assert.match(launch, /ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY\.zip/);
+  assert.match(connected, /ATHOO_APP_V2_1_CONNECTED_CERTIFICATION_HARDENED\.zip/);
+  assert.match(launch, /ATHOO_APP_V2_1_CONNECTED_CERTIFICATION_HARDENED\.zip/);
 });
 
 test("phase notes do not accumulate in the repository root", () => {

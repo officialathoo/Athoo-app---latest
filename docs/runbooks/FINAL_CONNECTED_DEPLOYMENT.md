@@ -1,6 +1,6 @@
 # Athoo Final Connected Deployment
 
-Use `ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip` as the only release baseline. Do not merge files from older ZIPs.
+Use `ATHOO_APP_V2_1_CONNECTED_CERTIFICATION_HARDENED.zip` as the only release baseline. Do not merge files from older ZIPs.
 
 ## 1. Certify the exact source
 
@@ -24,10 +24,10 @@ Commit the exact source and record the complete Git SHA and ZIP checksum:
 ```powershell
 git status --short
 git add .
-git commit -m "Athoo Phase 24.8 device acceptance integrity"
+git commit -m "Athoo App V2 source complete"
 git push origin main
 $Commit = git rev-parse HEAD
-Get-FileHash .\ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip -Algorithm SHA256
+Get-FileHash .\ATHOO_APP_V2_1_CONNECTED_CERTIFICATION_HARDENED.zip -Algorithm SHA256
 ```
 
 Use one release version and the same `$Commit` for Render, Vercel and EAS.
@@ -71,6 +71,9 @@ Configure Render from `.env.production.example`. Never commit actual credentials
 - TomTom or another configured map provider
 - TURN URLs, username and credential
 - Monitoring and escalation contacts
+- Authenticated HTTPS malware scanner (`UPLOAD_SCAN_MODE=required`, `UPLOAD_SCANNER_URL`, `UPLOAD_SCANNER_TOKEN`)
+- Upload quarantine maintenance and `UPLOAD_LEGACY_READ_POLICY=deny`
+- Invoice verification secret and token/IP rate limits
 - Release version, commit and build identity
 
 For the current single Render API instance use:
@@ -80,7 +83,9 @@ QUEUE_PROVIDER=postgres
 CACHE_PROVIDER=memory
 ```
 
-Do not scale to multiple API instances while using memory cache. Phase 24.8 verification rejects horizontal scaling unless the active cache reports `horizontalScaleSafe=true`.
+Do not scale to multiple API instances while using memory cache. Athoo App V2 verification rejects horizontal scaling unless the active cache reports `horizontalScaleSafe=true`.
+
+The external malware scanner is a required production dependency, not an optional UI feature. `/api/healthz/deep` must fail readiness when scanning is unsafe. Before enforcing `UPLOAD_LEGACY_READ_POLICY=deny`, inventory, scan and backfill all existing media into the verified-upload authorization records. Test real R2/GCS quarantine, locked snapshot, clean promotion, rejected deletion and stale-record cleanup.
 
 ## 4. Verify Neon before API rollout
 
@@ -95,7 +100,7 @@ pnpm db:integrity
 The expected latest migration is:
 
 ```text
-20260719_broadcast_delivery_configuration_integrity.sql
+20260802_athoo_v2_location_pagination_integrity.sql
 ```
 
 Do not start the updated API when migration verification or integrity checks fail.
@@ -149,6 +154,7 @@ This verifies:
 - TURN configuration returned to an authenticated provider
 - Policy centers and admin governance queues
 - Storage write/metadata/delete connectivity test
+- Real upload-scanner clean PNG acceptance and safe EICAR signature rejection
 - Map-provider connectivity test
 - SMTP transport and one real test email
 - One real phone-bound authentication OTP request
@@ -172,16 +178,16 @@ Fresh native builds are mandatory for notification sounds, Android channels, bio
 
 ## 8. Complete physical-device evidence
 
-Use the exact Phase 24.8 ZIP and the same release commit used by Render, Vercel and EAS:
+Use the exact Athoo App V2 ZIP and the same release commit used by Render, Vercel and EAS:
 
 ```powershell
-pnpm device:evidence:init -- --artifact .\ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip --release-version <release-version> --commit <full-git-sha>
+pnpm device:evidence:init -- --artifact .\ATHOO_APP_V2_1_CONNECTED_CERTIFICATION_HARDENED.zip --release-version <release-version> --commit <full-git-sha>
 ```
 
 Complete both build records and every case in `device-acceptance-evidence.json`, then validate:
 
 ```powershell
-pnpm device:evidence:validate -- .\device-acceptance-evidence.json .\ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip
+pnpm device:evidence:validate -- .\device-acceptance-evidence.json .\ATHOO_APP_V2_1_CONNECTED_CERTIFICATION_HARDENED.zip
 ```
 
 The validator binds the evidence to the active candidate name, real non-zero ZIP checksum, exact Git commit, both native build IDs and both physical devices. Cross-role cases must identify the Android and iPhone used. It rejects generic evidence such as “OK” or “Passed”, stale timestamps, missing cases, unknown cases and build/commit mismatches.

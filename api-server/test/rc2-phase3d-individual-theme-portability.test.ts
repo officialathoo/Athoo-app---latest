@@ -70,10 +70,13 @@ test("invoice branding and support destinations are centralized and portable", (
   const settings = read("athoo-app/context/SettingsContext.tsx");
   const profile = read("athoo-app/app/(customer)/(tabs)/profile.tsx");
 
-  for (const source of [customerInvoice, providerInvoice, bookingPdf]) {
-    assert.match(source, /invoiceConfig/);
+  for (const source of [customerInvoice, providerInvoice]) {
+    assert.match(source, /shareBookingInvoice/);
     assert.doesNotMatch(source, /support@athoo|@athoo_services|\+92\s*339/i);
   }
+  assert.match(bookingPdf, /invoiceConfig/);
+  assert.match(bookingPdf, /invoiceLogoDataUri/);
+  assert.doesNotMatch(bookingPdf, /support@athoo|@athoo_services|\+92\s*339/i);
   assert.match(invoiceConfig, /brandConfig\.displayName/);
   assert.match(invoiceConfig, /runtimeConfig\.support/);
   assert.match(settings, /platformName: brandConfig\.displayName/);

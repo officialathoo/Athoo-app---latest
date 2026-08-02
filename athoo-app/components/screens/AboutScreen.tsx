@@ -23,7 +23,7 @@ export function AboutScreen({ role }: { role: Role }) {
   const { translate: tr } = useLang();
   const { settings } = useSettings();
   const insets = useSafeAreaInsets();
-  const version = Constants.expoConfig?.version || "1.0.0";
+  const version = Constants.expoConfig?.version || "2.0.0";
   const accent = role === "provider" ? theme.colors.secondary : theme.colors.primary;
 
   const features = useMemo<Feature[]>(() => role === "provider" ? [

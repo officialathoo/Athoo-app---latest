@@ -1,5 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import { LinearGradient } from "expo-linear-gradient";
+import * as ExpoLocation from "expo-location";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
@@ -135,9 +136,11 @@ export default function NegotiateScreen() {
   const [selectedServiceSlug, setSelectedServiceSlug] = useState(serviceId || "");
   const [loadingProvider, setLoadingProvider] = useState(isCreateMode);
   const [offerPrice, setOfferPrice] = useState(providerRate ? String(providerRate) : "");
+  const [travelCharge, setTravelCharge] = useState("0");
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [selectedCounter, setSelectedCounter] = useState("");
+  const [selectedTravelCharge, setSelectedTravelCharge] = useState("0");
   const [actionLoading, setActionLoading] = useState(false);
   const [mediaAssets, setMediaAssets] = useState<any[]>([]);
   const [uploadingMedia, setUploadingMedia] = useState(false);
@@ -147,6 +150,15 @@ export default function NegotiateScreen() {
   const [address, setAddress] = useState("");
   const [addressLatitude, setAddressLatitude] = useState<number | null>(null);
   const [addressLongitude, setAddressLongitude] = useState<number | null>(null);
+  const [locationMeta, setLocationMeta] = useState<{
+    city: string;
+    area: string;
+    province?: string;
+    countryCode: string;
+    source: "current" | "search";
+    accuracy?: number | null;
+    confirmedAt: string;
+  } | null>(null);
   const [scheduledDate, setScheduledDate] = useState("");
   const [scheduledTime, setScheduledTime] = useState("");
   const [isGettingLocation, setIsGettingLocation] = useState(false);
@@ -163,10 +175,30 @@ export default function NegotiateScreen() {
         rationaleBody: "Athoo uses your location to fill the service address for this negotiation.",
       });
       if (!result.location) return;
-      const resolved = await reverseGeocode(result.location.latitude, result.location.longitude);
+      const [resolved, places] = await Promise.all([
+        reverseGeocode(result.location.latitude, result.location.longitude),
+        ExpoLocation.reverseGeocodeAsync({ latitude: result.location.latitude, longitude: result.location.longitude }).catch(() => []),
+      ]);
+      const place = places[0];
+      const city = place?.city || place?.subregion || place?.region || "";
+      const area = place?.district || place?.subregion || place?.name || place?.street || "";
+      const countryCode = place?.isoCountryCode?.trim().toUpperCase() || "";
+      if (!city.trim() || !area.trim() || !countryCode) {
+        showError("Confirm service area", "We found your GPS pin but could not confirm its city and area. Search the exact address instead.");
+        return;
+      }
       setAddressLatitude(result.location.latitude);
       setAddressLongitude(result.location.longitude);
-      setAddress(resolved || `${result.location.latitude.toFixed(5)}, ${result.location.longitude.toFixed(5)}`);
+      setLocationMeta({
+        city: city.trim(),
+        area: area.trim(),
+        province: place?.region?.trim() || undefined,
+        countryCode,
+        source: "current",
+        accuracy: result.location.accuracy ?? null,
+        confirmedAt: new Date().toISOString(),
+      });
+      setAddress(resolved || [place?.name, place?.street, area, city].filter(Boolean).join(", "));
     } catch {
       showError("Location Error", "Could not get your current location. Please type your address.");
     } finally {
@@ -289,17 +321,33 @@ export default function NegotiateScreen() {
 
       let latitude = addressLatitude;
       let longitude = addressLongitude;
-      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-        const matches = await searchAddress(address.trim(), null, 1);
-        const best = matches[0];
-        if (!best) {
-          throw new Error("Please select a valid service address or use your current location.");
+      let verifiedLocation = locationMeta;
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !verifiedLocation) {
+        const matches = await searchAddress(
+          address.trim(),
+          Number.isFinite(latitude) && Number.isFinite(longitude)
+            ? { latitude: latitude!, longitude: longitude! }
+            : null,
+          3,
+        );
+        const exact = matches.find((item) => item.city?.trim() && item.area?.trim() && item.countryCode?.trim());
+        if (!exact) {
+          throw new Error("Athoo could not verify the city and area for this address. Search the exact location or use your current location.");
         }
-        latitude = best.lat;
-        longitude = best.lng;
-        setAddressLatitude(best.lat);
-        setAddressLongitude(best.lng);
-        if (best.label) setAddress(best.label);
+        latitude = exact.lat;
+        longitude = exact.lng;
+        verifiedLocation = {
+          city: exact.city!.trim(),
+          area: exact.area!.trim(),
+          province: exact.province?.trim() || undefined,
+          countryCode: exact.countryCode!.trim().toUpperCase(),
+          source: "search",
+          confirmedAt: new Date().toISOString(),
+        };
+        setAddressLatitude(exact.lat);
+        setAddressLongitude(exact.lng);
+        setLocationMeta(verifiedLocation);
+        if (exact.label) setAddress(exact.label);
       }
 
       await createNegotiation({
@@ -307,9 +355,17 @@ export default function NegotiateScreen() {
         providerName: provider.name,
         service: resolvedServiceLabel,
         customerOffer: price,
+        travellingCharge: Math.max(0, parseInt(travelCharge || "0", 10) || 0),
         address: address.trim(),
         latitude: latitude!,
         longitude: longitude!,
+        locationCity: verifiedLocation.city,
+        locationArea: verifiedLocation.area,
+        locationProvince: verifiedLocation.province,
+        locationCountryCode: verifiedLocation.countryCode,
+        locationSource: verifiedLocation.source,
+        locationAccuracy: verifiedLocation.accuracy,
+        locationConfirmedAt: verifiedLocation.confirmedAt,
         scheduledDate: scheduledDate.trim(),
         scheduledTime: scheduledTime.trim(),
         mediaUrls,
@@ -373,9 +429,11 @@ export default function NegotiateScreen() {
         selectedNegotiation.id,
         amount,
         `My revised offer is Rs. ${amount}`,
-        user.name || "Customer"
+        user.name || "Customer",
+        Math.max(0, parseInt(selectedTravelCharge || "0", 10) || 0)
       );
       setSelectedCounter("");
+      setSelectedTravelCharge("0");
     } catch {
       showError("Failed", "Could not send counter offer.");
     } finally {
@@ -467,8 +525,9 @@ export default function NegotiateScreen() {
                     <View style={styles.amountBox}>
                       <Text style={styles.amountLabel}>Provider Counter</Text>
                       <Text style={[styles.amountValue, { color: theme.colors.secondary }] }>
-                        Rs. {selectedNegotiation.providerCounter}
+                        Rs. {selectedNegotiation.providerCounter} / hour
                       </Text>
+                      <Text style={styles.amountLabel}>Travel: Rs. {selectedNegotiation.providerTravellingCharge || 0}</Text>
                     </View>
                   ) : null}
                 </View>
@@ -481,6 +540,14 @@ export default function NegotiateScreen() {
                         placeholder="Send new counter offer"
                         value={selectedCounter}
                         onChangeText={(v) => setSelectedCounter(v.replace(/[^0-9]/g, ""))}
+                        keyboardType="numeric"
+                        placeholderTextColor={theme.colors.textMuted}
+                      />
+                      <TextInput
+                        style={styles.counterInputInline}
+                        placeholder="Travel charge"
+                        value={selectedTravelCharge}
+                        onChangeText={(v) => setSelectedTravelCharge(v.replace(/[^0-9]/g, ""))}
                         keyboardType="numeric"
                         placeholderTextColor={theme.colors.textMuted}
                       />
@@ -828,6 +895,19 @@ export default function NegotiateScreen() {
                     keyboardType="number-pad"
                   />
                 </View>
+                <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Travelling charge</Text>
+                <Text style={styles.helperText}>Use 0 when travel is included. This is separate from the hourly rate.</Text>
+                <View style={styles.priceInputWrapper}>
+                  <Text style={styles.pricePrefix}>Rs.</Text>
+                  <TextInput
+                    style={styles.priceInput}
+                    value={travelCharge}
+                    onChangeText={(v) => setTravelCharge(v.replace(/[^0-9]/g, ""))}
+                    placeholder="0"
+                    placeholderTextColor={theme.colors.textMuted}
+                    keyboardType="number-pad"
+                  />
+                </View>
               </View>
             </AnimatedCard>
 
@@ -1032,6 +1112,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     color: theme.colors.text,
+  },
+
+  helperText: {
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    lineHeight: 18,
   },
 
   // Step wizard styles

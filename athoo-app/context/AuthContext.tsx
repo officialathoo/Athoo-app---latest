@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
-import { api, setToken, setRefreshToken, clearToken, getToken, getRefreshToken, realtime, setUnauthorizedHandler } from "@/services/api";
+import { api, setToken, setRefreshToken, clearToken, getToken, getRefreshToken, restoreAccessToken, realtime, setUnauthorizedHandler } from "@/services/api";
 import { notificationService } from "@/services/NotificationService";
 import {
   authenticateWithBiometric,
@@ -135,6 +135,8 @@ function isUnauthorizedError(error: unknown): boolean {
 }
 
 function isTransientNetworkError(error: unknown): boolean {
+  const code = String((error as any)?.code || "");
+  if (code === "SESSION_REFRESH_UNAVAILABLE") return true;
   const message = String((error as any)?.message || error || "").toLowerCase();
   return (
     message.includes("network request failed") ||
@@ -178,8 +180,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loadUser = useCallback(async () => {
     try {
-      const token = await getToken();
-      if (!token) {
+      let token = await getToken();
+      const refreshToken = token ? null : await getRefreshToken();
+      if (!token && !refreshToken) {
         await removeSecureItem(SESSION_USER_CACHE_KEY).catch(() => undefined);
         setUser(null);
         setRequiresBiometric(false);
@@ -198,6 +201,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
         await disableBiometric();
+      }
+
+      if (!token) {
+        const restored = await restoreAccessToken();
+        if (restored.status === "renewed" && restored.token) {
+          token = restored.token;
+        } else if (restored.status === "unavailable") {
+          const cachedRaw = await getSecureItem(SESSION_USER_CACHE_KEY);
+          const cached = cachedRaw ? sanitizeUser(JSON.parse(cachedRaw)) : null;
+          if (cached?.id && cached?.phone) setUser(cached);
+          setRequiresBiometric(false);
+          return;
+        } else {
+          await clearToken();
+          await removeSecureItem(SESSION_USER_CACHE_KEY).catch(() => undefined);
+          await disableBiometric();
+          setUser(null);
+          setRequiresBiometric(false);
+          return;
+        }
       }
 
       const res = await api.getMe();
@@ -430,6 +453,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const rawUser = (me?.user as any) || (res.user as any) || null;
       if (!rawUser) return { success: false, isNewUser: false, error: "User profile could not be loaded" };
       const hydrated = await attachSavedProviders(sanitizeUser(rawUser));
+      await setSecureItem(SESSION_USER_CACHE_KEY, JSON.stringify(hydrated)).catch(() => undefined);
       setUser(hydrated);
       setRequiresBiometric(false);
       return { success: true, isNewUser: false, user: hydrated };
@@ -466,6 +490,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const rawUser = (me?.user as any) || (res.user as any) || null;
       if (!rawUser) return { success: false, error: "User profile could not be loaded" };
       const hydrated = await attachSavedProviders(sanitizeUser(rawUser));
+      await setSecureItem(SESSION_USER_CACHE_KEY, JSON.stringify(hydrated)).catch(() => undefined);
       setUser(hydrated);
       setRequiresBiometric(false);
       return { success: true, user: hydrated };
@@ -486,6 +511,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const rawUser = (me?.user as any) || (res.user as any) || null;
       if (!rawUser) return { success: false, error: "User profile could not be loaded" };
       const hydrated = await attachSavedProviders(sanitizeUser(rawUser));
+      await setSecureItem(SESSION_USER_CACHE_KEY, JSON.stringify(hydrated)).catch(() => undefined);
       setUser(hydrated);
       setRequiresBiometric(false);
       return { success: true, user: hydrated };
@@ -506,6 +532,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const rawUser = (me?.user as any) || (res.user as any) || null;
       if (!rawUser) return { success: false, error: "User profile could not be loaded" };
       const hydrated = await attachSavedProviders(sanitizeUser({ ...rawUser, savedProviders: [] }));
+      await setSecureItem(SESSION_USER_CACHE_KEY, JSON.stringify(hydrated)).catch(() => undefined);
       setUser(hydrated);
       setRequiresBiometric(false);
       return {
@@ -666,10 +693,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const result = await authenticateWithBiometric("Sign in to Athoo");
       if (!result.success) return { success: false, error: result.error || "Authentication cancelled or failed" };
 
-      const token = await getToken();
+      let token = await getToken();
       if (!token) {
-        await disableBiometric();
-        return { success: false, error: "Session expired. Please login again." };
+        const restored = await restoreAccessToken();
+        if (restored.status === "renewed" && restored.token) {
+          token = restored.token;
+        } else if (restored.status === "unavailable") {
+          return { success: false, error: "Your session is saved, but Athoo cannot reconnect yet. Please try again." };
+        } else {
+          await clearLocalSession(true);
+          return { success: false, error: "Session expired. Please login again." };
+        }
       }
       const res = await api.getMe();
       const rawUser = (res?.user as any) || null;
@@ -805,4 +839,3 @@ export function useAuth() {
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
 }
-

@@ -20,7 +20,7 @@ const CUSTOMER_FAQS: FAQ[] = [
   },
   {
     keywords: ["broadcast", "open request", "multiple providers", "send to all", "post job"],
-    answer: "With Broadcast Requests, you post a job to all available providers at once:\n\n1. From the Home screen, tap 'Broadcast'\n2. Describe your job and set your budget\n3. Multiple providers will send you their offers\n4. Compare offers and choose the best one\n5. Your selected provider starts the booking\n\nBroadcast is perfect for urgent or custom jobs where you want competitive offers!",
+    answer: "With Broadcast Requests, you post a job to nearby eligible providers at once:\n\n1. From the Home screen, tap 'Broadcast'\n2. Describe your job and set an hourly labor rate plus travel charge\n3. A provider who accepts your exact offer confirms the booking immediately\n4. If a provider counters, you can accept or reject that counter\n5. After one booking is confirmed, the request disappears for all other providers\n\nThere is no second provider acceptance after a price is agreed.",
   },
   {
     keywords: ["start otp", "arrival otp", "provider arrived", "confirm arrival", "otp to start"],
@@ -187,7 +187,7 @@ const PROVIDER_FAQS: FAQ[] = [
   },
   {
     keywords: ["broadcast", "broadcast job", "open request", "find jobs", "bid"],
-    answer: "Broadcast Jobs are open requests from customers:\n\n• When a customer broadcasts a job, you get notified instantly\n• View it in My Jobs → Broadcast Requests\n• See the job details, customer's budget, and location area\n• Send your offer price to compete with other providers\n• If the customer selects you, the booking is created\n\nBroadcast jobs are great for filling gaps in your schedule!",
+    answer: "Broadcast Jobs are open requests from customers:\n\n• When an eligible nearby customer broadcasts a job, you are notified\n• Accept the customer's exact hourly and travel offer to confirm the booking immediately\n• Or send a counter with your hourly rate and travel charge\n• If the customer rejects your counter, you may revise it within the offer limit\n• If the customer accepts your counter, the booking is confirmed automatically—no second acceptance\n• Once filled, the request disappears from every other provider's feed.",
   },
   {
     keywords: ["profile", "update profile", "edit profile", "services", "bio", "rate", "edit info"],

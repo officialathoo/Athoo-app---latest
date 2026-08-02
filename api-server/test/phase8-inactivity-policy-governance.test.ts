@@ -41,7 +41,7 @@ test("database migration stores lifecycle state and versioned bilingual policies
   assert.match(migration, /Permanent deletion is (?:intentionally )?never automatic/);
   assert.match(schema, /inactivityState: text\("inactivity_state"\)/);
   assert.match(schema, /policyDocumentsTable/);
-  assert.match(read("lib/db/src/migrations.ts"), /20260719_broadcast_delivery_configuration_integrity\.sql/);
+  assert.match(read("lib/db/src/migrations.ts"), /20260802_athoo_v2_location_pagination_integrity\.sql/);
 });
 
 test("admin inactivity queue supports audited review actions and exact notification routing", () => {

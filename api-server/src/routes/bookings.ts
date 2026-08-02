@@ -3,7 +3,7 @@ import { logger } from "../lib/logger";
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
 import { bookingsTable, negotiationsTable, serviceCategoriesTable, usersTable, invoicesTable } from "@workspace/db/schema";
-import { and, eq, inArray, desc, not, gte, lt, sql, isNull } from "drizzle-orm";
+import { and, eq, inArray, desc, not, gte, gt, lt, or, sql, isNull } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { getPlatformSettings } from "../lib/admin";
 import { emitToUser, emitToRole, type EventName } from "../lib/eventBus";
@@ -11,23 +11,30 @@ import { notifyUser } from "../lib/notifications";
 import { activeWorkHttpPayload, getCustomerActiveWorkBlock, getProviderActiveWorkBlock } from "../lib/businessRules";
 import { canTransitionBookingStatus, isBookingStatus, type BookingStatus } from "../domain/booking-status";
 import { ReviewSubmissionError, submitBookingReview } from "../domain/reviews";
-import { providerScheduleAllows, providerWithinRadius } from "../lib/providerAvailability";
+import { distanceKm, providerScheduleAllows, providerWithinRadius } from "../lib/providerAvailability";
+import { parseScheduledDateTime } from "../domain/booking-schedule";
+import { normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { isCleanOwnedUploadObjectPath } from "../lib/verifiedUploads";
+import { assertLocationInActiveServiceArea, locationColumns, LocationIntegrityError, parseCanonicalLocation } from "../lib/locationIntegrity";
 
 
-function parseScheduledDateTime(dateValue: unknown, timeValue: unknown): Date | null {
-  const date = String(dateValue || "").trim();
-  const time = String(timeValue || "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
-  const match = time.match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
-  if (!match) return null;
-  let hour = Number(match[1]);
-  const minute = Number(match[2]);
-  const ap = String(match[3] || "").toUpperCase();
-  if (ap === "PM" && hour < 12) hour += 12;
-  if (ap === "AM" && hour === 12) hour = 0;
-  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
-  const dt = new Date(`${date}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00`);
-  return Number.isFinite(dt.getTime()) ? dt : null;
+type BookingCursor = { updatedAt: string; id: string };
+
+function encodeBookingCursor(row: { updatedAt: Date | string | null; id: string }): string {
+  const updatedAt = row.updatedAt instanceof Date ? row.updatedAt.toISOString() : new Date(String(row.updatedAt || 0)).toISOString();
+  return Buffer.from(JSON.stringify({ updatedAt, id: row.id }), "utf8").toString("base64url");
+}
+
+function decodeBookingCursor(value: unknown): BookingCursor | null {
+  if (typeof value !== "string" || !value.trim() || value.length > 500) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as BookingCursor;
+    const date = new Date(parsed.updatedAt);
+    if (!parsed.id || parsed.id.length > 100 || Number.isNaN(date.getTime())) return null;
+    return { updatedAt: date.toISOString(), id: parsed.id };
+  } catch {
+    return null;
+  }
 }
 
 function validateFutureBookingDateTime(dateValue: unknown, timeValue: unknown, minMinutes = 20): string | null {
@@ -232,6 +239,9 @@ async function applyCompletionCommission(bookingId: string) {
         providerName: booking.providerName,
         service: booking.service,
         address: booking.address,
+        locationCity: booking.locationCity || null,
+        locationArea: booking.locationArea || null,
+        locationCountryCode: booking.locationCountryCode || null,
         scheduledDate: booking.scheduledDate,
         scheduledTime: booking.scheduledTime,
         subtotal: serviceCharge,
@@ -288,17 +298,57 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
     const role = req.user!.role;
-    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 100));
-    const offset = Math.max(0, Number(req.query.offset) || 0);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+    const offset = Math.min(10_000, Math.max(0, Number(req.query.offset) || 0));
+    const rawCursor = typeof req.query.cursor === "string" ? req.query.cursor : "";
+    const cursor = rawCursor ? decodeBookingCursor(rawCursor) : null;
+    if (rawCursor && !cursor) {
+      res.status(400).json({ error: "Invalid booking cursor", code: "INVALID_CURSOR" });
+      return;
+    }
 
-    const bookings = role === "customer"
-      ? await db.select().from(bookingsTable).where(eq(bookingsTable.customerId, userId)).orderBy(desc(bookingsTable.createdAt)).limit(limit).offset(offset)
+    const rawUpdatedSince = typeof req.query.updatedSince === "string" ? req.query.updatedSince.trim() : "";
+    const updatedSince = rawUpdatedSince ? new Date(rawUpdatedSince) : null;
+    if (updatedSince && (Number.isNaN(updatedSince.getTime()) || updatedSince.getTime() > Date.now() + 5 * 60 * 1000)) {
+      res.status(400).json({ error: "Invalid updatedSince value", code: "INVALID_UPDATED_SINCE" });
+      return;
+    }
+
+    const ownerCondition = role === "customer"
+      ? eq(bookingsTable.customerId, userId)
       : role === "provider"
-      ? await db.select().from(bookingsTable).where(eq(bookingsTable.providerId, userId)).orderBy(desc(bookingsTable.createdAt)).limit(limit).offset(offset)
-      : await db.select().from(bookingsTable).orderBy(desc(bookingsTable.createdAt)).limit(limit).offset(offset);
-
+        ? eq(bookingsTable.providerId, userId)
+        : undefined;
+    const filters: any[] = [];
+    if (ownerCondition) filters.push(ownerCondition);
+    if (updatedSince) filters.push(gt(bookingsTable.updatedAt, updatedSince));
+    if (cursor) {
+      const cursorDate = new Date(cursor.updatedAt);
+      filters.push(or(
+        lt(bookingsTable.updatedAt, cursorDate),
+        and(eq(bookingsTable.updatedAt, cursorDate), lt(bookingsTable.id, cursor.id)),
+      )!);
+    }
+    const whereCondition = filters.length ? and(...filters) : undefined;
+    const query = db
+      .select()
+      .from(bookingsTable)
+      .where(whereCondition)
+      .orderBy(desc(bookingsTable.updatedAt), desc(bookingsTable.id))
+      .limit(limit + 1);
+    const rows = offset > 0 && !cursor && !updatedSince ? await query.offset(offset) : await query;
+    const hasMore = rows.length > limit;
+    const bookings = rows.slice(0, limit);
     const enriched = await enrichBookings(bookings, role, userId);
-    res.json({ bookings: enriched, limit, offset, hasMore: bookings.length === limit });
+    const last = bookings[bookings.length - 1];
+    res.json({
+      bookings: enriched,
+      limit,
+      offset: offset > 0 && !cursor && !updatedSince ? offset : 0,
+      hasMore,
+      nextCursor: hasMore && last ? encodeBookingCursor(last) : null,
+      serverTime: new Date().toISOString(),
+    });
   } catch (e) {
     logger.error({ err: e }, "bookings list error");
     res.status(500).json({ error: "Failed to load bookings" });
@@ -383,6 +433,23 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       return;
     }
 
+    const normalizedAttachment = normalizeStoredObjectPath(attachment) || null;
+    const normalizedVideoUrl = normalizeStoredObjectPath(videoUrl) || null;
+    if (attachment && !normalizedAttachment) {
+      res.status(400).json({ error: "Invalid booking attachment" });
+      return;
+    }
+    if (videoUrl && !normalizedVideoUrl) {
+      res.status(400).json({ error: "Invalid booking video" });
+      return;
+    }
+    const bookingMedia = [normalizedAttachment, normalizedVideoUrl].filter((value): value is string => Boolean(value));
+    const bookingMediaClean = await Promise.all(bookingMedia.map((value) => isCleanOwnedUploadObjectPath(value, userId, ["shared"])));
+    if (bookingMediaClean.some((clean) => !clean)) {
+      res.status(400).json({ error: "Booking media must pass Athoo security scanning before use" });
+      return;
+    }
+
     const activeBlock = await getCustomerActiveWorkBlock(userId);
     if (activeBlock.blocked) {
       res.status(409).json(activeWorkHttpPayload(activeBlock));
@@ -392,13 +459,18 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
     // Load platform settings once for all policy enforcement below
     const settings = await getPlatformSettings();
 
-    // Require customer GPS coordinates — enforced server-side regardless of client
-    const parsedPickedLat = toNumber(pickedLat) ?? toNumber(customerLat) ?? toNumber(latitude);
-    const parsedPickedLng = toNumber(pickedLng) ?? toNumber(customerLng) ?? toNumber(longitude);
-    if (parsedPickedLat === null || parsedPickedLng === null) {
-      res.status(400).json({ error: "Your location is required to create a booking. Please enable location access in your app settings." });
-      return;
-    }
+    // V2 canonical location snapshot. Free-text addresses are not accepted by
+    // themselves because provider eligibility, maps and arrival checks depend
+    // on the confirmed city/area and exact pin.
+    const canonicalLocation = parseCanonicalLocation({
+      ...req.body,
+      address,
+      pickedLat: pickedLat ?? customerLat ?? latitude,
+      pickedLng: pickedLng ?? customerLng ?? longitude,
+    });
+    await assertLocationInActiveServiceArea(canonicalLocation);
+    const parsedPickedLat = canonicalLocation.latitude;
+    const parsedPickedLng = canonicalLocation.longitude;
 
     // Professional schedule validation: no past jobs and no immediate accidental bookings.
     // Server-side enforcement is mandatory because frontend date pickers can be bypassed.
@@ -510,9 +582,9 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       service: String(service).trim(),
       serviceIcon: serviceIcon || "tool",
       description: description || null,
-      attachment: attachment || null,
-      videoUrl: typeof videoUrl === "string" && videoUrl.length > 0 ? videoUrl : null,
-      address: String(address).trim(),
+      attachment: normalizedAttachment,
+      videoUrl: normalizedVideoUrl,
+      ...locationColumns(canonicalLocation),
       scheduledDate: String(scheduledDate),
       scheduledTime: String(scheduledTime),
       status: "pending",
@@ -578,6 +650,10 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json({ booking: sanitizeBookingForViewer(createdBooking as any, role, userId), duplicate: false });
   } catch (e) {
+    if (e instanceof LocationIntegrityError) {
+      res.status(e.status).json({ error: e.message, code: e.code });
+      return;
+    }
     logger.error({ err: e }, "booking create error");
     res.status(500).json({ error: "Failed to create booking" });
   }
@@ -872,8 +948,45 @@ router.post("/:id/arrived", requireAuth, async (req: AuthRequest, res: Response)
       return;
     }
 
+    const providerLat = toNumber(req.body?.latitude ?? req.body?.providerLat);
+    const providerLng = toNumber(req.body?.longitude ?? req.body?.providerLng);
+    const providerAccuracy = toNumber(req.body?.accuracy ?? req.body?.providerAccuracy);
+    const jobLat = toNumber(booking.customerLat ?? booking.pickedLat);
+    const jobLng = toNumber(booking.customerLng ?? booking.pickedLng);
+    const arrivalRadiusKm = Math.max(0.1, Math.min(5, Number(process.env.BOOKING_ARRIVAL_RADIUS_KM || 1)));
+    const maxArrivalAccuracyMeters = Math.max(25, Math.min(1000, Number(process.env.BOOKING_ARRIVAL_MAX_ACCURACY_METERS || 250)));
+    if (providerLat == null || providerLng == null) {
+      res.status(400).json({ error: "A fresh provider GPS location is required to mark arrival", code: "ARRIVAL_LOCATION_REQUIRED" });
+      return;
+    }
+    if (providerAccuracy != null && providerAccuracy > maxArrivalAccuracyMeters) {
+      res.status(409).json({ error: "GPS accuracy is too low. Move outdoors, enable precise location, and try again.", code: "ARRIVAL_LOCATION_INACCURATE" });
+      return;
+    }
+    if (jobLat == null || jobLng == null) {
+      res.status(409).json({ error: "The customer job pin is missing. Ask the customer to update the job location before arrival.", code: "JOB_LOCATION_REQUIRED" });
+      return;
+    }
+    const arrivalDistanceKm = distanceKm(providerLat, providerLng, jobLat, jobLng);
+    if (arrivalDistanceKm > arrivalRadiusKm) {
+      res.status(409).json({
+        error: `You can mark arrival only within ${arrivalRadiusKm} km of the customer job pin. You are about ${arrivalDistanceKm.toFixed(1)} km away.`,
+        code: "OUTSIDE_ARRIVAL_RADIUS",
+        distanceKm: Math.round(arrivalDistanceKm * 10) / 10,
+        allowedRadiusKm: arrivalRadiusKm,
+      });
+      return;
+    }
+
     const [updated] = await db.update(bookingsTable)
-      .set({ providerArrivedAt: new Date(), updatedAt: new Date() })
+      .set({
+        providerArrivedAt: new Date(),
+        providerLat,
+        providerLng,
+        providerAccuracy,
+        providerUpdatedAt: new Date(),
+        updatedAt: new Date(),
+      })
       .where(and(
         eq(bookingsTable.id, req.params.id as string),
         isNull(bookingsTable.providerArrivedAt),
@@ -1388,6 +1501,16 @@ router.post("/:id/counter", requireAuth, async (req: AuthRequest, res: Response)
       status: "provider_counter",
       bookingId: booking.id,
       address: booking.address,
+      latitude: booking.pickedLat ?? booking.customerLat,
+      longitude: booking.pickedLng ?? booking.customerLng,
+      locationCity: booking.locationCity,
+      locationArea: booking.locationArea,
+      locationProvince: booking.locationProvince,
+      locationCountryCode: booking.locationCountryCode,
+      locationSource: booking.locationSource,
+      locationAccuracy: booking.locationAccuracy,
+      locationConfirmedAt: booking.locationConfirmedAt,
+      locationVerifiedAt: booking.locationVerifiedAt,
       scheduledDate: booking.scheduledDate,
       scheduledTime: booking.scheduledTime,
       expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5-min window
@@ -1412,4 +1535,3 @@ router.post("/:id/counter", requireAuth, async (req: AuthRequest, res: Response)
 });
 
 export default router;
-

@@ -1,6 +1,6 @@
 # Athoo Android/iOS Device Acceptance Runbook
 
-This runbook validates the exact Phase 24.8 candidate on one physical Android phone and one physical iPhone. Do not reuse evidence from an older ZIP, commit, EAS build, Render deploy or Vercel deploy.
+This runbook validates the exact Athoo App V2 candidate on one physical Android phone and one physical iPhone. Do not reuse evidence from an older ZIP, commit, EAS build, Render deploy or Vercel deploy.
 
 ## 1. Build preparation
 
@@ -22,7 +22,7 @@ Record each EAS build ID, artifact URL, creation time and source commit. Use ded
 ## 2. Initialize evidence from the exact ZIP
 
 ```powershell
-pnpm device:evidence:init -- --artifact .\ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip --release-version <release-version> --commit <full-git-sha>
+pnpm device:evidence:init -- --artifact .\ATHOO_APP_V2_1_CONNECTED_CERTIFICATION_HARDENED.zip --release-version <release-version> --commit <full-git-sha>
 ```
 
 This computes the ZIP checksum and creates every required Android, iOS and cross-role evidence record. Do not delete cases or rename IDs.
@@ -120,7 +120,7 @@ For every completed, failed or blocked case record:
 Validate:
 
 ```powershell
-pnpm device:evidence:validate -- .\device-acceptance-evidence.json .\ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip
+pnpm device:evidence:validate -- .\device-acceptance-evidence.json .\ATHOO_APP_V2_1_CONNECTED_CERTIFICATION_HARDENED.zip
 ```
 
 The command returns exit code 0 only when every case passes. Pending evidence returns code 3. Failed or blocked evidence returns code 1. Invalid or mismatched evidence returns code 2.

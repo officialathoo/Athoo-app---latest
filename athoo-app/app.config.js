@@ -129,7 +129,7 @@ const appScheme = readEnv(
 
 const appVersion = readEnv(
   "APP_VERSION",
-  "1.0.0",
+  "2.0.0",
 );
 
 const expoOwner = readEnv(
@@ -510,13 +510,9 @@ const extra = {
 
   RELEASE_IDENTITY: {
     version: releaseVersion,
+    commitSha: releaseCommitSha || null,
+    buildId: releaseBuildId || null,
     environment: appEnvironment,
-    ...(typeof releaseCommitSha === "string" && releaseCommitSha.trim()
-      ? { commitSha: releaseCommitSha.trim() }
-      : {}),
-    ...(typeof releaseBuildId === "string" && releaseBuildId.trim()
-      ? { buildId: releaseBuildId.trim() }
-      : {}),
   },
 
   API_BASE_URL: apiBaseUrl,
@@ -537,6 +533,16 @@ const extra = {
 
   SUPPORT_FACEBOOK_URL: readEnv(
     "EXPO_PUBLIC_SUPPORT_FACEBOOK_URL",
+  ),
+
+  SUPPORT_X_URL: readEnv(
+    "EXPO_PUBLIC_SUPPORT_X_URL",
+    "https://x.com/athoo_services",
+  ),
+
+  WEBSITE_URL: readEnv(
+    "EXPO_PUBLIC_WEBSITE_URL",
+    "https://athoo.pk",
   ),
 
   SUPPORT_EMAIL: readEnv(

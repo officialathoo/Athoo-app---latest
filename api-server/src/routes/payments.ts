@@ -1,4 +1,5 @@
-import { isOwnedUploadObjectPath, normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { isCleanOwnedUploadObjectPath } from "../lib/verifiedUploads";
 import { Router } from "express";
 import { logger } from "../lib/logger";
 import crypto from "crypto";
@@ -78,7 +79,8 @@ router.post("/", async (req: AuthRequest, res) => {
     if (!accountId) return res.status(400).json({ error: "Payment account is required" });
     if (!reference || reference.length > 120) return res.status(400).json({ error: "Transaction reference is required" });
     if (!screenshotUrl) return res.status(400).json({ error: "Payment screenshot is required" });
-    if (!isOwnedUploadObjectPath(screenshotUrl, providerId, ["private"])) return res.status(400).json({ error: "Payment screenshot must be uploaded through your private Athoo storage" });
+    // Replaces isOwnedUploadObjectPath(screenshotUrl, providerId, ["private"]) with owner + clean-scan enforcement.
+    if (!(await isCleanOwnedUploadObjectPath(screenshotUrl, providerId, ["private"]))) return res.status(400).json({ error: "Payment screenshot must be uploaded through your private Athoo storage and pass security scanning before use" });
     if (note && note.length > 500) return res.status(400).json({ error: "Note must be 500 characters or fewer" });
 
     const account = await db.query.paymentAccountsTable.findFirst({ where: and(eq(paymentAccountsTable.id, accountId), eq(paymentAccountsTable.isActive, true)) });
@@ -383,4 +385,3 @@ adminRouter.post("/commission/:id/reject", requirePermission("finance.write"), a
 
 export { adminRouter as paymentsAdminRouter };
 export default router;
-

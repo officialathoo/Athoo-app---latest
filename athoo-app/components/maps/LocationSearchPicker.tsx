@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as ExpoLocation from "expo-location";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -29,10 +30,13 @@ export type LocationSelection = Coordinate & {
   primary?: string;
   secondary?: string;
   city?: string;
+  area?: string;
   province?: string;
+  countryCode?: string;
   postcode?: string;
   source: "search" | "current" | "saved" | "recent" | "map";
   accuracy?: number | null;
+  confirmedAt?: string;
 };
 
 export type SavedLocationOption = {
@@ -41,6 +45,13 @@ export type SavedLocationOption = {
   address: string;
   latitude?: number | null;
   longitude?: number | null;
+  locationCity?: string | null;
+  locationArea?: string | null;
+  locationProvince?: string | null;
+  locationCountryCode?: string | null;
+  locationSource?: string | null;
+  locationAccuracy?: number | null;
+  locationConfirmedAt?: string | null;
 };
 
 type Props = {
@@ -155,8 +166,9 @@ export function LocationSearchPicker({
   );
 
   const commit = useCallback((selection: LocationSelection) => {
-    void saveRecent(selection);
-    onSelect(selection);
+    const confirmedSelection = { ...selection, confirmedAt: new Date().toISOString() };
+    void saveRecent(confirmedSelection);
+    onSelect(confirmedSelection);
     onClose();
   }, [onClose, onSelect]);
 
@@ -177,12 +189,27 @@ export function LocationSearchPicker({
         setMessage(tr("We could not get an accurate location. Search for your address or place the pin on the map."));
         return;
       }
-      const address = await reverseGeocode(result.location.latitude, result.location.longitude);
+      const [address, deviceResults] = await Promise.all([
+        reverseGeocode(result.location.latitude, result.location.longitude),
+        ExpoLocation.reverseGeocodeAsync({ latitude: result.location.latitude, longitude: result.location.longitude }).catch(() => []),
+      ]);
+      const deviceAddress = deviceResults[0];
+      const city = deviceAddress?.city || deviceAddress?.subregion || deviceAddress?.region || undefined;
+      const area = deviceAddress?.district || deviceAddress?.subregion || deviceAddress?.name || deviceAddress?.street || undefined;
+      if (!city || !area) {
+        setMessage(tr("We found your pin but could not confirm its city and area. Search for the exact address or choose it on the map."));
+        return;
+      }
       commit({
         latitude: result.location.latitude,
         longitude: result.location.longitude,
-        address: address || `${result.location.latitude.toFixed(5)}, ${result.location.longitude.toFixed(5)}`,
+        address: address || [deviceAddress?.name, deviceAddress?.street, area, city].filter(Boolean).join(", "),
         primary: address || tr("Current location"),
+        city,
+        area,
+        province: deviceAddress?.region || undefined,
+        countryCode: deviceAddress?.isoCountryCode?.toUpperCase() || undefined,
+        postcode: deviceAddress?.postalCode || undefined,
         source: "current",
         accuracy: result.location.accuracy,
       });
@@ -204,7 +231,9 @@ export function LocationSearchPicker({
         primary: item.primary,
         secondary: item.secondary,
         city: item.city,
+        area: item.area,
         province: item.province,
+        countryCode: item.countryCode,
         postcode: item.postcode,
         source: "search",
       })}
@@ -324,10 +353,24 @@ export function LocationSearchPicker({
               const longitude = Number(source.longitude);
               const label = "label" in source ? source.label : tr("Recent location");
               const address = source.address;
+              const savedSource = isSaved ? source as SavedLocationOption : null;
+              const recentSource = isSaved ? null : source as RecentLocation;
               return (
                 <Pressable
                   accessibilityRole="button"
-                  onPress={() => commit({ latitude, longitude, address, primary: label, source: isSaved ? "saved" : "recent" })}
+                  onPress={() => commit({
+                    latitude,
+                    longitude,
+                    address,
+                    primary: label,
+                    city: savedSource?.locationCity || recentSource?.city || undefined,
+                    area: savedSource?.locationArea || recentSource?.area || undefined,
+                    province: savedSource?.locationProvince || recentSource?.province || undefined,
+                    countryCode: savedSource?.locationCountryCode || recentSource?.countryCode || undefined,
+                    source: isSaved ? "saved" : "recent",
+                    accuracy: savedSource?.locationAccuracy ?? recentSource?.accuracy ?? undefined,
+                    confirmedAt: savedSource?.locationConfirmedAt || recentSource?.confirmedAt || undefined,
+                  })}
                   style={({ pressed }) => [styles.resultRow, { borderBottomColor: theme.colors.border, backgroundColor: pressed ? theme.colors.surfaceAlt : theme.colors.surface }]}
                 >
                   <View style={[styles.resultIcon, { backgroundColor: theme.colors.infoSoft }]}> 

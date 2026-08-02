@@ -1,24 +1,34 @@
-# Athoo Phase 24.8 Device Acceptance Integrity Candidate
+# Athoo App V2.1 — Connected-Certification Hardened Candidate
 
-This cumulative package contains the Athoo mobile application, API, admin panel, shared libraries, database migrations and release-engineering controls.
+This repository is the cumulative Athoo App V2.1 baseline. It preserves the complete V2 application and strengthens the connected release path so the exact source, database, storage, map, email, OTP and malware-scanner evidence can be verified from one release identity.
 
 ## Workspaces
 
-- `api-server/` — backend API and provider abstraction layers
-- `admin-panel/` — administration panel
+- `api-server/` — authenticated API, authorization, bookings, realtime events, secure uploads, invoices and provider abstractions
+- `admin-panel/` — operational administration panel
 - `athoo-app/` — Expo/React Native customer and provider application
-- `lib/` — shared packages and database schema
-- `scripts/` — validation, database, security, connected-runtime and release-decision tooling
-- `sql/` and `deploy/` — database and deployment resources
+- `lib/` — shared API and database packages
+- `scripts/` — database, validation, security and release tooling
+- `deploy/` and `sql/` — ordered migrations and deployment resources
 - `.maestro/` — mobile smoke-test flows
 
-## Configuration-first rule
+## V2 source position
 
-External providers, endpoints, credentials, branding, limits and deployment-specific behavior remain configurable. Secrets belong in deployment secret managers, never in the mobile app, admin bundle, Git history or public ZIPs.
+- Media is quarantined, locked, content-inspected, externally malware-scanned and promoted only after a clean result.
+- Protected media requires entity-level owner, participant, eligible-provider or administrator authorization.
+- Account deletion and temporary deactivation require password or verified email/mobile OTP step-up.
+- Broadcast, direct and negotiated jobs use a single final acceptance and atomic winner selection.
+- Scheduled jobs use schedule-aware expiry and reminders; arrival uses a configurable GPS geofence.
+- Negotiations preserve media, canonical location, hourly charges and travelling charges into the booking.
+- Invoices use Athoo branding and signed non-PII QR verification.
+- Booking history uses bounded cursor pagination, immediate sanitized cache hydration and silent delta refresh.
+- Every new booking, broadcast, negotiation and saved address requires one canonical location snapshot: address, city, area, province, ISO country code, coordinates, source, accuracy and confirmation time.
+- Default service-area seed supports all Pakistani provinces and territories, while administrators retain runtime control over active regions, cities and areas.
+- Stage 24/Phase 25 provider-neutral maps, storage, email, push, calls, notifications, sessions and device-evidence controls remain active.
+- Connected production verification now validates a harmless PNG through the real malware scanner and requires rejection of the safe EICAR antivirus test signature.
+- The connected GitHub workflow installs the locked pnpm version before enabling dependency caching and uploads evidence under the active V2 release name.
 
-Current documentation is indexed in `docs/README.md`. Provider contracts are under `docs/architecture/`, and production procedures are under `docs/runbooks/`.
-
-## Local source certification
+## Local source verification
 
 ```powershell
 corepack enable
@@ -33,19 +43,15 @@ pnpm mobile:export
 
 ## Connected certification
 
-Phase 24.8 carries forward all Phase 24.7 broadcast lifecycle, session, map, biometric, UI, call-transport, fresh-location and notification self-healing fixes. It hardens release acceptance so the exact ZIP, Git commit, Android build and iOS build are bound to one evidence set. Every originally reported defect now has an explicit Android, iOS or cross-role acceptance case, and the final RC2 decision cannot return GO without a passed strict device-evidence summary.
+Use `ATHOO_APP_V2_1_CONNECTED_CERTIFICATION_HARDENED.zip` as the only active candidate and follow:
 
-Follow:
-
-- `docs/archive/development-history/ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY.md`
-- `docs/archive/development-history/ATHOO_PHASE24_7_BROADCAST_LIFECYCLE_INTEGRITY.md`
-- `docs/archive/development-history/ATHOO_PHASE24_6_LOCATION_NOTIFICATION_SELF_HEALING.md`
-- `docs/archive/development-history/ATHOO_PHASE24_5_CALL_TRANSPORT_GATING.md`
-- `docs/archive/development-history/ATHOO_PHASE24_4_FINAL_SOURCE_AUDIT.md`
+- `docs/archive/development-history/ATHOO_APP_V2_SOURCE_COMPLETION.md`
+- `docs/archive/development-history/ATHOO_APP_V2_1_CONNECTED_CERTIFICATION_HARDENING.md`
 - `docs/runbooks/FINAL_CONNECTED_DEPLOYMENT.md`
-- `docs/runbooks/MOBILE_BETA_RELEASE_RUNBOOK.md`
+- `docs/runbooks/PRODUCTION_LAUNCH_RUNBOOK.md`
+- `docs/runbooks/DEVICE_ACCEPTANCE_RUNBOOK.md`
 - `docs/qa/device-acceptance-checklist.json`
 - `docs/qa/device-acceptance-evidence-template.json`
 - `docs/qa/rc2-evidence-template.json`
 
-A production launch is allowed only after connected, device, load and security evidence is complete and `pnpm rc2:decision` returns `GO`.
+“Source verified” does not mean “production certified.” Launch remains prohibited until clean dependency-backed typecheck/builds, Neon migration rehearsal, real storage and malware-scanner probes, legacy-media remediation, exact Android/iPhone evidence, load/recovery/security testing and the final release decision all pass.

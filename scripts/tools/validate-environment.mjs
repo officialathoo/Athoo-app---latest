@@ -2,17 +2,24 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-const envPath = path.resolve(process.argv[2] || ".env");
-const text = await fs.readFile(envPath, "utf8").catch(() => { throw new Error(`Environment file not found: ${envPath}`); });
+const useProcessEnvironment = process.argv[2] === "--process";
+const envPath = useProcessEnvironment ? "process.env" : path.resolve(process.argv[2] || ".env");
 const values = new Map();
 const duplicates = new Set();
-for (const [index, raw] of text.split(/\r?\n/).entries()) {
-  const line = raw.trim();
-  if (!line || line.startsWith("#")) continue;
-  const match = line.match(/^([A-Z][A-Z0-9_]*)=(.*)$/);
-  if (!match) throw new Error(`Invalid environment line ${index + 1}: ${raw}`);
-  if (values.has(match[1])) duplicates.add(match[1]);
-  values.set(match[1], match[2].trim().replace(/^['"]|['"]$/g, ""));
+if (useProcessEnvironment) {
+  for (const [key, value] of Object.entries(process.env)) {
+    if (/^[A-Z][A-Z0-9_]*$/.test(key) && typeof value === "string") values.set(key, value.trim());
+  }
+} else {
+  const text = await fs.readFile(envPath, "utf8").catch(() => { throw new Error(`Environment file not found: ${envPath}`); });
+  for (const [index, raw] of text.split(/\r?\n/).entries()) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const match = line.match(/^([A-Z][A-Z0-9_]*)=(.*)$/);
+    if (!match) throw new Error(`Invalid environment line ${index + 1}: ${raw}`);
+    if (values.has(match[1])) duplicates.add(match[1]);
+    values.set(match[1], match[2].trim().replace(/^['"]|['"]$/g, ""));
+  }
 }
 
 const errors = [];
@@ -26,6 +33,10 @@ for (const key of duplicates) errors.push(`${key} is defined more than once`);
 for (const key of ["JWT_SECRET", "REFRESH_TOKEN_SECRET", "SESSION_SECRET"]) {
   const value = values.get(key) || "";
   if (value.length < 32 || /CHANGE_ME|example|password/i.test(value)) errors.push(`${key} must be a non-placeholder secret of at least 32 characters`);
+}
+const invoiceVerificationSecret = values.get("INVOICE_VERIFICATION_SECRET") || "";
+if (invoiceVerificationSecret.length < 32 || /CHANGE_ME|REPLACE_WITH|example|password/i.test(invoiceVerificationSecret)) {
+  errors.push("INVOICE_VERIFICATION_SECRET must be a non-placeholder secret of at least 32 characters");
 }
 if (values.get("NODE_ENV") !== "production" && values.get("NODE_ENV") !== "staging") errors.push("NODE_ENV must be production or staging for deployment validation");
 for (const key of ["API_BASE_URL", "ADMIN_BASE_URL"]) {
@@ -80,6 +91,24 @@ if (storageProvider === "gcs") {
   if (!bucket) errors.push("S3-compatible storage requires STORAGE_S3_BUCKET or a compatible legacy bucket setting");
   if (r2AccountId && !/^[a-f0-9]{32}$/i.test(r2AccountId)) errors.push("CLOUDFLARE_R2_ACCOUNT_ID must be a 32-character account identifier");
   if (bucket && !/^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$/i.test(bucket)) errors.push("Storage bucket name is invalid");
+}
+const uploadScanMode = (values.get("UPLOAD_SCAN_MODE") || "").trim().toLowerCase();
+if (uploadScanMode !== "required") errors.push("UPLOAD_SCAN_MODE=required is mandatory in staging and production");
+const uploadScannerUrl = values.get("UPLOAD_SCANNER_URL") || "";
+try {
+  const parsedScannerUrl = new URL(uploadScannerUrl);
+  if (parsedScannerUrl.protocol !== "https:" || parsedScannerUrl.username || parsedScannerUrl.password) {
+    errors.push("UPLOAD_SCANNER_URL must be an HTTPS URL without embedded credentials");
+  }
+} catch {
+  errors.push("UPLOAD_SCANNER_URL must be a valid HTTPS URL");
+}
+const uploadScannerToken = values.get("UPLOAD_SCANNER_TOKEN") || "";
+if (uploadScannerToken.length < 24 || /CHANGE_ME|REPLACE_WITH|example|password/i.test(uploadScannerToken)) {
+  errors.push("UPLOAD_SCANNER_TOKEN must be a non-placeholder secret of at least 24 characters");
+}
+if ((values.get("UPLOAD_LEGACY_READ_POLICY") || "deny").toLowerCase() !== "deny") {
+  errors.push("UPLOAD_LEGACY_READ_POLICY=deny is mandatory in staging and production");
 }
 if (values.get("QUEUE_PROVIDER") !== "postgres") errors.push("QUEUE_PROVIDER must be postgres for the current Athoo release");
 const cacheProvider = (values.get("CACHE_PROVIDER") || "memory").trim().toLowerCase();
@@ -140,11 +169,26 @@ function validateBoundedInteger(key, fallback, min, max) {
   const parsed = Number(raw || fallback);
   if (!Number.isInteger(parsed) || parsed < min || parsed > max) errors.push(`${key} must be an integer from ${min} to ${max}`);
 }
+function validateBoundedNumber(key, fallback, min, max) {
+  const raw = values.get(key);
+  const parsed = Number(raw || fallback);
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) errors.push(`${key} must be a number from ${min} to ${max}`);
+}
 for (const key of ["ENABLE_LIVE_TRACKING"]) {
   const value = values.get(key);
   if (value && !boolValues.has(value.toLowerCase())) errors.push(`${key} must be true or false`);
 }
 if (values.get("BODY_LIMIT") && !/^\d+(?:kb|mb)$/i.test(values.get("BODY_LIMIT"))) errors.push("BODY_LIMIT must use a bounded size such as 512kb or 2mb");
+const serviceCountryCode = String(values.get("SERVICE_COUNTRY_CODE") || "PK").trim().toUpperCase();
+if (!/^[A-Z]{2}$/.test(serviceCountryCode)) errors.push("SERVICE_COUNTRY_CODE must be a two-letter ISO country code");
+validateBoundedNumber("SERVICE_COUNTRY_MIN_LAT", 23, -90, 90);
+validateBoundedNumber("SERVICE_COUNTRY_MAX_LAT", 38, -90, 90);
+validateBoundedNumber("SERVICE_COUNTRY_MIN_LNG", 60, -180, 180);
+validateBoundedNumber("SERVICE_COUNTRY_MAX_LNG", 78.5, -180, 180);
+validateBoundedNumber("LOCATION_MAX_ACCURACY_METERS", 500, 10, 5000);
+validateBoundedInteger("LOCATION_CONFIRMATION_MAX_AGE_MS", 86400000, 300000, 604800000);
+if (Number(values.get("SERVICE_COUNTRY_MIN_LAT") || 23) >= Number(values.get("SERVICE_COUNTRY_MAX_LAT") || 38)) errors.push("SERVICE_COUNTRY_MIN_LAT must be smaller than SERVICE_COUNTRY_MAX_LAT");
+if (Number(values.get("SERVICE_COUNTRY_MIN_LNG") || 60) >= Number(values.get("SERVICE_COUNTRY_MAX_LNG") || 78.5)) errors.push("SERVICE_COUNTRY_MIN_LNG must be smaller than SERVICE_COUNTRY_MAX_LNG");
 validateBoundedInteger("MAX_JSON_DEPTH", 12, 4, 32);
 validateBoundedInteger("MAX_STRING_FIELD_LENGTH", 1200000, 10000, 5000000);
 validateBoundedInteger("GLOBAL_RATE_LIMIT_WINDOW_MS", 60000, 1000, 3600000);
@@ -178,6 +222,22 @@ validateBoundedInteger("EMAIL_QUEUE_MAX_ATTEMPTS", 4, 1, 10);
 validateBoundedInteger("EMAIL_CHALLENGE_RETENTION_DAYS", 7, 1, 90);
 validateBoundedInteger("EMAIL_DELIVERY_RETENTION_DAYS", 180, 30, 730);
 validateBoundedInteger("EMAIL_MAINTENANCE_INTERVAL_MS", 21600000, 900000, 86400000);
+validateBoundedInteger("ACCOUNT_STEP_UP_OTP_TTL_SECONDS", 600, 120, 900);
+validateBoundedInteger("ACCOUNT_STEP_UP_RESEND_COOLDOWN_SECONDS", 45, 30, 300);
+validateBoundedInteger("ACCOUNT_STEP_UP_MAX_ATTEMPTS", 5, 3, 10);
+validateBoundedInteger("ACCOUNT_STEP_UP_REQUEST_RATE_LIMIT_MAX", 5, 1, 50);
+validateBoundedInteger("ACCOUNT_STEP_UP_VERIFY_RATE_LIMIT_MAX", 10, 1, 100);
+validateBoundedInteger("ACCOUNT_ACTION_RATE_LIMIT_MAX", 10, 1, 100);
+validateBoundedInteger("REFUND_REQUEST_RATE_LIMIT_MAX", 10, 1, 100);
+validateBoundedInteger("BROADCAST_ACTION_RATE_LIMIT_MAX", 40, 1, 500);
+validateBoundedInteger("UPLOAD_URL_RATE_LIMIT_MAX", 120, 1, 1000);
+validateBoundedInteger("UPLOAD_SCAN_TIMEOUT_MS", 90000, 5000, 240000);
+validateBoundedInteger("UPLOAD_SCAN_MAX_CONCURRENCY", 2, 1, 20);
+validateBoundedInteger("UPLOAD_SCAN_RECLAIM_MS", 600000, 60000, 1800000);
+validateBoundedInteger("UPLOAD_QUARANTINE_SWEEP_INTERVAL_MS", 900000, 60000, 86400000);
+validateBoundedInteger("UPLOAD_QUARANTINE_SWEEP_BATCH_SIZE", 100, 1, 500);
+validateBoundedInteger("UPLOAD_QUARANTINE_DELETE_CONCURRENCY", 4, 1, 10);
+validateBoundedInteger("UPLOAD_SECURITY_RECORD_RETENTION_DAYS", 30, 7, 365);
 validateBoundedInteger("EMAIL_MARKETING_MAX_RECIPIENTS", 500, 1, 10000);
 validateBoundedInteger("SMTP_MAX_CONNECTIONS", 3, 1, 20);
 validateBoundedInteger("SMTP_MAX_MESSAGES_PER_CONNECTION", 100, 1, 1000);
@@ -268,6 +328,21 @@ validateBoundedInteger("CALL_FALLBACK_CHUNK_MS", 800, 300, 2000);
 validateBoundedInteger("INACTIVITY_SWEEP_MIN_INTERVAL_MS", 21600000, 900000, 86400000);
 validateBoundedInteger("USER_ACTIVITY_WRITE_INTERVAL_MS", 600000, 60000, 86400000);
 validateBoundedInteger("BOOKING_SWEEP_INTERVAL_MS", 60000, 10000, 3600000);
+validateBoundedInteger("BOOKING_NO_SHOW_GRACE_MINUTES", 30, 5, 240);
+validateBoundedInteger("BOOKING_NO_SHOW_SWEEP_BATCH_SIZE", 100, 1, 500);
+validateBoundedInteger("AUTH_TOKEN_RATE_LIMIT_WINDOW_MS", 60000, 1000, 3600000);
+validateBoundedInteger("AUTH_TOKEN_RATE_LIMIT_MAX", 360, 10, 100000);
+validateBoundedInteger("INVOICE_VERIFY_RATE_LIMIT_MAX", 30, 1, 1000);
+const noShowAutoCancel = (values.get("BOOKING_NO_SHOW_AUTO_CANCEL_ENABLED") || "false").toLowerCase();
+if (!new Set(["true", "false"]).has(noShowAutoCancel)) {
+  errors.push("BOOKING_NO_SHOW_AUTO_CANCEL_ENABLED must be true or false");
+}
+const bookingTimeZone = values.get("BOOKING_TIME_ZONE") || "Asia/Karachi";
+try {
+  new Intl.DateTimeFormat("en", { timeZone: bookingTimeZone }).format(new Date(0));
+} catch {
+  errors.push("BOOKING_TIME_ZONE must be a valid IANA time zone");
+}
 
 const releaseVersion = values.get("RELEASE_VERSION") || "";
 const releaseCommit = values.get("RELEASE_COMMIT_SHA") || "";
@@ -477,4 +552,3 @@ if (errors.length) {
   process.exit(1);
 }
 console.log(JSON.stringify({ valid: true, file: envPath, warnings }, null, 2));
-

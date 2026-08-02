@@ -79,6 +79,7 @@ export default function BroadcastStatusScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selecting, setSelecting] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [showExpireModal, setShowExpireModal] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -108,11 +109,9 @@ export default function BroadcastStatusScreen() {
     const off = realtime.on((msg) => {
       if (msg.type === "broadcast:response" && msg.payload?.requestId === requestId) {
         load(true);
-        const resp = msg.payload?.response;
-        const providerName = resp?.providerName ?? "A provider";
-        const priceText = resp?.providerOffer ? `Rs. ${resp.providerOffer}` : "open price";
       }
-      if (msg.type === "broadcast:accepted" || msg.type === "broadcast:cancelled") {
+      if ((msg.type === "broadcast:accepted" || msg.type === "broadcast:cancelled")
+        && (!msg.payload?.requestId || msg.payload.requestId === requestId)) {
         load(true);
       }
     });
@@ -124,7 +123,13 @@ export default function BroadcastStatusScreen() {
     setSelecting(responseId);
     try {
       const res = await api.selectBroadcastResponse(requestId, responseId);
-      setRequest({ ...request, status: "accepted" });
+      setRequest((current: any) => ({
+        ...current,
+        ...(res.request || {}),
+        status: "accepted",
+        bookingId: res.booking.id,
+        acceptedResponseId: responseId,
+      }));
       Alert.alert(
         "Booking Confirmed! 🎉",
         "Your provider has been notified and your booking is confirmed.",
@@ -144,6 +149,44 @@ export default function BroadcastStatusScreen() {
     } finally {
       setSelecting(null);
     }
+  };
+
+  const handleReject = (responseId: string, providerName: string) => {
+    if (!requestId || selecting || rejecting) return;
+    Alert.alert(
+      "Reject Counter",
+      `Reject ${providerName || "this provider"}'s counter? The broadcast will stay open and the provider may send a different amount.`,
+      [
+        { text: "Keep Counter", style: "cancel" },
+        {
+          text: "Reject",
+          style: "destructive",
+          onPress: async () => {
+            setRejecting(responseId);
+            try {
+              const result = await api.rejectBroadcastResponse(requestId, responseId);
+              setRequest((current: any) => ({
+                ...current,
+                responses: (current?.responses || []).map((response: any) =>
+                  response.id === responseId ? { ...response, status: "rejected_by_customer" } : response
+                ),
+              }));
+              Alert.alert(
+                "Counter Rejected",
+                result.canRevise
+                  ? "The provider has been notified and may send a revised counter."
+                  : "The provider has been notified. The response revision limit has been reached.",
+              );
+            } catch (e: any) {
+              showError("Unable to reject counter", apiErrorToMessage(e, "We couldn't reject this counter. Please try again."));
+              load(true);
+            } finally {
+              setRejecting(null);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleCancel = () => {
@@ -268,11 +311,25 @@ export default function BroadcastStatusScreen() {
       >
         {/* Status banner */}
         {isAccepted && (
-          <View style={[styles.statusBanner, { backgroundColor: theme.colors.success + "20", borderColor: theme.colors.success + "40" }]}>
-            <Icon name="check-circle" size={20} color={theme.colors.success} />
-            <Text style={[styles.statusBannerText, { color: theme.colors.success }]}>
-              Provider selected! Booking confirmed.
-            </Text>
+          <View style={[styles.acceptedBanner, { backgroundColor: theme.colors.success + "20", borderColor: theme.colors.success + "40" }]}>
+            <View style={styles.statusBannerRow}>
+              <Icon name="check-circle" size={20} color={theme.colors.success} />
+              <Text style={[styles.statusBannerText, { color: theme.colors.success }]}>
+                Provider accepted. Your booking is confirmed—no second acceptance is needed.
+              </Text>
+            </View>
+            {request.bookingId ? (
+              <Pressable
+                style={styles.viewBookingBtn}
+                onPress={() => router.replace({
+                  pathname: "/(customer)/booking-detail",
+                  params: { bookingId: request.bookingId },
+                } as any)}
+              >
+                <Text style={styles.viewBookingText}>View Booking</Text>
+                <Icon name="arrow-right" size={14} color={theme.colors.onBrand} />
+              </Pressable>
+            ) : null}
           </View>
         )}
         {isCancelled && (
@@ -337,6 +394,7 @@ export default function BroadcastStatusScreen() {
         {pendingResponses.map((resp: any, index: number) => {
           const price = resp.providerOffer ?? request.customerOffer;
           const isSelecting = selecting === resp.id;
+          const isRejecting = rejecting === resp.id;
           const isCountered = resp.providerOffer != null && request.customerOffer != null && resp.providerOffer !== request.customerOffer;
 
           return (
@@ -396,20 +454,33 @@ export default function BroadcastStatusScreen() {
               ) : null}
 
               {isOpen && (
-                <Pressable
-                  style={[styles.selectBtn, isSelecting && styles.selectBtnDisabled]}
-                  onPress={() => handleSelect(resp.id)}
-                  disabled={isSelecting || !!selecting}
-                >
-                  {isSelecting ? (
-                    <ActivityIndicator size="small" color={theme.colors.onBrand} />
-                  ) : (
-                    <>
-                      <Icon name="check-circle" size={16} color={theme.colors.onBrand} />
-                      <Text style={styles.selectBtnText}>Select This Provider</Text>
-                    </>
-                  )}
-                </Pressable>
+                <View style={styles.offerActionRow}>
+                  <Pressable
+                    style={[styles.rejectBtn, (isRejecting || !!selecting) && styles.selectBtnDisabled]}
+                    onPress={() => handleReject(resp.id, resp.providerName)}
+                    disabled={isRejecting || !!selecting || !!rejecting}
+                  >
+                    {isRejecting ? (
+                      <ActivityIndicator size="small" color={theme.colors.danger} />
+                    ) : (
+                      <Text style={styles.rejectBtnText}>Reject</Text>
+                    )}
+                  </Pressable>
+                  <Pressable
+                    style={[styles.selectBtn, (isSelecting || !!rejecting) && styles.selectBtnDisabled]}
+                    onPress={() => handleSelect(resp.id)}
+                    disabled={isSelecting || !!selecting || !!rejecting}
+                  >
+                    {isSelecting ? (
+                      <ActivityIndicator size="small" color={theme.colors.onBrand} />
+                    ) : (
+                      <>
+                        <Icon name="check-circle" size={16} color={theme.colors.onBrand} />
+                        <Text style={styles.selectBtnText}>{isCountered ? "Accept Counter" : "Confirm Provider"}</Text>
+                      </>
+                    )}
+                  </Pressable>
+                </View>
               )}
             </View>
           );
@@ -484,7 +555,19 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
   },
+  acceptedBanner: {
+    gap: 12,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  statusBannerRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   statusBannerText: { fontSize: 14, fontWeight: "700", flex: 1 },
+  viewBookingBtn: {
+    minHeight: 42, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
+    backgroundColor: theme.colors.success, borderRadius: 11, paddingHorizontal: 14,
+  },
+  viewBookingText: { fontSize: 13, fontWeight: "800", color: theme.colors.onBrand },
 
   jobCard: {
     backgroundColor: theme.colors.surface,
@@ -584,6 +667,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   selectBtn: {
+    flex: 1.65,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -594,6 +678,13 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   selectBtnDisabled: { opacity: 0.6 },
   selectBtnText: { fontSize: 15, fontWeight: "800", color: theme.colors.onBrand },
+  offerActionRow: { flexDirection: "row", alignItems: "stretch", gap: 10 },
+  rejectBtn: {
+    flex: 1, minHeight: 48, alignItems: "center", justifyContent: "center",
+    borderRadius: 12, borderWidth: 1.5, borderColor: theme.colors.danger,
+    backgroundColor: theme.colors.danger + "08", paddingHorizontal: 10,
+  },
+  rejectBtnText: { fontSize: 14, fontWeight: "800", color: theme.colors.danger },
 
   expireOverlay: {
     flex: 1, backgroundColor: "rgba(0,0,0,0.6)",

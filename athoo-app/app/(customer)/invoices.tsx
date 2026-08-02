@@ -8,7 +8,6 @@ import { router } from "expo-router";
 import React, { useEffect, useState, useMemo } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Platform,
   Pressable,
@@ -19,22 +18,12 @@ import {
 } from "react-native";
 import { brandConfig } from "@/config/brand";
 import { invoiceConfig } from "@/config/invoice";
-import * as Print from "expo-print";
-import * as Sharing from "expo-sharing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnimatedCard } from "@/components/ui/AnimatedCard";
 import { useAuth } from "@/context/AuthContext";
 import { useBookings } from "@/context/BookingContext";
 import { api } from "@/services/api";
-
-function escapeHtml(value: unknown): string {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
+import { shareBookingInvoice } from "@/utils/bookingInvoicePdf";
 
 type ApiInvoice = {
   id: string;
@@ -57,6 +46,7 @@ type ApiInvoice = {
   providerAmount: number;
   status: string;
   createdAt: string;
+  verification: { verificationUrl: string; qrCodeDataUri: string };
 };
 
 export default function InvoicesScreen() {
@@ -118,94 +108,23 @@ export default function InvoicesScreen() {
 
   const handleDownloadPdf = async (b: any) => {
     if (generatingPdf) return;
-    const invoiceNo = getInvoiceNo(b.id);
-    const { subtotal, visitCharge } = getInvoiceTotal(b);
-    const serviceAmount = subtotal - visitCharge;
-    const hourlyRate = Number((b as any).ratePerHour ?? (b as any).price ?? serviceAmount ?? 0);
-    const durationHours = hourlyRate > 0 ? Math.max(1, Math.round((serviceAmount / hourlyRate) * 100) / 100) : 1;
-    const match = apiInvoices.find((i) => i.bookingId === b.id);
-    const discount = match?.discountAmount ?? 0;
-    const total = match?.totalAmount ?? subtotal;
-    const customerName = escapeHtml(b.customerName);
-    const providerName = escapeHtml(b.providerName);
-    const address = escapeHtml(b.address);
-    const serviceName = escapeHtml(b.service);
-    const direction = isUrdu ? "rtl" : "ltr";
-
-    const printColors = invoiceConfig.colors;
-    const invoiceFooter = [invoiceConfig.brandName, invoiceConfig.contactLine].filter(Boolean).join(" · ");
-
-    const html = `<!DOCTYPE html><html dir="${direction}"><head><meta charset="utf-8">
-<style>
-  body{font-family:Arial,sans-serif;margin:0;padding:0;color:${printColors.text};background:${printColors.page};direction:${direction}}
-  .page{max-width:700px;margin:0 auto;background:${printColors.page};border-radius:12px;overflow:hidden;border:1px solid ${printColors.text};box-shadow:none}
-  .header{background:${printColors.primaryPressed};color:${printColors.page};padding:28px 30px;display:flex;justify-content:space-between;align-items:flex-start;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .logo{font-size:24px;font-weight:900;letter-spacing:-1px}
-  .logo-sub{font-size:11px;opacity:.75;margin-top:2px}
-  .inv-meta{text-align:right}
-  .inv-no{font-size:18px;font-weight:700}
-  .inv-date{font-size:12px;opacity:.8;margin-top:4px}
-  .paid-badge{background:rgba(255,255,255,0.25);border-radius:20px;padding:3px 12px;font-size:11px;font-weight:700;margin-top:8px;display:inline-block}
-  .body{padding:28px 30px}
-  .parties{display:flex;gap:30px;margin-bottom:24px}
-  .party{flex:1;background:${printColors.page};border:1px solid ${printColors.text};border-radius:10px;padding:14px 16px}
-  .party-label{font-size:10px;color:${printColors.textMuted};font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
-  .party-name{font-size:15px;font-weight:700;color:${printColors.text};margin-bottom:3px}
-  .party-detail{font-size:12px;color:${printColors.textSecondary}}
-  table{width:100%;border-collapse:collapse;margin-bottom:16px}
-  th{background:${printColors.surface};font-size:11px;color:${printColors.text};text-transform:uppercase;letter-spacing:.5px;padding:10px 12px;text-align:left;font-weight:700}
-  td{padding:11px 12px;font-size:13px;border-bottom:1px solid ${printColors.border}}
-  .amount{text-align:right}
-  .total-row{background:linear-gradient(135deg,${printColors.primary},${printColors.primaryPressed});color:${printColors.page}}
-  .total-row td{font-weight:700;font-size:15px;padding:14px 12px}
-  .formula{background:${printColors.infoSoft};border:1px solid ${printColors.primary};border-radius:8px;padding:12px 14px;font-size:12px;color:${printColors.text};font-weight:700;margin-bottom:16px}
-  .note{background:${printColors.infoSoft};border:1px solid ${printColors.infoBorder};border-radius:8px;padding:12px 14px;font-size:12px;color:${printColors.info};margin-bottom:20px}
-  .footer{text-align:center;font-size:11px;color:${printColors.textMuted};padding:0 0 8px}
-</style></head><body>
-<div class="page">
-  <div class="header">
-    <div><div class="logo">${escapeHtml(invoiceConfig.brandName)}</div><div class="logo-sub">${escapeHtml(tr("Home Services · Across Pakistan"))}</div></div>
-    <div class="inv-meta"><div class="inv-no">${escapeHtml(invoiceNo)}</div><div class="inv-date">${escapeHtml(formatLocalizedDate(b.createdAt))}</div><div class="paid-badge">✓ ${escapeHtml(tr("PAID"))}</div></div>
-  </div>
-  <div class="body">
-    <div class="parties">
-      <div class="party"><div class="party-label">${escapeHtml(tr("Billed To"))}</div><div class="party-name">${customerName}</div><div class="party-detail">${address}</div></div>
-      <div class="party"><div class="party-label">${escapeHtml(tr("Service By"))}</div><div class="party-name">${providerName}</div><div class="party-detail">${serviceName}</div></div>
-    </div>
-    <div class="formula">${escapeHtml(tr("Final Invoice = Hourly Rate × Actual Job Time + Travel Charges"))}</div>
-    <table>
-      <tr><th>${escapeHtml(tr("Description"))}</th><th style="text-align:right">${escapeHtml(tr("Amount"))}</th></tr>
-      <tr><td>${escapeHtml(tr("Hourly Rate"))}<br><small style="color:${printColors.textSecondary}">${escapeHtml(formatCurrency(hourlyRate))} / ${escapeHtml(tr("hour"))} × ${durationHours} ${escapeHtml(tr("hour(s)"))}</small></td><td class="amount">${escapeHtml(formatCurrency(serviceAmount))}</td></tr>
-      ${visitCharge > 0 ? `<tr><td>${escapeHtml(tr("Travel Charges"))}<br><small style="color:${printColors.textSecondary}">${escapeHtml(tr("Separate from hourly rate"))}</small></td><td class="amount">${escapeHtml(formatCurrency(visitCharge))}</td></tr>` : ""}
-      <tr><td style="color:${printColors.textSecondary}">${escapeHtml(tr("Subtotal"))}</td><td class="amount" style="color:${printColors.textSecondary}">${escapeHtml(formatCurrency(subtotal))}</td></tr>
-      ${discount > 0 ? `<tr><td style="color:${printColors.success}">${escapeHtml(tr("Discount Applied"))}</td><td class="amount" style="color:${printColors.success}">−${escapeHtml(formatCurrency(discount))}</td></tr>` : ""}
-      <tr class="total-row"><td>${escapeHtml(tr("TOTAL PAID"))}</td><td class="amount">${escapeHtml(formatCurrency(total))}</td></tr>
-    </table>
-    <div class="note">${escapeHtml(tr("Payment was made directly to the service provider. Athoo does not handle funds. This is an electronic receipt only."))}</div>
-    <div class="footer">${escapeHtml(invoiceFooter)}${invoiceFooter ? " · " : ""}${escapeHtml(tr("Thank you for using {{name}}!", { name: invoiceConfig.brandName }))}</div>
-  </div>
-</div>
-</body></html>`;
-
-    try {
-      setGeneratingPdf(true);
-      if (Platform.OS === "web") {
-        const w = window.open("", "_blank", "noopener,noreferrer");
-        if (w) { w.opener = null; w.document.write(html); w.document.close(); w.print(); }
-        return;
-      }
-      const { uri } = await Print.printToFileAsync({ html, base64: false });
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `Invoice ${invoiceNo}` });
-      } else {
-        Alert.alert(tr("Invoice ready"), tr("Your invoice was saved and is ready to share."));
-      }
-    } catch (e: any) {
-      Alert.alert(tr("Unable to create invoice"), apiErrorToMessage(e, tr("We couldn't create the invoice PDF. Please try again.")));
-    } finally {
-      setGeneratingPdf(false);
-    }
+    const match = apiInvoices.find((invoice) => invoice.bookingId === b.id);
+    await shareBookingInvoice(
+      {
+        ...b,
+        invoiceNumber: match?.invoiceNumber,
+        subtotal: match?.subtotal,
+        totalAmount: match?.totalAmount,
+        visitCharge: match?.visitCharge ?? b.visitCharge,
+        discountAmount: match?.discountAmount,
+        commissionAmount: match?.commissionAmount,
+        providerAmount: match?.providerAmount,
+        status: match?.status ?? b.status,
+        createdAt: match?.createdAt ?? b.createdAt,
+        verification: match?.verification,
+      },
+      { role: "customer", onState: setGeneratingPdf },
+    );
   };
 
   if (selected) {

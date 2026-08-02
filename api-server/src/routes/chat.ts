@@ -8,9 +8,16 @@ import { logger } from "../lib/logger";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { emitToUser } from "../lib/eventBus";
 import { notifyUser } from "../lib/notifications";
+import { normalizeStoredObjectPath, safeUploadName } from "../lib/storageSecurity";
+import { getUploadSecurityRecord, isCleanOwnedUploadObjectPath } from "../lib/verifiedUploads";
 
 const router = Router();
 const generateId = () => crypto.randomUUID();
+
+function buildChatPairKey(participant1Id: string, participant2Id: string, bookingId: string | null): string {
+  const [firstParticipantId, secondParticipantId] = [participant1Id, participant2Id].sort();
+  return `${firstParticipantId}:${secondParticipantId}:${bookingId || "direct"}`;
+}
 
 function isParticipant(chat: typeof chatsTable.$inferSelect, userId: string) {
   return chat.participant1Id === userId || chat.participant2Id === userId;
@@ -96,6 +103,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
     const chat = {
       id: generateId(), participant1Id: userId, participant2Id: otherUserId,
       participant1Name: me.name, participant2Name: other.name, bookingId, service,
+      pairKey: buildChatPairKey(userId, otherUserId, bookingId),
     };
     await db.insert(chatsTable).values(chat);
     return res.status(201).json({ chat });
@@ -134,13 +142,18 @@ router.post("/:chatId/messages", requireAuth, async (req: AuthRequest, res: Resp
     const userId = req.user!.userId;
     const chatId = String(req.params.chatId);
     const normalizedText = typeof req.body?.text === "string" ? req.body.text.trim() : "";
-    const mediaUrl = typeof req.body?.mediaUrl === "string" ? req.body.mediaUrl.trim() : "";
+    const rawMediaUrl = typeof req.body?.mediaUrl === "string" ? req.body.mediaUrl.trim() : "";
+    const mediaUrl = normalizeStoredObjectPath(rawMediaUrl);
     const clientMessageId = typeof req.body?.clientMessageId === "string" ? req.body.clientMessageId.trim() : "";
     if (!normalizedText && !mediaUrl) return res.status(400).json({ error: "Message text or attachment is required" });
     if (normalizedText.length > 4000) return res.status(400).json({ error: "Message is too long" });
     if (!clientMessageId || clientMessageId.length > 120 || !/^[A-Za-z0-9._:-]+$/.test(clientMessageId)) {
       return res.status(400).json({ error: "A valid clientMessageId is required" });
     }
+    if (rawMediaUrl && (!mediaUrl || mediaUrl.length > 500 || !(await isCleanOwnedUploadObjectPath(mediaUrl, userId, ["shared"])))) {
+      return res.status(400).json({ error: "Chat attachments must pass Athoo security scanning before use" });
+    }
+    const mediaRecord = mediaUrl ? await getUploadSecurityRecord(mediaUrl) : null;
 
     const chat = await db.query.chatsTable.findFirst({ where: eq(chatsTable.id, chatId) });
     if (!chat) return res.status(404).json({ error: "Chat not found" });
@@ -156,7 +169,8 @@ router.post("/:chatId/messages", requireAuth, async (req: AuthRequest, res: Resp
       id: generateId(), chatId, senderId: userId,
       senderName: chat.participant1Id === userId ? chat.participant1Name : chat.participant2Name,
       text: normalizedText || "Attachment", mediaUrl: mediaUrl || null,
-      mediaType: req.body?.mediaType || null, fileName: req.body?.fileName || null,
+      mediaType: mediaRecord?.detectedContentType || null,
+      fileName: mediaUrl ? safeUploadName(String(req.body?.fileName || mediaUrl.split("/").pop() || "attachment")) : null,
       deliveryStatus: "sent", clientMessageId,
     };
     const inserted = await db.insert(messagesTable).values(message).onConflictDoNothing().returning();

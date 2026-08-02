@@ -174,6 +174,9 @@ requireCondition(deepChecks.maps?.configured === true, `Map services are not con
 requireCondition(deepChecks.email?.configured === true, "Transactional email is not configured");
 requireCondition(deepChecks.storage?.configured === true, "Object storage is not configured");
 requireCondition(deepChecks.storage?.productionSafe !== false, "Object storage is not production safe");
+requireCondition(deepChecks.uploadScanner?.configured === true, "Upload malware scanner is not configured");
+requireCondition(deepChecks.uploadScanner?.productionSafe === true, "Upload malware scanner is not production safe");
+requireCondition(!deepChecks.uploadSecurityMaintenance?.lastError, `Upload-security maintenance reported an error: ${deepChecks.uploadSecurityMaintenance?.lastError || "unknown"}`);
 requireCondition(deepChecks.otpDelivery?.configured === true, "No production authentication OTP delivery channel is configured");
 requireCondition(deepChecks.otpDelivery?.phoneRegistrationConfigured === true, "No phone-bound registration OTP channel is configured");
 requireCondition(deepChecks.push?.configured !== false, "Push provider is not configured", "warning");
@@ -335,16 +338,27 @@ if (adminToken) {
   const integrations = await apiRequest("admin integration status", "/api/admin/settings/integrations/status", { headers: adminAuth });
   integrationStatus = integrations.body;
   const configured = integrations.body?.integrations || {};
-  for (const name of ["maps", "email", "push", "otp", "storage", "calls", "queue", "cache"]) {
+  for (const name of ["maps", "email", "push", "otp", "storage", "uploadScanner", "uploadSecurityMaintenance", "calls", "queue", "cache"]) {
     requireCondition(configured[name]?.configured === true, `Admin integration status reports ${name} as unconfigured: ${configured[name]?.error || "unknown"}`);
   }
   requireCondition(configured.storage?.productionSafe === true, "Admin integration status reports storage as not production safe");
+  requireCondition(configured.uploadScanner?.productionSafe === true, "Admin integration status reports the upload scanner as not production safe");
+  requireCondition(configured.uploadSecurityMaintenance?.productionSafe === true, `Admin integration status reports upload-security maintenance failure: ${configured.uploadSecurityMaintenance?.error || "unknown"}`);
   requireCondition(configured.queue?.durable === true, "Admin integration status reports a non-durable queue");
   if (expectedInstances > 1) requireCondition(configured.cache?.horizontalScaleSafe === true, "Admin integration status reports cache as unsafe for horizontal scaling");
 
   if (readBoolean("CONNECTED_VERIFY_STORAGE", true)) {
     const storageTest = await apiRequest("storage provider connectivity", "/api/admin/settings/integrations/storage/test", { method: "POST", headers: adminAuth });
     requireCondition(storageTest.body?.ok === true, `Storage provider connectivity failed: ${storageTest.body?.error || "unknown"}`);
+  }
+
+  if (readBoolean("CONNECTED_VERIFY_UPLOAD_SCANNER", true)) {
+    const scannerTest = await apiRequest("upload malware scanner connectivity", "/api/admin/settings/integrations/upload-scanner/test", { method: "POST", headers: adminAuth });
+    requireCondition(scannerTest.body?.ok === true, `Upload malware scanner connectivity failed: ${scannerTest.body?.error || "unknown"}`);
+    requireCondition(scannerTest.body?.productionSafe === true, "Upload malware scanner connectivity test did not report production-safe configuration");
+    requireCondition(scannerTest.body?.detectedContentType === "image/png", `Upload malware scanner clean probe returned unexpected content type: ${scannerTest.body?.detectedContentType || "missing"}`);
+    requireCondition(scannerTest.body?.cleanProbeAccepted === true, "Upload malware scanner rejected the harmless PNG connectivity probe");
+    requireCondition(scannerTest.body?.eicarProbeRejected === true, "Upload malware scanner did not reject the safe EICAR antivirus test signature");
   }
 
   if (readBoolean("CONNECTED_VERIFY_MAP_PROVIDERS", true)) {
@@ -373,7 +387,7 @@ if (adminToken) {
 warnings.push("Actual Expo push receipt, notification sound, background/killed-state deep link, and two-way media transfer remain physical-device evidence and are not claimed by this HTTP verifier");
 
 const evidence = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   status: failures.length ? "failed" : "passed",
   apiBaseUrl: apiBase,
   adminBaseUrl: adminBase,
@@ -388,6 +402,8 @@ const evidence = {
   providers: {
     email: redact(deepChecks.email || null),
     storage: redact(deepChecks.storage || null),
+    uploadScanner: redact(deepChecks.uploadScanner || null),
+    uploadSecurityMaintenance: redact(deepChecks.uploadSecurityMaintenance || null),
     otpDelivery: redact(deepChecks.otpDelivery || null),
     maps: redact(deepChecks.maps || null),
     push: redact(deepChecks.push || null),

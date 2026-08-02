@@ -1,6 +1,6 @@
 # Athoo Production Launch Runbook
 
-This runbook promotes the Phase 24.8 strict device-acceptance-integrity candidate without bypassing connected, load, security or physical-device evidence.
+This runbook promotes the Athoo App V2 source-complete certification candidate without bypassing connected, load, security or physical-device evidence.
 
 ## 1. Freeze the artifact
 
@@ -14,14 +14,29 @@ pnpm release:verify:code
 pnpm mobile:doctor
 pnpm mobile:export
 pnpm env:validate .\production.env
-pnpm launch:preflight .\production.env .\ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip
+pnpm launch:preflight .\production.env .\ATHOO_APP_V2_1_CONNECTED_CERTIFICATION_HARDENED.zip
 ```
 
 `--skip-code` is allowed only when the exact commit already passed trusted CI and that evidence is attached.
 
+### Upload-security gate
+
+Production must use an authenticated HTTPS malware scanner:
+
+```text
+UPLOAD_SCAN_MODE=required
+UPLOAD_SCANNER_URL=https://<private-scanner-domain>/scan
+UPLOAD_SCANNER_TOKEN=<rotated-secret>
+UPLOAD_LEGACY_READ_POLICY=deny
+```
+
+Deep readiness must report the malware scanner as ready. Test clean images, videos and documents, EICAR/test-malware, compound extensions, renamed executables, malformed scanner replies, timeout, overload and scanner unavailability. The API must fail closed.
+
+Before setting `UPLOAD_LEGACY_READ_POLICY=deny`, inventory and backfill existing media: hash it, scan it, create clean authorization records and verify profile, chat, booking, negotiation, premium and support media. Do not deploy a deny policy that makes legitimate legacy media unavailable.
+
 ## 3. Back up and migrate
 
-Create a Neon restore point. Apply and verify every migration through `20260719_broadcast_delivery_configuration_integrity.sql`. Retain the previous API, admin and mobile artifacts. Use `docs/runbooks/ROLLBACK_RUNBOOK.md` for rollback.
+Create a Neon restore point. Apply and verify every migration through `20260802_athoo_v2_location_pagination_integrity.sql`. Retain the previous API, admin and mobile artifacts. Use `docs/runbooks/ROLLBACK_RUNBOOK.md` for rollback.
 
 ## 4. Deploy one commit
 
@@ -37,17 +52,17 @@ pnpm launch:postdeploy
 pnpm runtime:verify:connected
 ```
 
-Strict verification must include controlled customer, provider and admin credentials. API/admin provenance, TURN, queue, cache, storage, maps, email, OTP, provider broadcast eligibility, policies and admin operational queues must pass.
+Strict verification must include controlled customer, provider and admin credentials. API/admin provenance, TURN, queue, cache, storage, maps, email, OTP, provider broadcast eligibility, policies, admin operational queues, a clean scanner probe and EICAR rejection must pass.
 
 ## 6. Complete strict Android and iPhone evidence
 
-Initialize evidence from the exact Phase 24.8 ZIP instead of manually copying an unbound template:
+Initialize evidence from the exact Athoo App V2 ZIP instead of manually copying an unbound template:
 
 ```powershell
-pnpm device:evidence:init -- --artifact .\ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip --release-version <release-version> --commit <full-git-sha>
+pnpm device:evidence:init -- --artifact .\ATHOO_APP_V2_1_CONNECTED_CERTIFICATION_HARDENED.zip --release-version <release-version> --commit <full-git-sha>
 ```
 
-Run every item in `docs/qa/device-acceptance-checklist.json` on the exact Android and iPhone builds. Attach a real screenshot, video or log reference, device/OS, build ID, timestamp and specific notes. Validate with `pnpm device:evidence:validate -- .\device-acceptance-evidence.json .\ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip`.
+Run every item in `docs/qa/device-acceptance-checklist.json` on the exact Android and iPhone builds. Attach a real screenshot, video or log reference, device/OS, build ID, timestamp and specific notes. Validate with `pnpm device:evidence:validate -- .\device-acceptance-evidence.json .\ATHOO_APP_V2_1_CONNECTED_CERTIFICATION_HARDENED.zip`.
 
 Required acceptance includes the originally reported white map, stale provider location, radius reset/mismatch, missed provider broadcast, two-device session persistence, unstable push/chat/call notifications, call crash/no voice, bottom navigation cut-off, overlapping time selectors, availability-state feedback, biometric enable/login and invoices with no tax.
 

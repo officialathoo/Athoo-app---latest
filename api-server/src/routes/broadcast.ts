@@ -5,8 +5,10 @@ import { db } from "@workspace/db";
 import {
   broadcastRequestsTable,
   broadcastResponsesTable,
+  broadcastOfferEventsTable,
   bookingsTable,
   serviceCategoriesTable,
+  negotiationsTable,
   usersTable,
 } from "@workspace/db/schema";
 import { and, eq, ne, desc, sql, or, inArray } from "drizzle-orm";
@@ -15,9 +17,39 @@ import { getPlatformSettings } from "../lib/admin";
 import { emitToUser, emitToRole, type EventName } from "../lib/eventBus";
 import { notifyUser } from "../lib/notifications";
 import { enqueueJob, registerJobHandler } from "../lib/queue";
-import { activeWorkHttpPayload, getBusyProviderIds, getCustomerActiveWorkBlock, getProviderActiveWorkBlock } from "../lib/businessRules";
+import { normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { isCleanOwnedUploadObjectPath } from "../lib/verifiedUploads";
+import { assertLocationInActiveServiceArea, LocationIntegrityError, parseCanonicalLocation } from "../lib/locationIntegrity";
+import {
+  ACTIVE_BOOKING_STATUSES,
+  ACTIVE_NEGOTIATION_STATUSES,
+  activeWorkHttpPayload,
+  getBusyProviderIds,
+  getCustomerActiveWorkBlock,
+  getProviderActiveWorkBlock,
+} from "../lib/businessRules";
 
 const router = Router();
+
+type BroadcastTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+class BroadcastFlowError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+type AcceptedBroadcastOutcome = {
+  request: typeof broadcastRequestsTable.$inferSelect;
+  response: typeof broadcastResponsesTable.$inferSelect;
+  booking: typeof bookingsTable.$inferSelect;
+  losingProviderIds: string[];
+  duplicate: boolean;
+};
 
 function generateId(): string {
   return crypto.randomUUID();
@@ -39,6 +71,37 @@ function toNumber(v: unknown): number | null {
     return Number.isFinite(n) ? Math.round(n) : null;
   }
   return null;
+}
+
+function boundedWholeAmount(value: unknown, options: { min: number; max: number }): number | null {
+  const raw = typeof value === "number" ? value : typeof value === "string" && /^\d{1,9}$/.test(value.trim()) ? Number(value.trim()) : NaN;
+  if (!Number.isSafeInteger(raw) || raw < options.min || raw > options.max) return null;
+  return raw;
+}
+
+function cleanResponseRequestId(value: unknown, requestId: string, providerId: string): string {
+  const supplied = String(value || "").trim();
+  if (/^[A-Za-z0-9._:-]{8,120}$/.test(supplied)) return supplied;
+  // Backward-compatible deterministic key for clients released before Phase
+  // 18B. Updated clients always provide a fresh key for each revision.
+  return `legacy:${requestId}:${providerId}`.slice(0, 120);
+}
+
+function responsePayloadMatches(
+  response: typeof broadcastResponsesTable.$inferSelect,
+  input: {
+    responseType: "accept" | "counter";
+    providerOffer: number | null;
+    providerTravellingCharge: number;
+    message: string | null;
+    clientRequestId: string;
+  },
+): boolean {
+  return response.responseType === input.responseType
+    && (response.providerOffer ?? null) === input.providerOffer
+    && Number(response.providerTravellingCharge ?? 0) === input.providerTravellingCharge
+    && (response.message || null) === input.message
+    && response.clientRequestId === input.clientRequestId;
 }
 
 // Coordinate parser that PRESERVES decimal precision. Never use toNumber() for
@@ -91,6 +154,12 @@ function broadcastDeliveryConcurrency(): number {
   const configured = Number(process.env.BROADCAST_DELIVERY_CONCURRENCY || 10);
   if (!Number.isFinite(configured)) return 10;
   return Math.max(1, Math.min(50, Math.floor(configured)));
+}
+
+function broadcastResponseProviderBatchSize(): number {
+  const configured = Number(process.env.BROADCAST_RESPONSE_PROVIDER_BATCH_SIZE || 500);
+  if (!Number.isFinite(configured)) return 500;
+  return Math.max(1, Math.min(1000, Math.floor(configured)));
 }
 
 async function forEachWithConcurrency<T>(
@@ -188,6 +257,247 @@ function matchProviderToBroadcast(
     distanceKm: Math.round(distance * 10) / 10,
     effectiveRadiusKm: effectiveRadius,
   };
+}
+
+async function lockActiveWorkSubjects(
+  tx: BroadcastTransaction,
+  customerId: string,
+  providerId: string,
+): Promise<void> {
+  for (const userId of [customerId, providerId].sort()) {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`active-work:${userId}`}, 0))`);
+  }
+}
+
+async function assertBroadcastPartiesAvailable(
+  tx: BroadcastTransaction,
+  customerId: string,
+  providerId: string,
+): Promise<{
+  customer: typeof usersTable.$inferSelect;
+  provider: typeof usersTable.$inferSelect;
+}> {
+  const [customer, provider] = await Promise.all([
+    tx.query.usersTable.findFirst({ where: eq(usersTable.id, customerId) }),
+    tx.query.usersTable.findFirst({ where: eq(usersTable.id, providerId) }),
+  ]);
+  if (!customer || customer.role !== "customer") {
+    throw new BroadcastFlowError(404, "CUSTOMER_NOT_FOUND", "Customer account is not available");
+  }
+  if (!provider || provider.role !== "provider") {
+    throw new BroadcastFlowError(404, "PROVIDER_NOT_FOUND", "Provider account is not available");
+  }
+  if (provider.isBlocked || provider.isDeactivated || !provider.isAvailable) {
+    throw new BroadcastFlowError(409, "PROVIDER_NOT_AVAILABLE", provider.blockedReason || "This provider is not available right now");
+  }
+  if (!provider.isVerified || provider.verificationStatus !== "approved") {
+    throw new BroadcastFlowError(403, "PROVIDER_NOT_VERIFIED", "This provider is not verified for new jobs");
+  }
+
+  const [customerBooking, providerBooking, customerNegotiation, providerNegotiation] = await Promise.all([
+    tx.select({ id: bookingsTable.id }).from(bookingsTable).where(and(
+      eq(bookingsTable.customerId, customerId),
+      inArray(bookingsTable.status, [...ACTIVE_BOOKING_STATUSES]),
+    )).limit(1),
+    tx.select({ id: bookingsTable.id }).from(bookingsTable).where(and(
+      eq(bookingsTable.providerId, providerId),
+      inArray(bookingsTable.status, [...ACTIVE_BOOKING_STATUSES]),
+    )).limit(1),
+    tx.select({ id: negotiationsTable.id }).from(negotiationsTable).where(and(
+      eq(negotiationsTable.customerId, customerId),
+      inArray(negotiationsTable.status, [...ACTIVE_NEGOTIATION_STATUSES]),
+    )).limit(1),
+    tx.select({ id: negotiationsTable.id }).from(negotiationsTable).where(and(
+      eq(negotiationsTable.providerId, providerId),
+      inArray(negotiationsTable.status, [...ACTIVE_NEGOTIATION_STATUSES]),
+    )).limit(1),
+  ]);
+
+  if (customerBooking[0]) throw new BroadcastFlowError(409, "ACTIVE_BOOKING", "You already have an active booking");
+  if (providerBooking[0]) throw new BroadcastFlowError(409, "PROVIDER_BUSY", "This provider accepted another job first");
+  if (customerNegotiation[0]) throw new BroadcastFlowError(409, "ACTIVE_NEGOTIATION", "You already have an active negotiation");
+  if (providerNegotiation[0]) throw new BroadcastFlowError(409, "PROVIDER_BUSY", "This provider is completing another offer");
+  return { customer, provider };
+}
+
+async function finalizeAcceptedBroadcast(
+  tx: BroadcastTransaction,
+  request: typeof broadcastRequestsTable.$inferSelect,
+  response: typeof broadcastResponsesTable.$inferSelect,
+  acceptedBy: "customer" | "provider",
+): Promise<AcceptedBroadcastOutcome> {
+  await lockActiveWorkSubjects(tx, request.customerId, response.providerId);
+  const { customer, provider } = await assertBroadcastPartiesAvailable(tx, request.customerId, response.providerId);
+
+  const agreedPrice = response.responseType === "accept"
+    ? request.customerOffer
+    : response.providerOffer;
+  if (!agreedPrice || agreedPrice <= 0) {
+    throw new BroadcastFlowError(400, "INVALID_AGREED_PRICE", "A valid agreed hourly price is required");
+  }
+  const visitCharge = Math.max(0, Number(
+    response.responseType === "accept"
+      ? request.travellingCharge ?? 0
+      : response.providerTravellingCharge ?? request.travellingCharge ?? 0,
+  ));
+
+  const [booking] = await tx.insert(bookingsTable).values({
+    id: generateId(),
+    publicId: generatePublicId(),
+    clientRequestId: `broadcast:${request.id}`,
+    customerId: request.customerId,
+    customerName: customer.name,
+    customerPhone: customer.phone,
+    providerId: provider.id,
+    providerName: provider.name,
+    providerPhone: provider.phone,
+    service: request.serviceLabel,
+    serviceIcon: request.serviceIcon || "tool",
+    description: request.description || null,
+    attachment: null,
+    videoUrl: request.videoUrl || null,
+    address: request.address,
+    locationCity: request.locationCity,
+    locationArea: request.locationArea,
+    locationProvince: request.locationProvince,
+    locationCountryCode: request.locationCountryCode,
+    locationSource: request.locationSource,
+    locationAccuracy: request.locationAccuracy,
+    locationConfirmedAt: request.locationConfirmedAt,
+    locationVerifiedAt: request.locationVerifiedAt,
+    scheduledDate: request.scheduledDate,
+    scheduledTime: request.scheduledTime,
+    status: "accepted",
+    price: agreedPrice,
+    commissionAmount: 0,
+    providerAmount: agreedPrice,
+    commissionRate: 0,
+    visitCharge,
+    ratePerHour: agreedPrice,
+    categorySlug: request.service,
+    pickedLat: request.latitude,
+    pickedLng: request.longitude,
+    customerLat: request.latitude,
+    customerLng: request.longitude,
+    providerLat: null,
+    providerLng: null,
+    providerAccuracy: null,
+    providerUpdatedAt: null,
+    providerArrivedAt: null,
+  }).returning();
+  if (!booking) throw new BroadcastFlowError(409, "BOOKING_CREATE_CONFLICT", "This job could not be confirmed");
+
+  const [updatedRequest] = await tx.update(broadcastRequestsTable).set({
+    status: "accepted",
+    acceptedResponseId: response.id,
+    bookingId: booking.id,
+    updatedAt: new Date(),
+  }).where(and(
+    eq(broadcastRequestsTable.id, request.id),
+    eq(broadcastRequestsTable.status, "open"),
+  )).returning();
+  if (!updatedRequest) throw new BroadcastFlowError(409, "BROADCAST_FILLED", "This job is no longer available");
+
+  const [acceptedResponse] = await tx.update(broadcastResponsesTable).set({
+    status: "accepted_by_customer",
+    rejectedAt: null,
+    updatedAt: new Date(),
+  }).where(and(
+    eq(broadcastResponsesTable.id, response.id),
+    eq(broadcastResponsesTable.requestId, request.id),
+    eq(broadcastResponsesTable.status, "pending"),
+  )).returning();
+  if (!acceptedResponse) throw new BroadcastFlowError(409, "RESPONSE_UNAVAILABLE", "This provider offer is no longer available");
+
+  const losingResponses = await tx.update(broadcastResponsesTable).set({
+    status: "not_selected",
+    updatedAt: new Date(),
+  }).where(and(
+    eq(broadcastResponsesTable.requestId, request.id),
+    ne(broadcastResponsesTable.id, response.id),
+    eq(broadcastResponsesTable.status, "pending"),
+  )).returning({ providerId: broadcastResponsesTable.providerId });
+
+  await tx.update(usersTable).set({ isAvailable: false, updatedAt: new Date() })
+    .where(eq(usersTable.id, provider.id));
+  await tx.insert(broadcastOfferEventsTable).values({
+    id: generateId(),
+    requestId: request.id,
+    responseId: response.id,
+    bookingId: booking.id,
+    actorId: acceptedBy === "provider" ? provider.id : customer.id,
+    actorRole: acceptedBy,
+    eventType: "booking_created",
+    revision: response.revision,
+    amount: agreedPrice,
+    travellingCharge: visitCharge,
+    metadata: { acceptedBy, losingResponseCount: losingResponses.length },
+  });
+
+  return {
+    request: updatedRequest,
+    response: acceptedResponse,
+    booking,
+    losingProviderIds: [...new Set(losingResponses.map((item) => item.providerId))],
+    duplicate: false,
+  };
+}
+
+async function deliverAcceptedBroadcast(
+  outcome: AcceptedBroadcastOutcome,
+  acceptedBy: "customer" | "provider",
+): Promise<void> {
+  if (outcome.duplicate) return;
+  const { booking, request } = outcome;
+  emitToUser(booking.customerId, "booking:updated" as EventName, { booking });
+  emitToUser(booking.customerId, "broadcast:accepted" as EventName, { requestId: request.id, bookingId: booking.id });
+  emitToUser(booking.providerId, "booking:new" as EventName, { booking });
+  emitToUser(booking.providerId, "broadcast:selected" as EventName, {
+    booking,
+    requestId: request.id,
+    serviceLabel: request.serviceLabel,
+    customerName: booking.customerName,
+  });
+  emitToUser(booking.providerId, "provider:availability" as EventName, { isAvailable: false, reason: "accepted" });
+  // Every connected provider receives only the opaque request id and refreshes
+  // their feed. Offline devices reconcile on their next foreground GET.
+  emitToRole("provider", "broadcast:accepted" as EventName, { requestId: request.id });
+  emitToRole("admin", "admin:event" as EventName, { type: "booking:new", booking });
+
+  notifyUser({
+    userId: booking.customerId,
+    title: acceptedBy === "provider" ? "Provider accepted your job" : "Booking confirmed",
+    body: `${booking.providerName} confirmed ${booking.service} at Rs. ${Number(booking.price || 0).toLocaleString()} per hour.`,
+    type: "booking",
+    link: `/bookings/${booking.id}`,
+    data: { bookingId: booking.id },
+    email: { category: "booking" },
+  }).catch(() => undefined);
+  notifyUser({
+    userId: booking.providerId,
+    title: acceptedBy === "provider" ? "Job accepted" : "🎉 You got the job!",
+    body: `${booking.service} with ${booking.customerName} is confirmed.`,
+    type: "booking",
+    link: `/jobs/${booking.id}`,
+    data: { bookingId: booking.id },
+    email: { category: "booking" },
+  }).catch(() => undefined);
+
+  await forEachWithConcurrency(outcome.losingProviderIds, broadcastDeliveryConcurrency(), async (providerId) => {
+    emitToUser(providerId, "broadcast:rejected" as EventName, {
+      requestId: request.id,
+      serviceLabel: request.serviceLabel,
+      customerName: booking.customerName,
+    });
+    await notifyUser({
+      userId: providerId,
+      title: "Request filled",
+      body: `${booking.customerName}'s ${request.serviceLabel} request was filled by another provider.`,
+      type: "broadcast",
+      link: "/broadcast",
+      data: { broadcastRequestId: request.id, role: "provider", type: "broadcast" },
+    });
+  });
 }
 
 async function deliverExpandedBroadcast(requestId: string): Promise<void> {
@@ -290,6 +600,12 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       return;
     }
 
+    const normalizedVideoUrl = normalizeStoredObjectPath(videoUrl) || null;
+    if (videoUrl && (!normalizedVideoUrl || !(await isCleanOwnedUploadObjectPath(normalizedVideoUrl, userId, ["shared"])))) {
+      res.status(400).json({ error: "Broadcast video must pass Athoo security scanning before use" });
+      return;
+    }
+
     const [customer, settings] = await Promise.all([
       db.query.usersTable.findFirst({ where: eq(usersTable.id, userId) }),
       getPlatformSettings(),
@@ -318,16 +634,12 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const parsedLat = toCoord(latitude);
-    const parsedLng = toCoord(longitude);
+    const canonicalLocation = parseCanonicalLocation({ ...req.body, address, latitude, longitude });
+    await assertLocationInActiveServiceArea(canonicalLocation);
+    const parsedLat = canonicalLocation.latitude;
+    const parsedLng = canonicalLocation.longitude;
     const parsedOffer = toNumber(customerOffer);
     const parsedTravellingCharge = Math.max(0, toNumber(travellingCharge) ?? 0);
-
-    // Require customer GPS coordinates server-side — frontend location gate is not sufficient
-    if (parsedLat === null || parsedLng === null) {
-      res.status(400).json({ error: "Your location is required to create a broadcast request. Please enable location access in your app settings." });
-      return;
-    }
 
     const request = {
       id: generateId(),
@@ -338,10 +650,18 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       serviceLabel: category?.name || String(serviceLabel).trim(),
       serviceIcon: category?.icon || serviceIcon || "tool",
       description: description || null,
-      videoUrl: videoUrl || null,
-      address: String(address).trim(),
+      videoUrl: normalizedVideoUrl,
+      address: canonicalLocation.formattedAddress,
       latitude: parsedLat,
       longitude: parsedLng,
+      locationCity: canonicalLocation.city,
+      locationArea: canonicalLocation.area,
+      locationProvince: canonicalLocation.province,
+      locationCountryCode: canonicalLocation.countryCode,
+      locationSource: canonicalLocation.source,
+      locationAccuracy: canonicalLocation.accuracy,
+      locationConfirmedAt: canonicalLocation.confirmedAt,
+      locationVerifiedAt: new Date(),
       scheduledDate: String(scheduledDate),
       scheduledTime: String(scheduledTime),
       customerOffer: parsedOffer,
@@ -504,6 +824,10 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json({ request, delivery: deliverySummary });
   } catch (e: any) {
+    if (e instanceof LocationIntegrityError) {
+      res.status(e.status).json({ error: e.message, code: e.code });
+      return;
+    }
     logger.error({ err: e }, "broadcast create error");
     // Drizzle wraps the underlying pg error in DrizzleQueryError, which
     // exposes the Postgres error code as `.cause.code`, not `.code` — a
@@ -668,6 +992,7 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
         return {
           ...r,
           myResponse: myResponseByRequest.get(r.id) || null,
+          responseRevisionLimit: Math.max(1, Math.min(10, Number(settings.maxNegotiationRounds || 3))),
           customerRating: customerRatingById.get(r.customerId) || 0,
           responseCount: responsesByRequest.get(r.id)?.length || 0,
           distanceKm: distKm,
@@ -784,21 +1109,46 @@ router.get("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
       .where(eq(broadcastResponsesTable.requestId, request.id))
       .orderBy(broadcastResponsesTable.createdAt);
 
-    const enrichedResponses = await Promise.all(
-      responses.map(async (resp) => {
-        const provider = await db.query.usersTable.findFirst({
-          where: eq(usersTable.id, resp.providerId),
-        });
-        return {
-          ...resp,
-          providerRating: provider?.rating || 0,
-          providerTotalJobs: provider?.totalJobs || 0,
-          providerIsVerified: provider?.isVerified || false,
-          providerProfileImage: provider?.profileImage || null,
-          providerProfileColor: provider?.profileColor || "#1A6EE0",
-        };
-      })
-    );
+    // Load provider summaries in bounded batch queries. The previous
+    // per-response lookup created an N+1 query burst and unbounded concurrent
+    // database work when a broadcast accumulated many responses.
+    const providerIds = [...new Set(responses.map((response) => response.providerId))];
+    const providers: Array<{
+      id: string;
+      rating: number | null;
+      totalJobs: number | null;
+      isVerified: boolean | null;
+      profileImage: string | null;
+      profileColor: string | null;
+    }> = [];
+    const providerBatchSize = broadcastResponseProviderBatchSize();
+    for (let start = 0; start < providerIds.length; start += providerBatchSize) {
+      const batchIds = providerIds.slice(start, start + providerBatchSize);
+      const batch = await db
+          .select({
+            id: usersTable.id,
+            rating: usersTable.rating,
+            totalJobs: usersTable.totalJobs,
+            isVerified: usersTable.isVerified,
+            profileImage: usersTable.profileImage,
+            profileColor: usersTable.profileColor,
+          })
+          .from(usersTable)
+          .where(inArray(usersTable.id, batchIds));
+      providers.push(...batch);
+    }
+    const providerById = new Map(providers.map((provider) => [provider.id, provider]));
+    const enrichedResponses = responses.map((response) => {
+      const provider = providerById.get(response.providerId);
+      return {
+        ...response,
+        providerRating: provider?.rating || 0,
+        providerTotalJobs: provider?.totalJobs || 0,
+        providerIsVerified: provider?.isVerified || false,
+        providerProfileImage: provider?.profileImage || null,
+        providerProfileColor: provider?.profileColor || "#1A6EE0",
+      };
+    });
 
     res.json({ request: { ...request, responses: enrichedResponses } });
   } catch (e) {
@@ -816,22 +1166,11 @@ router.post("/:id/respond", requireAuth, async (req: AuthRequest, res: Response)
       return;
     }
 
-    const request = await db.query.broadcastRequestsTable.findFirst({
-      where: eq(broadcastRequestsTable.id, String(req.params.id)),
-    });
+    const requestId = String(req.params.id);
+    const request = await db.query.broadcastRequestsTable.findFirst({ where: eq(broadcastRequestsTable.id, requestId) });
 
     if (!request) {
       res.status(404).json({ error: "Broadcast request not found" });
-      return;
-    }
-
-    if (request.status !== "open") {
-      res.status(400).json({ error: "This broadcast request is no longer open" });
-      return;
-    }
-
-    if (isExpiredBroadcast(request as any)) {
-      res.status(400).json({ error: "This broadcast request has expired" });
       return;
     }
 
@@ -841,7 +1180,7 @@ router.post("/:id/respond", requireAuth, async (req: AuthRequest, res: Response)
     }
 
     const provider = await db.query.usersTable.findFirst({ where: eq(usersTable.id, userId) });
-    if (!provider || provider.isBlocked || provider.isDeactivated) {
+    if (!provider || provider.isBlocked || provider.isDeactivated || !provider.isAvailable) {
       res.status(400).json({ error: provider?.blockedReason || "Your account cannot respond right now" });
       return;
     }
@@ -871,58 +1210,215 @@ router.post("/:id/respond", requireAuth, async (req: AuthRequest, res: Response)
       return;
     }
 
-    // Check for existing response
-    const existing = await db.query.broadcastResponsesTable.findFirst({
-      where: and(
-        eq(broadcastResponsesTable.requestId, request.id),
-        eq(broadcastResponsesTable.providerId, userId)
-      ),
+    const explicitAction = String(req.body?.action || "").trim().toLowerCase();
+    if (explicitAction && explicitAction !== "accept" && explicitAction !== "counter") {
+      res.status(400).json({ error: "action must be accept or counter", code: "INVALID_RESPONSE_ACTION" });
+      return;
+    }
+    const parsedOffer = boundedWholeAmount(req.body?.providerOffer, { min: 50, max: 10_000_000 });
+    const requestedTravel = req.body?.providerTravellingCharge;
+    const parsedTravel = requestedTravel === undefined
+      ? Math.max(0, Number(request.travellingCharge || 0))
+      : boundedWholeAmount(requestedTravel, { min: 0, max: 1_000_000 });
+    if (parsedTravel === null) {
+      res.status(400).json({ error: "Enter a valid whole-rupee travel charge", code: "INVALID_TRAVEL_CHARGE" });
+      return;
+    }
+    const responseType: "accept" | "counter" = explicitAction
+      ? explicitAction as "accept" | "counter"
+      : (request.customerOffer != null
+        && (parsedOffer === null || parsedOffer === request.customerOffer)
+        && parsedTravel === Number(request.travellingCharge || 0))
+        ? "accept"
+        : "counter";
+    if (responseType === "accept" && (!request.customerOffer || request.customerOffer <= 0)) {
+      res.status(400).json({ error: "This request has no customer price to accept. Send a counter quote instead.", code: "CUSTOMER_OFFER_REQUIRED" });
+      return;
+    }
+    if (responseType === "counter" && parsedOffer === null) {
+      res.status(400).json({ error: "Enter a valid whole-rupee hourly counter", code: "INVALID_COUNTER_AMOUNT" });
+      return;
+    }
+    if (responseType === "counter"
+      && parsedOffer === request.customerOffer
+      && parsedTravel === Number(request.travellingCharge || 0)) {
+      res.status(400).json({ error: "This matches the customer's offer. Use Accept Offer to confirm the job immediately.", code: "USE_DIRECT_ACCEPT" });
+      return;
+    }
+    if (req.body?.message !== undefined && typeof req.body.message !== "string") {
+      res.status(400).json({ error: "message must be text", code: "INVALID_RESPONSE_MESSAGE" });
+      return;
+    }
+    const rawMessage = String(req.body?.message || "").trim();
+    if (rawMessage.length > 300) {
+      res.status(400).json({ error: "message must be 300 characters or fewer", code: "INVALID_RESPONSE_MESSAGE" });
+      return;
+    }
+    const suppliedClientRequestId = req.body?.clientRequestId;
+    if (suppliedClientRequestId !== undefined
+      && !/^[A-Za-z0-9._:-]{8,120}$/.test(String(suppliedClientRequestId).trim())) {
+      res.status(400).json({ error: "clientRequestId format is invalid", code: "INVALID_CLIENT_REQUEST_ID" });
+      return;
+    }
+    const message = rawMessage || null;
+    const clientRequestId = cleanResponseRequestId(req.body?.clientRequestId, request.id, userId);
+    const maxRevisions = Math.max(1, Math.min(10, Number(settings.maxNegotiationRounds || 3)));
+
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`broadcast:${request.id}`}, 0))`);
+      const freshRequest = await tx.query.broadcastRequestsTable.findFirst({ where: eq(broadcastRequestsTable.id, request.id) });
+      if (!freshRequest) throw new BroadcastFlowError(404, "BROADCAST_NOT_FOUND", "Broadcast request not found");
+      const existing = await tx.query.broadcastResponsesTable.findFirst({ where: and(
+        eq(broadcastResponsesTable.requestId, freshRequest.id),
+        eq(broadcastResponsesTable.providerId, userId),
+      ) });
+
+      if (freshRequest.status === "accepted") {
+        if (existing && freshRequest.acceptedResponseId === existing.id && freshRequest.bookingId) {
+          const booking = await tx.query.bookingsTable.findFirst({ where: eq(bookingsTable.id, freshRequest.bookingId) });
+          if (booking) return {
+            kind: "accepted" as const,
+            outcome: { request: freshRequest, response: existing, booking, losingProviderIds: [], duplicate: true },
+          };
+        }
+        throw new BroadcastFlowError(409, "BROADCAST_FILLED", "This job is no longer available because another provider accepted first");
+      }
+      if (freshRequest.status !== "open") {
+        throw new BroadcastFlowError(409, "BROADCAST_NOT_AVAILABLE", "This broadcast request is no longer open");
+      }
+      if (isExpiredBroadcast(freshRequest)) {
+        throw new BroadcastFlowError(409, "BROADCAST_EXPIRED", "This broadcast request has expired");
+      }
+
+      const freshProvider = await tx.query.usersTable.findFirst({ where: eq(usersTable.id, userId) });
+      if (!freshProvider || freshProvider.isBlocked || freshProvider.isDeactivated || !freshProvider.isAvailable) {
+        throw new BroadcastFlowError(409, "PROVIDER_NOT_AVAILABLE", freshProvider?.blockedReason || "Your account cannot respond right now");
+      }
+      if (!freshProvider.isVerified || freshProvider.verificationStatus !== "approved") {
+        throw new BroadcastFlowError(403, "PROVIDER_NOT_VERIFIED", "Only verified providers can respond to broadcast requests");
+      }
+      const freshMatch = matchProviderToBroadcast(freshProvider, freshRequest, radius, new Set());
+      if (!freshMatch.eligible) {
+        throw new BroadcastFlowError(403, "BROADCAST_NOT_ELIGIBLE", "This job request is outside your current service category or service area");
+      }
+
+      const input = {
+        responseType,
+        providerOffer: responseType === "counter" ? parsedOffer : null,
+        providerTravellingCharge: responseType === "counter" ? parsedTravel : Number(freshRequest.travellingCharge || 0),
+        message,
+        clientRequestId,
+      };
+      let response: typeof broadcastResponsesTable.$inferSelect;
+      let revised = false;
+      let duplicate = false;
+
+      if (!existing) {
+        [response] = await tx.insert(broadcastResponsesTable).values({
+          id: generateId(),
+          requestId: freshRequest.id,
+          providerId: userId,
+          providerName: freshProvider.name,
+          ...input,
+          revision: 1,
+          status: "pending",
+        }).returning();
+      } else if (existing.status === "pending") {
+        if (!responsePayloadMatches(existing, input)) {
+          throw new BroadcastFlowError(409, "RESPONSE_ALREADY_PENDING", "You already have a response awaiting the customer");
+        }
+        response = existing;
+        duplicate = true;
+      } else if (existing.status === "rejected_by_customer") {
+        if (existing.clientRequestId === clientRequestId) {
+          throw new BroadcastFlowError(409, "NEW_REVISION_REQUIRED", "The customer declined this offer. Change the amount and send a revised counter.");
+        }
+        if (existing.revision >= maxRevisions) {
+          throw new BroadcastFlowError(409, "REVISION_LIMIT_REACHED", `Maximum of ${maxRevisions} response revisions reached`);
+        }
+        if (responseType === "counter"
+          && existing.providerOffer === input.providerOffer
+          && Number(existing.providerTravellingCharge || 0) === input.providerTravellingCharge) {
+          throw new BroadcastFlowError(400, "COUNTER_MUST_CHANGE", "Change the hourly or travel amount before sending another counter");
+        }
+        const [updated] = await tx.update(broadcastResponsesTable).set({
+          ...input,
+          revision: existing.revision + 1,
+          status: "pending",
+          rejectedAt: null,
+          updatedAt: new Date(),
+        }).where(and(
+          eq(broadcastResponsesTable.id, existing.id),
+          eq(broadcastResponsesTable.status, "rejected_by_customer"),
+          eq(broadcastResponsesTable.revision, existing.revision),
+        )).returning();
+        if (!updated) throw new BroadcastFlowError(409, "RESPONSE_CHANGED", "This response changed on another device");
+        response = updated;
+        revised = true;
+      } else {
+        throw new BroadcastFlowError(409, "RESPONSE_NOT_AVAILABLE", "This response can no longer be changed");
+      }
+
+      if (!duplicate) {
+        await tx.insert(broadcastOfferEventsTable).values({
+          id: generateId(),
+          requestId: freshRequest.id,
+          responseId: response.id,
+          actorId: userId,
+          actorRole: "provider",
+          eventType: revised ? "response_revised" : "response_submitted",
+          revision: response.revision,
+          amount: response.responseType === "accept" ? freshRequest.customerOffer : response.providerOffer,
+          travellingCharge: response.providerTravellingCharge,
+          metadata: { responseType: response.responseType },
+        });
+      }
+
+      if (response.responseType === "accept") {
+        const outcome = await finalizeAcceptedBroadcast(tx, freshRequest, response, "provider");
+        return { kind: "accepted" as const, outcome };
+      }
+      return { kind: "counter" as const, response, duplicate, revised };
     });
 
-    if (existing) {
-      res.status(409).json({ error: "You have already responded to this request", response: existing });
+    if (result.kind === "accepted") {
+      deliverAcceptedBroadcast(result.outcome, "provider").catch((error) => {
+        logger.warn({ err: error, broadcastRequestId: request.id }, "broadcast accepted but notification delivery was incomplete");
+      });
+      res.status(result.outcome.duplicate ? 200 : 201).json({
+        response: result.outcome.response,
+        booking: result.outcome.booking,
+        accepted: true,
+        duplicate: result.outcome.duplicate,
+      });
       return;
     }
 
-    const { providerOffer, message } = req.body;
-    const parsedOffer = toNumber(providerOffer);
-
-    const response = {
-      id: generateId(),
-      requestId: request.id,
-      providerId: userId,
-      providerName: provider.name,
-      providerOffer: parsedOffer,
-      message: message || null,
-      status: "pending",
-    };
-
-    await db.insert(broadcastResponsesTable).values(response);
-
-    const finalPrice = parsedOffer ?? request.customerOffer;
-    const priceText = finalPrice ? `Rs. ${finalPrice}` : "open price";
-
-    emitToUser(request.customerId, "broadcast:response" as EventName, {
-      requestId: request.id,
-      response: {
-        ...response,
-        providerRating: provider.rating || 0,
-        providerTotalJobs: provider.totalJobs || 0,
-        providerIsVerified: provider.isVerified || false,
-      },
-    });
-
-    notifyUser({
-      userId: request.customerId,
-      title: "Provider responded!",
-      body: `${provider.name} responded to your ${request.serviceLabel} request — ${priceText}`,
-      type: "broadcast",
-      link: `/broadcasts/${request.id}`,
-      data: { broadcastRequestId: request.id, role: "customer", type: "broadcast" },
-    }).catch(() => undefined);
-
-    res.json({ response });
+    if (!result.duplicate) {
+      emitToUser(request.customerId, "broadcast:response" as EventName, {
+        requestId: request.id,
+        response: {
+          ...result.response,
+          providerRating: provider.rating || 0,
+          providerTotalJobs: provider.totalJobs || 0,
+          providerIsVerified: provider.isVerified || false,
+        },
+      });
+      notifyUser({
+        userId: request.customerId,
+        title: result.revised ? "Provider revised their counter" : "Provider sent a counter",
+        body: `${provider.name} proposed Rs. ${Number(result.response.providerOffer || 0).toLocaleString()} per hour for ${request.serviceLabel}`,
+        type: "broadcast",
+        link: `/broadcasts/${request.id}`,
+        data: { broadcastRequestId: request.id, role: "customer", type: "broadcast" },
+      }).catch(() => undefined);
+    }
+    res.status(result.duplicate ? 200 : 201).json({ response: result.response, accepted: false, duplicate: result.duplicate });
   } catch (e) {
+    if (e instanceof BroadcastFlowError) {
+      res.status(e.status).json({ error: e.message, code: e.code });
+      return;
+    }
     logger.error({ err: e }, "broadcast respond error");
     res.status(500).json({ error: "Failed to respond to broadcast request" });
   }
@@ -937,227 +1433,136 @@ router.post("/:id/select/:responseId", requireAuth, async (req: AuthRequest, res
       return;
     }
 
-    const request = await db.query.broadcastRequestsTable.findFirst({
-      where: eq(broadcastRequestsTable.id, String(req.params.id)),
-    });
+    const requestId = String(req.params.id);
+    const responseId = String(req.params.responseId);
+    const outcome = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`broadcast:${requestId}`}, 0))`);
+      const request = await tx.query.broadcastRequestsTable.findFirst({ where: eq(broadcastRequestsTable.id, requestId) });
+      if (!request) throw new BroadcastFlowError(404, "BROADCAST_NOT_FOUND", "Broadcast request not found");
+      if (request.customerId !== userId) throw new BroadcastFlowError(403, "ACCESS_DENIED", "Access denied");
 
-    if (!request) {
-      res.status(404).json({ error: "Broadcast request not found" });
-      return;
-    }
+      const response = await tx.query.broadcastResponsesTable.findFirst({ where: and(
+        eq(broadcastResponsesTable.id, responseId),
+        eq(broadcastResponsesTable.requestId, request.id),
+      ) });
+      if (!response) throw new BroadcastFlowError(404, "RESPONSE_NOT_FOUND", "Provider response not found");
 
-    if (request.customerId !== userId) {
-      res.status(403).json({ error: "Access denied" });
-      return;
-    }
-
-    if (request.status !== "open") {
-      res.status(400).json({ error: "This broadcast request is no longer open" });
-      return;
-    }
-
-    const chosenResponse = await db.query.broadcastResponsesTable.findFirst({
-      where: and(
-        eq(broadcastResponsesTable.id, String(req.params.responseId)),
-        eq(broadcastResponsesTable.requestId, request.id)
-      ),
-    });
-
-    if (!chosenResponse) {
-      res.status(404).json({ error: "Provider response not found" });
-      return;
-    }
-
-    if (chosenResponse.status !== "pending") {
-      res.status(400).json({ error: "This provider response is no longer available" });
-      return;
-    }
-
-    const provider = await db.query.usersTable.findFirst({
-      where: eq(usersTable.id, chosenResponse.providerId),
-    });
-
-    if (!provider || provider.isBlocked || provider.isDeactivated || !provider.isAvailable) {
-      res.status(400).json({ error: "This provider is not available right now" });
-      return;
-    }
-    if (provider.verificationStatus !== "approved") {
-      res.status(400).json({ error: "This provider has not completed verification and cannot be booked." });
-      return;
-    }
-
-    const customerBlock = await getCustomerActiveWorkBlock(userId);
-    if (customerBlock.blocked && customerBlock.entityId !== request.id) {
-      res.status(409).json(activeWorkHttpPayload(customerBlock));
-      return;
-    }
-
-    const providerBlock = await getProviderActiveWorkBlock(provider.id);
-    if (providerBlock.blocked) {
-      res.status(409).json(activeWorkHttpPayload(providerBlock));
-      return;
-    }
-
-    const customer = await db.query.usersTable.findFirst({ where: eq(usersTable.id, userId) });
-    if (!customer) {
-      res.status(400).json({ error: "Customer not found" });
-      return;
-    }
-
-    const agreedPrice = chosenResponse.providerOffer ?? request.customerOffer;
-
-    // Create the booking
-    const booking = {
-      id: generateId(),
-      publicId: generatePublicId(),
-      customerId: userId,
-      customerName: customer.name,
-      customerPhone: customer.phone,
-      providerId: provider.id,
-      providerName: provider.name,
-      providerPhone: provider.phone,
-      service: request.serviceLabel,
-      serviceIcon: request.serviceIcon || "tool",
-      description: request.description || null,
-      attachment: null,
-      videoUrl: request.videoUrl || null,
-      address: request.address,
-      scheduledDate: request.scheduledDate,
-      scheduledTime: request.scheduledTime,
-      status: "pending",
-      price: agreedPrice,
-      commissionAmount: 0,
-      providerAmount: agreedPrice,
-      commissionRate: 0,
-      visitCharge: request.travellingCharge ?? 0,
-      ratePerHour: provider.ratePerHour || null,
-      pickedLat: request.latitude,
-      pickedLng: request.longitude,
-      customerLat: request.latitude,
-      customerLng: request.longitude,
-      providerLat: null,
-      providerLng: null,
-      providerAccuracy: null,
-      providerUpdatedAt: null,
-      providerArrivedAt: null,
-    };
-
-    // ── Atomic transaction: insert booking + close broadcast + mark responses ──
-    // All four writes succeed together or all roll back. Without a transaction,
-    // two concurrent "select" calls from the same customer (double-tap) could
-    // both read status="open", both insert a booking, and both mark the broadcast
-    // as accepted — creating duplicate bookings. The DB-level unique partial index
-    // on bookings(provider_id) WHERE status IN ('pending','accepted','in_progress')
-    // is the final safety net, but committing the status flip atomically prevents
-    // the dirty-read window that would trigger it.
-    await db.transaction(async (tx) => {
-      // Re-read request status inside transaction to catch concurrent selections.
-      const freshRequest = await tx.query.broadcastRequestsTable.findFirst({
-        where: eq(broadcastRequestsTable.id, request.id),
-      });
-      if (!freshRequest || freshRequest.status !== "open") {
-        throw new Error("ALREADY_ACCEPTED");
+      if (request.status === "accepted") {
+        if (request.acceptedResponseId === response.id && request.bookingId) {
+          const booking = await tx.query.bookingsTable.findFirst({ where: eq(bookingsTable.id, request.bookingId) });
+          if (booking) return { request, response, booking, losingProviderIds: [], duplicate: true };
+        }
+        throw new BroadcastFlowError(409, "BROADCAST_FILLED", "This job was already confirmed with another provider");
       }
-      // Re-read response status inside transaction.
-      const freshResponse = await tx.query.broadcastResponsesTable.findFirst({
-        where: eq(broadcastResponsesTable.id, chosenResponse.id),
-      });
-      if (!freshResponse || freshResponse.status !== "pending") {
-        throw new Error("RESPONSE_UNAVAILABLE");
+      if (request.status !== "open" || isExpiredBroadcast(request)) {
+        throw new BroadcastFlowError(409, "BROADCAST_NOT_AVAILABLE", "This broadcast request is no longer available");
       }
-
-      await tx.insert(bookingsTable).values(booking);
-
-      await tx
-        .update(broadcastRequestsTable)
-        .set({
-          status: "accepted",
-          acceptedResponseId: chosenResponse.id,
-          bookingId: booking.id,
-          updatedAt: new Date(),
-        })
-        .where(eq(broadcastRequestsTable.id, request.id));
-
-      await tx
-        .update(broadcastResponsesTable)
-        .set({ status: "accepted_by_customer", updatedAt: new Date() })
-        .where(eq(broadcastResponsesTable.id, chosenResponse.id));
-
-      await tx
-        .update(broadcastResponsesTable)
-        .set({ status: "rejected_by_customer", updatedAt: new Date() })
-        .where(
-          and(
-            eq(broadcastResponsesTable.requestId, request.id),
-            ne(broadcastResponsesTable.id, chosenResponse.id),
-            eq(broadcastResponsesTable.status, "pending")
-          )
-        );
+      if (response.status !== "pending") {
+        throw new BroadcastFlowError(409, "RESPONSE_UNAVAILABLE", "This provider response is no longer available");
+      }
+      return finalizeAcceptedBroadcast(tx, request, response, "customer");
     });
 
-    // Notify chosen provider — send both booking:new (for BookingContext) AND
-    // broadcast:selected (so BroadcastContext can play a ringtone + popup).
-    emitToUser(provider.id, "booking:new" as EventName, { booking });
-    emitToUser(provider.id, "broadcast:selected" as EventName, {
-      booking,
-      requestId: request.id,
-      serviceLabel: request.serviceLabel,
-      customerName: customer.name,
+    deliverAcceptedBroadcast(outcome, "customer").catch((error) => {
+      logger.warn({ err: error, broadcastRequestId: requestId }, "broadcast selected but notification delivery was incomplete");
     });
-    notifyUser({
-      userId: provider.id,
-      title: "🎉 You got the job!",
-      body: `${customer.name} selected you for ${request.serviceLabel}`,
-      type: "booking",
-      link: `/jobs/${booking.id}`,
-      data: { bookingId: booking.id },
-    }).catch(() => undefined);
-
-    // Notify all providers whose responses were just rejected
-    const rejectedResponses = await db
-      .select({ providerId: broadcastResponsesTable.providerId })
-      .from(broadcastResponsesTable)
-      .where(
-        and(
-          eq(broadcastResponsesTable.requestId, request.id),
-          eq(broadcastResponsesTable.status, "rejected_by_customer")
-        )
-      );
-
-    for (const r of rejectedResponses) {
-      if (r.providerId === provider.id) continue; // skip chosen provider
-      emitToUser(r.providerId, "broadcast:rejected" as EventName, {
-        requestId: request.id,
-        serviceLabel: request.serviceLabel,
-        customerName: customer.name,
-      });
-      notifyUser({
-        userId: r.providerId,
-        title: "Request filled",
-        body: `${customer.name}'s ${request.serviceLabel} request was filled by another provider`,
-        type: "broadcast",
-        link: `/broadcast`,
-        data: { broadcastRequestId: request.id, role: "provider", type: "broadcast" },
-      }).catch(() => undefined);
-    }
-
-    // Notify customer
-    emitToUser(userId, "booking:updated" as EventName, { booking });
-
-    emitToRole("admin", "admin:event" as EventName, { type: "booking:new", booking });
-
-    res.json({ booking, request: { ...request, status: "accepted", bookingId: booking.id } });
-  } catch (e: any) {
-    if (e?.message === "ALREADY_ACCEPTED") {
-      res.status(409).json({ error: "This broadcast request was already filled by another selection. Please refresh." });
-      return;
-    }
-    if (e?.message === "RESPONSE_UNAVAILABLE") {
-      res.status(409).json({ error: "This provider's offer is no longer available. Please choose another." });
+    res.status(outcome.duplicate ? 200 : 201).json({
+      booking: outcome.booking,
+      request: outcome.request,
+      response: outcome.response,
+      duplicate: outcome.duplicate,
+    });
+  } catch (e) {
+    if (e instanceof BroadcastFlowError) {
+      res.status(e.status).json({ error: e.message, code: e.code });
       return;
     }
     logger.error({ err: e }, "broadcast select error");
     res.status(500).json({ error: "Failed to select provider and create booking" });
+  }
+});
+
+// ─── Customer: Reject one counter while keeping the broadcast open ──────────
+router.post("/:id/responses/:responseId/reject", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    if (req.user!.role !== "customer") {
+      res.status(403).json({ error: "Only customers can reject provider counters" });
+      return;
+    }
+    const userId = req.user!.userId;
+    const requestId = String(req.params.id);
+    const responseId = String(req.params.responseId);
+    const settings = await getPlatformSettings();
+    const maxRevisions = Math.max(1, Math.min(10, Number(settings.maxNegotiationRounds || 3)));
+
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`broadcast:${requestId}`}, 0))`);
+      const request = await tx.query.broadcastRequestsTable.findFirst({ where: eq(broadcastRequestsTable.id, requestId) });
+      if (!request) throw new BroadcastFlowError(404, "BROADCAST_NOT_FOUND", "Broadcast request not found");
+      if (request.customerId !== userId) throw new BroadcastFlowError(403, "ACCESS_DENIED", "Access denied");
+      if (request.status !== "open" || isExpiredBroadcast(request)) {
+        throw new BroadcastFlowError(409, "BROADCAST_NOT_AVAILABLE", "This broadcast request is no longer available");
+      }
+      const response = await tx.query.broadcastResponsesTable.findFirst({ where: and(
+        eq(broadcastResponsesTable.id, responseId),
+        eq(broadcastResponsesTable.requestId, request.id),
+      ) });
+      if (!response) throw new BroadcastFlowError(404, "RESPONSE_NOT_FOUND", "Provider response not found");
+      if (response.status === "rejected_by_customer") {
+        return { request, response, duplicate: true, canRevise: response.revision < maxRevisions };
+      }
+      if (response.status !== "pending") {
+        throw new BroadcastFlowError(409, "RESPONSE_UNAVAILABLE", "This provider response is no longer available");
+      }
+      const [rejected] = await tx.update(broadcastResponsesTable).set({
+        status: "rejected_by_customer",
+        rejectedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(and(
+        eq(broadcastResponsesTable.id, response.id),
+        eq(broadcastResponsesTable.status, "pending"),
+      )).returning();
+      if (!rejected) throw new BroadcastFlowError(409, "RESPONSE_CHANGED", "This provider response changed on another device");
+      await tx.insert(broadcastOfferEventsTable).values({
+        id: generateId(),
+        requestId: request.id,
+        responseId: rejected.id,
+        actorId: userId,
+        actorRole: "customer",
+        eventType: "response_rejected",
+        revision: rejected.revision,
+        amount: rejected.responseType === "accept" ? request.customerOffer : rejected.providerOffer,
+        travellingCharge: rejected.providerTravellingCharge,
+        metadata: { providerMayRevise: rejected.revision < maxRevisions },
+      });
+      return { request, response: rejected, duplicate: false, canRevise: rejected.revision < maxRevisions };
+    });
+
+    if (!result.duplicate) {
+      emitToUser(result.response.providerId, "broadcast:response-rejected" as EventName, {
+        requestId,
+        responseId,
+        canRevise: result.canRevise,
+      });
+      notifyUser({
+        userId: result.response.providerId,
+        title: "Customer declined your counter",
+        body: result.canRevise
+          ? `You can send a revised amount for ${result.request.serviceLabel}.`
+          : `The response limit was reached for ${result.request.serviceLabel}.`,
+        type: "broadcast",
+        link: `/broadcasts/${requestId}`,
+        data: { broadcastRequestId: requestId, role: "provider", type: "broadcast" },
+      }).catch(() => undefined);
+    }
+    res.json({ response: result.response, canRevise: result.canRevise, duplicate: result.duplicate });
+  } catch (e) {
+    if (e instanceof BroadcastFlowError) {
+      res.status(e.status).json({ error: e.message, code: e.code });
+      return;
+    }
+    logger.error({ err: e }, "broadcast response reject error");
+    res.status(500).json({ error: "Failed to reject provider response" });
   }
 });
 
@@ -1184,13 +1589,35 @@ router.post("/:id/cancel", requireAuth, async (req: AuthRequest, res: Response) 
       return;
     }
 
-    await db
-      .update(broadcastRequestsTable)
-      .set({ status: "cancelled", updatedAt: new Date() })
-      .where(eq(broadcastRequestsTable.id, request.id));
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`broadcast:${request.id}`}, 0))`);
+      const [cancelled] = await tx.update(broadcastRequestsTable)
+        .set({ status: "cancelled", updatedAt: new Date() })
+        .where(and(eq(broadcastRequestsTable.id, request.id), eq(broadcastRequestsTable.status, "open")))
+        .returning({ id: broadcastRequestsTable.id });
+      if (!cancelled) throw new BroadcastFlowError(409, "BROADCAST_NOT_AVAILABLE", "Only open requests can be cancelled");
+      await tx.update(broadcastResponsesTable).set({ status: "not_selected", updatedAt: new Date() }).where(and(
+        eq(broadcastResponsesTable.requestId, request.id),
+        eq(broadcastResponsesTable.status, "pending"),
+      ));
+      await tx.insert(broadcastOfferEventsTable).values({
+        id: generateId(),
+        requestId: request.id,
+        actorId: userId,
+        actorRole: req.user!.role === "admin" ? "admin" : "customer",
+        eventType: "broadcast_cancelled",
+        metadata: {},
+      });
+    });
+
+    emitToRole("provider", "broadcast:cancelled" as EventName, { requestId: request.id });
 
     res.json({ success: true });
   } catch (e) {
+    if (e instanceof BroadcastFlowError) {
+      res.status(e.status).json({ error: e.message, code: e.code });
+      return;
+    }
     logger.error({ err: e }, "broadcast cancel error");
     res.status(500).json({ error: "Failed to cancel broadcast request" });
   }
@@ -1222,13 +1649,37 @@ router.post("/:id/respond/withdraw", requireAuth, async (req: AuthRequest, res: 
       return;
     }
 
-    await db
-      .update(broadcastResponsesTable)
-      .set({ status: "withdrawn", updatedAt: new Date() })
-      .where(eq(broadcastResponsesTable.id, existing.id));
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`broadcast:${existing.requestId}`}, 0))`);
+      const request = await tx.query.broadcastRequestsTable.findFirst({ where: eq(broadcastRequestsTable.id, existing.requestId) });
+      if (!request || request.status !== "open" || isExpiredBroadcast(request)) {
+        throw new BroadcastFlowError(409, "BROADCAST_NOT_AVAILABLE", "This broadcast request is no longer available");
+      }
+      const [withdrawn] = await tx.update(broadcastResponsesTable)
+        .set({ status: "withdrawn", updatedAt: new Date() })
+        .where(and(eq(broadcastResponsesTable.id, existing.id), eq(broadcastResponsesTable.status, "pending")))
+        .returning();
+      if (!withdrawn) throw new BroadcastFlowError(409, "RESPONSE_CHANGED", "This response changed on another device");
+      await tx.insert(broadcastOfferEventsTable).values({
+        id: generateId(),
+        requestId: existing.requestId,
+        responseId: existing.id,
+        actorId: userId,
+        actorRole: "provider",
+        eventType: "response_withdrawn",
+        revision: existing.revision,
+        amount: existing.responseType === "accept" ? request.customerOffer : existing.providerOffer,
+        travellingCharge: existing.providerTravellingCharge,
+        metadata: {},
+      });
+    });
 
     res.json({ success: true });
   } catch (e) {
+    if (e instanceof BroadcastFlowError) {
+      res.status(e.status).json({ error: e.message, code: e.code });
+      return;
+    }
     logger.error({ err: e }, "broadcast withdraw error");
     res.status(500).json({ error: "Failed to withdraw response" });
   }

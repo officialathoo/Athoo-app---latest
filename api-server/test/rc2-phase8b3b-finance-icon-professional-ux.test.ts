@@ -77,17 +77,21 @@ test("commission payment requires a reference owned screenshot and user-safe upl
   assert.match(source, /Payment Screenshot/);
 });
 
-test("invoice documents escape dynamic content and use localized dates and currency", () => {
+test("invoice documents escape dynamic content and use Pakistan dates and currency", () => {
+  const pdf = read("athoo-app/utils/bookingInvoicePdf.ts");
+  assert.match(pdf, /function esc/);
+  assert.match(pdf, /replace\(\/&\/g, "&amp;"\)/);
+  assert.match(pdf, /toLocaleDateString\("en-PK"/);
+  assert.match(pdf, /Rs\. \$\{Number\.isFinite/);
+  assert.match(pdf, /Unable to create invoice/);
   for (const file of [
     "athoo-app/app/(customer)/invoices.tsx",
     "athoo-app/app/(provider)/invoices.tsx",
   ]) {
     const source = read(file);
-    assert.match(source, /function escapeHtml/);
+    assert.match(source, /shareBookingInvoice/);
     assert.match(source, /formatLocalizedDate/);
     assert.match(source, /formatCurrency/);
-    assert.match(source, /html dir="\$\{direction\}"/);
-    assert.match(source, /Unable to create invoice/);
   }
 });
 

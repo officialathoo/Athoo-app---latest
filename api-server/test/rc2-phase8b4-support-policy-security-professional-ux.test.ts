@@ -93,7 +93,9 @@ test("security settings use strong password validation and double-confirmed acco
   assert.match(privacy, /const deleteAccount/);
   assert.ok((privacy.match(/Alert\.alert/g) || []).length >= 3, "account deletion should require layered confirmation");
   assert.match(privacy, /apiErrorToMessage/);
-  assert.match(privacy, /api\.deleteMe\(\)/);
+  assert.match(privacy, /AccountActionVerificationModal/);
+  assert.match(privacy, /api\.deleteMe\(credential\)/);
+  assert.match(privacy, /api\.deactivateAccount\(credential\)/);
 });
 
 test("about and legal content use dynamic platform settings and bilingual versioned documents", () => {

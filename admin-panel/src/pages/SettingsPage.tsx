@@ -320,7 +320,7 @@ export function SettingsPage() {
     maintenanceMode: false,
     defaultVisitCharge: "200",
     maxBookingsPerDay: "10",
-    appVersion: "1.0.0",
+    appVersion: "2.0.0",
     minBookingNoticeHours: "1",
     allowGuestBrowsing: true,
     providerAutoApprove: false,
@@ -384,7 +384,7 @@ export function SettingsPage() {
         maintenanceMode: Boolean(s.maintenanceMode),
         defaultVisitCharge: String(s.defaultVisitCharge ?? 200),
         maxBookingsPerDay: String(s.maxBookingsPerDay ?? 10),
-        appVersion: s.appVersion || "1.0.0",
+        appVersion: s.appVersion || "2.0.0",
         minBookingNoticeHours: String(s.minBookingNoticeHours ?? 1),
         allowGuestBrowsing: s.allowGuestBrowsing !== false,
         providerAutoApprove: Boolean(s.providerAutoApprove),
@@ -616,7 +616,7 @@ export function SettingsPage() {
         </Field>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="App Version" hint="Current production release.">
-            <TInput value={form.appVersion} onChange={v => set("appVersion", v)} placeholder="1.0.0" />
+            <TInput value={form.appVersion} onChange={v => set("appVersion", v)} placeholder="2.0.0" />
           </Field>
           <Field label="Maintenance Mode" hint="Immediately blocks all new bookings.">
             <Toggle

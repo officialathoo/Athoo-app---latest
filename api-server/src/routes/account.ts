@@ -3,12 +3,13 @@ import { normalizeEmailAddress, queuePasswordChangedEmail, sendEmailChallenge, v
 import { queueEmail } from "../lib/emailDelivery";
 import { notifyUser } from "../lib/notifications";
 import { emitToRole, emitToUser } from "../lib/eventBus";
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { logger } from "../lib/logger";
 import crypto from "crypto";
 import * as bcrypt from "bcryptjs";
 import { db } from "@workspace/db";
-import { isOwnedUploadObjectPath, normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { isCleanOwnedUploadObjectPath } from "../lib/verifiedUploads";
 import { cleanupReplacedOwnedMedia } from "../lib/mediaLifecycle";
 import { createAdminNotification } from "../lib/adminNotifications";
 import {
@@ -26,7 +27,18 @@ import {
   requireAdmin,
   requirePermission,
   type AuthRequest,
+  signPurposeToken,
+  verifyToken,
 } from "../middlewares/auth";
+import { normalizeSessionDeviceId } from "../lib/session";
+import {
+  cleanAccountAction,
+  cleanAccountStepUpChannel,
+  getAccountStepUpOptions,
+  requestAccountStepUpCode,
+  verifyAccountStepUpCode,
+  type AccountAction,
+} from "../lib/accountStepUp";
 
 const router = Router();
 const id = () => crypto.randomUUID();
@@ -95,6 +107,136 @@ router.post("/delete-request/cancel", requireAuthAllowDeactivated, async (req: A
 
 router.use(requireAuth);
 
+function stepUpTokenPurpose(action: AccountAction): string {
+  return `account_action:${action}`;
+}
+
+async function requireAccountActionCredential(
+  req: AuthRequest,
+  res: Response,
+  user: typeof usersTable.$inferSelect,
+  action: AccountAction,
+): Promise<"password" | "otp" | null> {
+  const password = typeof req.body?.password === "string" ? req.body.password : null;
+  const verificationToken = typeof req.body?.verificationToken === "string" ? req.body.verificationToken.trim() : null;
+  if (password !== null && verificationToken) {
+    res.status(400).json({ error: "Choose password or a verification code, not both.", code: "STEP_UP_METHOD_CONFLICT" });
+    return null;
+  }
+  if (password !== null) {
+    if (!user.password) {
+      res.status(400).json({ error: "This account does not have a password. Use a mobile or email code.", code: "PASSWORD_UNAVAILABLE" });
+      return null;
+    }
+    if (password.length < 1 || password.length > 256 || !(await bcrypt.compare(password, user.password))) {
+      res.status(400).json({ error: "Password is incorrect.", code: "PASSWORD_INCORRECT" });
+      return null;
+    }
+    return "password";
+  }
+  if (verificationToken) {
+    if (verificationToken.length > 4096) {
+      res.status(400).json({ error: "Verification expired. Request a new code.", code: "STEP_UP_INVALID" });
+      return null;
+    }
+    const decoded = verifyToken(verificationToken);
+    const currentDeviceId = normalizeSessionDeviceId(req.headers["x-athoo-device-id"]);
+    const valid = decoded
+      && decoded.tokenType === "purpose"
+      && decoded.purpose === stepUpTokenPurpose(action)
+      && decoded.userId === user.id
+      && decoded.role === user.role
+      && decoded.sessionId === req.user!.sessionId
+      && (decoded.deviceId || null) === currentDeviceId;
+    if (!valid) {
+      res.status(403).json({ error: "Verification expired or does not match this action. Request a new code.", code: "STEP_UP_INVALID" });
+      return null;
+    }
+    return "otp";
+  }
+  res.status(400).json({ error: "Confirm this action with your password or a one-time code.", code: "STEP_UP_REQUIRED" });
+  return null;
+}
+
+router.get("/step-up/options", async (req: AuthRequest, res) => {
+  try {
+    const user = await db.query.usersTable.findFirst({ where: eq(usersTable.id, req.user!.userId) });
+    if (!user) return res.status(404).json({ error: "User not found" });
+    return res.json(await getAccountStepUpOptions(user));
+  } catch (error) {
+    logger.error({ err: error, userId: req.user!.userId }, "account step-up options failed");
+    return res.status(500).json({ error: "Unable to load account verification options" });
+  }
+});
+
+router.post("/step-up/request", async (req: AuthRequest, res) => {
+  try {
+    const action = cleanAccountAction(req.body?.action);
+    const channel = cleanAccountStepUpChannel(req.body?.channel);
+    if (!action || !channel) return res.status(400).json({ error: "A valid account action and delivery method are required.", code: "STEP_UP_REQUEST_INVALID" });
+    const user = await db.query.usersTable.findFirst({ where: eq(usersTable.id, req.user!.userId) });
+    if (!user) return res.status(404).json({ error: "User not found" });
+    const result = await requestAccountStepUpCode({ user, action, channel });
+    if (!result.success) {
+      const status = ["OTP_RESEND_COOLDOWN", "OTP_REQUEST_IN_PROGRESS"].includes(result.errorCode || "") ? 429 : 503;
+      return res.status(status).json({
+        error: status === 429
+          ? `Please wait ${result.resendAfterSeconds} seconds before requesting another code.`
+          : "Verification code delivery is temporarily unavailable. Choose another method or try again.",
+        code: result.errorCode,
+        retryAfterSeconds: result.resendAfterSeconds,
+      });
+    }
+    return res.json({
+      success: true,
+      destination: result.destination,
+      expiresInSeconds: result.expiresInSeconds,
+      resendAfterSeconds: result.resendAfterSeconds,
+      ...(result.code ? { code: result.code } : {}),
+    });
+  } catch (error) {
+    logger.error({ err: error, userId: req.user!.userId }, "account step-up request failed");
+    return res.status(500).json({ error: "Unable to send the verification code" });
+  }
+});
+
+router.post("/step-up/verify", async (req: AuthRequest, res) => {
+  try {
+    const action = cleanAccountAction(req.body?.action);
+    const channel = cleanAccountStepUpChannel(req.body?.channel);
+    const code = String(req.body?.code || "").trim();
+    if (!action || !channel || !/^\d{6}$/.test(code)) {
+      return res.status(400).json({ error: "Enter the valid 6-digit verification code.", code: "OTP_INVALID" });
+    }
+    const user = await db.query.usersTable.findFirst({ where: eq(usersTable.id, req.user!.userId) });
+    if (!user) return res.status(404).json({ error: "User not found" });
+    const verified = await verifyAccountStepUpCode({ user, action, channel, code });
+    if (!verified.success) {
+      const status = verified.code === "OTP_ATTEMPT_LIMIT" || verified.code === "EMAIL_OTP_ATTEMPT_LIMIT" ? 429 : 400;
+      return res.status(status).json({
+        error: verified.code?.includes("EXPIRED")
+          ? "The verification code expired. Request a new code."
+          : status === 429
+            ? "Too many incorrect attempts. Request a new code."
+            : "The verification code is incorrect.",
+        code: verified.code,
+        attemptsRemaining: verified.attemptsRemaining,
+      });
+    }
+    const verificationToken = signPurposeToken({
+      userId: user.id,
+      role: user.role,
+      sessionId: req.user!.sessionId,
+      purpose: stepUpTokenPurpose(action),
+      deviceId: normalizeSessionDeviceId(req.headers["x-athoo-device-id"]) ?? undefined,
+    }, "5m");
+    return res.json({ success: true, verificationToken, expiresInSeconds: 300 });
+  } catch (error) {
+    logger.error({ err: error, userId: req.user!.userId }, "account step-up verification failed");
+    return res.status(500).json({ error: "Unable to verify the code" });
+  }
+});
+
 // PROFILE — get current user profile
 router.get("/profile", async (req: AuthRequest, res) => {
   try {
@@ -138,7 +280,8 @@ router.patch("/profile", async (req: AuthRequest, res) => {
     }
     if (body.profileImage !== undefined) {
       const profileImage = normalizeStoredObjectPath(body.profileImage);
-      if (profileImage && !isOwnedUploadObjectPath(profileImage, user.id, ["shared", "private"])) return res.status(400).json({ error: "Profile photo must be uploaded through your Athoo account" });
+      // Stronger successor to isOwnedUploadObjectPath(profileImage, ...): ownership alone is insufficient.
+      if (profileImage && !(await isCleanOwnedUploadObjectPath(profileImage, user.id, ["shared", "private"]))) return res.status(400).json({ error: "Profile photo must be uploaded through your Athoo account and pass security scanning before use" });
       patch.profileImage = profileImage || null;
     }
     if (body.profileColor !== undefined) {
@@ -188,17 +331,21 @@ router.post("/password", async (req: AuthRequest, res) => {
 // DEACTIVATE — temporary
 router.post("/deactivate", async (req: AuthRequest, res) => {
   try {
-    const { password } = req.body ?? {};
     const user = await db.query.usersTable.findFirst({ where: eq(usersTable.id, req.user!.userId) });
     if (!user) return res.status(404).json({ error: "User not found" });
-    if (user.password && password !== undefined) {
-      const ok = await bcrypt.compare(String(password), user.password);
-      if (!ok) return res.status(401).json({ error: "Password is incorrect" });
-    }
-    await db
-      .update(usersTable)
-      .set({ isDeactivated: true, accountStatus: "deactivated", updatedAt: new Date() })
-      .where(eq(usersTable.id, user.id));
+    const verificationMethod = await requireAccountActionCredential(req, res, user, "deactivate");
+    if (!verificationMethod) return;
+    await db.transaction(async (tx) => {
+      await tx
+        .update(usersTable)
+        .set({ isDeactivated: true, accountStatus: "deactivated", updatedAt: new Date() })
+        .where(eq(usersTable.id, user.id));
+      await tx.insert(auditLogTable).values({
+        id: id(), adminId: user.id, adminName: user.name, adminRole: user.role,
+        action: "account.self_deactivated", target: "user", targetId: user.id,
+        details: { verificationMethod }, ip: req.ip ?? null,
+      });
+    });
     await revokeAllUserSessions(user.id, "account_deactivated");
     if (user.email) {
       void queueEmail({
@@ -220,13 +367,12 @@ router.post("/deactivate", async (req: AuthRequest, res) => {
 // DELETION — schedules deletion 7 days out, can be cancelled until then
 router.post("/delete-request", async (req: AuthRequest, res) => {
   try {
-    const { password, reason } = req.body ?? {};
+    const { reason } = req.body ?? {};
     const user = await db.query.usersTable.findFirst({ where: eq(usersTable.id, req.user!.userId) });
     if (!user) return res.status(404).json({ error: "User not found" });
-    if (user.password && password !== undefined) {
-      const ok = await bcrypt.compare(String(password), user.password);
-      if (!ok) return res.status(401).json({ error: "Password is incorrect" });
-    }
+    const verificationMethod = await requireAccountActionCredential(req, res, user, "delete");
+    if (!verificationMethod) return;
+    const cleanReason = reason ? String(reason).trim().slice(0, 500) : null;
     const existingPending = await db.query.accountDeletionRequestsTable.findFirst({
       where: and(
         eq(accountDeletionRequestsTable.userId, user.id),
@@ -239,22 +385,40 @@ router.post("/delete-request", async (req: AuthRequest, res) => {
     }
     const scheduledDeleteAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     const newId = id();
-    await db.insert(accountDeletionRequestsTable).values({
-      id: newId,
-      userId: user.id,
-      reason: reason ? String(reason) : null,
-      scheduledDeleteAt,
-      status: "pending",
+    const inserted = await db.transaction(async (tx) => {
+      const [created] = await tx.insert(accountDeletionRequestsTable).values({
+        id: newId,
+        userId: user.id,
+        reason: cleanReason,
+        scheduledDeleteAt,
+        status: "pending",
+      }).onConflictDoNothing().returning({ id: accountDeletionRequestsTable.id });
+      if (!created) return false;
+      await tx
+        .update(usersTable)
+        .set({
+          accountStatus: "pending_deletion",
+          deletionScheduledAt: scheduledDeleteAt,
+          isDeactivated: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(usersTable.id, user.id));
+      await tx.insert(auditLogTable).values({
+        id: id(), adminId: user.id, adminName: user.name, adminRole: user.role,
+        action: "account.self_deletion_requested", target: "account_deletion_request", targetId: newId,
+        details: { verificationMethod, hasReason: Boolean(cleanReason), scheduledDeleteAt: scheduledDeleteAt.toISOString() },
+        ip: req.ip ?? null,
+      });
+      return true;
     });
-    await db
-      .update(usersTable)
-      .set({
-        accountStatus: "pending_deletion",
-        deletionScheduledAt: scheduledDeleteAt,
-        isDeactivated: true,
-        updatedAt: new Date(),
-      })
-      .where(eq(usersTable.id, user.id));
+    if (!inserted) {
+      const concurrent = await db.query.accountDeletionRequestsTable.findFirst({
+        where: and(eq(accountDeletionRequestsTable.userId, user.id), eq(accountDeletionRequestsTable.status, "pending")),
+        orderBy: desc(accountDeletionRequestsTable.createdAt),
+      });
+      if (concurrent) return res.json({ success: true, scheduledDeleteAt: concurrent.scheduledDeleteAt, duplicate: true });
+      return res.status(409).json({ error: "A deletion request is already being processed. Please refresh and try again.", code: "DELETION_REQUEST_CONFLICT" });
+    }
     await revokeAllUserSessions(user.id, "account_deletion_requested");
     await createAdminNotification({
       title: "Account deletion requested",
@@ -476,8 +640,9 @@ router.post("/services/request", async (req: AuthRequest, res) => {
     if (pending) return res.status(409).json({ error: "A request for this service is already pending", request: pending });
     for (const document of documents) {
       const url = normalizeStoredObjectPath(document?.url);
-      if (!isOwnedUploadObjectPath(url, req.user!.userId, ["private"])) {
-        return res.status(400).json({ error: "Service-request documents must be uploaded through your private Athoo storage" });
+      // Replaces isOwnedUploadObjectPath(url, req.user!.userId, ["private"]) with owner + clean-scan enforcement.
+      if (!(await isCleanOwnedUploadObjectPath(url, req.user!.userId, ["private"]))) {
+        return res.status(400).json({ error: "Service-request documents must be uploaded through your private Athoo storage and pass security scanning before use" });
       }
       document.url = url;
     }
@@ -669,4 +834,3 @@ adminRouter.post("/deletion-requests/:id/cancel", requirePermission("users.write
 
 export { adminRouter as accountAdminRouter };
 export default router;
-

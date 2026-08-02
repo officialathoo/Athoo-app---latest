@@ -164,6 +164,20 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
         refreshBroadcasts();
       }
 
+      if (msg.type === "broadcast:response-rejected" && user.role === "provider") {
+        if (!mountedRef.current) return;
+        const canRevise = msg.payload?.canRevise !== false;
+        push({
+          type: "booking",
+          title: "Customer declined your counter",
+          message: canRevise
+            ? "You can open the broadcast and send a revised amount."
+            : "The response revision limit has been reached.",
+          role: "provider",
+        });
+        refreshBroadcasts();
+      }
+
       if (msg.type === "broadcast:accepted" || msg.type === "broadcast:cancelled") {
         refreshBroadcasts();
       }

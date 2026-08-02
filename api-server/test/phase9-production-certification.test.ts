@@ -75,9 +75,9 @@ test("release blueprints and runbooks use the current source-audited baseline an
   const final = read("docs/runbooks/FINAL_CONNECTED_DEPLOYMENT.md");
   const launch = read("docs/runbooks/PRODUCTION_LAUNCH_RUNBOOK.md");
   const packageJson = json("package.json");
-  assert.match(final, /ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY\.zip/);
-  assert.match(final, /20260719_broadcast_delivery_configuration_integrity\.sql/);
-  assert.match(launch, /Phase 24\.8 strict device-acceptance-integrity candidate/);
+  assert.match(final, /ATHOO_APP_V2_1_CONNECTED_CERTIFICATION_HARDENED\.zip/);
+  assert.match(final, /20260802_athoo_v2_location_pagination_integrity\.sql/);
+  assert.match(launch, /Athoo App V2 source-complete certification candidate/);
   assert.ok(packageJson.scripts["release:blueprints:validate"]);
   assert.match(packageJson.scripts["release:verify:code"], /release:blueprints:validate/);
 });

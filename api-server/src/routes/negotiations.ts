@@ -12,6 +12,8 @@ import { notifyUser } from "../lib/notifications";
 import { getPlatformSettings } from "../lib/admin";
 import { activeWorkHttpPayload, getCustomerActiveWorkBlock, getProviderActiveWorkBlock } from "../lib/businessRules";
 import { providerScheduleAllows, providerWithinRadius } from "../lib/providerAvailability";
+import { validateCleanOwnedUploadObjectPaths } from "../lib/verifiedUploads";
+import { assertLocationInActiveServiceArea, LocationIntegrityError, parseCanonicalLocation } from "../lib/locationIntegrity";
 
 const router = Router();
 
@@ -140,15 +142,25 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const { providerId, providerName, customerName, service, customerOffer, address, latitude, longitude, scheduledDate, scheduledTime, clientRequestId } = req.body;
+    const { providerId, providerName, customerName, service, customerOffer, travellingCharge, address, latitude, longitude, scheduledDate, scheduledTime, clientRequestId, mediaUrls } = req.body;
     const amount = toAmount(customerOffer);
+    const customerTravellingCharge = toAmount(travellingCharge) ?? 0;
     const requestId = typeof clientRequestId === "string" ? clientRequestId.trim() : "";
     if (!requestId || requestId.length > 120 || !/^[A-Za-z0-9._:-]+$/.test(requestId)) {
       res.status(400).json({ error: "A valid clientRequestId is required" });
       return;
     }
     if (!providerId || !service || !amount || amount < 100) {
-      res.status(400).json({ error: "Valid provider, service, and offer are required" });
+      res.status(400).json({ error: "Valid provider, service, and hourly offer are required" });
+      return;
+    }
+    if (customerTravellingCharge < 0 || customerTravellingCharge > 1_000_000) {
+      res.status(400).json({ error: "Enter a valid travelling charge" });
+      return;
+    }
+    const mediaValidation = await validateCleanOwnedUploadObjectPaths(mediaUrls, userId, { maxItems: 3, scopes: ["shared"] });
+    if (!mediaValidation.ok) {
+      res.status(400).json({ error: mediaValidation.error });
       return;
     }
     if (!address || !scheduledDate || !scheduledTime) {
@@ -198,12 +210,10 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       res.status(400).json({ error: "This provider is currently busy and cannot take new offers." });
       return;
     }
-    const customerLat = Number(latitude);
-    const customerLng = Number(longitude);
-    if (!Number.isFinite(customerLat) || !Number.isFinite(customerLng)) {
-      res.status(400).json({ error: "Customer coordinates are required for provider radius validation" });
-      return;
-    }
+    const canonicalLocation = parseCanonicalLocation({ ...req.body, address, latitude, longitude });
+    await assertLocationInActiveServiceArea(canonicalLocation);
+    const customerLat = canonicalLocation.latitude;
+    const customerLng = canonicalLocation.longitude;
     const radiusMatch = providerWithinRadius(provider, customerLat, customerLng);
     if (!radiusMatch.allowed) {
       res.status(400).json({ error: `This address is outside the provider's ${radiusMatch.radiusKm || 15} km service radius.` });
@@ -244,8 +254,10 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       id: generateId(),
       senderId: userId,
       senderName: customerName || "Customer",
-      text: `Customer offered Rs. ${amount}`,
+      text: `Customer offered Rs. ${amount}/hour${customerTravellingCharge ? ` + Rs. ${customerTravellingCharge} travel` : ""}`,
       offerAmount: amount,
+      travellingCharge: customerTravellingCharge,
+      mediaUrls: mediaValidation.paths,
       timestamp: new Date().toISOString(),
     };
 
@@ -258,12 +270,23 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       providerName: providerName || provider.name,
       service: String(service),
       customerOffer: amount,
+      customerTravellingCharge,
       providerCounter: null,
+      providerTravellingCharge: null,
       finalPrice: null,
+      finalTravellingCharge: 0,
       status: "customer_offer" as NegotiationStatus,
-      address: String(address),
-      latitude: latitude != null ? Number(latitude) : null,
-      longitude: longitude != null ? Number(longitude) : null,
+      address: canonicalLocation.formattedAddress,
+      latitude: canonicalLocation.latitude,
+      longitude: canonicalLocation.longitude,
+      locationCity: canonicalLocation.city,
+      locationArea: canonicalLocation.area,
+      locationProvince: canonicalLocation.province,
+      locationCountryCode: canonicalLocation.countryCode,
+      locationSource: canonicalLocation.source,
+      locationAccuracy: canonicalLocation.accuracy,
+      locationConfirmedAt: canonicalLocation.confirmedAt,
+      locationVerifiedAt: new Date(),
       scheduledDate: String(scheduledDate),
       scheduledTime: String(scheduledTime),
       bookingId: null,
@@ -293,7 +316,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
     notifyUser({
       userId: negotiation.providerId,
       title: "New offer",
-      body: `${negotiation.customerName} offered Rs. ${amount} for ${negotiation.service}`,
+      body: `${negotiation.customerName} offered Rs. ${amount}/hour${customerTravellingCharge ? ` + Rs. ${customerTravellingCharge} travel` : ""} for ${negotiation.service}`,
       type: "negotiation",
       link: `/negotiations/${negotiation.id}`,
       data: { negotiationId: negotiation.id },
@@ -303,6 +326,10 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json({ negotiation });
   } catch (e) {
+    if (e instanceof LocationIntegrityError) {
+      res.status(e.status).json({ error: e.message, code: e.code });
+      return;
+    }
     logger.error({ err: e }, "negotiation create error");
     res.status(500).json({ error: "Failed to create negotiation" });
   }
@@ -311,10 +338,15 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
 router.patch("/:id/counter", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const amount = toAmount(req.body?.amount);
+    const travellingCharge = toAmount(req.body?.travellingCharge) ?? 0;
     const message = String(req.body?.message || "Counter offer sent").trim().slice(0, 300);
 
     if (!amount || amount < 100 || amount > 10_000_000) {
-      res.status(400).json({ error: "Enter a valid counter amount" });
+      res.status(400).json({ error: "Enter a valid hourly counter amount" });
+      return;
+    }
+    if (travellingCharge < 0 || travellingCharge > 1_000_000) {
+      res.status(400).json({ error: "Enter a valid travelling charge" });
       return;
     }
 
@@ -361,16 +393,18 @@ router.patch("/:id/counter", requireAuth, async (req: AuthRequest, res: Response
       nextStatus = "provider_counter";
       patch = {
         providerCounter: amount,
+        providerTravellingCharge: travellingCharge,
         status: nextStatus,
-        // Reset the 20s clock for the customer to respond.
+        // Reset the response deadline for the customer.
         expiresAt: nextDeadline(),
       } as Partial<typeof neg>;
       msgs.push({
         id: generateId(),
         senderId: userId,
         senderName: neg.providerName,
-        text: message || `Provider countered Rs. ${amount}`,
+        text: message || `Provider countered Rs. ${amount}/hour${travellingCharge ? ` + Rs. ${travellingCharge} travel` : ""}`,
         offerAmount: amount,
+        travellingCharge,
         timestamp: new Date().toISOString(),
       });
     } else if (isCustomer && role === "customer") {
@@ -381,16 +415,18 @@ router.patch("/:id/counter", requireAuth, async (req: AuthRequest, res: Response
       nextStatus = "customer_offer";
       patch = {
         customerOffer: amount,
+        customerTravellingCharge: travellingCharge,
         status: nextStatus,
-        // Reset the 20s clock for the provider to respond.
+        // Reset the response deadline for the provider.
         expiresAt: nextDeadline(),
       } as Partial<typeof neg>;
       msgs.push({
         id: generateId(),
         senderId: userId,
         senderName: neg.customerName,
-        text: message || `Customer offered Rs. ${amount}`,
+        text: message || `Customer offered Rs. ${amount}/hour${travellingCharge ? ` + Rs. ${travellingCharge} travel` : ""}`,
         offerAmount: amount,
+        travellingCharge,
         timestamp: new Date().toISOString(),
       });
     } else {
@@ -422,7 +458,7 @@ router.patch("/:id/counter", requireAuth, async (req: AuthRequest, res: Response
       notifyUser({
         userId: recipientId,
         title: "Counter offer",
-        body: `${actor} countered Rs. ${amount}`,
+        body: `${actor} countered Rs. ${amount}/hour${travellingCharge ? ` + Rs. ${travellingCharge} travel` : ""}`,
         type: "negotiation",
         link: `/negotiations/${updated.id}`,
         data: { negotiationId: updated.id },
@@ -454,6 +490,7 @@ router.patch("/:id/accept", requireAuth, async (req: AuthRequest, res: Response)
     const isProvider = neg.providerId === userId && role === "provider";
 
     let finalPrice: number | null = null;
+    let finalTravellingCharge = 0;
     let text = "";
 
     if (isProvider) {
@@ -467,7 +504,8 @@ router.patch("/:id/accept", requireAuth, async (req: AuthRequest, res: Response)
         return;
       }
       finalPrice = neg.customerOffer;
-      text = `Provider accepted Rs. ${finalPrice}`;
+      finalTravellingCharge = neg.customerTravellingCharge || 0;
+      text = `Provider accepted Rs. ${finalPrice}/hour${finalTravellingCharge ? ` + Rs. ${finalTravellingCharge} travel` : ""}`;
     } else if (isCustomer) {
       const customerBlock = await getCustomerActiveWorkBlock(userId);
       if (customerBlock.blocked && customerBlock.entityId !== neg.id) {
@@ -479,7 +517,8 @@ router.patch("/:id/accept", requireAuth, async (req: AuthRequest, res: Response)
         return;
       }
       finalPrice = neg.providerCounter;
-      text = `Customer accepted Rs. ${finalPrice}`;
+      finalTravellingCharge = neg.providerTravellingCharge || 0;
+      text = `Customer accepted Rs. ${finalPrice}/hour${finalTravellingCharge ? ` + Rs. ${finalTravellingCharge} travel` : ""}`;
     } else {
       res.status(403).json({ error: "You can only accept your own negotiations" });
       return;
@@ -492,6 +531,7 @@ router.patch("/:id/accept", requireAuth, async (req: AuthRequest, res: Response)
       senderName: isProvider ? neg.providerName : neg.customerName,
       text,
       offerAmount: finalPrice,
+      travellingCharge: finalTravellingCharge,
       timestamp: new Date().toISOString(),
     });
 
@@ -517,6 +557,7 @@ router.patch("/:id/accept", requireAuth, async (req: AuthRequest, res: Response)
         .set({
           status: "accepted",
           finalPrice,
+          finalTravellingCharge,
           messages: msgs,
           updatedAt: new Date(),
         })
@@ -551,8 +592,17 @@ router.patch("/:id/accept", requireAuth, async (req: AuthRequest, res: Response)
           service: neg.service,
           serviceIcon: "tool",
           description: null,
-          attachment: null,
+          attachment: msgs.flatMap((message) => message.mediaUrls || []).find((url) => !/\.(mp4|mov|m4v)(?:$|\?)/i.test(url)) || null,
+          videoUrl: msgs.flatMap((message) => message.mediaUrls || []).find((url) => /\.(mp4|mov|m4v)(?:$|\?)/i.test(url)) || null,
           address: (neg.address as string | null) || "To be confirmed",
+          locationCity: neg.locationCity,
+          locationArea: neg.locationArea,
+          locationProvince: neg.locationProvince,
+          locationCountryCode: neg.locationCountryCode,
+          locationSource: neg.locationSource,
+          locationAccuracy: neg.locationAccuracy,
+          locationConfirmedAt: neg.locationConfirmedAt,
+          locationVerifiedAt: neg.locationVerifiedAt,
           scheduledDate: (neg.scheduledDate as string | null) || today.toISOString().split("T")[0],
           scheduledTime: (neg.scheduledTime as string | null) || "10:00",
           status: "accepted",
@@ -560,12 +610,12 @@ router.patch("/:id/accept", requireAuth, async (req: AuthRequest, res: Response)
           commissionAmount: 0,
           providerAmount: finalPrice,
           commissionRate: 0,
-          visitCharge: 0,
+          visitCharge: finalTravellingCharge,
           categorySlug: null,
           pickedLat: (neg.latitude as number | null) ?? null,
           pickedLng: (neg.longitude as number | null) ?? null,
-          customerLat: null,
-          customerLng: null,
+          customerLat: (neg.latitude as number | null) ?? null,
+          customerLng: (neg.longitude as number | null) ?? null,
           providerLat: null,
           providerLng: null,
           providerAccuracy: null,
@@ -588,7 +638,7 @@ router.patch("/:id/accept", requireAuth, async (req: AuthRequest, res: Response)
         notifyUser({
           userId: neg.customerId,
           title: "Booking Confirmed!",
-          body: `Your ${neg.service} booking is confirmed at Rs. ${finalPrice}`,
+          body: `Your ${neg.service} booking is confirmed at Rs. ${finalPrice}/hour${finalTravellingCharge ? ` + Rs. ${finalTravellingCharge} travel` : ""}`,
           type: "booking",
           link: `/bookings/${newBookingId}`,
           data: { bookingId: newBookingId },
@@ -609,7 +659,7 @@ router.patch("/:id/accept", requireAuth, async (req: AuthRequest, res: Response)
       notifyUser({
         userId: recipientId,
         title: "Offer accepted",
-        body: `${actor} accepted Rs. ${finalPrice}`,
+        body: `${actor} accepted Rs. ${finalPrice}/hour${finalTravellingCharge ? ` + Rs. ${finalTravellingCharge} travel` : ""}`,
         type: "negotiation",
         link: `/negotiations/${updated.id}`,
         data: { negotiationId: updated.id },
@@ -648,19 +698,26 @@ router.patch("/:id/reject", requireAuth, async (req: AuthRequest, res: Response)
       return;
     }
 
+    const customerDeclinedCounter = isCustomer && neg.status === "provider_counter";
+    const nextStatus: NegotiationStatus = customerDeclinedCounter ? "customer_offer" : "rejected";
     const msgs = [...((neg.messages as NegotiationMessage[]) || [])] as NegotiationMessage[];
     msgs.push({
       id: generateId(),
       senderId: userId,
       senderName: isProvider ? neg.providerName : neg.customerName,
-      text: isProvider ? "Provider rejected the offer" : "Customer rejected the counter offer",
+      text: customerDeclinedCounter
+        ? "Customer declined the counter offer. Provider may send a revised offer."
+        : isProvider
+          ? "Provider rejected the offer"
+          : "Customer withdrew the offer",
       timestamp: new Date().toISOString(),
     });
 
     const [updated] = await db
       .update(negotiationsTable)
       .set({
-        status: "rejected",
+        status: nextStatus,
+        expiresAt: customerDeclinedCounter ? nextDeadline() : neg.expiresAt,
         messages: msgs,
         updatedAt: new Date(),
       })
@@ -674,10 +731,21 @@ router.patch("/:id/reject", requireAuth, async (req: AuthRequest, res: Response)
       return;
     }
     if (updated) {
-      emitToUser(updated.customerId, "negotiation:rejected", { negotiation: updated });
-      emitToUser(updated.providerId, "negotiation:rejected", { negotiation: updated });
+      emitToUser(updated.customerId, "negotiation:updated", { negotiation: updated });
+      emitToUser(updated.providerId, "negotiation:updated", { negotiation: updated });
+      if (customerDeclinedCounter) {
+        notifyUser({
+          userId: updated.providerId,
+          title: "Counter offer declined",
+          body: `${updated.customerName} declined your latest offer for ${updated.service}. You can send a revised amount.`,
+          type: "negotiation",
+          link: `/negotiations/${updated.id}`,
+          data: { negotiationId: updated.id },
+          email: { category: "booking" },
+        }).catch(() => undefined);
+      }
     }
-    res.json({ negotiation: updated });
+    res.json({ negotiation: updated, canRecounter: customerDeclinedCounter });
   } catch (e) {
     logger.error({ err: e }, "negotiation reject error");
     res.status(500).json({ error: "Failed to reject offer" });

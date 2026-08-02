@@ -38,6 +38,7 @@ import { OpenStreetMapPreview } from "@/components/maps/OpenStreetMapPreview";
 import { getDirections } from "@/services/maps";
 import { getFastForegroundLocation, cacheForegroundLocation } from "@/services/location";
 import { apiErrorToMessage } from "@/lib/apiError";
+import { PrivateImage } from "@/services/storage";
 
 type LiveCoords = {
   latitude: number;
@@ -636,7 +637,22 @@ export default function JobDetailScreen() {
     if (!booking) return;
 
     try {
-      await api.markProviderArrived(booking.id);
+      const locationResult = await getFastForegroundLocation({
+        timeoutMs: 10_000,
+        requiredAccuracy: 250,
+        freshAccuracy: "highest",
+        rationaleTitle: "Verify arrival location",
+        rationaleBody: "Athoo confirms that you are within 1 km of the customer job pin before starting work.",
+      });
+      if (!locationResult.location) {
+        Alert.alert("Location Required", "Enable precise location and try again near the customer job address.");
+        return;
+      }
+      await api.markProviderArrived(booking.id, {
+        latitude: locationResult.location.latitude,
+        longitude: locationResult.location.longitude,
+        accuracy: locationResult.location.accuracy,
+      });
       const res = await api.generateStartPin(booking.id);
       const updated = res.booking as Booking;
       await syncBooking(updated);
@@ -846,10 +862,7 @@ export default function JobDetailScreen() {
   const hasLocation = !!getBookingLatLng(booking) || !!booking.address?.trim();
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
+    <View style={{ flex: 1 }}>
       <View style={[styles.container, { paddingTop: topPad }]}>
         <View style={styles.header}>
           <Pressable style={styles.backBtn} onPress={() => router.back()}>
@@ -1129,10 +1142,17 @@ export default function JobDetailScreen() {
                   <Text style={styles.photoLabel}>Customer&apos;s Photo</Text>
                 </View>
 
-                <Image
-                  source={{ uri: booking.attachment.startsWith("data:") ? booking.attachment : `data:image/jpeg;base64,${booking.attachment}` }}
+                <PrivateImage
+                  objectPath={
+                    booking.attachment.startsWith("/objects/") ||
+                    booking.attachment.startsWith("data:") ||
+                    booking.attachment.startsWith("http")
+                      ? booking.attachment
+                      : `data:image/jpeg;base64,${booking.attachment}`
+                  }
                   style={styles.attachmentImage}
                   resizeMode="cover"
+                  accessibilityLabel="Customer booking attachment"
                 />
               </View>
             ) : null}
@@ -1472,6 +1492,7 @@ export default function JobDetailScreen() {
           <KeyboardAvoidingView
             style={{ flex: 1 }}
             behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? topPad : 0}
           >
             <View style={styles.modalOverlay}>
               <View style={styles.modalBox}>
@@ -1536,6 +1557,10 @@ export default function JobDetailScreen() {
                   }}
                   keyboardType="number-pad"
                   maxLength={4}
+                  autoFocus
+                  showSoftInputOnFocus
+                  textContentType="oneTimeCode"
+                  autoComplete="sms-otp"
                   returnKeyType="done"
                   onSubmitEditing={
                     showArriveOtp
@@ -1568,7 +1593,7 @@ export default function JobDetailScreen() {
           </KeyboardAvoidingView>
         </Modal>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -2129,15 +2154,17 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.55)",
-    justifyContent: "flex-end",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 24,
   },
 
   modalBox: {
     backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 24,
-    paddingBottom: 40,
+    borderRadius: 24,
+    padding: 20,
+    paddingBottom: 24,
+    maxHeight: "85%",
     gap: 16,
   },
 
@@ -2174,8 +2201,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   otpBox: {
-    width: 60,
-    height: 64,
+    width: 54,
+    height: 58,
     borderRadius: 16,
     borderWidth: 2,
     borderColor: theme.colors.border,

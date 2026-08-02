@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
   Pressable,
@@ -40,6 +40,7 @@ type Props = {
   markers?: OpenMapMarker[];
   polyline?: Coordinate[];
   interactive?: boolean;
+  gesturesEnabled?: boolean;
   onCoordinateChange?: (latitude: number, longitude: number) => void;
 };
 
@@ -123,6 +124,7 @@ export function OpenStreetMapPreview({
   markers = [],
   polyline = [],
   interactive = false,
+  gesturesEnabled = true,
   onCoordinateChange,
 }: Props) {
   const { theme } = useTheme();
@@ -137,6 +139,15 @@ export function OpenStreetMapPreview({
   const [size, setSize] = useState<Size>({ width: 360, height });
   const [failedTiles, setFailedTiles] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [manualCenter, setManualCenter] = useState<Coordinate | null>(null);
+  const [manualZoom, setManualZoom] = useState<number | null>(null);
+  const gestureRef = useRef<{
+    distance: number;
+    midpointX: number;
+    midpointY: number;
+    center: Coordinate;
+    zoom: number;
+  } | null>(null);
 
   useEffect(() => {
     setFailedTiles(0);
@@ -155,11 +166,11 @@ export function OpenStreetMapPreview({
     return points.length ? points : [DEFAULT_CENTER];
   }, [explicitCenter, validMarkers, validPolyline]);
 
-  const resolvedZoom = useMemo(
+  const fittedZoom = useMemo(
     () => chooseZoom(allPoints, size, tileSize, zoom),
     [allPoints, size, tileSize, zoom],
   );
-  const center = useMemo<Coordinate>(() => {
+  const fittedCenter = useMemo<Coordinate>(() => {
     if (explicitCenter) return explicitCenter;
     const latitudes = allPoints.map((point) => point.latitude);
     const longitudes = allPoints.map((point) => point.longitude);
@@ -169,7 +180,17 @@ export function OpenStreetMapPreview({
     };
   }, [allPoints, explicitCenter]);
 
-  const centerWorld = useMemo(() => project(center, resolvedZoom, tileSize), [center, resolvedZoom, tileSize]);
+  useEffect(() => {
+    setManualCenter(null);
+    setManualZoom(null);
+  }, [latitude, longitude, markers, polyline, zoom, tileSize]);
+
+  const resolvedZoom = manualZoom ?? fittedZoom;
+  const center = manualCenter ?? fittedCenter;
+  const centerWorld = useMemo(
+    () => project(center, resolvedZoom, tileSize),
+    [center, resolvedZoom, tileSize],
+  );
 
   const tiles = useMemo(() => {
     if (!tileTemplateConfigured || !size.width || !size.height) return [];
@@ -220,9 +241,56 @@ export function OpenStreetMapPreview({
     onCoordinateChange(next.latitude, next.longitude);
   };
 
+  const zoomBy = (delta: number) => {
+    const nextZoom = clamp(resolvedZoom + delta, 3, 18);
+    setManualCenter(center);
+    setManualZoom(nextZoom);
+  };
+
+  const beginGesture = (event: GestureResponderEvent) => {
+    const touches = event.nativeEvent.touches;
+    if (!gesturesEnabled || touches.length < 2) return;
+    const [a, b] = touches;
+    gestureRef.current = {
+      distance: Math.max(1, Math.hypot(a.locationX - b.locationX, a.locationY - b.locationY)),
+      midpointX: (a.locationX + b.locationX) / 2,
+      midpointY: (a.locationY + b.locationY) / 2,
+      center,
+      zoom: resolvedZoom,
+    };
+  };
+
+  const moveGesture = (event: GestureResponderEvent) => {
+    const start = gestureRef.current;
+    const touches = event.nativeEvent.touches;
+    if (!start || touches.length < 2) return;
+    const [a, b] = touches;
+    const distance = Math.max(1, Math.hypot(a.locationX - b.locationX, a.locationY - b.locationY));
+    const midpointX = (a.locationX + b.locationX) / 2;
+    const midpointY = (a.locationY + b.locationY) / 2;
+    const nextZoom = clamp(Math.round(start.zoom + Math.log2(distance / start.distance)), 3, 18);
+    const startWorldAtNextZoom = project(start.center, nextZoom, tileSize);
+    const nextCenter = unproject({
+      x: startWorldAtNextZoom.x - (midpointX - start.midpointX),
+      y: startWorldAtNextZoom.y - (midpointY - start.midpointY),
+    }, nextZoom, tileSize);
+    setManualZoom(nextZoom);
+    setManualCenter(nextCenter);
+  };
+
+  const endGesture = () => {
+    gestureRef.current = null;
+  };
+
   const content = (
     <View
       onLayout={handleLayout}
+      onStartShouldSetResponder={(event) => gesturesEnabled && event.nativeEvent.touches.length >= 2}
+      onMoveShouldSetResponder={(event) => gesturesEnabled && event.nativeEvent.touches.length >= 2}
+      onResponderGrant={beginGesture}
+      onResponderMove={moveGesture}
+      onResponderRelease={endGesture}
+      onResponderTerminate={endGesture}
       style={[
         styles.container,
         { height, backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.border },
@@ -287,7 +355,18 @@ export function OpenStreetMapPreview({
 
       {interactive ? (
         <View pointerEvents="none" style={styles.tapHint}>
-          <Text style={styles.tapHintText}>Tap map to move pin</Text>
+          <Text style={styles.tapHintText}>Tap to move pin • pinch with two fingers to zoom</Text>
+        </View>
+      ) : null}
+
+      {gesturesEnabled ? (
+        <View style={styles.zoomControls}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Zoom map in" onPress={() => zoomBy(1)} style={styles.zoomButton}>
+            <Text style={styles.zoomButtonText}>+</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Zoom map out" onPress={() => zoomBy(-1)} style={styles.zoomButton}>
+            <Text style={styles.zoomButtonText}>−</Text>
+          </Pressable>
         </View>
       ) : null}
 
@@ -333,6 +412,23 @@ function createStyles(theme: AthooTheme, tileSize: 256 | 512) {
       borderLeftColor: "transparent",
       borderRightColor: "transparent",
     },
+    zoomControls: {
+      position: "absolute",
+      right: 8,
+      top: 8,
+      gap: 6,
+    },
+    zoomButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: theme.colors.elevated,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    zoomButtonText: { fontSize: 23, lineHeight: 25, fontWeight: "800", color: theme.colors.text },
     attribution: {
       position: "absolute",
       right: 5,

@@ -45,7 +45,20 @@
       "availability-time-picker-no-overlap",
       "availability-toggle-animation-and-server-state",
       "biometric-enable-unlock-disable",
-      "invoice-has-no-tax"
+      "invoice-has-no-tax",
+      "account-delete-deactivate-step-up-verification",
+      "persistent-login-after-app-close-and-network-recovery",
+      "completion-otp-keyboard-remains-visible",
+      "map-pinch-zoom-and-place-labels",
+      "negotiation-media-location-and-price-breakdown",
+      "scheduled-jobs-separate-tab-and-reminders",
+      "booking-list-cache-and-silent-refresh",
+      "provider-job-filter-cards-compact",
+      "customer-booking-no-six-month-recommendation",
+      "invoice-signed-qr-opens-official-verification",
+      "canonical-location-city-area-confirmation",
+      "saved-address-canonical-location-reuse",
+      "booking-history-cursor-pagination-load-more"
     ],
     "ios": [
       "fresh-install-and-native-splash",
@@ -84,7 +97,20 @@
       "availability-time-picker-no-overlap",
       "availability-toggle-animation-and-server-state",
       "biometric-enable-unlock-disable",
-      "invoice-has-no-tax"
+      "invoice-has-no-tax",
+      "account-delete-deactivate-step-up-verification",
+      "persistent-login-after-app-close-and-network-recovery",
+      "completion-otp-keyboard-remains-visible",
+      "map-pinch-zoom-and-place-labels",
+      "negotiation-media-location-and-price-breakdown",
+      "scheduled-jobs-separate-tab-and-reminders",
+      "booking-list-cache-and-silent-refresh",
+      "provider-job-filter-cards-compact",
+      "customer-booking-no-six-month-recommendation",
+      "invoice-signed-qr-opens-official-verification",
+      "canonical-location-city-area-confirmation",
+      "saved-address-canonical-location-reuse",
+      "booking-history-cursor-pagination-load-more"
     ]
   },
   "crossRole": [
@@ -111,6 +137,19 @@
     "broadcast-delivery-after-location-radius-change",
     "single-device-revocation-immediate-old-device",
     "call-no-crash-two-way-audio-with-turn-or-fallback",
-    "invoice-no-tax-customer-provider-admin-consistency"
+    "invoice-no-tax-customer-provider-admin-consistency",
+    "single-accept-broadcast-creates-booking",
+    "accepted-counteroffer-creates-booking-without-provider-reaccept",
+    "rejected-offer-allows-provider-recounter",
+    "accepted-job-disappears-from-other-providers",
+    "future-scheduled-job-does-not-expire-as-immediate",
+    "scheduled-job-day-and-five-hour-reminders-both-parties",
+    "geofenced-arrival-rejects-outside-configured-radius",
+    "negotiation-media-location-visible-to-both-participants",
+    "secure-upload-clean-promotion-and-malware-rejection",
+    "refund-request-private-evidence-and-reliable-status",
+    "signed-invoice-verification-is-tamper-resistant-and-non-pii",
+    "wrong-city-booking-rejected-by-active-service-area",
+    "location-snapshot-consistent-booking-negotiation-invoice"
   ]
 }

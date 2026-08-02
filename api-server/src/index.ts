@@ -7,6 +7,7 @@ import { startBookingSweeper, stopBookingSweeper } from "./lib/bookingSweeper";
 import { shutdownQueue, startQueueWorker } from "./lib/queue";
 import { assertDatabaseMigrationsCurrent } from "./lib/databaseMigrations";
 import { startEmailMaintenance, stopEmailMaintenance } from "./lib/emailDelivery";
+import { startUploadSecurityMaintenance, stopUploadSecurityMaintenance } from "./lib/uploadSecurityMaintenance";
 
 const rawPort = process.env["PORT"] || "5000";
 
@@ -48,8 +49,9 @@ async function startServer(): Promise<void> {
     logger.info({ port }, "Server listening");
     startQueueWorker();
     startEmailMaintenance();
+    startUploadSecurityMaintenance();
     startBookingSweeper();
-    logger.info("bookingSweeper started (5-min no-show cancel, 1-min interval)");
+    logger.info("booking lifecycle sweeper started");
   });
 }
 
@@ -64,6 +66,7 @@ async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, "shutdown signal received");
   stopBookingSweeper();
   stopEmailMaintenance();
+  stopUploadSecurityMaintenance();
   const serverClosed = new Promise<void>((resolve) => {
     server.close((error?: Error) => {
       if (error) logger.error({ err: error }, "error while closing HTTP server");

@@ -6,15 +6,15 @@ import test from "node:test";
 const root = path.resolve(import.meta.dirname, "../..");
 const read = (relativePath: string) => fs.readFileSync(path.join(root, relativePath), "utf8");
 
-test("active release documents point only to the Phase 24.8 candidate", () => {
+test("active release documents point only to the Athoo App V2 candidate", () => {
   const readme = read("README.md");
   const connected = read("docs/runbooks/FINAL_CONNECTED_DEPLOYMENT.md");
   const launch = read("docs/runbooks/PRODUCTION_LAUNCH_RUNBOOK.md");
   for (const text of [readme, connected, launch]) {
     assert.doesNotMatch(text, /PHASE14|Phase 14/);
   }
-  assert.match(connected, /ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY\.zip/);
-  assert.match(launch, /ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY\.zip/);
+  assert.match(connected, /ATHOO_APP_V2_1_CONNECTED_CERTIFICATION_HARDENED\.zip/);
+  assert.match(launch, /ATHOO_APP_V2_1_CONNECTED_CERTIFICATION_HARDENED\.zip/);
 });
 
 test("EAS identity is portable and release blueprints reject committed project UUIDs", () => {
@@ -59,11 +59,11 @@ test("cache and queue readiness never advertise adapters that are not active", (
 
 test("current certification remains honest about external launch gates", () => {
   const status = JSON.parse(read("docs/qa/current-release-status.json"));
-  assert.match(status.candidate, /^ATHOO_PHASE(?:23|24)_/);
-  assert.match(status.status, /(?:CONNECTED-VERIFICATION-READY|SOURCE-VERIFIED-CONNECTED-DEVICE-VALIDATION-PENDING|SOURCE-VERIFIED-STRICT-DEVICE-EVIDENCE-PENDING)/);
+  assert.equal(status.candidate, "ATHOO_APP_V2_1_CONNECTED_CERTIFICATION_HARDENED.zip");
+  assert.equal(status.status, "V2.1-SOURCE-VERIFIED-CONNECTED-CERTIFICATION-HARDENED-EXTERNAL-EVIDENCE-PENDING");
   assert.match(status.launchDecision, /^NO-GO-/);
   assert.equal(status.externalVerification.connectedRuntime, "pending");
   assert.equal(status.externalVerification.androidDevice, "pending");
   assert.equal(status.externalVerification.iosDevice, "pending");
-  assert.equal(status.externalVerification.loadAndSecurity, "pending");
+  assert.equal(status.externalVerification.loadRecoveryAndSecurity, "pending");
 });

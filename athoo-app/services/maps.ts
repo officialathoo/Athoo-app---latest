@@ -20,7 +20,9 @@ export interface PlaceSuggestion {
   lat: number;
   lng: number;
   city?: string;
+  area?: string;
   province?: string;
+  countryCode?: string;
   postcode?: string;
   precision: AddressPrecision;
   source: string;

@@ -29,8 +29,9 @@ export const invoiceConfig = Object.freeze({
     successBorder: "#86EFAC",
   }),
   contactLine: [
-    runtimeConfig.support.phoneDisplay,
+    runtimeConfig.support.websiteUrl?.replace(/^https?:\/\//, "").replace(/\/$/, ""),
     runtimeConfig.support.email,
-    runtimeConfig.support.socialHandle,
+    runtimeConfig.support.phoneDisplay,
+    runtimeConfig.support.socialHandle || "@athoo_services",
   ].filter(Boolean).join(" · "),
 });
