@@ -12,6 +12,7 @@ export type EmailTemplateKey =
   | "new_device_login"
   | "email_changed"
   | "account_status"
+  | "account_action_otp"
   | "campaign_custom";
 
 export type TemplateVariables = Record<string, string | number | boolean | null | undefined>;
@@ -62,6 +63,11 @@ const BUILT_INS: Record<EmailTemplateKey, TemplateDefinition> = {
   account_status: {
     subject: "{{brandName}} account status update",
     body: "Hi {{name}},\n\nYour {{brandName}} account status is now {{status}}.\n{{reason}}\n\nContact {{supportName}} if you need assistance.",
+    category: "security",
+  },
+  account_action_otp: {
+    subject: "Confirm your {{brandName}} account action",
+    body: "Hi {{name}},\n\nUse {{code}} to {{action}}. This code expires in {{expiresMinutes}} minutes and works only for this specific action.\n\nNever share this code. If you did not request this, keep your account active, change your password, and contact {{supportName}}.",
     category: "security",
   },
   campaign_custom: {

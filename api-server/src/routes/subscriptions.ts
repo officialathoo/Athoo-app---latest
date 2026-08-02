@@ -1,4 +1,5 @@
-import { isOwnedUploadObjectPath, normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { isCleanOwnedUploadObjectPath } from "../lib/verifiedUploads";
 import { Router } from "express";
 import { logger } from "../lib/logger";
 import { notifyUser } from "../lib/notifications";
@@ -104,8 +105,8 @@ router.post("/subscribe", async (req: AuthRequest, res) => {
       return res.status(400).json({ error: "Payment screenshot is required" });
     }
     const normalizedScreenshotUrl = normalizeStoredObjectPath(screenshotUrl);
-    if (normalizedScreenshotUrl && !isOwnedUploadObjectPath(normalizedScreenshotUrl, req.user!.userId, ["private"])) {
-      return res.status(400).json({ error: "Payment screenshot must be uploaded through your private Athoo storage" });
+    if (normalizedScreenshotUrl && !(await isCleanOwnedUploadObjectPath(normalizedScreenshotUrl, req.user!.userId, ["private"]))) {
+      return res.status(400).json({ error: "Payment screenshot must be uploaded through your private Athoo storage and pass security scanning before use" });
     }
     const pending = await db.query.userSubscriptionsTable.findFirst({ where: and(eq(userSubscriptionsTable.userId, req.user!.userId), eq(userSubscriptionsTable.status, "pending")) });
     if (pending) return res.status(409).json({ error: "You already have a pending subscription payment" });
@@ -518,4 +519,3 @@ export async function seedSubscriptionPlansIfEmpty() {
     // non-fatal
   }
 }
-

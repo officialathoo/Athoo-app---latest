@@ -5,8 +5,8 @@ services:
     plan: free
     rootDir: .
     buildCommand: corepack enable && corepack prepare pnpm@10.33.2 --activate && pnpm install --frozen-lockfile && pnpm --filter @workspace/api-server build
-    startCommand: pnpm db:migrate && pnpm --filter @workspace/api-server start
-    healthCheckPath: /api/healthz
+    startCommand: pnpm env:validate -- --process && pnpm db:migrate && pnpm --filter @workspace/api-server start
+    healthCheckPath: /api/healthz/deep
     autoDeployTrigger: commit
     envVars:
       - key: NODE_ENV
@@ -139,6 +139,30 @@ services:
         sync: false
       - key: GCS_PRIVATE_KEY
         sync: false
+      - key: UPLOAD_SCAN_MODE
+        value: required
+      - key: UPLOAD_SCANNER_URL
+        sync: false
+      - key: UPLOAD_SCANNER_TOKEN
+        sync: false
+      - key: UPLOAD_SCAN_TIMEOUT_MS
+        value: "90000"
+      - key: UPLOAD_SCAN_MAX_CONCURRENCY
+        value: "2"
+      - key: UPLOAD_SCAN_RECLAIM_MS
+        value: "600000"
+      - key: UPLOAD_LEGACY_READ_POLICY
+        value: deny
+      - key: UPLOAD_SECURITY_MAINTENANCE_ENABLED
+        value: "true"
+      - key: UPLOAD_QUARANTINE_SWEEP_INTERVAL_MS
+        value: "900000"
+      - key: UPLOAD_QUARANTINE_SWEEP_BATCH_SIZE
+        value: "100"
+      - key: UPLOAD_QUARANTINE_DELETE_CONCURRENCY
+        value: "4"
+      - key: UPLOAD_SECURITY_RECORD_RETENTION_DAYS
+        value: "180"
       - key: QUEUE_PROVIDER
         value: postgres
       - key: QUEUE_POLL_MS
@@ -153,6 +177,8 @@ services:
         value: "500"
       - key: BROADCAST_DELIVERY_CONCURRENCY
         value: "10"
+      - key: BROADCAST_RESPONSE_PROVIDER_BATCH_SIZE
+        value: "500"
       - key: CACHE_PROVIDER
         value: memory
       - key: MICRO_CACHE_TTL_MS
@@ -381,6 +407,30 @@ services:
         value: "10000"
       - key: ALLOW_DEV_OTP_RESPONSE
         value: "false"
+      - key: ACCOUNT_STEP_UP_OTP_TTL_SECONDS
+        value: "600"
+      - key: ACCOUNT_STEP_UP_RESEND_COOLDOWN_SECONDS
+        value: "45"
+      - key: ACCOUNT_STEP_UP_MAX_ATTEMPTS
+        value: "5"
+      - key: ACCOUNT_STEP_UP_REQUEST_RATE_LIMIT_MAX
+        value: "5"
+      - key: ACCOUNT_STEP_UP_VERIFY_RATE_LIMIT_MAX
+        value: "10"
+      - key: ACCOUNT_ACTION_RATE_LIMIT_MAX
+        value: "10"
+      - key: AUTH_TOKEN_RATE_LIMIT_WINDOW_MS
+        value: "60000"
+      - key: AUTH_TOKEN_RATE_LIMIT_MAX
+        value: "360"
+      - key: INVOICE_VERIFY_RATE_LIMIT_MAX
+        value: "30"
+      - key: INVOICE_VERIFICATION_SECRET
+        generateValue: true
+      - key: REFUND_REQUEST_RATE_LIMIT_MAX
+        value: "10"
+      - key: BROADCAST_ACTION_RATE_LIMIT_MAX
+        value: "40"
       - key: CALL_PROVIDER
         value: cloudflare-turn
       - key: CLOUDFLARE_TURN_KEY_ID
@@ -443,6 +493,34 @@ services:
         value: "250"
       - key: DOCUMENT_EXPIRY_SWEEP_MAX_BATCHES
         value: "4"
+      - key: BOOKING_TIME_ZONE
+        value: Asia/Karachi
+      - key: BOOKING_ARRIVAL_RADIUS_KM
+        value: "1"
+      - key: BOOKING_ARRIVAL_MAX_ACCURACY_METERS
+        value: "250"
+      - key: SERVICE_COUNTRY_CODE
+        value: PK
+      - key: SERVICE_COUNTRY_MIN_LAT
+        value: "23"
+      - key: SERVICE_COUNTRY_MAX_LAT
+        value: "38"
+      - key: SERVICE_COUNTRY_MIN_LNG
+        value: "60"
+      - key: SERVICE_COUNTRY_MAX_LNG
+        value: "78.5"
+      - key: LOCATION_MAX_ACCURACY_METERS
+        value: "500"
+      - key: LOCATION_CONFIRMATION_MAX_AGE_MS
+        value: "86400000"
+      - key: PRE_JOB_REMINDER_BATCH_SIZE
+        value: "200"
+      - key: BOOKING_NO_SHOW_AUTO_CANCEL_ENABLED
+        value: "false"
+      - key: BOOKING_NO_SHOW_GRACE_MINUTES
+        value: "30"
+      - key: BOOKING_NO_SHOW_SWEEP_BATCH_SIZE
+        value: "100"
       - key: METRICS_TOKEN
         generateValue: true
       - key: ALLOW_PENDING_MIGRATIONS

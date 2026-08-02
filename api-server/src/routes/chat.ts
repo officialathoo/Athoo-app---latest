@@ -9,6 +9,8 @@ import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { emitToUser } from "../lib/eventBus";
 import { notifyUser } from "../lib/notifications";
 import { chatPairKey } from "../lib/publicIds";
+import { normalizeStoredObjectPath, safeUploadName } from "../lib/storageSecurity";
+import { getUploadSecurityRecord, isCleanOwnedUploadObjectPath } from "../lib/verifiedUploads";
 
 const router = Router();
 const generateId = () => crypto.randomUUID();
@@ -182,13 +184,18 @@ router.post("/:chatId/messages", requireAuth, async (req: AuthRequest, res: Resp
     const userId = req.user!.userId;
     const chatId = String(req.params.chatId);
     const normalizedText = typeof req.body?.text === "string" ? req.body.text.trim() : "";
-    const mediaUrl = typeof req.body?.mediaUrl === "string" ? req.body.mediaUrl.trim() : "";
+    const rawMediaUrl = typeof req.body?.mediaUrl === "string" ? req.body.mediaUrl.trim() : "";
+    const mediaUrl = normalizeStoredObjectPath(rawMediaUrl);
     const clientMessageId = typeof req.body?.clientMessageId === "string" ? req.body.clientMessageId.trim() : "";
     if (!normalizedText && !mediaUrl) return res.status(400).json({ error: "Message text or attachment is required" });
     if (normalizedText.length > 4000) return res.status(400).json({ error: "Message is too long" });
     if (!clientMessageId || clientMessageId.length > 120 || !/^[A-Za-z0-9._:-]+$/.test(clientMessageId)) {
       return res.status(400).json({ error: "A valid clientMessageId is required" });
     }
+    if (rawMediaUrl && (!mediaUrl || mediaUrl.length > 500 || !(await isCleanOwnedUploadObjectPath(mediaUrl, userId, ["shared"])))) {
+      return res.status(400).json({ error: "Chat attachments must pass Athoo security scanning before use" });
+    }
+    const mediaRecord = mediaUrl ? await getUploadSecurityRecord(mediaUrl) : null;
 
     const chat = await db.query.chatsTable.findFirst({ where: eq(chatsTable.id, chatId) });
     if (!chat) return res.status(404).json({ error: "Chat not found" });
@@ -213,7 +220,8 @@ router.post("/:chatId/messages", requireAuth, async (req: AuthRequest, res: Resp
       id: generateId(), chatId, senderId: userId,
       senderName,
       text: normalizedText || "Attachment", mediaUrl: mediaUrl || null,
-      mediaType: req.body?.mediaType || null, fileName: req.body?.fileName || null,
+      mediaType: mediaRecord?.detectedContentType || null,
+      fileName: mediaUrl ? safeUploadName(String(req.body?.fileName || mediaUrl.split("/").pop() || "attachment")) : null,
       deliveryStatus: "sent", clientMessageId,
     };
     const inserted = await db.insert(messagesTable).values(message).onConflictDoNothing().returning();

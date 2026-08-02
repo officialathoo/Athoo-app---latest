@@ -24,6 +24,8 @@ export interface NegotiationMessage {
   senderName: string;
   text: string;
   offerAmount?: number;
+  travellingCharge?: number;
+  mediaUrls?: string[];
   timestamp: string;
 }
 
@@ -35,8 +37,11 @@ export interface Negotiation {
   providerName: string;
   service: string;
   customerOffer: number;
+  customerTravellingCharge?: number;
   providerCounter?: number;
+  providerTravellingCharge?: number;
   finalPrice?: number;
+  finalTravellingCharge?: number;
   status: NegotiationStatus;
   messages: NegotiationMessage[];
   createdAt: string;
@@ -66,9 +71,17 @@ interface NegotiationContextType {
     providerName: string;
     service: string;
     customerOffer: number;
+    travellingCharge?: number;
     address?: string;
     latitude?: number;
     longitude?: number;
+    locationCity: string;
+    locationArea: string;
+    locationProvince?: string;
+    locationCountryCode: string;
+    locationSource: string;
+    locationAccuracy?: number | null;
+    locationConfirmedAt: string;
     scheduledDate?: string;
     scheduledTime?: string;
     mediaUrls?: string[];
@@ -77,7 +90,8 @@ interface NegotiationContextType {
     id: string,
     amount: number,
     message: string,
-    senderName: string
+    senderName: string,
+    travellingCharge?: number
   ) => Promise<void>;
   acceptOffer: (id: string, finalPrice?: number) => Promise<{ negotiation: Negotiation; bookingId?: string | null }>;
   rejectOffer: (id: string) => Promise<void>;
@@ -379,9 +393,17 @@ export function NegotiationProvider({ children }: { children: React.ReactNode })
       providerName: string;
       service: string;
       customerOffer: number;
+      travellingCharge?: number;
       address?: string;
       latitude?: number;
       longitude?: number;
+      locationCity: string;
+      locationArea: string;
+      locationProvince?: string;
+      locationCountryCode: string;
+      locationSource: string;
+      locationAccuracy?: number | null;
+      locationConfirmedAt: string;
       scheduledDate?: string;
       scheduledTime?: string;
       mediaUrls?: string[];
@@ -404,8 +426,8 @@ export function NegotiationProvider({ children }: { children: React.ReactNode })
   );
 
   const counterOffer = useCallback(
-    async (id: string, amount: number, message: string, senderName: string) => {
-      const res = await api.counterOffer(id, amount, message, senderName);
+    async (id: string, amount: number, message: string, senderName: string, travellingCharge = 0) => {
+      const res = await api.counterOffer(id, amount, message, senderName, travellingCharge);
       const updated = res.negotiation as Negotiation;
       seenKeysRef.current.add(negKey(updated));
       setNegotiations((prev) => prev.map((n) => (n.id === id ? updated : n)));

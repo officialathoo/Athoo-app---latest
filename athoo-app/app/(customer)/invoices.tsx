@@ -8,7 +8,6 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState, useMemo } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Platform,
   Pressable,
@@ -19,23 +18,12 @@ import {
 } from "react-native";
 import { brandConfig } from "@/config/brand";
 import { invoiceConfig } from "@/config/invoice";
-import * as Print from "expo-print";
-import * as Sharing from "expo-sharing";
-import * as FileSystem from "expo-file-system/legacy";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnimatedCard } from "@/components/ui/AnimatedCard";
 import { useAuth } from "@/context/AuthContext";
 import { useBookings } from "@/context/BookingContext";
 import { api } from "@/services/api";
-
-function escapeHtml(value: unknown): string {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
+import { shareBookingInvoice } from "@/utils/bookingInvoicePdf";
 
 type ApiInvoice = {
   id: string;
@@ -63,6 +51,7 @@ type ApiInvoice = {
   providerAmount: number;
   status: string;
   createdAt: string;
+  verification: { verificationUrl: string; qrCodeDataUri: string };
 };
 
 export default function InvoicesScreen() {
@@ -132,23 +121,6 @@ export default function InvoicesScreen() {
     }
   }, [params.bookingId, completed]);
 
-  async function loadInvoiceLogoDataUri(): Promise<string> {
-    try {
-      const source = Image.resolveAssetSource(brandConfig.assets.mark);
-      if (!source?.uri) return "";
-      let uri = source.uri;
-      if (/^https?:\/\//i.test(uri)) {
-        const target = `${FileSystem.cacheDirectory || ""}athoo-invoice-logo.png`;
-        const downloaded = await FileSystem.downloadAsync(uri, target);
-        uri = downloaded.uri;
-      }
-      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
-      return base64 ? `data:image/png;base64,${base64}` : "";
-    } catch {
-      return "";
-    }
-  }
-
   const handleShare = async (b: any) => {
     await handleDownloadPdf(b);
   };
@@ -157,97 +129,23 @@ export default function InvoicesScreen() {
 
   const handleDownloadPdf = async (b: any) => {
     if (generatingPdf) return;
-    const invoiceNo = getInvoiceNo(b.id);
-    const { match, serviceAmount, visitCharge, discount, totalAmount, ratePerHour, durationMinutes } = getInvoiceAmounts(b);
-    const jobNumber = match?.bookingPublicId || b.publicId || b.id;
-    const logoDataUri = await loadInvoiceLogoDataUri();
-    const statusLabel = String(match?.status || "issued").toUpperCase();
-    const customerName = escapeHtml(b.customerName);
-    const providerName = escapeHtml(b.providerName);
-    const address = escapeHtml(b.address);
-    const serviceName = escapeHtml(b.service);
-    const direction = isUrdu ? "rtl" : "ltr";
-
-    const printColors = invoiceConfig.colors;
-    const invoiceFooter = [invoiceConfig.brandName, invoiceConfig.contactLine].filter(Boolean).join(" · ");
-
-    const html = `<!DOCTYPE html><html dir="${direction}"><head><meta charset="utf-8">
-<style>
-  @page{size:A4;margin:0}
-  *{box-sizing:border-box}
-  html,body{margin:0;padding:0;background:${printColors.canvas};color:${printColors.text};font-family:Arial,sans-serif;direction:${direction}}
-  .page{width:210mm;min-height:297mm;margin:0 auto;background:${printColors.page};position:relative;padding-bottom:34mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .header{min-height:48mm;background:linear-gradient(135deg,${printColors.primary},${printColors.primaryPressed});color:${printColors.page};padding:15mm 16mm 11mm;display:flex;justify-content:space-between;align-items:flex-start}
-  .brand{display:flex;align-items:center;gap:12px}.brand img{width:52px;height:52px;border-radius:13px;background:${printColors.page};object-fit:contain;padding:4px}.brand-name{font-size:27px;font-weight:900;letter-spacing:-1px}.brand-sub{font-size:11px;opacity:.85;margin-top:3px}
-  .meta{text-align:${isUrdu ? "left" : "right"}}.invoice-title{font-size:13px;letter-spacing:2px;font-weight:700;opacity:.8}.invoice-no{font-size:20px;font-weight:900;margin-top:4px}.status{display:inline-block;margin-top:8px;padding:5px 12px;border:1px solid rgba(255,255,255,.45);border-radius:999px;font-size:10px;font-weight:800}
-  .body{padding:12mm 16mm}.refs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10mm}.ref{border:1px solid ${printColors.border};border-radius:8px;padding:9px}.label{font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:${printColors.textMuted};font-weight:800}.value{font-size:12px;font-weight:700;margin-top:4px;word-break:break-word}
-  .parties{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:9mm}.party{background:${printColors.background};border:1px solid ${printColors.border};border-radius:10px;padding:12px}.party-name{font-size:15px;font-weight:800;margin-top:5px}.party-detail{font-size:11px;line-height:1.5;color:${printColors.textSecondary};margin-top:4px}
-  .formula{background:${printColors.infoSoft};border-left:4px solid ${printColors.primary};padding:10px 12px;font-size:11px;font-weight:700;margin-bottom:7mm}
-  table{width:100%;border-collapse:collapse}th{background:${printColors.surface};padding:10px 12px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:${printColors.textSecondary}}td{padding:11px 12px;border-bottom:1px solid ${printColors.border};font-size:12px}.amount{text-align:right}.total td{background:${printColors.primaryPressed};color:${printColors.page};font-size:16px;font-weight:900;border:0}.small{font-size:10px;color:${printColors.textSecondary};margin-top:4px}
-  .note{margin-top:8mm;background:${printColors.successSoft};border:1px solid ${printColors.successBorder};border-radius:8px;padding:10px 12px;font-size:10px;line-height:1.5;color:${printColors.textSecondary}}
-  .footer{position:absolute;left:16mm;right:16mm;bottom:10mm;border-top:1px solid ${printColors.border};padding-top:7mm;display:flex;justify-content:space-between;gap:15px;font-size:9px;color:${printColors.textMuted}}.footer strong{color:${printColors.text}}
-  @media screen{.page{box-shadow:0 8px 30px rgba(15,23,42,.18)}}
-</style></head><body><main class="page">
-  <header class="header">
-    <div class="brand">${logoDataUri ? `<img src="${logoDataUri}" alt="Athoo logo">` : ""}<div><div class="brand-name">${escapeHtml(invoiceConfig.brandName)}</div><div class="brand-sub">${escapeHtml(invoiceConfig.descriptor)} · Pakistan</div></div></div>
-    <div class="meta"><div class="invoice-title">INVOICE</div><div class="invoice-no">${escapeHtml(invoiceNo)}</div><div class="status">${escapeHtml(statusLabel)}</div></div>
-  </header>
-  <section class="body">
-    <div class="refs">
-      <div class="ref"><div class="label">Job number</div><div class="value">${escapeHtml(jobNumber)}</div></div>
-      <div class="ref"><div class="label">Issued</div><div class="value">${escapeHtml(formatLocalizedDate(match?.createdAt || b.createdAt))}</div></div>
-      <div class="ref"><div class="label">Completed</div><div class="value">${escapeHtml(formatLocalizedDate(match?.jobCompletedAt || b.jobCompletedAt || b.updatedAt || b.createdAt))}</div></div>
-    </div>
-    <div class="parties">
-      <div class="party"><div class="label">Billed to</div><div class="party-name">${customerName}</div><div class="party-detail">${address}</div></div>
-      <div class="party"><div class="label">Service provider</div><div class="party-name">${providerName}</div><div class="party-detail">${serviceName}</div></div>
-    </div>
-    <div class="formula">Service amount = agreed hourly rate ÷ 60 × actual worked minutes. Visit/travel charge is then added.</div>
-    <table>
-      <thead><tr><th>Description</th><th class="amount">Amount</th></tr></thead>
-      <tbody>
-        <tr><td><strong>${serviceName}</strong><div class="small">${escapeHtml(formatCurrency(ratePerHour))} per hour × ${durationMinutes} minute(s)</div></td><td class="amount">${escapeHtml(formatCurrency(serviceAmount))}</td></tr>
-        ${visitCharge > 0 ? `<tr><td>Visit / travelling charge</td><td class="amount">${escapeHtml(formatCurrency(visitCharge))}</td></tr>` : ""}
-        ${discount > 0 ? `<tr><td>Discount</td><td class="amount">−${escapeHtml(formatCurrency(discount))}</td></tr>` : ""}
-        <tr class="total"><td>TOTAL</td><td class="amount">${escapeHtml(formatCurrency(totalAmount))}</td></tr>
-      </tbody>
-    </table>
-    <div class="note">Payment is made directly between customer and provider. This invoice is the official Athoo job record and uses the agreed booking rate and recorded job duration.</div>
-  </section>
-  <footer class="footer"><div><strong>${escapeHtml(invoiceConfig.brandName)}</strong><br>${escapeHtml(invoiceConfig.descriptor)}</div><div>${escapeHtml(invoiceFooter || "Official Athoo service invoice")}</div></footer>
-</main></body></html>`;
-
-    try {
-      setGeneratingPdf(true);
-      if (Platform.OS === "web") {
-        const frame = document.createElement("iframe");
-        frame.style.position = "fixed";
-        frame.style.right = "0";
-        frame.style.bottom = "0";
-        frame.style.width = "0";
-        frame.style.height = "0";
-        frame.style.border = "0";
-        frame.srcdoc = html;
-        frame.onload = () => {
-          frame.contentWindow?.focus();
-          frame.contentWindow?.print();
-          window.setTimeout(() => frame.remove(), 1_000);
-        };
-        document.body.appendChild(frame);
-        return;
-      }
-      const { uri } = await Print.printToFileAsync({ html, base64: false });
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `Invoice ${invoiceNo}` });
-      } else {
-        Alert.alert(tr("Invoice ready"), tr("Your invoice was saved and is ready to share."));
-      }
-    } catch (e: any) {
-      Alert.alert(tr("Unable to create invoice"), apiErrorToMessage(e, tr("We couldn't create the invoice PDF. Please try again.")));
-    } finally {
-      setGeneratingPdf(false);
-    }
+    const match = apiInvoices.find((invoice) => invoice.bookingId === b.id);
+    await shareBookingInvoice(
+      {
+        ...b,
+        invoiceNumber: match?.invoiceNumber,
+        subtotal: match?.subtotal,
+        totalAmount: match?.totalAmount,
+        visitCharge: match?.visitCharge ?? b.visitCharge,
+        discountAmount: match?.discountAmount,
+        commissionAmount: match?.commissionAmount,
+        providerAmount: match?.providerAmount,
+        status: match?.status ?? b.status,
+        createdAt: match?.createdAt ?? b.createdAt,
+        verification: match?.verification,
+      },
+      { role: "customer", onState: setGeneratingPdf },
+    );
   };
 
   if (selected) {

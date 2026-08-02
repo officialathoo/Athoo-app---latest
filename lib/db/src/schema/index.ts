@@ -14,7 +14,6 @@ import { createInsertSchema } from "drizzle-zod";
 
 export const usersTable = pgTable("users", {
   id: text("id").primaryKey(),
-  publicId: text("public_id").notNull().unique(),
   name: text("name").notNull(),
   phone: text("phone").notNull().unique(),
   role: text("role").notNull(),
@@ -50,19 +49,8 @@ export const usersTable = pgTable("users", {
   // Identity / KYC
   fatherName: text("father_name"),
   cnicNumber: text("cnic_number"),
-  // ISO date (YYYY-MM-DD) from the physical CNIC. Lifetime cards are tracked
-  // explicitly so providers are never forced to invent an expiry date.
   cnicExpiry: text("cnic_expiry"),
-  cnicLifetime: boolean("cnic_lifetime").default(false),
   dob: text("dob"),
-  // Provider document-compliance lifecycle. This is separate from manual
-  // deactivation so document renewal approval cannot accidentally undo an
-  // administrator suspension or a user-requested account closure.
-  documentComplianceStatus: text("document_compliance_status").default("active"), // active | action_required | warning | grace | renewal_pending | suspended
-  documentComplianceReason: text("document_compliance_reason"),
-  documentGraceEndsAt: timestamp("document_grace_ends_at"),
-  documentSuspendedAt: timestamp("document_suspended_at"),
-  documentActionRequiredNotifiedAt: timestamp("document_action_required_notified_at"),
   // Account lifecycle
   accountStatus: text("account_status").default("active"), // active | deactivated | pending_deletion | deleted
   deletionScheduledAt: timestamp("deletion_scheduled_at"),
@@ -89,8 +77,6 @@ export const usersTable = pgTable("users", {
   // Geo (used for nearest-provider matching, no paid Maps API needed)
   latitude: text("latitude"),
   longitude: text("longitude"),
-  locationAccuracy: real("location_accuracy"),
-  locationUpdatedAt: timestamp("location_updated_at"),
   // Legal acceptance (v4.4) — captured at registration
   termsAcceptedAt: timestamp("terms_accepted_at"),
   privacyAcceptedAt: timestamp("privacy_accepted_at"),
@@ -102,10 +88,20 @@ export const usersTable = pgTable("users", {
   inactivityWarningSentAt: timestamp("inactivity_warning_sent_at"),
   inactivityRestrictedAt: timestamp("inactivity_restricted_at"),
   inactivityReviewAt: timestamp("inactivity_review_at"),
+  publicId: text("public_id").notNull(),
+  availabilityUpdatedAt: timestamp("availability_updated_at", { withTimezone: true }),
+  availabilityOverrideReason: text("availability_override_reason"),
+  locationAccuracy: real("location_accuracy"),
+  locationUpdatedAt: timestamp("location_updated_at"),
+  cnicLifetime: boolean("cnic_lifetime").default(false),
+  documentComplianceStatus: text("document_compliance_status").default("active"),
+  documentComplianceReason: text("document_compliance_reason"),
+  documentGraceEndsAt: timestamp("document_grace_ends_at"),
+  documentSuspendedAt: timestamp("document_suspended_at"),
+  documentActionRequiredNotifiedAt: timestamp("document_action_required_notified_at"),
   joinedAt: timestamp("joined_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => [
-  uniqueIndex("users_public_id_uidx").on(t.publicId),
   index("users_role_idx").on(t.role),
   index("users_phone_idx").on(t.phone),
   index("users_verification_status_idx").on(t.verificationStatus),
@@ -124,14 +120,15 @@ export const usersTable = pgTable("users", {
   index("users_last_active_at_idx").on(t.lastActiveAt),
   index("users_inactivity_state_idx").on(t.inactivityState),
   index("users_inactivity_review_queue_idx").on(t.inactivityState, t.inactivityReviewAt),
+  index("users_updated_at_idx").on(t.updatedAt),
+  index("users_joined_at_idx").on(t.joinedAt),
+  index("users_provider_geo_idx").on(t.role, t.latitude, t.longitude).where(sql`${t.role} = 'provider'`),
+  index("users_provider_location_freshness_idx").on(t.locationUpdatedAt).where(sql`${t.role} = 'provider' and ${t.isAvailable} = true`),
   index("users_provider_verification_queue_idx").on(t.role, t.verificationStatus, t.joinedAt),
   index("users_document_compliance_status_idx").on(t.documentComplianceStatus),
   index("users_document_grace_ends_at_idx").on(t.documentGraceEndsAt),
-  index("users_document_suspended_at_idx")
-    .on(t.documentSuspendedAt)
-    .where(sql`${t.documentSuspendedAt} is not null`),
-  index("users_joined_at_idx").on(t.joinedAt),
-  index("users_updated_at_idx").on(t.updatedAt),
+  index("users_document_suspended_at_idx").on(t.documentSuspendedAt).where(sql`${t.documentSuspendedAt} is not null`),
+  uniqueIndex("users_public_id_uidx").on(t.publicId),
 ]);
 
 // Service categories — admin-managed list shown to customers
@@ -170,11 +167,11 @@ export const paymentAccountsTable = pgTable("payment_accounts", {
   accountNumber: text("account_number").notNull(),
   iban: text("iban"),
   instructions: text("instructions"),
-  qrCodeUrl: text("qr_code_url"),
   isActive: boolean("is_active").default(true),
   sortOrder: integer("sort_order").default(0),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  qrCodeUrl: text("qr_code_url"),
 });
 
 // Commission payments providers send in (with screenshot proof)
@@ -273,6 +270,10 @@ export const accountDeletionRequestsTable = pgTable("account_deletion_requests",
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => [
   index("account_deletion_requests_status_created_idx").on(t.status, t.createdAt),
+  index("account_deletion_user_status_idx").on(t.userId, t.status),
+  uniqueIndex("account_deletion_one_pending_uidx")
+    .on(t.userId)
+    .where(sql`${t.status} = 'pending'`),
 ]);
 
 // Email change requests — verified via OTP to the new email
@@ -337,6 +338,14 @@ export const bookingsTable = pgTable("bookings", {
   attachment: text("attachment"),
   videoUrl: text("video_url"),
   address: text("address").notNull(),
+  locationCity: text("location_city"),
+  locationArea: text("location_area"),
+  locationProvince: text("location_province"),
+  locationCountryCode: text("location_country_code"),
+  locationSource: text("location_source"),
+  locationAccuracy: real("location_accuracy"),
+  locationConfirmedAt: timestamp("location_confirmed_at"),
+  locationVerifiedAt: timestamp("location_verified_at"),
   scheduledDate: text("scheduled_date").notNull(),
   scheduledTime: text("scheduled_time").notNull(),
   status: text("status").notNull().default("pending"),
@@ -360,6 +369,7 @@ export const bookingsTable = pgTable("bookings", {
   // Set once the customer has been auto-prompted to rate the completed job;
   // prevents the sweeper from re-pinging on every tick.
   ratingReminderSentAt: timestamp("rating_reminder_sent_at"),
+  scheduledDayReminderSentAt: timestamp("scheduled_day_reminder_sent_at"),
   preJobReminderSentAt: timestamp("pre_job_reminder_sent_at"),
   jobStartedAt: timestamp("job_started_at"),
   jobCompletedAt: timestamp("job_completed_at"),
@@ -379,7 +389,12 @@ export const bookingsTable = pgTable("bookings", {
   index("bookings_provider_id_idx").on(t.providerId),
   index("bookings_status_idx").on(t.status),
   index("bookings_created_at_idx").on(t.createdAt),
+  index("bookings_customer_updated_cursor_idx").on(t.customerId, t.updatedAt, t.id),
+  index("bookings_provider_updated_cursor_idx").on(t.providerId, t.updatedAt, t.id),
   index("bookings_public_id_idx").on(t.publicId),
+  index("bookings_customer_refund_eligibility_idx")
+    .on(t.customerId, t.createdAt)
+    .where(sql`${t.status} in ('completed', 'cancelled') and ${t.paymentStatus} in ('paid', 'received')`),
   uniqueIndex("bookings_customer_request_uidx").on(t.customerId, t.clientRequestId),
 ]);
 
@@ -410,13 +425,24 @@ export const negotiationsTable = pgTable("negotiations", {
   providerName: text("provider_name").notNull(),
   service: text("service").notNull(),
   customerOffer: integer("customer_offer").notNull(),
+  customerTravellingCharge: integer("customer_travelling_charge").notNull().default(0),
   providerCounter: integer("provider_counter"),
+  providerTravellingCharge: integer("provider_travelling_charge"),
   finalPrice: integer("final_price"),
+  finalTravellingCharge: integer("final_travelling_charge").notNull().default(0),
   status: text("status").notNull().default("customer_offer"),
   // Location and scheduling fields set by customer when creating offer
   address: text("address"),
   latitude: real("latitude"),
   longitude: real("longitude"),
+  locationCity: text("location_city"),
+  locationArea: text("location_area"),
+  locationProvince: text("location_province"),
+  locationCountryCode: text("location_country_code"),
+  locationSource: text("location_source"),
+  locationAccuracy: real("location_accuracy"),
+  locationConfirmedAt: timestamp("location_confirmed_at"),
+  locationVerifiedAt: timestamp("location_verified_at"),
   scheduledDate: text("scheduled_date"),
   scheduledTime: text("scheduled_time"),
   // Booking created automatically when accepted
@@ -431,12 +457,13 @@ export const negotiationsTable = pgTable("negotiations", {
 }, (t) => [
   index("negotiations_created_at_idx").on(t.createdAt),
   index("negotiations_status_expires_idx").on(t.status, t.expiresAt),
+  index("negotiations_customer_updated_cursor_idx").on(t.customerId, t.updatedAt, t.id),
+  index("negotiations_provider_updated_cursor_idx").on(t.providerId, t.updatedAt, t.id),
   uniqueIndex("negotiations_customer_request_uidx").on(t.customerId, t.clientRequestId),
 ]);
 
 export const chatsTable = pgTable("chats", {
   id: text("id").primaryKey(),
-  pairKey: text("pair_key").notNull().unique(),
   participant1Id: text("participant1_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   participant2Id: text("participant2_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   participant1Name: text("participant1_name").notNull(),
@@ -453,9 +480,12 @@ export const chatsTable = pgTable("chats", {
   lastMessageAt: timestamp("last_message_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  pairKey: text("pair_key").notNull(),
 }, (t) => [
-  uniqueIndex("chats_pair_key_uidx").on(t.pairKey),
   index("chats_last_message_at_idx").on(t.lastMessageAt),
+  uniqueIndex("chats_pair_key_uidx").on(t.pairKey),
+  index("chats_participant1_updated_idx").on(t.participant1Id, t.updatedAt),
+  index("chats_participant2_updated_idx").on(t.participant2Id, t.updatedAt),
 ]);
 
 export const messagesTable = pgTable("messages", {
@@ -475,6 +505,39 @@ export const messagesTable = pgTable("messages", {
   index("messages_chat_id_idx").on(t.chatId),
   index("messages_sender_id_idx").on(t.senderId),
   uniqueIndex("messages_sender_client_uidx").on(t.chatId, t.senderId, t.clientMessageId),
+]);
+
+// Every user-supplied object is quarantined logically until the API verifies
+// its bytes and (in production) an independent malware scanner reports clean.
+// Application routes and object serving consult this record instead of
+// trusting a filename, a client Content-Type header, or storage metadata.
+export const uploadSecurityRecordsTable = pgTable("upload_security_records", {
+  objectPath: text("object_path").primaryKey(),
+  quarantinePath: text("quarantine_path").notNull(),
+  scanPath: text("scan_path").notNull(),
+  ownerId: text("owner_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  scope: text("scope").notNull(),
+  originalName: text("original_name").notNull(),
+  declaredContentType: text("declared_content_type").notNull(),
+  detectedContentType: text("detected_content_type"),
+  declaredSize: integer("declared_size").notNull(),
+  actualSize: integer("actual_size"),
+  sha256: text("sha256"),
+  scanStatus: text("scan_status").notNull().default("pending"),
+  scanner: text("scanner"),
+  rejectionReason: text("rejection_reason"),
+  scanStartedAt: timestamp("scan_started_at"),
+  scannedAt: timestamp("scanned_at"),
+  expiresAt: timestamp("expires_at").notNull(),
+  quarantineDeletedAt: timestamp("quarantine_deleted_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("upload_security_quarantine_path_uidx").on(t.quarantinePath),
+  uniqueIndex("upload_security_scan_path_uidx").on(t.scanPath),
+  index("upload_security_owner_status_idx").on(t.ownerId, t.scanStatus),
+  index("upload_security_status_expiry_idx").on(t.scanStatus, t.expiresAt),
+  index("upload_security_sha256_idx").on(t.sha256),
 ]);
 
 export const callsTable = pgTable("calls", {
@@ -548,6 +611,13 @@ export const savedAddressesTable = pgTable("saved_addresses", {
   isDefault: boolean("is_default").default(false),
   latitude: real("latitude"),
   longitude: real("longitude"),
+  locationCity: text("location_city"),
+  locationArea: text("location_area"),
+  locationProvince: text("location_province"),
+  locationCountryCode: text("location_country_code"),
+  locationSource: text("location_source"),
+  locationAccuracy: real("location_accuracy"),
+  locationConfirmedAt: timestamp("location_confirmed_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -593,6 +663,7 @@ export const auditLogTable = pgTable("audit_log", {
 }, (t) => [
   index("audit_log_admin_id_idx").on(t.adminId),
   index("audit_log_created_at_idx").on(t.createdAt),
+  index("audit_log_target_created_idx").on(t.target, t.targetId, t.createdAt),
 ]);
 
 // Internal admin notifications
@@ -610,7 +681,6 @@ export const adminNotificationsTable = pgTable("admin_notifications", {
   index("admin_notifications_target_created_idx").on(t.targetAdminId, t.createdAt),
 ]);
 
-// Ticket notes — admin internal notes on support tickets
 export const adminWorkItemViewsTable = pgTable("admin_work_item_views", {
   id: text("id").primaryKey(),
   adminId: text("admin_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
@@ -622,6 +692,7 @@ export const adminWorkItemViewsTable = pgTable("admin_work_item_views", {
   index("admin_work_item_views_admin_seen_idx").on(t.adminId, t.seenAt),
 ]);
 
+// Ticket notes — admin internal notes on support tickets
 export const ticketNotesTable = pgTable("ticket_notes", {
   id: text("id").primaryKey(),
   ticketId: text("ticket_id").notNull().references(() => supportTicketsTable.id),
@@ -643,6 +714,8 @@ export const providerDocumentsTable = pgTable("provider_documents", {
   rejectionNote: text("rejection_note"),
   reviewedBy: text("reviewed_by"),
   reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
   issuedAt: timestamp("issued_at"),
   expiresAt: timestamp("expires_at"),
   expiryNotApplicable: boolean("expiry_not_applicable").notNull().default(false),
@@ -650,40 +723,31 @@ export const providerDocumentsTable = pgTable("provider_documents", {
   expiryReminder7SentAt: timestamp("expiry_reminder_7_sent_at"),
   expiryReminder1SentAt: timestamp("expiry_reminder_1_sent_at"),
   expiryNoticeSentAt: timestamp("expiry_notice_sent_at"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => [
   index("provider_documents_provider_id_idx").on(t.providerId),
-  index("provider_documents_expiry_idx")
-    .on(t.expiresAt)
-    .where(sql`${t.status} = 'approved' and ${t.expiryNotApplicable} = false`),
   uniqueIndex("provider_documents_provider_type_uidx").on(t.providerId, t.type),
+  index("provider_documents_expiry_idx").on(t.expiresAt).where(sql`${t.status} = 'approved' and ${t.expiryNotApplicable} = false`),
 ]);
 
-// Provider-submitted replacements for expiring identity documents. Approved
-// documents remain untouched while a replacement is pending, preserving a
-// complete audit trail and preventing an upload from silently bypassing review.
 export const providerDocumentUpdateRequestsTable = pgTable("provider_document_update_requests", {
   id: text("id").primaryKey(),
   providerId: text("provider_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
-  documentType: text("document_type").notNull(), // cnic_front | cnic_back | police
+  documentType: text("document_type").notNull(),
   label: text("label"),
   url: text("url").notNull(),
   issuedAt: timestamp("issued_at"),
   expiresAt: timestamp("expires_at"),
   expiryNotApplicable: boolean("expiry_not_applicable").notNull().default(false),
-  status: text("status").notNull().default("pending"), // pending | approved | rejected | cancelled
+  status: text("status").notNull().default("pending"),
   rejectionNote: text("rejection_note"),
   reviewedBy: text("reviewed_by").references(() => usersTable.id, { onDelete: "set null" }),
   reviewedAt: timestamp("reviewed_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => [
+  uniqueIndex("provider_document_updates_one_pending_uidx").on(t.providerId, t.documentType).where(sql`${t.status} = 'pending'`),
   index("provider_document_updates_provider_idx").on(t.providerId, t.createdAt),
   index("provider_document_updates_status_idx").on(t.status, t.createdAt),
-  uniqueIndex("provider_document_updates_one_pending_uidx")
-    .on(t.providerId, t.documentType)
-    .where(sql`${t.status} = 'pending'`),
 ]);
 
 // Customer favorites — saved providers
@@ -756,6 +820,10 @@ export const refundRequestsTable = pgTable("refund_requests", {
   index("refund_requests_customer_id_idx").on(t.customerId),
   index("refund_requests_provider_id_idx").on(t.providerId),
   index("refund_requests_status_created_idx").on(t.status, t.createdAt),
+  index("refund_requests_booking_status_idx").on(t.bookingId, t.status),
+  uniqueIndex("refund_requests_unresolved_booking_uidx")
+    .on(t.bookingId)
+    .where(sql`${t.status} in ('pending', 'approved')`),
   uniqueIndex("refund_requests_customer_request_uidx").on(t.customerId, t.clientRequestId),
 ]);
 
@@ -816,6 +884,8 @@ export interface NegotiationMessage {
   senderName: string;
   text: string;
   offerAmount?: number;
+  travellingCharge?: number;
+  mediaUrls?: string[];
   timestamp: string;
 }
 
@@ -840,6 +910,7 @@ export type Negotiation = typeof negotiationsTable.$inferSelect;
 export type BookingOperation = typeof bookingOperationsTable.$inferSelect;
 export type Chat = typeof chatsTable.$inferSelect;
 export type Message = typeof messagesTable.$inferSelect;
+export type UploadSecurityRecord = typeof uploadSecurityRecordsTable.$inferSelect;
 export type Call = typeof callsTable.$inferSelect;
 export type AppSettings = typeof appSettingsTable.$inferSelect;
 export type AdminBroadcast = typeof adminBroadcastsTable.$inferSelect;
@@ -886,6 +957,14 @@ export const broadcastRequestsTable = pgTable("broadcast_requests", {
   address: text("address").notNull(),
   latitude: real("latitude"),
   longitude: real("longitude"),
+  locationCity: text("location_city"),
+  locationArea: text("location_area"),
+  locationProvince: text("location_province"),
+  locationCountryCode: text("location_country_code"),
+  locationSource: text("location_source"),
+  locationAccuracy: real("location_accuracy"),
+  locationConfirmedAt: timestamp("location_confirmed_at"),
+  locationVerifiedAt: timestamp("location_verified_at"),
   scheduledDate: text("scheduled_date").notNull(),
   scheduledTime: text("scheduled_time").notNull(),
   // Customer's opening offer; null = "name your price"
@@ -894,10 +973,10 @@ export const broadcastRequestsTable = pgTable("broadcast_requests", {
   travellingCharge: integer("travelling_charge").default(0),
   // open | accepted | cancelled | expired
   status: text("status").notNull().default("open"),
-  // Which broadcastResponsesTable.id the customer chose
+  // Winning response chosen by the customer or accepted directly by provider
   acceptedResponseId: text("accepted_response_id"),
   // The booking created once a provider response is selected
-  bookingId: text("booking_id"),
+  bookingId: text("booking_id").references(() => bookingsTable.id, { onDelete: "set null" }),
   // Broadcast expires after 30 min if no provider is selected
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
@@ -906,6 +985,7 @@ export const broadcastRequestsTable = pgTable("broadcast_requests", {
   index("broadcast_requests_status_idx").on(t.status),
   index("broadcast_requests_customer_id_idx").on(t.customerId),
   uniqueIndex("broadcast_requests_customer_request_uidx").on(t.customerId, t.clientRequestId),
+  uniqueIndex("broadcast_requests_booking_uidx").on(t.bookingId).where(sql`${t.bookingId} is not null`),
   index("broadcast_requests_expires_at_idx").on(t.expiresAt),
 ]);
 
@@ -916,15 +996,46 @@ export const broadcastResponsesTable = pgTable("broadcast_responses", {
   providerName: text("provider_name").notNull(),
   // null = provider accepts customer's offered price; set = provider counter
   providerOffer: integer("provider_offer"),
+  providerTravellingCharge: integer("provider_travelling_charge").notNull().default(0),
+  responseType: text("response_type").notNull().default("counter"), // accept | counter
+  clientRequestId: text("client_request_id"),
+  revision: integer("revision").notNull().default(1),
   message: text("message"),
-  // pending | accepted_by_customer | rejected_by_customer | withdrawn
+  // pending | accepted_by_customer | rejected_by_customer | not_selected | withdrawn
   status: text("status").notNull().default("pending"),
+  rejectedAt: timestamp("rejected_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => [
+  uniqueIndex("broadcast_responses_request_provider_uidx").on(t.requestId, t.providerId),
+  uniqueIndex("broadcast_responses_provider_request_id_uidx")
+    .on(t.providerId, t.clientRequestId)
+    .where(sql`${t.clientRequestId} is not null`),
+  index("broadcast_responses_request_status_idx").on(t.requestId, t.status),
+]);
+
+export const broadcastOfferEventsTable = pgTable("broadcast_offer_events", {
+  id: text("id").primaryKey(),
+  requestId: text("request_id").notNull().references(() => broadcastRequestsTable.id, { onDelete: "cascade" }),
+  responseId: text("response_id").references(() => broadcastResponsesTable.id, { onDelete: "set null" }),
+  bookingId: text("booking_id").references(() => bookingsTable.id, { onDelete: "set null" }),
+  actorId: text("actor_id").references(() => usersTable.id, { onDelete: "set null" }),
+  actorRole: text("actor_role").notNull(),
+  eventType: text("event_type").notNull(),
+  revision: integer("revision"),
+  amount: integer("amount"),
+  travellingCharge: integer("travelling_charge"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [
+  index("broadcast_offer_events_request_created_idx").on(t.requestId, t.createdAt),
+  index("broadcast_offer_events_response_created_idx").on(t.responseId, t.createdAt),
+  index("broadcast_offer_events_actor_created_idx").on(t.actorId, t.createdAt),
+]);
 
 export type BroadcastRequest = typeof broadcastRequestsTable.$inferSelect;
 export type BroadcastResponse = typeof broadcastResponsesTable.$inferSelect;
+export type BroadcastOfferEvent = typeof broadcastOfferEventsTable.$inferSelect;
 
 // ─── Marketing Banners ────────────────────────────────────────────────────────
 // Admin-managed promotional banners displayed on customer/provider home screens.
@@ -1039,19 +1150,17 @@ export const invoicesTable = pgTable("invoices", {
   id: text("id").primaryKey(),
   invoiceNumber: text("invoice_number").notNull().unique(), // ATH-000001
   bookingId: text("booking_id").notNull().references(() => bookingsTable.id, { onDelete: "cascade" }),
-  bookingPublicId: text("booking_public_id"),
   customerId: text("customer_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   providerId: text("provider_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   customerName: text("customer_name").notNull(),
   providerName: text("provider_name").notNull(),
   service: text("service").notNull(),
   address: text("address").notNull(),
+  locationCity: text("location_city"),
+  locationArea: text("location_area"),
+  locationCountryCode: text("location_country_code"),
   scheduledDate: text("scheduled_date").notNull(),
   scheduledTime: text("scheduled_time").notNull(),
-  ratePerHour: integer("rate_per_hour"),
-  durationMinutes: integer("duration_minutes"),
-  jobStartedAt: timestamp("job_started_at"),
-  jobCompletedAt: timestamp("job_completed_at"),
   subtotal: integer("subtotal").notNull(),
   visitCharge: integer("visit_charge").default(0),
   platformFee: integer("platform_fee").default(0),   // 5% from customer
@@ -1063,7 +1172,15 @@ export const invoicesTable = pgTable("invoices", {
   status: text("status").default("issued"), // issued | paid | disputed | cancelled
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+  publicId: text("public_id"),
+  bookingPublicId: text("booking_public_id"),
+  ratePerHour: integer("rate_per_hour"),
+  durationMinutes: integer("duration_minutes"),
+  jobStartedAt: timestamp("job_started_at"),
+  jobCompletedAt: timestamp("job_completed_at"),
+}, (t) => [
+  index("invoices_booking_public_id_idx").on(t.bookingPublicId),
+]);
 
 // ─── Report Issues ────────────────────────────────────────────────────────────
 export const reportIssuesTable = pgTable("report_issues", {
@@ -1128,7 +1245,7 @@ export const emailVerificationChallengesTable = pgTable("email_verification_chal
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   email: text("email").notNull(),
-  purpose: text("purpose").notNull(), // verify_email | login | email_change
+  purpose: text("purpose").notNull(), // verify_email | login | email_change | account_deactivate | account_delete
   role: text("role"),
   codeHash: text("code_hash").notNull(),
   attempts: integer("attempts").notNull().default(0),

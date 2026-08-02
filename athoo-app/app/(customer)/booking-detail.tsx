@@ -1,4 +1,4 @@
-import { AthooMapFallback } from "@/components/maps/AthooMapFallback";
+import { OpenStreetMapPreview } from "@/components/maps/OpenStreetMapPreview";
 import { BookingTrustPanel, PostServiceCare } from "@/components/design";
 import { Icon } from "@/components/ui/Icon";
 import { router, useLocalSearchParams } from "expo-router";
@@ -517,18 +517,14 @@ export default function BookingDetailScreen() {
 
   const status = getStatusConfig(theme)[booking.status];
   const providerName = booking.providerName || "Provider";
-  // For scheduled jobs, only show the map once the provider has started sharing
-  // their location (i.e. dbProviderCoords is set). For instant/in-progress
-  // jobs show it as soon as the status allows.
-  const isScheduledBooking = !!(booking.scheduledDate || booking.scheduledTime);
-  const providerHasSharedLocation = !!dbProviderCoords || !!realtimeProviderCoords;
+  // Show the route immediately after acceptance, including scheduled jobs.
+  // Once the provider has arrived / the job starts, location has served its
+  // purpose and the screen returns focus to work controls instead of a map.
   const showTrackingMap =
-    booking.status === "in_progress"
-      ? !!customerCoords && isValidCoordPair(customerCoords?.latitude, customerCoords?.longitude)
-      : booking.status === "accepted" &&
-        !!customerCoords &&
-        isValidCoordPair(customerCoords?.latitude, customerCoords?.longitude) &&
-        (!isScheduledBooking || providerHasSharedLocation);
+    booking.status === "accepted" &&
+    !(booking as any).providerArrivedAt &&
+    !!customerCoords &&
+    isValidCoordPair(customerCoords?.latitude, customerCoords?.longitude);
 
   const TIMELINE = [
     { label: "Booking Placed", done: true },
@@ -714,7 +710,17 @@ export default function BookingDetailScreen() {
               </View>
             </View>
 
-            <AthooMapFallback />
+            <OpenStreetMapPreview
+              latitude={customerCoords?.latitude}
+              longitude={customerCoords?.longitude}
+              height={250}
+              markers={[
+                ...(customerCoords ? [{ id: "job-site", kind: "job" as const, label: booking.address || "Job site", ...customerCoords }] : []),
+                ...(providerCoords ? [{ id: "provider", kind: "provider" as const, label: providerName, ...providerCoords }] : []),
+              ]}
+              polyline={routeCoords}
+              gesturesEnabled
+            />
 
             {/* Map legend */}
             <View style={styles.mapLegend}>

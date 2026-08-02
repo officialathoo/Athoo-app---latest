@@ -54,7 +54,7 @@ test("portable email migration and schema preserve provider-neutral durable stat
   assert.match(migration, /email_challenges_purpose_check/);
   assert.match(migration, /email_campaigns_status_check/);
   assert.match(migration, /email_deliveries_status_check/);
-  assert.match(migrations, /20260720_release_phase28_professional_workflow_integrity\.sql/);
+  assert.match(migrations, /20260802_phase19_security_flow_performance\.sql/);
 });
 
 test("email provider is a portable SMTP adapter with safe operational status", () => {

@@ -29,8 +29,17 @@ for (const key of [
   "INCIDENT_COMMANDER_CONTACT", "SUPPORT_ESCALATION_EMAIL", "USER_ACTIVITY_WRITE_INTERVAL_MS",
   "INACTIVITY_SWEEP_MIN_INTERVAL_MS", "SERVER_REQUEST_TIMEOUT_MS", "SERVER_HEADERS_TIMEOUT_MS",
   "SERVER_KEEP_ALIVE_TIMEOUT_MS", "WS_MAX_PAYLOAD_BYTES", "WS_MAX_CONNECTIONS_PER_SESSION",
-  "DB_POOL_MAX", "QUEUE_CONCURRENCY", "BROADCAST_DELIVERY_CONCURRENCY", "MAX_UPLOAD_BYTES",
-  "SIGNED_UPLOAD_TTL_SECONDS", "SIGNED_READ_TTL_SECONDS", "MICRO_CACHE_TTL_MS",
+  "DB_POOL_MAX", "QUEUE_CONCURRENCY", "BROADCAST_DELIVERY_CONCURRENCY",
+  "BROADCAST_RESPONSE_PROVIDER_BATCH_SIZE", "MAX_UPLOAD_BYTES", "SIGNED_UPLOAD_TTL_SECONDS",
+  "SIGNED_READ_TTL_SECONDS", "MICRO_CACHE_TTL_MS", "BOOKING_TIME_ZONE",
+  "BOOKING_NO_SHOW_AUTO_CANCEL_ENABLED", "BOOKING_NO_SHOW_GRACE_MINUTES",
+  "BOOKING_NO_SHOW_SWEEP_BATCH_SIZE", "BOOKING_ARRIVAL_RADIUS_KM",
+  "BOOKING_ARRIVAL_MAX_ACCURACY_METERS", "SERVICE_COUNTRY_CODE", "SERVICE_COUNTRY_MIN_LAT", "SERVICE_COUNTRY_MAX_LAT",
+  "SERVICE_COUNTRY_MIN_LNG", "SERVICE_COUNTRY_MAX_LNG", "LOCATION_MAX_ACCURACY_METERS",
+  "LOCATION_CONFIRMATION_MAX_AGE_MS", "UPLOAD_SCAN_MODE", "UPLOAD_SCANNER_URL",
+  "UPLOAD_SCANNER_TOKEN", "UPLOAD_LEGACY_READ_POLICY", "UPLOAD_SECURITY_MAINTENANCE_ENABLED",
+  "INVOICE_VERIFICATION_SECRET", "AUTH_TOKEN_RATE_LIMIT_WINDOW_MS", "AUTH_TOKEN_RATE_LIMIT_MAX",
+  "INVOICE_VERIFY_RATE_LIMIT_MAX",
 ]) {
   if (!seen.has(key)) errors.push(`.env.production.example: missing ${key}`);
 }
@@ -45,11 +54,19 @@ for (const key of [
   "INCIDENT_COMMANDER_CONTACT", "SUPPORT_ESCALATION_EMAIL", "USER_ACTIVITY_WRITE_INTERVAL_MS",
   "INACTIVITY_SWEEP_MIN_INTERVAL_MS", "SERVER_REQUEST_TIMEOUT_MS", "SERVER_HEADERS_TIMEOUT_MS",
   "SERVER_KEEP_ALIVE_TIMEOUT_MS", "WS_MAX_PAYLOAD_BYTES", "WS_MAX_CONNECTIONS_PER_SESSION",
+  "BOOKING_TIME_ZONE", "BOOKING_NO_SHOW_AUTO_CANCEL_ENABLED", "BOOKING_NO_SHOW_GRACE_MINUTES",
+  "BOOKING_NO_SHOW_SWEEP_BATCH_SIZE", "BOOKING_ARRIVAL_RADIUS_KM",
+  "BOOKING_ARRIVAL_MAX_ACCURACY_METERS", "SERVICE_COUNTRY_CODE", "SERVICE_COUNTRY_MIN_LAT", "SERVICE_COUNTRY_MAX_LAT",
+  "SERVICE_COUNTRY_MIN_LNG", "SERVICE_COUNTRY_MAX_LNG", "LOCATION_MAX_ACCURACY_METERS",
+  "LOCATION_CONFIRMATION_MAX_AGE_MS", "UPLOAD_SCAN_MODE", "UPLOAD_SCANNER_URL",
+  "UPLOAD_SCANNER_TOKEN", "UPLOAD_LEGACY_READ_POLICY", "INVOICE_VERIFICATION_SECRET",
+  "AUTH_TOKEN_RATE_LIMIT_WINDOW_MS", "AUTH_TOKEN_RATE_LIMIT_MAX", "INVOICE_VERIFY_RATE_LIMIT_MAX",
 ]) {
   if (!new RegExp(`- key: ${key}(?:\\n|\\r\\n)`).test(render)) errors.push(`render.yaml: missing ${key}`);
 }
 if (!/pnpm install --frozen-lockfile/.test(render)) errors.push("render.yaml: build must use the frozen lockfile");
-if (!/startCommand: pnpm db:migrate && pnpm --filter @workspace\/api-server start/.test(render)) errors.push("render.yaml: migration/start command is not the certified sequence");
+if (!/startCommand: pnpm env:validate -- --process && pnpm db:migrate && pnpm --filter @workspace\/api-server start/.test(render)) errors.push("render.yaml: environment-validation/migration/start command is not the certified sequence");
+if (!/healthCheckPath: \/api\/healthz\/deep/.test(render)) errors.push("render.yaml: deep production readiness health check is required");
 
 const rootEas = JSON.parse(read("eas.json"));
 const appEas = JSON.parse(read("athoo-app/eas.json"));
@@ -81,11 +98,16 @@ requireText(".github/workflows/connected-runtime.yml", /CONNECTED_PROVIDER_IDENT
 requireText(".github/workflows/connected-runtime.yml", /CONNECTED_DATABASE_URL/, "connected Neon database secret is not wired");
 requireText(".github/workflows/connected-runtime.yml", /pnpm db:status[\s\S]*pnpm db:verify[\s\S]*pnpm db:integrity/, "connected database verification sequence is incomplete");
 requireText(".github/workflows/connected-runtime.yml", /CONNECTED_ADMIN_ORIGIN/, "deployed admin verification is not wired");
+requireText(".github/workflows/connected-runtime.yml", /CONNECTED_VERIFY_UPLOAD_SCANNER: "true"/, "connected malware-scanner verification is not enabled");
+requireText(".github/workflows/connected-runtime.yml", /pnpm\/action-setup@v6[\s\S]*actions\/setup-node@v6[\s\S]*cache: pnpm/, "connected workflow must install pnpm before enabling the pnpm dependency cache");
 requireText("scripts/tools/connected-runtime-verify.mjs", /admin release manifest/, "connected verification does not compare admin release identity");
 requireText("scripts/tools/connected-runtime-verify.mjs", /storage provider connectivity/, "connected verification does not test object storage");
+requireText("scripts/tools/connected-runtime-verify.mjs", /upload malware scanner connectivity/, "connected verification does not test the real malware scanner");
 requireText("docs/runbooks/FINAL_CONNECTED_DEPLOYMENT.md", activeCandidatePattern, "active candidate is not documented");
-requireText("docs/runbooks/FINAL_CONNECTED_DEPLOYMENT.md", /20260720_release_phase28_professional_workflow_integrity\.sql/, "latest migration is not documented");
+requireText("docs/runbooks/FINAL_CONNECTED_DEPLOYMENT.md", /20260802_phase19_security_flow_performance\.sql/, "latest Athoo V2.2 migration is not documented");
 requireText("docs/runbooks/PRODUCTION_LAUNCH_RUNBOOK.md", /calls\.productionReady=true|TURN/, "TURN production gate is not documented");
+requireText("docs/runbooks/PRODUCTION_LAUNCH_RUNBOOK.md", /malware scanner|UPLOAD_SCANNER_URL/i, "external malware scanner gate is not documented");
+requireText("docs/runbooks/PRODUCTION_LAUNCH_RUNBOOK.md", /legacy media|backfill|existing media/i, "existing-media security migration is not documented");
 
 if (errors.length) {
   console.error("Release blueprint validation failed:");

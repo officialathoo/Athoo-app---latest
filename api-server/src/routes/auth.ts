@@ -7,7 +7,8 @@ import { signAccessToken, signPurposeToken, verifyToken, requireAuth, type AuthR
 import { createSession, rotateSession, revokeSession, revokeAllUserSessions, normalizeSessionDeviceId } from "../lib/session";
 import { getPlatformSettings } from "../lib/admin";
 import { LEGAL_VERSION } from "../lib/legal";
-import { isOwnedUploadObjectPath, normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { isCleanOwnedUploadObjectPath } from "../lib/verifiedUploads";
 import { cleanupReplacedOwnedMedia } from "../lib/mediaLifecycle";
 // Rate limiting is handled globally by express-rate-limit in app.ts
 import * as bcrypt from "bcryptjs";
@@ -946,8 +947,9 @@ router.patch("/me", requireAuth, async (req: AuthRequest, res: Response) => {
     }
     if (body.profileImage !== undefined) {
       const profileImage = normalizeStoredObjectPath(body.profileImage);
-      if (profileImage && !isOwnedUploadObjectPath(profileImage, user.id, ["shared", "private"])) {
-        res.status(400).json({ error: "Profile photo must be uploaded through your Athoo account" });
+      // Stronger successor to isOwnedUploadObjectPath(profileImage, ...): ownership alone is insufficient.
+      if (profileImage && !(await isCleanOwnedUploadObjectPath(profileImage, user.id, ["shared", "private"]))) {
+        res.status(400).json({ error: "Profile photo must be uploaded through your Athoo account and pass security scanning before use" });
         return;
       }
       updates.profileImage = profileImage || null;
@@ -981,30 +983,23 @@ router.patch("/me", requireAuth, async (req: AuthRequest, res: Response) => {
   }
 });
 
-// DELETE /auth/me — permanently delete account
-router.delete("/me", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    await db.delete(usersTable).where(eq(usersTable.id, req.user!.userId));
-    res.json({ success: true });
-  } catch (e) {
-    logger.error({ err: e }, "delete me error");
-    res.status(500).json({ error: "Failed to delete account" });
-  }
+// Legacy account-destruction endpoints are intentionally blocked. Account
+// deactivation and permanent deletion are high-risk actions and must pass the
+// purpose-bound password/email-OTP/mobile-OTP step-up workflow in /api/me/account.
+// Keeping an authenticated but unverified compatibility route would allow an
+// older or malicious client to bypass that protection.
+router.delete("/me", requireAuth, (_req: AuthRequest, res: Response) => {
+  return res.status(410).json({
+    error: "Fresh password or OTP verification is required. Update the app and try again.",
+    code: "STEP_UP_REQUIRED",
+  });
 });
 
-// POST /auth/deactivate — deactivate account (keep data, prevent login)
-router.post("/deactivate", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    await db
-      .update(usersTable)
-      .set({ isDeactivated: true, updatedAt: new Date() })
-      .where(eq(usersTable.id, req.user!.userId));
-
-    res.json({ success: true });
-  } catch (e) {
-    logger.error({ err: e }, "deactivate error");
-    res.status(500).json({ error: "Failed to deactivate account" });
-  }
+router.post("/deactivate", requireAuth, (_req: AuthRequest, res: Response) => {
+  return res.status(410).json({
+    error: "Fresh password or OTP verification is required. Update the app and try again.",
+    code: "STEP_UP_REQUIRED",
+  });
 });
 
 // GET /auth/users/:id — get public profile of any user
@@ -1568,4 +1563,3 @@ router.post("/switch-role", requireAuth, async (req: AuthRequest, res: Response)
 });
 
 export default router;
-

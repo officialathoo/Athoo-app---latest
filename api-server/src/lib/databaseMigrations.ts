@@ -20,7 +20,7 @@ export async function getMigrationHealth(): Promise<MigrationHealth> {
 
     const result = await pool.query<{ migration_id: string; total: string }>(`
       SELECT migration_id, COUNT(*) OVER()::text AS total
-      FROM athoo_schema_migrations
+      FROM public.athoo_schema_migrations
       ORDER BY migration_id DESC
       LIMIT 1
     `);

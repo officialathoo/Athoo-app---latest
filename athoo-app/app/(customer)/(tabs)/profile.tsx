@@ -25,7 +25,6 @@ import { AnimatedCard } from "@/components/ui/AnimatedCard";
 import { useAuth } from "@/context/AuthContext";
 import { useBookings } from "@/context/BookingContext";
 import { useLang } from "@/context/LanguageContext";
-import { api } from "@/services/api";
 import { uploadPickedImage, PrivateImage } from "@/services/storage";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
@@ -167,51 +166,11 @@ export default function ProfileScreen() {
   };
 
   const handleDeactivate = () => {
-    Alert.alert(
-      "Deactivate Account",
-      "Your account will be hidden from the app. You can reactivate it by logging back in. Continue?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Deactivate",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await api.deactivateAccount();
-              await logout();
-            } catch {
-              Alert.alert("Error", "Could not deactivate account. Please try again.");
-            }
-          },
-        },
-      ]
-    );
+    router.push("/(customer)/privacy" as any);
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert(
-      "Delete Account",
-      "Your account will be deactivated now and permanently deleted after a 7-day grace period. You can sign in during that period to cancel the request.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Schedule Deletion",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              const result = await api.requestAccountDeletion();
-              await logout();
-              Alert.alert(
-                "Deletion Scheduled",
-                `Your account is scheduled for deletion on ${new Date(result.scheduledDeleteAt).toLocaleDateString()}. Sign in before then to cancel the request.`,
-              );
-            } catch {
-              Alert.alert("Error", "Could not delete account. Please try again.");
-            }
-          },
-        },
-      ]
-    );
+    router.push("/(customer)/privacy" as any);
   };
 
   const handleMenuPress = (route: string | null) => {

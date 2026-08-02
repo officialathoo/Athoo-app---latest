@@ -1,6 +1,6 @@
 # Athoo Final Connected Deployment
 
-Use `ATHOO_PHASE28_5_2_RELEASE_METADATA_FIXED.zip` as the only release baseline. Do not merge files from older ZIPs.
+Use `ATHOO_V2_2_PRODUCTION_CERTIFICATION.zip` as the only Athoo V2.2 release candidate. Do not merge files from older ZIPs.
 
 ## 1. Certify the exact source
 
@@ -24,10 +24,10 @@ Commit the exact source and record the complete Git SHA and ZIP checksum:
 ```powershell
 git status --short
 git add .
-git commit -m "Athoo Phase 28.5 device acceptance integrity"
+git commit -m "Athoo V2.2 production certification integration"
 git push origin main
 $Commit = git rev-parse HEAD
-Get-FileHash .\ATHOO_PHASE28_5_2_RELEASE_METADATA_FIXED.zip -Algorithm SHA256
+Get-FileHash .\ATHOO_V2_2_PRODUCTION_CERTIFICATION.zip -Algorithm SHA256
 ```
 
 Use one release version and the same `$Commit` for Render, Vercel and EAS.
@@ -71,6 +71,9 @@ Configure Render from `.env.production.example`. Never commit actual credentials
 - TomTom or another configured map provider
 - TURN URLs, username and credential
 - Monitoring and escalation contacts
+- Authenticated HTTPS malware scanner (`UPLOAD_SCAN_MODE=required`, `UPLOAD_SCANNER_URL`, `UPLOAD_SCANNER_TOKEN`)
+- Upload quarantine maintenance and `UPLOAD_LEGACY_READ_POLICY=deny`
+- Invoice verification secret and token/IP rate limits
 - Release version, commit and build identity
 
 For the current single Render API instance use:
@@ -80,7 +83,9 @@ QUEUE_PROVIDER=postgres
 CACHE_PROVIDER=memory
 ```
 
-Do not scale to multiple API instances while using memory cache. Phase 28.5 verification rejects horizontal scaling unless the active cache reports `horizontalScaleSafe=true`.
+Do not scale to multiple API instances while using memory cache. Athoo V2.2 verification rejects horizontal scaling unless the active cache reports `horizontalScaleSafe=true`.
+
+The external malware scanner is a required production dependency, not an optional UI feature. `/api/healthz/deep` must fail readiness when scanning is unsafe. Before enforcing `UPLOAD_LEGACY_READ_POLICY=deny`, inventory, scan and backfill all existing media into the verified-upload authorization records. Test real R2/GCS quarantine, locked snapshot, clean promotion, rejected deletion and stale-record cleanup.
 
 ## 4. Verify Neon before API rollout
 
@@ -95,10 +100,10 @@ pnpm db:integrity
 The expected latest migration is:
 
 ```text
-20260720_release_phase28_professional_workflow_integrity.sql
+20260802_phase19_security_flow_performance.sql
 ```
 
-Do not start the updated API when migration verification or integrity checks fail.
+Do not start the updated API when migration verification or integrity checks fail. The database must report all 53 migrations applied, zero pending migrations, no checksum drift and the exact Athoo V2.2 schema fingerprint used during certification.
 
 ## 5. Deploy Render and Vercel from the same commit
 
@@ -149,6 +154,7 @@ This verifies:
 - TURN configuration returned to an authenticated provider
 - Policy centers and admin governance queues
 - Storage write/metadata/delete connectivity test
+- Real upload-scanner clean PNG acceptance and safe EICAR signature rejection
 - Map-provider connectivity test
 - SMTP transport and one real test email
 - One real phone-bound authentication OTP request
@@ -168,25 +174,25 @@ eas build --platform android --profile preview --clear-cache
 eas build --platform ios --profile preview --clear-cache
 ```
 
-Fresh native builds are mandatory for notification sounds, Android channels, biometrics and WebRTC native configuration. Record each EAS build ID and source commit.
+Fresh native builds from the exact release commit are mandatory for notification sounds, Android channels, biometrics and WebRTC native configuration. Record each EAS build ID and source commit.
 
 ## 8. Complete physical-device evidence
 
-Use the exact Phase 28.5 ZIP and the same release commit used by Render, Vercel and EAS:
+Use the exact Athoo V2.2 ZIP and the same release commit used by Render, Vercel and EAS:
 
 ```powershell
-pnpm device:evidence:init -- --artifact .\ATHOO_PHASE28_5_2_RELEASE_METADATA_FIXED.zip --release-version <release-version> --commit <full-git-sha>
+pnpm device:evidence:init -- --artifact .\ATHOO_V2_2_PRODUCTION_CERTIFICATION.zip --release-version <release-version> --commit <full-git-sha>
 ```
 
 Complete both build records and every case in `device-acceptance-evidence.json`, then validate:
 
 ```powershell
-pnpm device:evidence:validate -- .\device-acceptance-evidence.json .\ATHOO_PHASE28_5_2_RELEASE_METADATA_FIXED.zip
+pnpm device:evidence:validate -- .\device-acceptance-evidence.json .\ATHOO_V2_2_PRODUCTION_CERTIFICATION.zip
 ```
 
-The validator binds the evidence to the active candidate name, real non-zero ZIP checksum, exact Git commit, both native build IDs and both physical devices. Cross-role cases must identify the Android and iPhone used. It rejects generic evidence such as “OK” or “Passed”, stale timestamps, missing cases, unknown cases and build/commit mismatches.
+The validator binds the evidence to the active candidate name, real non-zero ZIP checksum, exact Git commit, both native build IDs and both physical devices. Cross-role cases must identify the Android and iPhone used. It rejects generic evidence such as ΓÇ£OKΓÇ¥ or ΓÇ£PassedΓÇ¥, stale timestamps, missing cases, unknown cases and build/commit mismatches.
 
-The physical matrix explicitly covers full map-tile rendering, fresh provider location on open/foreground, radius persistence and matching, broadcast receipt after radius change, immediate old-device revocation, biometric enable/unlock/disable, call crash resistance and two-way audio, time-picker layout, bottom safe area, availability state animation, notification delivery and invoices with no tax.
+The physical matrix explicitly covers full map-tile rendering, canonical Pakistan location selection, saved-address reuse, fresh provider location on open/foreground, radius persistence and matching, single-accept broadcast behavior, rejected-offer recountering, scheduled-job safety and reminders, private refund evidence, immediate old-device revocation, biometric enable/unlock/disable, verified Cloudflare relay and two-way audio, secure-upload clean promotion and malware rejection, signed non-PII invoice QR verification, time-picker layout, bottom safe area, availability state animation, notification delivery and invoices with no tax.
 
 HTTP verification does not prove actual Expo receipt, sound playback, killed-state deep links or two-way audio. Those remain mandatory physical-device checks.
 

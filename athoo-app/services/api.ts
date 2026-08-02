@@ -3,6 +3,10 @@ import { getSecureItem, removeSecureItem, setSecureItem } from "@/services/secur
 import { getDeviceId } from "@/services/deviceIdentity";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
+import {
+  classifyRefreshResponse,
+  type SessionRefreshResult,
+} from "@/services/sessionRefreshPolicy";
 
 // Native builds require an explicit API URL from deployment configuration.
 // Web builds may use their own origin. No hosting vendor is embedded in code.
@@ -63,7 +67,7 @@ type RequestOptions = Omit<RequestInit, "body"> & {
 // PrivateImage components) don't hit AsyncStorage on every render.
 let _cachedToken: string | null = null;
 let _cachedRefreshToken: string | null = null;
-let _refreshPromise: Promise<string | null> | null = null;
+let _refreshPromise: Promise<SessionRefreshResult> | null = null;
 
 export async function getToken(): Promise<string | null> {
   if (_cachedToken) return _cachedToken;
@@ -189,32 +193,54 @@ async function fetchWithTimeout(
   }
 }
 
-async function refreshAccessTokenOnce(): Promise<string | null> {
+function sessionRefreshUnavailableError(): Error {
+  const error = new Error("Your session is still saved, but Athoo could not reconnect. Please try again.");
+  Object.assign(error, {
+    status: 503,
+    code: "SESSION_REFRESH_UNAVAILABLE",
+    transient: true,
+  });
+  return error;
+}
+
+async function refreshAccessTokenOnce(): Promise<SessionRefreshResult> {
   if (_refreshPromise) return _refreshPromise;
   _refreshPromise = (async () => {
-    const refreshToken = await getRefreshToken();
-    if (!refreshToken || !API_BASE_URL) return null;
     try {
+      const refreshToken = await getRefreshToken();
+      if (!refreshToken) return { status: "missing" };
+      if (!API_BASE_URL) return { status: "unavailable" };
       const deviceId = await getDeviceId();
       const response = await fetchWithTimeout(buildUrl("/api/auth/refresh"), {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json", "X-Athoo-Device-Id": deviceId },
         body: JSON.stringify({ refreshToken }),
       }, DEFAULT_TIMEOUT_MS);
-      if (!response.ok) return null;
-      const data = await response.json() as { token?: string; refreshToken?: string };
-      if (!data.token || !data.refreshToken) return null;
+      let data: { token?: string; refreshToken?: string } = {};
+      try {
+        data = await response.json() as { token?: string; refreshToken?: string };
+      } catch {
+        // A malformed upstream response is not proof that the refresh session
+        // was revoked. Preserve credentials and let a later request retry.
+      }
+      const status = classifyRefreshResponse(response.status, Boolean(data.token), Boolean(data.refreshToken));
+      if (status !== "renewed" || !data.token || !data.refreshToken) return { status };
       const remember = (await AsyncStorage.getItem(REMEMBER_KEY)) !== "false";
       await setToken(data.token, remember);
       await setRefreshToken(data.refreshToken, remember);
-      return data.token;
+      return { status: "renewed", token: data.token };
     } catch {
-      return null;
+      return { status: "unavailable" };
     } finally {
       _refreshPromise = null;
     }
   })();
   return _refreshPromise;
+}
+
+/** Restore an access token from the encrypted rotating refresh credential. */
+export async function restoreAccessToken(): Promise<SessionRefreshResult> {
+  return refreshAccessTokenOnce();
 }
 
 async function request<T = any>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -280,12 +306,15 @@ async function request<T = any>(path: string, options: RequestOptions = {}): Pro
         // Unauthenticated endpoints returning 401 (e.g. wrong credentials) must
         // NOT force the current user out.
         if (response.status === 401 && auth && !refreshedAfterUnauthorized) {
-          const renewedToken = await refreshAccessTokenOnce();
-          if (renewedToken) {
-            finalHeaders.Authorization = `Bearer ${renewedToken}`;
+          const refreshResult = await refreshAccessTokenOnce();
+          if (refreshResult.status === "renewed" && refreshResult.token) {
+            finalHeaders.Authorization = `Bearer ${refreshResult.token}`;
             refreshedAfterUnauthorized = true;
             attempt -= 1;
             continue;
+          }
+          if (refreshResult.status === "unavailable") {
+            throw sessionRefreshUnavailableError();
           }
         }
         if (response.status === 401 && auth) {
@@ -811,10 +840,15 @@ export const api = {
   },
 
   // Bookings
-  getBookings() {
-    return request<{ bookings: any[] }>("/api/bookings", {
+  getBookings(params?: { limit?: number; cursor?: string | null; updatedSince?: string | null }) {
+    return request<{ bookings: any[]; hasMore: boolean; nextCursor: string | null; serverTime: string }>("/api/bookings", {
       method: "GET",
       auth: true,
+      params: {
+        limit: Math.min(100, Math.max(1, Number(params?.limit) || 50)),
+        ...(params?.cursor ? { cursor: params.cursor } : {}),
+        ...(params?.updatedSince ? { updatedSince: params.updatedSince } : {}),
+      },
     });
   },
 
@@ -865,10 +899,11 @@ export const api = {
     });
   },
 
-  markProviderArrived(id: string) {
+  markProviderArrived(id: string, location: { latitude: number; longitude: number; accuracy?: number | null }) {
     return request<{ booking: any }>(`/api/bookings/${id}/arrived`, {
       method: "POST",
       auth: true,
+      body: location,
     });
   },
 
@@ -1024,9 +1059,17 @@ export const api = {
     customerName: string;
     service: string;
     customerOffer: number;
+    travellingCharge?: number;
     address?: string;
     latitude?: number;
     longitude?: number;
+    locationCity: string;
+    locationArea: string;
+    locationProvince?: string;
+    locationCountryCode: string;
+    locationSource: string;
+    locationAccuracy?: number | null;
+    locationConfirmedAt: string;
     scheduledDate?: string;
     scheduledTime?: string;
     mediaUrls?: string[];
@@ -1055,11 +1098,11 @@ export const api = {
     });
   },
 
-  counterOffer(id: string, amount: number, message: string, senderName: string) {
+  counterOffer(id: string, amount: number, message: string, senderName: string, travellingCharge = 0) {
     return request<{ negotiation: any }>(`/api/negotiations/${id}/counter`, {
       method: "PATCH",
       auth: true,
-      body: { amount, message, senderName },
+      body: { amount, message, senderName, travellingCharge },
     });
   },
 
@@ -1175,7 +1218,20 @@ export const api = {
     return request<{ addresses: any[] }>("/api/addresses", { method: "GET", auth: true });
   },
 
-  addAddress(data: { label: string; address: string; icon?: string; latitude?: number | null; longitude?: number | null }) {
+  addAddress(data: {
+    label: string;
+    address: string;
+    icon?: string;
+    latitude: number;
+    longitude: number;
+    locationCity: string;
+    locationArea: string;
+    locationProvince?: string;
+    locationCountryCode: string;
+    locationSource: string;
+    locationAccuracy?: number | null;
+    locationConfirmedAt: string;
+  }) {
     return request<{ address: any }>("/api/addresses", { method: "POST", auth: true, body: data });
   },
 
@@ -1326,7 +1382,28 @@ export const api = {
       body: { oldPassword: payload.currentPassword, newPassword: payload.newPassword },
     });
   },
-  deactivateAccount(payload: { password?: string } = {}) {
+  getAccountStepUpOptions() {
+    return request<{
+      passwordAvailable: boolean;
+      phoneAvailable: boolean;
+      maskedPhone: string | null;
+      emailAvailable: boolean;
+      maskedEmail: string | null;
+    }>("/api/me/account/step-up/options", { method: "GET", auth: true });
+  },
+  requestAccountStepUpCode(payload: { action: "deactivate" | "delete"; channel: "phone" | "email" }) {
+    return request<{ success: boolean; destination?: string | null; expiresInSeconds: number; resendAfterSeconds: number; code?: string }>(
+      "/api/me/account/step-up/request",
+      { method: "POST", auth: true, body: payload },
+    );
+  },
+  verifyAccountStepUpCode(payload: { action: "deactivate" | "delete"; channel: "phone" | "email"; code: string }) {
+    return request<{ success: boolean; verificationToken: string; expiresInSeconds: number }>(
+      "/api/me/account/step-up/verify",
+      { method: "POST", auth: true, body: payload },
+    );
+  },
+  deactivateAccount(payload: { password?: string; verificationToken?: string }) {
     return request<{ success: boolean }>("/api/me/account/deactivate", {
       method: "POST",
       auth: true,
@@ -1334,8 +1411,8 @@ export const api = {
     });
   },
   /** @deprecated Use deactivateAccount. */
-  deactivateMe(password?: string) {
-    return this.deactivateAccount(password ? { password } : {});
+  deactivateMe(payload: { password?: string; verificationToken?: string }) {
+    return this.deactivateAccount(payload);
   },
   reactivateAccount() {
     return request<{ success: boolean }>("/api/me/account/reactivate", {
@@ -1343,8 +1420,8 @@ export const api = {
       auth: true,
     });
   },
-  requestAccountDeletion(payload: { reason?: string; password?: string } = {}) {
-    return request<{ scheduledDeleteAt: string }>("/api/me/account/delete-request", {
+  requestAccountDeletion(payload: { reason?: string; password?: string; verificationToken?: string }) {
+    return request<{ success: boolean; scheduledDeleteAt: string; duplicate?: boolean }>("/api/me/account/delete-request", {
       method: "POST",
       auth: true,
       body: payload,
@@ -1358,8 +1435,8 @@ export const api = {
   },
 
   /** @deprecated Use requestAccountDeletion. Kept for older profile/privacy screens. */
-  deleteMe() {
-    return this.requestAccountDeletion();
+  deleteMe(payload: { password?: string; verificationToken?: string }) {
+    return this.requestAccountDeletion(payload);
   },
   requestEmailChange(newEmail: string) {
     return request<{ success: boolean; code?: string }>("/api/me/account/email/request", {
@@ -1464,6 +1541,13 @@ export const api = {
     address: string;
     latitude?: number;
     longitude?: number;
+    locationCity: string;
+    locationArea: string;
+    locationProvince?: string;
+    locationCountryCode: string;
+    locationSource: string;
+    locationAccuracy?: number | null;
+    locationConfirmedAt: string;
     scheduledDate: string;
     scheduledTime: string;
     customerOffer?: number;
@@ -1515,8 +1599,14 @@ export const api = {
     });
   },
 
-  respondToBroadcast(requestId: string, payload: { providerOffer?: number; providerTravellingCharge?: number; message?: string }) {
-    return request<{ response: any }>(`/api/broadcast/${requestId}/respond`, {
+  respondToBroadcast(requestId: string, payload: {
+    action: "accept" | "counter";
+    providerOffer?: number;
+    providerTravellingCharge?: number;
+    message?: string;
+    clientRequestId: string;
+  }) {
+    return request<{ response: any; booking?: any; accepted: boolean; duplicate?: boolean }>(`/api/broadcast/${requestId}/respond`, {
       method: "POST",
       auth: true,
       body: payload,
@@ -1531,7 +1621,14 @@ export const api = {
   },
 
   selectBroadcastResponse(requestId: string, responseId: string) {
-    return request<{ booking: any }>(`/api/broadcast/${requestId}/select/${responseId}`, {
+    return request<{ booking: any; request?: any; response?: any; duplicate?: boolean }>(`/api/broadcast/${requestId}/select/${responseId}`, {
+      method: "POST",
+      auth: true,
+    });
+  },
+
+  rejectBroadcastResponse(requestId: string, responseId: string) {
+    return request<{ response: any; canRevise: boolean; duplicate?: boolean }>(`/api/broadcast/${requestId}/responses/${responseId}/reject`, {
       method: "POST",
       auth: true,
     });
@@ -1563,6 +1660,31 @@ export const api = {
   // Refunds (customer)
   getMyRefunds() {
     return request<{ refunds: any[] }>("/api/refunds/me", {
+      method: "GET",
+      auth: true,
+    });
+  },
+
+  getRefundEligibleBookings(limit = 50) {
+    return request<{
+      eligibleBookings: Array<{
+        id: string;
+        publicId?: string | null;
+        service: string;
+        status: "completed" | "cancelled";
+        paymentStatus: "paid" | "received";
+        price?: number | null;
+        visitCharge?: number | null;
+        refundableTotal: number;
+        paidRefundTotal: number;
+        remainingRefundable: number;
+        scheduledDate?: string | null;
+        scheduledTime?: string | null;
+        createdAt?: string | null;
+      }>;
+      limit: number;
+      hasMore: boolean;
+    }>(`/api/refunds/eligible-bookings?limit=${Math.min(100, Math.max(1, Math.trunc(limit)))}`, {
       method: "GET",
       auth: true,
     });
@@ -1742,8 +1864,37 @@ export const api = {
         providerAmount: number;
         status: string;
         createdAt: string;
+        verification: { verificationUrl: string; qrCodeDataUri: string };
       }>;
     }>("/api/invoices", { method: "GET", auth: true });
+  },
+
+  getInvoiceForBooking(bookingId: string) {
+    return request<{
+      invoice: {
+        id: string;
+        invoiceNumber: string;
+        bookingId: string;
+        customerId: string;
+        providerId: string;
+        customerName: string;
+        providerName: string;
+        service: string;
+        address: string;
+        scheduledDate: string;
+        scheduledTime: string;
+        subtotal: number;
+        visitCharge: number;
+        platformFee: number;
+        discountAmount: number;
+        totalAmount: number;
+        commissionAmount: number;
+        providerAmount: number;
+        status: string;
+        createdAt: string;
+        verification: { verificationUrl: string; qrCodeDataUri: string };
+      };
+    }>(`/api/invoices/booking/${encodeURIComponent(bookingId)}`, { method: "GET", auth: true });
   },
 };
 
@@ -1773,6 +1924,7 @@ export type RealtimeEventName =
   | "broadcast:accepted"
   | "broadcast:selected"
   | "broadcast:rejected"
+  | "broadcast:response-rejected"
   | "broadcast:cancelled";
 
 type RealtimeMessage = { type: RealtimeEventName | string; payload: any };

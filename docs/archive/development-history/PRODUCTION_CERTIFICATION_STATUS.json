@@ -1,45 +1,40 @@
 {
   "schemaVersion": 1,
-  "auditDate": "2026-07-17",
-  "inputBaseline": "ATHOO_PHASE13_ADMIN_TYPECHECK_FIXED.zip",
-  "candidateBaseline": "ATHOO_PHASE14_MOBILE_UPLOAD_TYPECHECK_FIXED.zip",
-  "status": "TYPECHECK-RERUN-REQUIRED",
-  "trigger": "The third connected Windows release:verify:code run passed API and admin-panel typechecks but exposed eight mobile TypeScript errors caused by an incomplete upload-scope function refactor.",
-  "remediation": {
-    "reportedCompilerErrors": 8,
-    "rootCauseCount": 1,
-    "filesChanged": [
-      "athoo-app/services/storage.ts",
-      "api-server/test/phase14-mobile-upload-typecheck-regression.test.ts"
-    ],
-    "changes": [
-      "added the private/shared UploadScope parameter to the shared uploadPickedImage contract",
-      "defined the scope value used when requesting portable storage upload instructions",
-      "forwarded scope through the Cloudinary branch for a consistent provider-agnostic upload contract",
-      "preserved shared as the backward-compatible default for profile, booking, negotiation, and broadcast media",
-      "preserved explicit private scope for premium payment, commission, verification, registration, and support evidence"
-    ]
-  },
-  "sourceVerification": {
-    "phase14TargetedTests": "3/3 passed",
-    "rootRegressionTests": "452/452 passed",
-    "typescriptSyntaxParsing": "506/506 passed",
-    "projectValidation": "passed",
-    "releaseValidation": "passed",
-    "operationsValidation": "passed",
-    "blueprintValidation": "passed",
-    "securityScan": "passed",
-    "expoWorkspaceValidation": "passed",
-    "reactNativeStyleValidation": "passed",
-    "mobileReleaseValidation": "passed",
-    "betaQaValidation": "passed",
-    "devicePreparationValidation": "passed",
-    "dependencyAwareMobileTypecheckMetroAndBuild": "rerun required on Windows"
-  },
-  "requiredNextEvidence": [
-    "pnpm install --frozen-lockfile in a clean Phase 14 folder",
-    "pnpm run release:verify:code with zero mobile typecheck and build errors",
-    "then Neon backup/migrations/integrity and connected infrastructure/device verification"
+  "auditDate": "2026-08-02",
+  "inputBaselines": [
+    "ATHOO_PHASE24_8_DEVICE_ACCEPTANCE_INTEGRITY_READY.zip",
+    "ATHOO_PHASE19_SECURITY_FLOW_PERFORMANCE_HARDENED.zip"
   ],
-  "launchRule": "Do not deploy or migrate until Phase 14 release:verify:code passes completely."
+  "commonAncestor": "ATHOO_PHASE16_PRODUCTION_HARDENED.zip",
+  "candidateBaseline": "ATHOO_PHASE25_UNIFIED_SECURITY_FLOW_DEVICE_READY.zip",
+  "status": "CODE-INTEGRATED-CONNECTED-CERTIFICATION-REQUIRED",
+  "verification": {
+    "mergeConflicts": "resolved-no-markers",
+    "apiRegressionTests": "568/568 passed using audit-only cloud SDK stubs; no real cloud operation was performed",
+    "typescriptSyntax": "551/551 parsed",
+    "javascriptSyntax": "44/44 passed node --check",
+    "projectValidation": "passed",
+    "securityScan": "passed",
+    "operationsReadiness": "passed",
+    "releaseBlueprints": "passed",
+    "expoWorkspace": "passed",
+    "reactNativeStyles": "passed",
+    "mobileRelease": "passed with EAS_PROJECT_ID warning",
+    "betaQa": "passed",
+    "dependencyAwareTypecheck": "blocked by unavailable dependency installation in audit environment",
+    "productionBuilds": "blocked by unavailable dependency installation in audit environment",
+    "connectedRuntime": "pending",
+    "physicalDevices": "pending"
+  },
+  "launchRule": "Do not deploy Phase 25 until clean dependency-backed typecheck/build, Neon migration, authenticated scanner, existing-media backfill, real storage, connected runtime, load/recovery, Android and iPhone evidence pass.",
+  "requiredNextEvidence": [
+    "clean pnpm install --frozen-lockfile followed by release:verify:code",
+    "Neon restore point and migration verification through 20260802_phase19_security_flow_performance.sql",
+    "authenticated HTTPS malware scanner clean/EICAR/polyglot/timeout/overload tests",
+    "existing R2/GCS and legacy-media inventory, scan, authorization backfill and deny-policy rehearsal",
+    "real storage quarantine, locked snapshot, promotion, serving and cleanup tests",
+    "refund, single-accept, scheduling, reminders, negotiation media, geofence and signed invoice connected tests",
+    "Render, Vercel, Expo, maps, TURN, push, email and OTP verification",
+    "strict Android and iPhone evidence plus load/recovery monitoring gates"
+  ]
 }

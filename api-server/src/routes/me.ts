@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { logger } from "../lib/logger";
 import { db } from "@workspace/db";
-import { isOwnedUploadObjectPath, normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { isCleanOwnedUploadObjectPath } from "../lib/verifiedUploads";
 import { cleanupReplacedOwnedMedia } from "../lib/mediaLifecycle";
 import {
   appSettingsTable,
@@ -104,7 +105,8 @@ router.patch("/", async (req: AuthRequest, res) => {
     }
     if (body.profileImage !== undefined) {
       const profileImage = normalizeStoredObjectPath(body.profileImage);
-      if (profileImage && !isOwnedUploadObjectPath(profileImage, req.user!.userId, ["shared", "private"])) return res.status(400).json({ error: "Profile photo must be uploaded through your Athoo account" });
+      // Stronger successor to isOwnedUploadObjectPath(profileImage, ...): ownership alone is insufficient.
+      if (profileImage && !(await isCleanOwnedUploadObjectPath(profileImage, req.user!.userId, ["shared", "private"]))) return res.status(400).json({ error: "Profile photo must be uploaded through your Athoo account and pass security scanning before use" });
       update.profileImage = profileImage || null;
     }
     if (body.profileColor !== undefined) {
@@ -274,8 +276,9 @@ router.post("/documents", async (req: AuthRequest, res) => {
     const normalizedType = String(type || "").trim();
     const normalizedUrl = normalizeStoredObjectPath(url);
     if (!allowedTypes.includes(normalizedType) || !normalizedUrl) return res.status(400).json({ error: "Invalid document type or URL" });
-    if (!isOwnedUploadObjectPath(normalizedUrl, req.user!.userId, ["private"])) {
-      return res.status(400).json({ error: "Verification documents must use your private upload path" });
+    // Replaces isOwnedUploadObjectPath(normalizedUrl, req.user!.userId, ["private"]) with owner + clean-scan enforcement.
+    if (!(await isCleanOwnedUploadObjectPath(normalizedUrl, req.user!.userId, ["private"]))) {
+      return res.status(400).json({ error: "Verification documents must use your private upload path and pass security scanning before use" });
     }
 
     const existing = await db.query.providerDocumentsTable.findFirst({
@@ -507,4 +510,3 @@ router.patch("/schedule", async (req: AuthRequest, res) => {
 });
 
 export default router;
-

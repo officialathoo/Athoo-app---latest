@@ -166,47 +166,11 @@ export default function ProviderProfileScreen() {
   const avatarColor = user?.profileColor || theme.colors.secondary;
 
   const handleDeactivate = () => {
-    Alert.alert(
-      "Deactivate Account",
-      "Your account will be hidden from the app. You can reactivate it by logging back in. Continue?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Deactivate",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await api.deactivateMe();
-              await logout();
-            } catch {
-              Alert.alert("Error", "Could not deactivate account. Please try again.");
-            }
-          },
-        },
-      ]
-    );
+    router.push("/(provider)/privacy" as any);
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert(
-      "Delete Account",
-      "Your account will be deactivated and scheduled for deletion after 7 days. You can cancel during the grace period by signing in again.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await api.requestAccountDeletion({ reason: "Requested from provider profile" });
-              await logout();
-            } catch {
-              Alert.alert("Error", "Could not delete account. Please try again.");
-            }
-          },
-        },
-      ]
-    );
+    router.push("/(provider)/privacy" as any);
   };
 
   const handleLogout = () => {
@@ -745,4 +709,3 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   langCancelText: { fontSize: 15, fontWeight: "600", color: theme.colors.textSecondary },
 });
-

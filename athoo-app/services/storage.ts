@@ -3,11 +3,13 @@
  *
  * Upload flow:
  *   1. getUploadUrl() → provider-specific direct-upload instructions
- *   2. Upload directly to Cloudinary/GCS-compatible storage
- *   3. Persist the returned stable objectPath / HTTPS URL
+ *   2. PUT into Athoo's non-readable quarantine object
+ *   3. Complete server-side scan and persist only the returned clean objectPath
  *
  * Display flow:
- *   - objectPath (/objects/<id>) is served via the API with ?token=
+ *   - objectPath (/objects/<id>) is served through authenticated API access
+ *   - Native clients send short-lived purpose tokens in Authorization headers
+ *   - Web falls back to a short-lived query token because browser image tags cannot attach headers
  *   - Legacy Cloudinary https URLs (pre-migration) still render directly
  *   - <PrivateImage objectPath={...} /> handles both transparently
  */
@@ -36,7 +38,7 @@ export function isStoragePath(value: string | null | undefined): boolean {
 
 /**
  * Returns the display URL for an objectPath.
- * - /objects/ paths: proxied through the API with ?token=
+ * - /objects/ paths: proxied through the authenticated API
  * - data: URIs and https URLs (legacy Cloudinary): returned as-is
  */
 export function getPrivateFileUrl(objectPath: string | null | undefined): string {
@@ -182,7 +184,15 @@ export type UploadUrlResult = {
 /**
  * Request a presigned PUT URL + objectPath from the API server.
  */
-async function confirmUploadedObject(objectPath: string, size: number, contentType: string): Promise<void> {
+type ConfirmedUpload = {
+  objectPath: string;
+  size: number;
+  contentType: string;
+  sha256: string;
+  securityStatus: "clean";
+};
+
+async function confirmUploadedObject(objectPath: string, size: number, contentType: string): Promise<ConfirmedUpload> {
   const [token, deviceId] = await Promise.all([getToken(), getDeviceId()]);
   const res = await fetch(`${STORAGE_API_BASE}/api/storage/uploads/complete`, {
     method: "POST",
@@ -193,12 +203,27 @@ async function confirmUploadedObject(objectPath: string, size: number, contentTy
     },
     body: JSON.stringify({ objectPath, size, contentType }),
   });
+  const raw = await res.text();
+  let parsed: any = {};
+  try { parsed = raw ? JSON.parse(raw) : {}; } catch {}
   if (!res.ok) {
-    const raw = await res.text();
-    let parsed: any = {};
-    try { parsed = raw ? JSON.parse(raw) : {}; } catch {}
     throw professionalUploadError(parsed?.error || parsed?.message || `Upload verification failed (${res.status})`);
   }
+  const finalPath = typeof parsed?.objectPath === "string" ? parsed.objectPath.trim() : "";
+  if (parsed?.securityStatus !== "clean"
+    || !/^\/objects\/uploads\/(?:private|shared)\/[^/]+\//.test(finalPath)
+    || !Number.isFinite(Number(parsed?.size))
+    || typeof parsed?.contentType !== "string"
+    || !/^[a-f0-9]{64}$/.test(String(parsed?.sha256 || ""))) {
+    throw new Error("Athoo could not verify the final secure file reference. Please upload the file again.");
+  }
+  return {
+    objectPath: finalPath,
+    size: Number(parsed.size),
+    contentType: parsed.contentType,
+    sha256: parsed.sha256,
+    securityStatus: "clean",
+  };
 }
 
 export type UploadScope = "private" | "shared";
@@ -233,61 +258,6 @@ export async function getUploadUrl(
  * On native, uses expo-file-system binary upload (reliable for file:// URIs).
  * On web, fetches the local blob and PUTs it.
  */
-async function uploadFileToCloudinary(
-  localUri: string,
-  uploadURL: string,
-  contentType: string,
-  fields: Record<string, string | number | boolean> = {},
-  onProgress?: UploadProgressCallback,
-  scope?: UploadScope,
-): Promise<string> {
-  const formData = new FormData();
-  Object.entries(fields).forEach(([key, value]) => {
-    formData.append(key, String(value));
-  });
-
-  const fileName = String(fields.public_id || "athoo-upload").split("/").pop() || "athoo-upload";
-
-  if (Platform.OS === "web") {
-    const blob = await (await fetch(localUri)).blob();
-    formData.append("file", blob as any, fileName);
-  } else {
-    formData.append("file", {
-      uri: localUri,
-      name: fileName,
-      type: contentType || "application/octet-stream",
-    } as any);
-  }
-
-  emitProgress(onProgress, { loaded: 0, percent: 0, stage: "uploading" });
-  const data = await new Promise<any>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.timeout = 300000;
-    xhr.open("POST", uploadURL);
-    xhr.upload.onprogress = (event) => {
-      const total = event.lengthComputable ? event.total : undefined;
-      const percent = total ? Math.min(99, Math.round((event.loaded / total) * 100)) : undefined;
-      emitProgress(onProgress, { loaded: event.loaded, total, percent, stage: "uploading" });
-    };
-    xhr.onerror = () => reject(new Error("Upload failed due to a network error. Check internet and try again."));
-    xhr.ontimeout = () => reject(new Error("Upload timed out. Please try again on a stronger connection or use a shorter video."));
-    xhr.onload = () => {
-      let parsed: any = {};
-      try { parsed = xhr.responseText ? JSON.parse(xhr.responseText) : {}; } catch { parsed = {}; }
-      if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new Error(parsed?.error?.message || `Cloudinary upload failed (${xhr.status})`));
-        return;
-      }
-      resolve(parsed);
-    };
-    xhr.send(formData);
-  });
-  emitProgress(onProgress, { loaded: 1, total: 1, percent: 100, stage: "processing" });
-  const secureUrl = data.secure_url || data.url;
-  if (!secureUrl) throw new Error("Cloudinary upload did not return a URL");
-  return secureUrl;
-}
-
 async function putFileToPresignedUrl(
   localUri: string,
   uploadURL: string,
@@ -353,22 +323,15 @@ export async function uploadPickedImage(
     emitProgress(onProgress, { loaded: 0, total: size, percent: 0, stage: "preparing" });
     const uploadInstructions = await getUploadUrl(metadata.filename, size, metadata.contentType, scope);
     if (uploadInstructions.provider === "cloudinary" || uploadInstructions.method === "POST") {
-      return await uploadFileToCloudinary(
-        prepared.uri,
-        uploadInstructions.uploadURL,
-        metadata.contentType,
-        uploadInstructions.fields || {},
-        onProgress,
-        scope,
-      );
+      throw new Error("This storage provider cannot use Athoo file security scanning. Please update the app or contact support.");
     }
     let lastError: unknown = null;
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         await putFileToPresignedUrl(prepared.uri, uploadInstructions.uploadURL, metadata.contentType, onProgress, uploadInstructions.headers || {});
-        await confirmUploadedObject(uploadInstructions.objectPath, size, metadata.contentType);
+        const confirmed = await confirmUploadedObject(uploadInstructions.objectPath, size, metadata.contentType);
         emitProgress(onProgress, { loaded: 1, total: 1, percent: 100, stage: "done" });
-        return uploadInstructions.objectPath;
+        return confirmed.objectPath;
       } catch (error) {
         lastError = error;
         if (attempt >= 2 || !String((error as any)?.message || error).toLowerCase().match(/network|timeout|timed out|failed to fetch/)) break;
@@ -406,8 +369,9 @@ interface PrivateImageProps {
 
 /**
  * Renders a storage image from an objectPath (/objects/<id>) or legacy URL.
- * For /objects/ paths, appends the auth token as a query param so the
- * <Image> request is authorized. data:/https URLs render directly.
+ * Native requests keep the short-lived purpose token out of URLs by using an
+ * Authorization header. Browser image tags use the query-token fallback.
+ * data:/https URLs render directly.
  * Returns null (or `fallback`) when objectPath is empty.
  */
 export function PrivateImage({
@@ -417,7 +381,7 @@ export function PrivateImage({
   resizeMode = "cover",
   accessibilityLabel,
 }: PrivateImageProps): React.ReactElement | null {
-  const [source, setSource] = useState<{ uri: string } | null>(null);
+  const [source, setSource] = useState<{ uri: string; headers?: Record<string, string> } | null>(null);
 
   useEffect(() => {
     if (!objectPath) {
@@ -429,9 +393,16 @@ export function PrivateImage({
       setSource({ uri: optimizeCloudinaryImageUrl(objectPath) });
       return;
     }
-    // /objects/ path — append token query param for authorized serving
     const base = getPrivateFileUrl(objectPath);
-    api.createPurposeToken("object-read").then(({ token }) => setSource({ uri: `${base}?token=${encodeURIComponent(token)}` })).catch(() => setSource(null));
+    api.createPurposeToken("object-read")
+      .then(({ token }) => {
+        if (Platform.OS === "web") {
+          setSource({ uri: `${base}?token=${encodeURIComponent(token)}` });
+        } else {
+          setSource({ uri: base, headers: { Authorization: `Bearer ${token}` } });
+        }
+      })
+      .catch(() => setSource(null));
   }, [objectPath]);
 
   if (!source) return fallback ? (fallback as React.ReactElement) : null;

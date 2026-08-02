@@ -71,6 +71,8 @@ import { getOtpDeliveryConfigurationStatus } from "../lib/otpDelivery";
 import { getStorageConfigurationStatus, testConfiguredStorageProvider } from "../lib/storageProvider";
 import { getInfrastructureProviderStatus } from "../lib/infrastructureConfiguration";
 import { queueStats } from "../lib/queue";
+import { getUploadScannerStatus, testConfiguredUploadScanner } from "../lib/uploadScanner";
+import { uploadSecurityMaintenanceStats } from "../lib/uploadSecurityMaintenance";
 import { publicUserId } from "../lib/publicIds";
 
 
@@ -1144,6 +1146,8 @@ router.get("/settings/integrations/status", requirePermission("settings.read"), 
     const maps = getMapConfigurationStatus(runtimeMapOverrides);
     const queue = queueStats();
     const cache = infrastructure.cache;
+    const uploadScanner = getUploadScannerStatus();
+    const uploadMaintenance = uploadSecurityMaintenanceStats();
 
     return res.json({
       runtimeConfigurationEnabled: communicationOverrides.enabled === true,
@@ -1207,6 +1211,26 @@ router.get("/settings/integrations/status", requirePermission("settings.read"), 
           },
           error: storage.error,
         },
+        uploadScanner: {
+          provider: "external_https",
+          mode: uploadScanner.mode,
+          configured: uploadScanner.configured,
+          productionSafe: uploadScanner.productionSafe,
+          runtimeSwitchable: false,
+          restartRequired: true,
+        },
+        uploadSecurityMaintenance: {
+          provider: "built_in",
+          configured: true,
+          productionSafe: uploadMaintenance.lastError === null,
+          runtimeSwitchable: false,
+          restartRequired: true,
+          running: uploadMaintenance.running,
+          lastRunAt: uploadMaintenance.lastRunAt,
+          lastExpiredCount: uploadMaintenance.lastExpiredCount,
+          lastCleanupCount: uploadMaintenance.lastCleanupCount,
+          error: uploadMaintenance.lastError,
+        },
         calls: {
           provider: calls.provider,
           configured: calls.productionReady,
@@ -1243,6 +1267,7 @@ router.get("/settings/integrations/status", requirePermission("settings.read"), 
         email: ["smtp", "http_json", "disabled"],
         push: ["expo", "http_json", "disabled"],
         storage: ["r2", "s3", "minio", "wasabi", "backblaze_b2", "digitalocean_spaces", "custom_s3", "gcs", "local-development"],
+        uploadScanner: ["external_https"],
         otp: ["whatsapp_cloud", "email", "http_sms"],
         calls: ["webrtc", "webrtc-turn", "webrtc-stun", "audio-fallback"],
         queue: ["postgres"],
@@ -1251,7 +1276,7 @@ router.get("/settings/integrations/status", requirePermission("settings.read"), 
       },
       notes: {
         runtimeSwitching: "Email and push may be switched at runtime after their credentials are configured in the deployment secret manager.",
-        restartRequired: "Storage, queue, cache, OTP channel order, and call infrastructure remain deployment settings because changing them can affect durable state or active sessions. Storage changes use standard adapters and require a restart plus migration verification, not source-code changes.",
+        restartRequired: "Storage, upload scanning, queue, cache, OTP channel order, and call infrastructure remain deployment settings because changing them can affect durable state or active sessions. Storage changes use standard adapters and require a restart plus migration verification, not source-code changes.",
         cacheScaling: "Memory cache is supported for one API instance. Redis is reserved but intentionally fails closed until a shared adapter is implemented and every cache consumer is migrated.",
       },
     });
@@ -1276,6 +1301,27 @@ router.post("/settings/integrations/storage/test", requirePermission("settings.w
     return res.status(502).json({
       ok: false,
       error: error instanceof Error ? error.message : "Storage provider test failed",
+    });
+  }
+});
+
+router.post("/settings/integrations/upload-scanner/test", requirePermission("settings.write"), async (req: AuthRequest, res) => {
+  try {
+    const result = await testConfiguredUploadScanner();
+    await logAdminAction(req, "upload_scanner_connectivity_tested", "settings", undefined, {
+      ok: result.ok,
+      configured: result.configured,
+      productionSafe: result.productionSafe,
+      scanner: result.scanner,
+      latencyMs: result.latencyMs,
+      error: result.error,
+    });
+    return res.status(result.ok ? 200 : 502).json(result);
+  } catch (error) {
+    logger.warn({ err: error }, "admin upload scanner connectivity test failed");
+    return res.status(502).json({
+      ok: false,
+      error: "Upload scanner connectivity test failed",
     });
   }
 });

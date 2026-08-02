@@ -82,7 +82,7 @@ export const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = {
   maintenanceMode: false,
   defaultVisitCharge: 200,
   maxBookingsPerDay: 10,
-  appVersion: "1.0.0",
+  appVersion: "2.0.0",
   minBookingNoticeHours: 1,
   allowGuestBrowsing: true,
   providerAutoApprove: false,

@@ -5,6 +5,7 @@ import { savedAddressesTable } from "@workspace/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../middlewares/auth";
 import { Response } from "express";
+import { assertLocationInActiveServiceArea, LocationIntegrityError, parseCanonicalLocation } from "../lib/locationIntegrity";
 
 const router = Router();
 
@@ -48,13 +49,10 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const lat = latitude == null ? null : Number(latitude);
-    const lng = longitude == null ? null : Number(longitude);
-    if ((lat != null && (!Number.isFinite(lat) || lat < -90 || lat > 90)) ||
-        (lng != null && (!Number.isFinite(lng) || lng < -180 || lng > 180))) {
-      res.status(400).json({ error: "Invalid address coordinates" });
-      return;
-    }
+    const canonicalLocation = parseCanonicalLocation({ ...req.body, address, latitude, longitude }, { requireFresh: true });
+    await assertLocationInActiveServiceArea(canonicalLocation);
+    const lat = canonicalLocation.latitude;
+    const lng = canonicalLocation.longitude;
 
     const isDefault = existing.length === 0;
 
@@ -62,11 +60,18 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       id: crypto.randomUUID(),
       userId,
       label: label.trim(),
-      address: address.trim(),
+      address: canonicalLocation.formattedAddress,
       icon: icon || "map-pin",
       isDefault,
       latitude: lat,
       longitude: lng,
+      locationCity: canonicalLocation.city,
+      locationArea: canonicalLocation.area,
+      locationProvince: canonicalLocation.province,
+      locationCountryCode: canonicalLocation.countryCode,
+      locationSource: canonicalLocation.source,
+      locationAccuracy: canonicalLocation.accuracy,
+      locationConfirmedAt: canonicalLocation.confirmedAt,
     };
 
     await db.insert(savedAddressesTable).values(newAddress);
@@ -76,6 +81,10 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       .where(eq(savedAddressesTable.id, newAddress.id));
     res.json({ address: saved[0] });
   } catch (e) {
+    if (e instanceof LocationIntegrityError) {
+      res.status(e.status).json({ error: e.message, code: e.code });
+      return;
+    }
     res.status(500).json({ error: "Failed to add address" });
   }
 });

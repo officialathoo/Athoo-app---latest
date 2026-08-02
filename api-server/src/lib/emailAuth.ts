@@ -4,7 +4,12 @@ import { emailVerificationChallengesTable, usersTable } from "@workspace/db/sche
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { deliverEmailNow, queueEmail } from "./emailDelivery";
 
-export type EmailChallengePurpose = "verify_email" | "login" | "email_change";
+export type EmailChallengePurpose =
+  | "verify_email"
+  | "login"
+  | "email_change"
+  | "account_deactivate"
+  | "account_delete";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -112,7 +117,16 @@ export async function sendEmailChallenge(args: {
     throw error;
   }
 
-  const templateKey = args.purpose === "login" ? "email_login_otp" : "email_verification";
+  const accountAction = args.purpose === "account_deactivate"
+    ? "temporarily deactivate your account"
+    : args.purpose === "account_delete"
+      ? "schedule permanent account deletion"
+      : null;
+  const templateKey = accountAction
+    ? "account_action_otp"
+    : args.purpose === "login"
+      ? "email_login_otp"
+      : "email_verification";
   const delivery = await deliverEmailNow({
     userId: args.userId,
     to: email,
@@ -123,6 +137,7 @@ export async function sendEmailChallenge(args: {
       name: args.name,
       code,
       expiresMinutes: Math.ceil(policy.ttlSeconds / 60),
+      action: accountAction,
       category: "security",
     },
     metadata: {

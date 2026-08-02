@@ -5,24 +5,13 @@ import { useTheme } from "@/context/ThemeContext";
 import { Icon } from "@/components/ui/Icon";
 import { router } from "expo-router";
 import React, { useEffect, useState, useMemo } from "react";
-import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import * as Print from "expo-print";
-import * as Sharing from "expo-sharing";
+import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useBookings } from "@/context/BookingContext";
 import { api } from "@/services/api";
 import { brandConfig } from "@/config/brand";
-import { invoiceConfig } from "@/config/invoice";
-
-function escapeHtml(value: unknown): string {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
+import { shareBookingInvoice } from "@/utils/bookingInvoicePdf";
 
 type ApiInvoice = {
   id: string;
@@ -48,6 +37,7 @@ type ApiInvoice = {
   providerAmount: number;
   status: string;
   createdAt: string;
+  verification: { verificationUrl: string; qrCodeDataUri: string };
 };
 
 export default function ProviderInvoicesScreen() {
@@ -100,6 +90,8 @@ export default function ProviderInvoicesScreen() {
       durationMinutes: match ? Number(match.durationMinutes || 0) : 0,
       jobNumber: match?.bookingPublicId || (b as any).publicId || b.id,
       invoiceNo: match ? match.invoiceNumber : `ATH-${b.id.slice(-6).toUpperCase()}`,
+      booking: b,
+      apiInvoice: match,
     };
   });
 
@@ -113,91 +105,23 @@ export default function ProviderInvoicesScreen() {
 
   const handleDownloadPdf = async (inv: NonNullable<typeof selected>) => {
     if (generatingPdf) return;
-    const total = inv.providerAmount;
-    const customerName = escapeHtml(inv.customer);
-    const serviceName = escapeHtml(inv.service);
-    const invoiceDate = escapeHtml(inv.date);
-    const direction = isUrdu ? "rtl" : "ltr";
-
-    const printColors = invoiceConfig.colors;
-    const invoiceFooter = [invoiceConfig.brandName, invoiceConfig.contactLine].filter(Boolean).join(" · ");
-
-    const html = `<!DOCTYPE html><html dir="${direction}"><head><meta charset="utf-8">
-<style>
-  @page{size:A4;margin:0}
-  body{font-family:Arial,sans-serif;margin:0;padding:0;color:${printColors.text};background:${printColors.canvas};direction:${direction}}
-  .page{width:210mm;min-height:297mm;margin:0 auto;background:${printColors.page};overflow:hidden;position:relative;padding-bottom:30mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .header{background:linear-gradient(135deg,${printColors.primary},${printColors.primaryPressed});color:${printColors.page};padding:28px 30px;display:flex;justify-content:space-between;align-items:flex-start}
-  .logo{font-size:24px;font-weight:900;letter-spacing:-1px}
-  .logo-sub{font-size:11px;opacity:.75;margin-top:2px}
-  .inv-meta{text-align:right}
-  .inv-no{font-size:18px;font-weight:700}
-  .inv-date{font-size:12px;opacity:.8;margin-top:4px}
-  .paid-badge{background:rgba(255,255,255,0.25);border-radius:20px;padding:3px 12px;font-size:11px;font-weight:700;margin-top:8px;display:inline-block}
-  .body{padding:28px 30px}
-  .parties{display:flex;gap:30px;margin-bottom:24px}
-  .party{flex:1;background:${printColors.page};border:1px solid ${printColors.text};border-radius:10px;padding:14px 16px}
-  .party-label{font-size:10px;color:${printColors.textMuted};font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
-  .party-name{font-size:15px;font-weight:700;color:${printColors.text};margin-bottom:3px}
-  .party-detail{font-size:12px;color:${printColors.textSecondary}}
-  table{width:100%;border-collapse:collapse;margin-bottom:16px}
-  th{background:${printColors.surface};font-size:11px;color:${printColors.text};text-transform:uppercase;letter-spacing:.5px;padding:10px 12px;text-align:left;font-weight:700}
-  td{padding:11px 12px;font-size:13px;border-bottom:1px solid ${printColors.border}}
-  .amount{text-align:right}
-  .total-row{background:linear-gradient(135deg,${printColors.success},${printColors.successPressed});color:${printColors.page}}
-  .total-row td{font-weight:700;font-size:15px;padding:14px 12px}
-  .note{background:${printColors.successSoft};border:1px solid ${printColors.successBorder};border-radius:8px;padding:12px 14px;font-size:12px;color:${printColors.success};margin-bottom:20px}
-  .footer{text-align:center;font-size:11px;color:${printColors.textMuted};padding:0 0 8px}
-</style></head><body>
-<div class="page">
-  <div class="header">
-    <div><div class="logo">${escapeHtml(invoiceConfig.brandName)}</div><div class="logo-sub">${escapeHtml(tr("Provider Earnings Statement"))}</div></div>
-    <div class="inv-meta"><div class="inv-no">${escapeHtml(inv.invoiceNo)}</div><div class="inv-date">${invoiceDate}</div><div class="paid-badge">✓ ${escapeHtml(tr("EARNED"))}</div></div>
-  </div>
-  <div class="body">
-    <div class="parties">
-      <div class="party"><div class="party-label">${escapeHtml(tr("Service Provided To"))}</div><div class="party-name">${customerName}</div></div>
-      <div class="party"><div class="party-label">${escapeHtml(tr("Service"))}</div><div class="party-name">${serviceName}</div><div class="party-detail">${invoiceDate}</div></div>
-    </div>
-    <table>
-      <tr><th>${escapeHtml(tr("Description"))}</th><th style="text-align:right">${escapeHtml(tr("Amount"))}</th></tr>
-      <tr><td>${serviceName}<br><small style="color:${printColors.textSecondary}">${escapeHtml(formatCurrency(inv.ratePerHour))} / hour × ${inv.durationMinutes} minute(s)</small></td><td class="amount">${escapeHtml(formatCurrency(inv.serviceAmount))}</td></tr>
-      ${inv.visitCharge > 0 ? `<tr><td>${escapeHtml(tr("Visit / Call-out Charge"))}</td><td class="amount">${escapeHtml(formatCurrency(inv.visitCharge))}</td></tr>` : ""}
-      <tr><td>${escapeHtml(tr("Athoo Commission"))}</td><td class="amount">−${escapeHtml(formatCurrency(inv.commissionAmount))}</td></tr>
-      <tr class="total-row"><td>${escapeHtml(tr("TOTAL EARNED"))}</td><td class="amount">${escapeHtml(formatCurrency(total))}</td></tr>
-    </table>
-    <div class="note">${escapeHtml(tr("This earnings statement reflects what you received directly from the customer. Keep it for your records."))}</div>
-    <div class="footer">${escapeHtml(invoiceFooter)}${invoiceFooter ? " · " : ""}${escapeHtml(tr("Thank you for using {{name}}!", { name: invoiceConfig.brandName }))}</div>
-  </div>
-</div>
-</body></html>`;
-
-    try {
-      setGeneratingPdf(true);
-      if (Platform.OS === "web") {
-        const frame = document.createElement("iframe");
-        Object.assign(frame.style, { position: "fixed", right: "0", bottom: "0", width: "0", height: "0", border: "0" });
-        frame.srcdoc = html;
-        frame.onload = () => {
-          frame.contentWindow?.focus();
-          frame.contentWindow?.print();
-          window.setTimeout(() => frame.remove(), 1_000);
-        };
-        document.body.appendChild(frame);
-        return;
-      }
-      const { uri } = await Print.printToFileAsync({ html, base64: false });
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `Invoice ${inv.invoiceNo}` });
-      } else {
-        Alert.alert(tr("Invoice ready"), tr("Your invoice was saved and is ready to share."));
-      }
-    } catch (e: any) {
-      Alert.alert(tr("Unable to create invoice"), apiErrorToMessage(e, tr("We couldn't create the invoice PDF. Please try again.")));
-    } finally {
-      setGeneratingPdf(false);
-    }
+    const match = inv.apiInvoice;
+    await shareBookingInvoice(
+      {
+        ...inv.booking,
+        invoiceNumber: match?.invoiceNumber ?? inv.invoiceNo,
+        subtotal: match?.subtotal,
+        totalAmount: match?.totalAmount,
+        visitCharge: match?.visitCharge ?? inv.visitCharge,
+        discountAmount: match?.discountAmount,
+        commissionAmount: match?.commissionAmount,
+        providerAmount: match?.providerAmount ?? inv.providerAmount,
+        status: match?.status ?? inv.booking.status,
+        createdAt: match?.createdAt ?? inv.booking.createdAt,
+        verification: match?.verification,
+      },
+      { role: "provider", onState: setGeneratingPdf },
+    );
   };
 
   if (selected) {

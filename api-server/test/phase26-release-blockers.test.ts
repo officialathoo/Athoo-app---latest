@@ -21,9 +21,11 @@ test("booking completion calculates and persists one timed invoice transactional
 
 test("invoice screens use A4 output and the completed-job action opens the exact invoice", async () => {
   const customerInvoice = await source("athoo-app/app/(customer)/invoices.tsx");
+  const invoicePdf = await source("athoo-app/utils/bookingInvoicePdf.ts");
   const adminInvoice = await source("admin-panel/src/pages/InvoicesPage.tsx");
   const bookingDetail = await source("athoo-app/app/(customer)/booking-detail.tsx");
-  assert.match(customerInvoice, /@page\{size:A4/);
+  assert.match(customerInvoice, /shareBookingInvoice/);
+  assert.match(invoicePdf, /@page\{size:A4/);
   assert.match(customerInvoice, /bookingPublicId/);
   assert.match(customerInvoice, /durationMinutes/);
   assert.match(adminInvoice, /@page\{size:A4/);
@@ -54,7 +56,7 @@ test("payment accounts support verified shared QR uploads and app display", asyn
   const providerPage = await source("athoo-app/app/(provider)/pay-commission.tsx");
   const migration = await source("deploy/migrations/20260720_phase26_release_blockers.sql");
   assert.match(migration, /qr_code_url TEXT/);
-  assert.match(payments, /isOwnedUploadObjectPath\(normalizedQrCodeUrl, req\.user!\.userId, \["shared"\]\)/);
+  assert.match(payments, /await isCleanOwnedUploadObjectPath\(normalizedQrCodeUrl, req\.user!\.userId, \["shared"\]\)/);
   assert.match(adminPage, /Upload QR image/);
   assert.match(adminPage, /uploadFile\(file, "shared"\)/);
   assert.match(providerPage, /PrivateImage objectPath=\{acct\.qrCodeUrl\}/);

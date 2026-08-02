@@ -35,8 +35,10 @@ test("Phase 30.1I deduplicates provider profile focus refreshes", () => {
   );
 });
 
-test("Phase 30.1I preserves provider profile mutations and media workflow", () => {
+test("Phase 30.1I preserves provider profile mutations and verified account actions", () => {
   const screen = read("athoo-app/app/(provider)/(tabs)/profile.tsx");
+  const privacy = read("athoo-app/components/screens/PrivacySecurityScreen.tsx");
+  const api = read("athoo-app/services/api.ts");
 
   assert.match(screen, /api\.updateAvailability\(val\)/);
   assert.match(screen, /updateUser\(\{ isAvailable: next \}\)/);
@@ -44,6 +46,10 @@ test("Phase 30.1I preserves provider profile mutations and media workflow", () =
   assert.match(screen, /pickFromGallery/);
   assert.match(screen, /uploadPickedImage/);
   assert.match(screen, /updateUser\(\{ profileImage: objectPath \}\)/);
-  assert.match(screen, /api\.deactivateMe\(\)/);
-  assert.match(screen, /api\.requestAccountDeletion/);
+  assert.match(screen, /router\.push\("\/\(provider\)\/privacy"/);
+  assert.match(privacy, /AccountActionVerificationModal/);
+  assert.match(privacy, /api\.deactivateAccount\(credential\)/);
+  assert.match(privacy, /api\.requestAccountDeletion\(credential\)/);
+  assert.match(api, /deactivateAccount\(payload:/);
+  assert.match(api, /requestAccountDeletion\(payload:/);
 });

@@ -8,7 +8,9 @@ export interface GeoResult {
   lat: number;
   lng: number;
   city?: string;
+  area?: string;
   province?: string;
+  countryCode?: string;
   postcode?: string;
   precision: GeoPrecision;
   source: string;

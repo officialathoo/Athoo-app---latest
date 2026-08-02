@@ -9,7 +9,9 @@ test("mobile storage upload contract accepts explicit private/shared scope", () 
     /export async function uploadPickedImage\([\s\S]*?onProgress\?: UploadProgressCallback,[\s\S]*?scope: UploadScope = "shared",[\s\S]*?\): Promise<string>/,
   );
   assert.match(storage, /getUploadUrl\(metadata\.filename, size, metadata\.contentType, scope\)/);
-  assert.match(storage, /uploadFileToCloudinary\([\s\S]*?onProgress,[\s\S]*?scope,[\s\S]*?\)/);
+  assert.match(storage, /provider === "cloudinary" \|\| uploadInstructions\.method === "POST"/);
+  assert.match(storage, /cannot use Athoo file security scanning/);
+  assert.match(storage, /return confirmed\.objectPath/);
 });
 
 test("sensitive mobile evidence uploads remain explicitly private", () => {

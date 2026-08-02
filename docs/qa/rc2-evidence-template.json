@@ -1,6 +1,6 @@
 {
   "schemaVersion": 4,
-  "releaseVersion": "",
+  "releaseVersion": "2.2.0",
   "releaseCommitSha": "0000000",
   "artifactSha256": "0000000000000000000000000000000000000000000000000000000000000000",
   "checks": {
@@ -218,6 +218,54 @@
       "reason": "",
       "count": 0
     },
+    "malwareScannerConnected": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "legacyMediaBackfill": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "accountActionStepUp": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "singleAcceptBookingFlow": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "scheduledJobSafety": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "geofencedArrival": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "signedInvoiceVerification": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "refundRequestReliability": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
     "openP0Defects": {
       "status": "pending",
       "evidence": "",
@@ -227,6 +275,24 @@
       "status": "pending",
       "evidence": "",
       "count": 0
+    },
+    "canonicalLocationIntegrity": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "bookingCursorPagination": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
+    },
+    "serviceAreaReadiness": {
+      "status": "pending",
+      "evidence": "",
+      "reason": "",
+      "count": 0
     }
   },
   "approvals": {
@@ -235,6 +301,6 @@
     "product": "",
     "operations": ""
   },
-  "candidateArtifactName": "ATHOO_PHASE28_5_2_RELEASE_METADATA_FIXED.zip",
+  "candidateArtifactName": "ATHOO_V2_2_PRODUCTION_CERTIFICATION.zip",
   "deviceEvidenceSummary": ""
 }

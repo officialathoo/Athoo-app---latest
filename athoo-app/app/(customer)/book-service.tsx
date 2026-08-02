@@ -125,7 +125,29 @@ export default function BookServiceScreen() {
       ? { latitude: parseFloat(paramPickedLat), longitude: parseFloat(paramPickedLng) }
       : null
   );
-  const [savedAddresses, setSavedAddresses] = useState<{ id: string; label: string; address: string; latitude?: number | null; longitude?: number | null }[]>([]);
+  const [savedAddresses, setSavedAddresses] = useState<Array<{
+    id: string;
+    label: string;
+    address: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    locationCity?: string | null;
+    locationArea?: string | null;
+    locationProvince?: string | null;
+    locationCountryCode?: string | null;
+    locationSource?: string | null;
+    locationAccuracy?: number | null;
+    locationConfirmedAt?: string | null;
+  }>>([]);
+  const [locationMeta, setLocationMeta] = useState<{
+    city: string;
+    area: string;
+    province?: string;
+    countryCode: string;
+    source: "search" | "current" | "saved" | "recent" | "map" | "pin" | "repeat_booking";
+    accuracy?: number | null;
+    confirmedAt: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -202,9 +224,51 @@ export default function BookServiceScreen() {
     expansionQueued: boolean;
   } | null>(null);
 
-  const applyLocationSelection = (selection: LocationSelection) => {
+  const resolveLocationMeta = async (
+    latitude: number,
+    longitude: number,
+    source: "search" | "current" | "saved" | "recent" | "map" | "pin" | "repeat_booking",
+    accuracy?: number | null,
+  ) => {
+    try {
+      const results = await Location.reverseGeocodeAsync({ latitude, longitude });
+      const place = results[0];
+      const city = place?.city || place?.subregion || place?.region || "";
+      const area = place?.district || place?.subregion || place?.name || place?.street || "";
+      const countryCode = place?.isoCountryCode?.trim().toUpperCase() || "";
+      if (!city.trim() || !area.trim() || !countryCode) return null;
+      return {
+        city: city.trim(),
+        area: area.trim(),
+        province: place?.region?.trim() || undefined,
+        countryCode,
+        source,
+        accuracy: accuracy ?? null,
+        confirmedAt: new Date().toISOString(),
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const applyLocationSelection = async (selection: LocationSelection) => {
     setAddress(selection.address);
     setUserLocation({ latitude: selection.latitude, longitude: selection.longitude });
+    const supplied = selection.city?.trim() && selection.area?.trim() && selection.countryCode?.trim()
+      ? {
+          city: selection.city.trim(),
+          area: selection.area.trim(),
+          province: selection.province?.trim() || undefined,
+          countryCode: selection.countryCode?.trim().toUpperCase() || "",
+          source: selection.source,
+          accuracy: selection.accuracy ?? null,
+          confirmedAt: selection.confirmedAt || new Date().toISOString(),
+        }
+      : await resolveLocationMeta(selection.latitude, selection.longitude, selection.source, selection.accuracy);
+    setLocationMeta(supplied);
+    if (!supplied) {
+      showError("Confirm service area", "Athoo could not confirm the city and area for this pin. Search the exact address or move the pin slightly and try again.");
+    }
     if (selection.accuracy != null) {
       setGpsAccuracyText(`GPS: ±${Math.round(selection.accuracy)} m`);
     } else {
@@ -238,8 +302,13 @@ export default function BookServiceScreen() {
       const coords = { latitude: result.location.latitude, longitude: result.location.longitude };
       setUserLocation(coords);
 
-      const { label: resolved } = await smartReverseGeocode(coords.latitude, coords.longitude);
+      const [{ label: resolved }, meta] = await Promise.all([
+        smartReverseGeocode(coords.latitude, coords.longitude),
+        resolveLocationMeta(coords.latitude, coords.longitude, "current", result.location.accuracy),
+      ]);
       setAddress(resolved);
+      setLocationMeta(meta);
+      if (!meta) showError("Confirm service area", "We found your GPS pin but could not confirm its city and area. Please search the exact address.");
     } catch {
       setGpsAccuracyText("");
       showError("Location Error", "Could not detect your location.");
@@ -341,8 +410,12 @@ export default function BookServiceScreen() {
     setUserLocation({ latitude, longitude });
     setReversingGeo(true);
     try {
-      const { label } = await smartReverseGeocode(latitude, longitude);
+      const [{ label }, meta] = await Promise.all([
+        smartReverseGeocode(latitude, longitude),
+        resolveLocationMeta(latitude, longitude, "pin"),
+      ]);
       setAddress(label);
+      setLocationMeta(meta);
     } catch { /* keep old address label */ }
     finally { setReversingGeo(false); }
   };
@@ -468,6 +541,20 @@ export default function BookServiceScreen() {
     if (!user) { showError("Login Required", "Please log in to continue."); return; }
     if (!selectedCategory) { showError("Error", "No category selected."); return; }
     if (!address.trim()) { showError("Error", "Please enter your address."); return; }
+    if (!userLocation) { showError("Confirm location", "Choose the service address from search, GPS, a saved place, or the map pin."); return; }
+    let verifiedLocationMeta = locationMeta;
+    if (!verifiedLocationMeta) {
+      verifiedLocationMeta = await resolveLocationMeta(
+        userLocation.latitude,
+        userLocation.longitude,
+        paramPreviousBookingId ? "repeat_booking" : "map",
+      );
+      setLocationMeta(verifiedLocationMeta);
+    }
+    if (!verifiedLocationMeta) {
+      showError("Confirm city and area", "Athoo could not verify the city and area for this service address. Search the exact address again before booking.");
+      return;
+    }
     const dateTimeError = isPastOrTooSoon(selectedDate, selectedTime, 20);
     if (dateTimeError) {
       showError("Invalid booking time", dateTimeError);
@@ -525,8 +612,15 @@ export default function BookServiceScreen() {
           description: description.trim() || undefined,
           videoUrl,
           address: finalAddress,
-          pickedLat: userLocation?.latitude,
-          pickedLng: userLocation?.longitude,
+          pickedLat: userLocation.latitude,
+          pickedLng: userLocation.longitude,
+          locationCity: verifiedLocationMeta.city,
+          locationArea: verifiedLocationMeta.area,
+          locationProvince: verifiedLocationMeta.province,
+          locationCountryCode: verifiedLocationMeta.countryCode,
+          locationSource: verifiedLocationMeta.source,
+          locationAccuracy: verifiedLocationMeta.accuracy,
+          locationConfirmedAt: verifiedLocationMeta.confirmedAt,
           scheduledDate: selectedDate,
           scheduledTime: selectedTime,
           price: parsedOffer && parsedOffer >= 100 ? parsedOffer : undefined,
@@ -555,8 +649,15 @@ export default function BookServiceScreen() {
           description: description.trim() || undefined,
           videoUrl,
           address: finalAddress,
-          latitude: userLocation?.latitude,
-          longitude: userLocation?.longitude,
+          latitude: userLocation.latitude,
+          longitude: userLocation.longitude,
+          locationCity: verifiedLocationMeta.city,
+          locationArea: verifiedLocationMeta.area,
+          locationProvince: verifiedLocationMeta.province,
+          locationCountryCode: verifiedLocationMeta.countryCode,
+          locationSource: verifiedLocationMeta.source,
+          locationAccuracy: verifiedLocationMeta.accuracy,
+          locationConfirmedAt: verifiedLocationMeta.confirmedAt,
           scheduledDate: selectedDate,
           scheduledTime: selectedTime,
           customerOffer: parsedOffer && parsedOffer >= 100 ? parsedOffer : undefined,
@@ -699,10 +800,24 @@ export default function BookServiceScreen() {
                         <Pressable
                           key={sa.id}
                           style={[styles.savedChip, isActive && styles.savedChipActive]}
-                          onPress={() => {
+                          onPress={async () => {
                             setAddress(sa.address);
-                            if (sa.latitude && sa.longitude) {
-                              setUserLocation({ latitude: sa.latitude, longitude: sa.longitude });
+                            if (sa.latitude != null && sa.longitude != null) {
+                              const latitude = Number(sa.latitude);
+                              const longitude = Number(sa.longitude);
+                              setUserLocation({ latitude, longitude });
+                              const meta = sa.locationCity && sa.locationArea
+                                ? {
+                                    city: sa.locationCity,
+                                    area: sa.locationArea,
+                                    province: sa.locationProvince || undefined,
+                                    countryCode: sa.locationCountryCode || "PK",
+                                    source: "saved" as const,
+                                    accuracy: sa.locationAccuracy ?? null,
+                                    confirmedAt: new Date().toISOString(),
+                                  }
+                                : await resolveLocationMeta(latitude, longitude, "saved", sa.locationAccuracy);
+                              setLocationMeta(meta);
                             }
                           }}
                         >
@@ -738,6 +853,7 @@ export default function BookServiceScreen() {
                     event.stopPropagation();
                     setAddress("");
                     setUserLocation(null);
+                    setLocationMeta(null);
                     setGpsAccuracyText("");
                   }}
                   style={{ padding: 8 }}
@@ -1167,7 +1283,7 @@ export default function BookServiceScreen() {
             <View style={styles.noteBox}>
               <Icon name="info" size={13} color={theme.colors.primary} />
               <Text style={styles.noteText}>
-                Your request will be broadcast to all nearby {selectedCategory?.name}s. You'll receive responses within minutes and pick your preferred provider — just like InDrive.
+                Nearby {selectedCategory?.name}s can accept your exact offer immediately. If a provider counters, you can accept or reject it. Once one provider is confirmed, the job disappears for everyone else.
               </Text>
             </View>
           </View>

@@ -10,6 +10,7 @@ import { apiErrorToMessage } from "@/lib/apiError";
 import { api } from "@/services/api";
 import { reverseGeocode } from "@/services/maps";
 import { router, useFocusEffect } from "expo-router";
+import * as ExpoLocation from "expo-location";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -32,6 +33,13 @@ type SavedAddress = {
   isDefault: boolean;
   latitude?: number | null;
   longitude?: number | null;
+  locationCity?: string | null;
+  locationArea?: string | null;
+  locationProvince?: string | null;
+  locationCountryCode?: string | null;
+  locationSource?: string | null;
+  locationAccuracy?: number | null;
+  locationConfirmedAt?: string | null;
   createdAt: string;
 };
 
@@ -61,6 +69,15 @@ export default function AddressesScreen() {
   const [newAddress, setNewAddress] = useState("");
   const [newLatitude, setNewLatitude] = useState<number | undefined>(undefined);
   const [newLongitude, setNewLongitude] = useState<number | undefined>(undefined);
+  const [newLocationMeta, setNewLocationMeta] = useState<{
+    city: string;
+    area: string;
+    province?: string;
+    countryCode: string;
+    source: string;
+    accuracy?: number | null;
+    confirmedAt: string;
+  } | null>(null);
 
   const load = useCallback(async (
     mode: "initial" | "refresh" | "background" = "initial"
@@ -119,6 +136,13 @@ export default function AddressesScreen() {
       address: address.address,
       latitude: address.latitude,
       longitude: address.longitude,
+      locationCity: address.locationCity,
+      locationArea: address.locationArea,
+      locationProvince: address.locationProvince,
+      locationCountryCode: address.locationCountryCode,
+      locationSource: address.locationSource,
+      locationAccuracy: address.locationAccuracy,
+      locationConfirmedAt: address.locationConfirmedAt,
     })),
     [addresses],
   );
@@ -127,6 +151,15 @@ export default function AddressesScreen() {
     setNewAddress(selection.address);
     setNewLatitude(selection.latitude);
     setNewLongitude(selection.longitude);
+    setNewLocationMeta(selection.city?.trim() && selection.area?.trim() && selection.countryCode?.trim() ? {
+      city: selection.city.trim(),
+      area: selection.area.trim(),
+      province: selection.province?.trim() || undefined,
+      countryCode: selection.countryCode?.trim().toUpperCase() || "",
+      source: selection.source,
+      accuracy: selection.accuracy ?? null,
+      confirmedAt: selection.confirmedAt || new Date().toISOString(),
+    } : null);
     if (!newLabel.trim()) {
       setNewLabel(selection.source === "current" ? tr("Current Location") : selection.primary || tr("Saved Place"));
     }
@@ -137,9 +170,24 @@ export default function AddressesScreen() {
     setNewLongitude(longitude);
     setResolving(true);
     try {
-      const resolved = await reverseGeocode(latitude, longitude);
-      setNewAddress(resolved || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
+      const [resolved, places] = await Promise.all([
+        reverseGeocode(latitude, longitude),
+        ExpoLocation.reverseGeocodeAsync({ latitude, longitude }).catch(() => []),
+      ]);
+      const place = places[0];
+      const city = place?.city || place?.subregion || place?.region || "";
+      const area = place?.district || place?.subregion || place?.name || place?.street || "";
+      setNewAddress(resolved || [place?.name, place?.street, area, city].filter(Boolean).join(", "));
+      setNewLocationMeta(city.trim() && area.trim() && place?.isoCountryCode?.trim() ? {
+        city: city.trim(),
+        area: area.trim(),
+        province: place?.region?.trim() || undefined,
+        countryCode: place?.isoCountryCode?.trim().toUpperCase() || "",
+        source: "pin",
+        confirmedAt: new Date().toISOString(),
+      } : null);
     } catch {
+      setNewLocationMeta(null);
       setNewAddress(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
     } finally {
       setResolving(false);
@@ -151,6 +199,7 @@ export default function AddressesScreen() {
     setNewAddress("");
     setNewLatitude(undefined);
     setNewLongitude(undefined);
+    setNewLocationMeta(null);
     setAdding(false);
   }, []);
 
@@ -163,6 +212,10 @@ export default function AddressesScreen() {
       showError(tr("Choose a location"), tr("Search for the address, use your current location, or place the pin on the map."));
       return;
     }
+    if (!newLocationMeta) {
+      showError(tr("Confirm city and area"), tr("Athoo could not verify the city and area for this address. Search the exact location or move the pin again."));
+      return;
+    }
     setSaving(true);
     try {
       const res = await api.addAddress({
@@ -171,6 +224,13 @@ export default function AddressesScreen() {
         icon: "map-pin",
         latitude: newLatitude,
         longitude: newLongitude,
+        locationCity: newLocationMeta.city,
+        locationArea: newLocationMeta.area,
+        locationProvince: newLocationMeta.province,
+        locationCountryCode: newLocationMeta.countryCode,
+        locationSource: newLocationMeta.source,
+        locationAccuracy: newLocationMeta.accuracy,
+        locationConfirmedAt: newLocationMeta.confirmedAt,
       });
       setAddresses((previous) => [...previous, res.address]);
       resetForm();
@@ -225,6 +285,15 @@ export default function AddressesScreen() {
             setNewLatitude(Number(defaultAddress.latitude));
             setNewLongitude(Number(defaultAddress.longitude));
             setNewAddress(defaultAddress.address);
+            setNewLocationMeta(defaultAddress.locationCity && defaultAddress.locationArea ? {
+              city: defaultAddress.locationCity,
+              area: defaultAddress.locationArea,
+              province: defaultAddress.locationProvince || undefined,
+              countryCode: defaultAddress.locationCountryCode || "PK",
+              source: "saved",
+              accuracy: defaultAddress.locationAccuracy ?? null,
+              confirmedAt: new Date().toISOString(),
+            } : null);
             return;
           }
           const pakistanCenter = { latitude: 30.3753, longitude: 69.3451 };
