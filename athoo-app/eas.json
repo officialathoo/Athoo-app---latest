@@ -32,8 +32,7 @@
       "env": {
         "APP_ENV": "staging",
         "APP_VERSION": "2.2.0",
-        "EXPO_PUBLIC_RELEASE_VERSION": "2.2.0",
-        "EXPO_PUBLIC_API_BASE_URL": "https://athoo-api.onrender.com"
+        "EXPO_PUBLIC_RELEASE_VERSION": "2.2.0"
       },
       "android": {
         "buildType": "apk"
