@@ -208,7 +208,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       if (amountError) throw new RefundRequestError(400, "INVALID_REFUND_AMOUNT", amountError);
 
       const row = {
-        id: crypto.randomUUID(), bookingId, customerId: userId, providerId: booking.providerId,
+        id: crypto.randomUUID(), bookingId, bookingPublicId: booking.publicId || null, customerId: userId, providerId: booking.providerId,
         reason, amountRequested: amount, evidenceUrl, clientRequestId, status: "pending" as const,
       };
       const [inserted] = await tx.insert(refundRequestsTable).values(row).onConflictDoNothing().returning();
@@ -234,7 +234,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       notifyUser({
         userId: row.providerId,
         title: "Refund / dispute opened",
-        body: `Customer requested Rs. ${row.amountRequested} refund: ${reason.slice(0, 80)}${reason.length > 80 ? "…" : ""}`,
+        body: `Customer requested Rs. ${row.amountRequested} refund: ${reason.slice(0, 80)}${reason.length > 80 ? "â€¦" : ""}`,
         type: "system",
         data: { refundId: row.id, bookingId },
         email: { category: "transactional" },

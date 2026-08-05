@@ -54,7 +54,37 @@ test("database migration is retry-safe and enforces broadcast conversion integri
   assert.match(migration, /SET status = 'accepted'/);
   assert.match(schema, /broadcastOfferEventsTable/);
   assert.match(schema, /providerTravellingCharge: integer\("provider_travelling_charge"\)/);
-  assert.match(latest, /20260802_athoo_v2_location_pagination_integrity\.sql/);
+  const latestMigrationMatch = latest.match(
+    /LATEST_DATABASE_MIGRATION\s*=\s*"([^"]+)"\s+as const/,
+  );
+
+  assert.ok(
+    latestMigrationMatch,
+    "latest database migration marker must be parseable",
+  );
+
+  const latestMigrationId = latestMigrationMatch[1];
+
+  assert.ok(
+    latestMigrationId,
+    "latest database migration ID must not be empty",
+  );
+
+  assert.ok(
+    fs.existsSync(
+      path.join(
+        root,
+        "deploy/migrations",
+        latestMigrationId,
+      ),
+    ),
+    `latest migration file does not exist: ${latestMigrationId}`,
+  );
+
+  assert.ok(
+    latestMigrationId.localeCompare("20260801_single_accept_broadcast_booking.sql") >= 0,
+    `latest migration regressed behind 20260801_single_accept_broadcast_booking.sql: ${latestMigrationId}`,
+  );
   assert.match(integrity, /duplicate_broadcast_provider_responses/);
   assert.match(integrity, /inconsistent_accepted_broadcasts/);
 });

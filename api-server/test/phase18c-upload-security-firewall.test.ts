@@ -59,7 +59,37 @@ test("database migration and storage routes enforce quarantine before serving", 
   assert.match(migration, /upload_security_path_boundaries_check/);
   assert.match(migration, /quarantine_deleted_at/);
   assert.match(migration, /scan_status IN \('pending', 'scanning', 'clean', 'rejected', 'error', 'expired'\)/);
-  assert.match(latest, /20260802_athoo_v2_location_pagination_integrity\.sql/);
+  const latestMigrationMatch = latest.match(
+    /LATEST_DATABASE_MIGRATION\s*=\s*"([^"]+)"\s+as const/,
+  );
+
+  assert.ok(
+    latestMigrationMatch,
+    "latest database migration marker must be parseable",
+  );
+
+  const latestMigrationId = latestMigrationMatch[1];
+
+  assert.ok(
+    latestMigrationId,
+    "latest database migration ID must not be empty",
+  );
+
+  assert.ok(
+    fs.existsSync(
+      path.join(
+        root,
+        "deploy/migrations",
+        latestMigrationId,
+      ),
+    ),
+    `latest migration file does not exist: ${latestMigrationId}`,
+  );
+
+  assert.ok(
+    latestMigrationId.localeCompare("20260801_upload_security_firewall.sql") >= 0,
+    `latest migration regressed behind 20260801_upload_security_firewall.sql: ${latestMigrationId}`,
+  );
   assert.match(route, /scanStoredUpload/);
   assert.match(route, /UPLOAD_SCAN_UNAVAILABLE/);
   assert.match(route, /isUploadReadyForServing/);

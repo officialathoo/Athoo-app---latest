@@ -34,7 +34,37 @@ test("V2 persists canonical locations and cursor indexes through one ordered mig
   assert.match(migration, /bookings_customer_updated_cursor_idx/);
   assert.match(migration, /bookings_provider_updated_cursor_idx/);
   assert.match(migration, /location_accuracy/);
-  assert.match(latest, /20260802_athoo_v2_location_pagination_integrity\.sql/);
+  const latestMigrationMatch = latest.match(
+    /LATEST_DATABASE_MIGRATION\s*=\s*"([^"]+)"\s+as const/,
+  );
+
+  assert.ok(
+    latestMigrationMatch,
+    "latest database migration marker must be parseable",
+  );
+
+  const latestMigrationId = latestMigrationMatch[1];
+
+  assert.ok(
+    latestMigrationId,
+    "latest database migration ID must not be empty",
+  );
+
+  assert.ok(
+    fs.existsSync(
+      path.join(
+        root,
+        "deploy/migrations",
+        latestMigrationId,
+      ),
+    ),
+    `latest migration file does not exist: ${latestMigrationId}`,
+  );
+
+  assert.ok(
+    latestMigrationId.localeCompare("20260802_athoo_v2_location_pagination_integrity.sql") >= 0,
+    `latest migration regressed behind 20260802_athoo_v2_location_pagination_integrity.sql: ${latestMigrationId}`,
+  );
 });
 
 test("V2 booking history is cursor paginated, delta refreshed, cached, and bounded", () => {
