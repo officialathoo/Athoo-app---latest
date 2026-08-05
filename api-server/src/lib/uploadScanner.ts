@@ -8,6 +8,10 @@ import {
   normalizeUploadMime,
   uploadContentTypeMatches,
 } from "./uploadContentPolicy";
+import {
+  resolveUploadScannerMode,
+  uploadScannerTemporaryBypassEnabled,
+} from "./uploadScannerMode";
 
 const PREFIX_LIMIT = 64 * 1024;
 const RESPONSE_LIMIT = 8 * 1024;
@@ -85,10 +89,7 @@ function boundedInteger(value: unknown, fallback: number, min: number, max: numb
 }
 
 function scannerMode(): "required" | "signature-only" {
-  if (["production", "staging"].includes(String(process.env.NODE_ENV || "").trim().toLowerCase())) return "required";
-  return String(process.env.UPLOAD_SCAN_MODE || "signature-only").trim().toLowerCase() === "required"
-    ? "required"
-    : "signature-only";
+  return resolveUploadScannerMode();
 }
 
 function scannerConfiguration(): { mode: "required" | "signature-only"; url: string; token: string; timeoutMs: number; maxConcurrency: number } {
@@ -101,15 +102,26 @@ function scannerConfiguration(): { mode: "required" | "signature-only"; url: str
   };
 }
 
-export function getUploadScannerStatus(): { mode: string; configured: boolean; productionSafe: boolean } {
+export function getUploadScannerStatus(): {
+  mode: string;
+  configured: boolean;
+  productionSafe: boolean;
+  temporaryBypass: boolean;
+} {
   const config = scannerConfiguration();
+  const temporaryBypass = uploadScannerTemporaryBypassEnabled();
   let validUrl = false;
   try {
     const parsed = new URL(config.url);
     validUrl = parsed.protocol === "https:" && !parsed.username && !parsed.password;
   } catch {}
   const configured = validUrl && config.token.length >= 24;
-  return { mode: config.mode, configured, productionSafe: config.mode === "required" && configured };
+  return {
+    mode: config.mode,
+    configured,
+    productionSafe: config.mode === "required" && configured && !temporaryBypass,
+    temporaryBypass,
+  };
 }
 
 const SCANNER_CONNECTIVITY_PROBE = Buffer.from(

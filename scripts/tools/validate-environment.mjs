@@ -94,18 +94,39 @@ if (storageProvider === "gcs") {
 }
 const uploadScanMode = (values.get("UPLOAD_SCAN_MODE") || "").trim().toLowerCase();
 if (uploadScanMode !== "required") errors.push("UPLOAD_SCAN_MODE=required is mandatory in staging and production");
-const uploadScannerUrl = values.get("UPLOAD_SCANNER_URL") || "";
-try {
-  const parsedScannerUrl = new URL(uploadScannerUrl);
-  if (parsedScannerUrl.protocol !== "https:" || parsedScannerUrl.username || parsedScannerUrl.password) {
-    errors.push("UPLOAD_SCANNER_URL must be an HTTPS URL without embedded credentials");
-  }
-} catch {
-  errors.push("UPLOAD_SCANNER_URL must be a valid HTTPS URL");
+
+const uploadScannerTemporaryBypassRaw = (
+  values.get("UPLOAD_SCANNER_TEMPORARY_BYPASS") || "false"
+).trim().toLowerCase();
+
+if (!new Set(["true", "false"]).has(uploadScannerTemporaryBypassRaw)) {
+  errors.push("UPLOAD_SCANNER_TEMPORARY_BYPASS must be true or false");
 }
+
+const uploadScannerTemporaryBypass = uploadScannerTemporaryBypassRaw === "true";
+const uploadScannerUrl = values.get("UPLOAD_SCANNER_URL") || "";
 const uploadScannerToken = values.get("UPLOAD_SCANNER_TOKEN") || "";
-if (uploadScannerToken.length < 24 || /CHANGE_ME|REPLACE_WITH|example|password/i.test(uploadScannerToken)) {
-  errors.push("UPLOAD_SCANNER_TOKEN must be a non-placeholder secret of at least 24 characters");
+
+if (uploadScannerTemporaryBypass) {
+  warnings.push(
+    "UPLOAD_SCANNER_TEMPORARY_BYPASS=true: external malware scanning is temporarily disabled; production certification remains blocked",
+  );
+} else {
+  try {
+    const parsedScannerUrl = new URL(uploadScannerUrl);
+    if (parsedScannerUrl.protocol !== "https:" || parsedScannerUrl.username || parsedScannerUrl.password) {
+      errors.push("UPLOAD_SCANNER_URL must be an HTTPS URL without embedded credentials");
+    }
+  } catch {
+    errors.push("UPLOAD_SCANNER_URL must be a valid HTTPS URL");
+  }
+
+  if (
+    uploadScannerToken.length < 24 ||
+    /CHANGE_ME|REPLACE_WITH|example|password/i.test(uploadScannerToken)
+  ) {
+    errors.push("UPLOAD_SCANNER_TOKEN must be a non-placeholder secret of at least 24 characters");
+  }
 }
 if ((values.get("UPLOAD_LEGACY_READ_POLICY") || "deny").toLowerCase() !== "deny") {
   errors.push("UPLOAD_LEGACY_READ_POLICY=deny is mandatory in staging and production");

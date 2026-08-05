@@ -141,6 +141,8 @@ services:
         sync: false
       - key: UPLOAD_SCAN_MODE
         value: required
+      - key: UPLOAD_SCANNER_TEMPORARY_BYPASS
+        value: "false"
       - key: UPLOAD_SCANNER_URL
         sync: false
       - key: UPLOAD_SCANNER_TOKEN
