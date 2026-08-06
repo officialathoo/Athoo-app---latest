@@ -382,8 +382,12 @@ export function PrivateImage({
   accessibilityLabel,
 }: PrivateImageProps): React.ReactElement | null {
   const [source, setSource] = useState<{ uri: string; headers?: Record<string, string> } | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
+    setSource(null);
+    setFailed(false);
+
     if (!objectPath) {
       setSource(null);
       return;
@@ -402,10 +406,17 @@ export function PrivateImage({
           setSource({ uri: base, headers: { Authorization: `Bearer ${token}` } });
         }
       })
-      .catch(() => setSource(null));
+      .catch(() => {
+        setSource(null);
+        setFailed(true);
+      });
   }, [objectPath]);
 
-  if (!source) return fallback ? (fallback as React.ReactElement) : null;
+  if (failed || !source) {
+    return fallback
+      ? (fallback as React.ReactElement)
+      : null;
+  }
 
   return React.createElement(Image, {
     source,
@@ -416,5 +427,6 @@ export function PrivateImage({
     accessible: Boolean(accessibilityLabel),
     accessibilityRole: accessibilityLabel ? "image" : undefined,
     accessibilityLabel,
+    onError: () => setFailed(true),
   });
 }
