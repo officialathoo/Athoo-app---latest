@@ -86,6 +86,10 @@ import {
   type LegacyReferencedMediaScopePolicy,
 } from "../src/lib/legacyReferencedMediaBackfill.ts";
 
+import {
+  lockLegacyReferencedMediaSourceRows,
+} from "../src/lib/legacyReferencedMediaConcurrency.ts";
+
 type CandidateRow = {
   object_path: string;
   owner_id: string;
@@ -660,6 +664,11 @@ async function revalidateCandidate(
         )
     `,
     [candidate.objectPath],
+  );
+
+  await lockLegacyReferencedMediaSourceRows(
+    client,
+    candidate.objectPath,
   );
 
   const current =
