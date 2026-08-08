@@ -350,6 +350,34 @@ app.use(
 );
 
 app.use(
+  "/api/auth/email/verification/send",
+  rateLimit({
+    ...rateLimitConfig((req) =>
+      authKey("public-email-verification-send", normalizeEmail(req.body?.email), req),
+    ),
+    max: Number(process.env.EMAIL_PUBLIC_VERIFICATION_RATE_LIMIT_MAX || 10),
+    message: {
+      error: "Too many email verification requests. Please try again in 15 minutes.",
+      code: "RATE_LIMITED",
+    },
+  }),
+);
+
+app.use(
+  "/api/auth/email/verification/verify",
+  rateLimit({
+    ...rateLimitConfig((req) =>
+      authKey("public-email-verification-verify", normalizeEmail(req.body?.email), req),
+    ),
+    max: Number(process.env.EMAIL_PUBLIC_VERIFICATION_VERIFY_RATE_LIMIT_MAX || 20),
+    message: {
+      error: "Too many email verification attempts. Please try again in 15 minutes.",
+      code: "RATE_LIMITED",
+    },
+  }),
+);
+
+app.use(
   "/api/me/email/verification/send",
   rateLimit({
     windowMs: 15 * 60 * 1000,

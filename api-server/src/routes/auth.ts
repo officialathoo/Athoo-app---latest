@@ -480,6 +480,236 @@ router.post("/email/send-otp", async (req, res) => {
   }
 });
 
+router.post("/email/verification/send", async (req, res) => {
+  try {
+    const email = normalizeEmailAddress(req.body?.email);
+    const expectedRole = cleanRole(req.body?.role);
+
+    if (!email) {
+      return res.status(400).json({
+        error: "Enter a valid email address.",
+        code: "INVALID_EMAIL",
+      });
+    }
+
+    if (!expectedRole) {
+      return res.status(400).json({
+        error: "Select Customer or Provider before verifying your email.",
+        code: "ROLE_REQUIRED",
+      });
+    }
+
+    const user = await findEmailLoginUser(email, expectedRole);
+    const unavailable = accountUnavailableResponse(user, expectedRole);
+
+    if (unavailable) {
+      return res.status(unavailable.status).json({
+        error: unavailable.error,
+        code: unavailable.code,
+      });
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        error: "No active Athoo account was found with this email address.",
+        code: "ACCOUNT_NOT_FOUND",
+      });
+    }
+
+    if (await isAuthIdentityBlacklisted(user.phone, email)) {
+      return res.status(403).json({
+        error: "This account is suspended. Please contact Athoo Support.",
+        code: "ACCOUNT_SUSPENDED",
+      });
+    }
+
+    if (user.emailVerified) {
+      return res.json({
+        success: true,
+        alreadyVerified: true,
+      });
+    }
+
+    const existingVerifiedOwner = await db.query.usersTable.findFirst({
+      where: and(
+        normalizedEmailCondition(email),
+        eq(usersTable.emailVerified, true),
+      ),
+    });
+
+    if (existingVerifiedOwner && existingVerifiedOwner.id !== user.id) {
+      return res.status(409).json({
+        error: "This email address is already verified on another account.",
+        code: "EMAIL_IN_USE",
+      });
+    }
+
+    const result = await sendEmailChallenge({
+      userId: user.id,
+      email,
+      name: user.name,
+      role: expectedRole,
+      purpose: "verify_email",
+    });
+
+    if (!result.success) {
+      const status =
+        result.errorCode === "EMAIL_OTP_RESEND_COOLDOWN" ? 429 : 503;
+
+      return res.status(status).json({
+        error:
+          result.errorCode === "EMAIL_OTP_RESEND_COOLDOWN"
+            ? "Please wait " +
+              result.resendAfterSeconds +
+              " seconds before requesting another email code."
+            : "The verification email could not be delivered. Please try again shortly.",
+        code: result.errorCode,
+        retryAfterSeconds: result.resendAfterSeconds,
+      });
+    }
+
+    const maskedEmail = email.replace(/^(.{1,2}).*(@.*)$/, "$1***$2");
+
+    return res.json({
+      success: true,
+      maskedEmail,
+      expiresInSeconds: result.expiresInSeconds,
+      resendAfterSeconds: result.resendAfterSeconds,
+      ...(result.code ? { code: result.code } : {}),
+    });
+  } catch (error) {
+    logger.error({ err: error }, "public email verification send failed");
+
+    return res.status(500).json({
+      error: "We could not send the email verification code.",
+      code: "EMAIL_VERIFICATION_SEND_FAILED",
+    });
+  }
+});
+
+router.post("/email/verification/verify", async (req, res) => {
+  try {
+    const email = normalizeEmailAddress(req.body?.email);
+    const expectedRole = cleanRole(req.body?.role);
+    const code = String(req.body?.code || "").trim();
+
+    if (!email || !/^\d{6}$/.test(code)) {
+      return res.status(400).json({
+        error: "Email and a valid 6-digit code are required.",
+        code: "EMAIL_VERIFICATION_REQUIRED",
+      });
+    }
+
+    if (!expectedRole) {
+      return res.status(400).json({
+        error: "Select Customer or Provider before verifying your email.",
+        code: "ROLE_REQUIRED",
+      });
+    }
+
+    const user = await findEmailLoginUser(email, expectedRole);
+    const unavailable = accountUnavailableResponse(user, expectedRole);
+
+    if (unavailable) {
+      return res.status(unavailable.status).json({
+        error: unavailable.error,
+        code: unavailable.code,
+      });
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        error: "No active Athoo account was found with this email address.",
+        code: "ACCOUNT_NOT_FOUND",
+      });
+    }
+
+    if (await isAuthIdentityBlacklisted(user.phone, email)) {
+      return res.status(403).json({
+        error: "This account is suspended. Please contact Athoo Support.",
+        code: "ACCOUNT_SUSPENDED",
+      });
+    }
+
+    if (user.emailVerified) {
+      return res.json({
+        success: true,
+        alreadyVerified: true,
+      });
+    }
+
+    const existingVerifiedOwner = await db.query.usersTable.findFirst({
+      where: and(
+        normalizedEmailCondition(email),
+        eq(usersTable.emailVerified, true),
+      ),
+    });
+
+    if (existingVerifiedOwner && existingVerifiedOwner.id !== user.id) {
+      return res.status(409).json({
+        error: "This email address is already verified on another account.",
+        code: "EMAIL_IN_USE",
+      });
+    }
+
+    const verified = await verifyEmailChallenge({
+      userId: user.id,
+      email,
+      purpose: "verify_email",
+      code,
+      role: expectedRole,
+    });
+
+    if (!verified.success) {
+      const status =
+        verified.code === "EMAIL_OTP_ATTEMPT_LIMIT" ? 429 : 400;
+
+      return res.status(status).json({
+        error:
+          verified.code === "EMAIL_OTP_EXPIRED"
+            ? "The email verification code has expired. Request a new code."
+            : verified.code === "EMAIL_OTP_ATTEMPT_LIMIT"
+              ? "Too many incorrect attempts. Request a new code."
+              : "The email verification code is incorrect.",
+        code: verified.code,
+        attemptsRemaining: verified.attemptsRemaining,
+      });
+    }
+
+    try {
+      await db
+        .update(usersTable)
+        .set({
+          emailVerified: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(usersTable.id, user.id));
+    } catch (error) {
+      if (postgresErrorCode(error) === "23505") {
+        return res.status(409).json({
+          error: "This email address is already verified on another account.",
+          code: "EMAIL_IN_USE",
+        });
+      }
+
+      throw error;
+    }
+
+    // Verification proves ownership of the mailbox only.
+    // A normal password/OTP login is still required to create a session.
+    return res.json({
+      success: true,
+    });
+  } catch (error) {
+    logger.error({ err: error }, "public email verification failed");
+
+    return res.status(500).json({
+      error: "We could not verify the email address.",
+      code: "EMAIL_VERIFICATION_FAILED",
+    });
+  }
+});
+
 router.post("/email/verify-otp", async (req, res) => {
   try {
     const email = normalizeEmailAddress(req.body?.email);
@@ -1271,9 +1501,27 @@ router.post("/forgot-password/send-otp", async (req, res) => {
     let smsSent = false;
     let deliveryChannel: string | null = null;
     let otpId: string | null = null;
+    let shouldIssueOtp = Boolean(user);
 
     if (user) {
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+      const previousOtp = await latestOtp(
+        normalizedPhone,
+        "password_reset",
+        user.role === "provider" ? "provider" : "customer",
+      );
+      const previousCreatedAt = previousOtp?.createdAt
+        ? new Date(previousOtp.createdAt).getTime()
+        : 0;
+      const remainingMs =
+        previousCreatedAt + OTP_RESEND_COOLDOWN_SECONDS * 1000 - Date.now();
+
+      if (previousOtp && !previousOtp.used && remainingMs > 0) {
+        shouldIssueOtp = false;
+      }
+    }
+
+    if (user && shouldIssueOtp) {
+      const expiresAt = new Date(Date.now() + OTP_TTL_SECONDS * 1000);
       await db
         .update(otpsTable)
         .set({ used: true })
@@ -1306,7 +1554,7 @@ router.post("/forgot-password/send-otp", async (req, res) => {
         code,
         purpose: "password_reset",
         role: user.role === "provider" ? "provider" : "customer",
-        expiresMinutes: 10,
+        expiresMinutes: Math.ceil(OTP_TTL_SECONDS / 60),
         email: user.emailVerified ? user.email : null,
         userId: user.id,
         userName: user.name,
@@ -1342,6 +1590,8 @@ router.post("/forgot-password/send-otp", async (req, res) => {
     return res.json({
       success: true,
       challengeToken,
+      expiresInSeconds: OTP_TTL_SECONDS,
+      resendAfterSeconds: OTP_RESEND_COOLDOWN_SECONDS,
       // Delivery details are intentionally hidden outside development so this
       // endpoint cannot be used to discover whether an account exists.
       ...(isDev && user ? { code, maskedPhone, emailSent, whatsappSent, smsSent, deliveryChannel } : {}),

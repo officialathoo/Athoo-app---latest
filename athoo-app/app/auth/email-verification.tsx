@@ -12,7 +12,15 @@ import { Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, Tex
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function EmailVerificationScreen() {
-  const params = useLocalSearchParams<{ role?: string; sent?: string; expires?: string; resend?: string; code?: string }>();
+  const params = useLocalSearchParams<{
+    role?: string;
+    sent?: string;
+    expires?: string;
+    resend?: string;
+    code?: string;
+    email?: string;
+    mode?: string;
+  }>();
   const { user, refreshUser } = useAuth();
   const { theme } = useTheme();
   const { translate: tr, textAlign, writingDirection } = useLang();
@@ -21,11 +29,35 @@ export default function EmailVerificationScreen() {
   const insets = useSafeAreaInsets();
   const role = params.role === "provider" ? "provider" : "customer";
   const destination = role === "provider" ? "/(provider)/(tabs)/dashboard" : "/(customer)/(tabs)/home";
+  const publicEmail = String(params.email || "").trim().toLowerCase();
+  const publicLoginVerification =
+    !user &&
+    params.mode === "login" &&
+    Boolean(publicEmail);
+  const verificationEmail = user?.email || publicEmail;
+
+  const returnToLogin = () => {
+    router.replace({
+      pathname: "/auth/login" as any,
+      params: { role },
+    });
+  };
+
+  const continueAfterVerification = () => {
+    if (publicLoginVerification) {
+      returnToLogin();
+      return;
+    }
+
+    router.replace(destination as any);
+  };
+
   const [code, setCode] = useState(__DEV__ ? String(params.code || "") : "");
   const [loading, setLoading] = useState(false);
-  const [expiresIn, setExpiresIn] = useState(Math.max(0, Number(params.expires || 600)));
-  const [resendIn, setResendIn] = useState(Math.max(0, Number(params.resend || 45)));
-  const [sent, setSent] = useState(params.sent === "true");
+  const initiallySent = params.sent === "true";
+  const [expiresIn, setExpiresIn] = useState(Math.max(0, Number(params.expires || (initiallySent ? 600 : 0))));
+  const [resendIn, setResendIn] = useState(Math.max(0, Number(params.resend || (initiallySent ? 45 : 0))));
+  const [sent, setSent] = useState(initiallySent);
 
   useEffect(() => {
     if (user?.emailVerified) router.replace(destination as any);
@@ -40,21 +72,54 @@ export default function EmailVerificationScreen() {
   }, []);
 
   const sendCode = async () => {
+    if (!verificationEmail) {
+      Alert.alert(
+        tr("Could not send email"),
+        tr("Add an email address from your profile before verification."),
+      );
+      return;
+    }
+
     setLoading(true);
     try {
-      const result = await api.sendEmailVerification();
+      const result = publicLoginVerification
+        ? await api.sendPublicEmailVerification(verificationEmail, role)
+        : await api.sendEmailVerification();
+
       if (result.alreadyVerified) {
-        await refreshUser();
-        router.replace(destination as any);
+        if (user) await refreshUser();
+
+        Alert.alert(
+          tr("Email verified"),
+          tr("This email is already verified. You can use email OTP to sign in."),
+          [
+            {
+              text: tr("Continue"),
+              onPress: continueAfterVerification,
+            },
+          ],
+        );
         return;
       }
+
       setSent(true);
       setExpiresIn(result.expiresInSeconds || 600);
       setResendIn(result.resendAfterSeconds || 45);
+
       if (__DEV__ && result.code) setCode(result.code);
-      Alert.alert(tr("Email sent"), tr("A new 6-digit verification code was sent to your email."));
+
+      Alert.alert(
+        tr("Email sent"),
+        tr("A new 6-digit verification code was sent to your email."),
+      );
     } catch (error) {
-      Alert.alert(tr("Could not send email"), tr(apiErrorToMessage(error, "Please check the email configuration or try again shortly.")));
+      Alert.alert(
+        tr("Could not send email"),
+        tr(apiErrorToMessage(
+          error,
+          "Please check the email configuration or try again shortly.",
+        )),
+      );
     } finally {
       setLoading(false);
     }
@@ -65,13 +130,37 @@ export default function EmailVerificationScreen() {
       Alert.alert(tr("Invalid code"), tr("Enter the 6-digit code from your email."));
       return;
     }
+    if (!verificationEmail) {
+      Alert.alert(
+        tr("Verification failed"),
+        tr("Add an email address from your profile before verification."),
+      );
+      return;
+    }
+
     setLoading(true);
     try {
-      await api.verifyEmailVerification(code);
-      await refreshUser();
-      Alert.alert(tr("Email verified"), tr("Your email is now verified and can be used for secure email OTP login."), [
-        { text: tr("Continue"), onPress: () => router.replace(destination as any) },
-      ]);
+      if (publicLoginVerification) {
+        await api.verifyPublicEmailVerification(
+          verificationEmail,
+          code,
+          role,
+        );
+      } else {
+        await api.verifyEmailVerification(code);
+        await refreshUser();
+      }
+
+      Alert.alert(
+        tr("Email verified"),
+        tr("Your email is now verified and can be used for secure email OTP login."),
+        [
+          {
+            text: tr("Continue"),
+            onPress: continueAfterVerification,
+          },
+        ],
+      );
     } catch (error) {
       Alert.alert(tr("Verification failed"), tr(apiErrorToMessage(error, "The code is incorrect or expired.")));
     } finally {
@@ -85,7 +174,9 @@ export default function EmailVerificationScreen() {
         <View style={styles.iconWrap}><Icon name="mail" size={34} color={theme.colors.primary} /></View>
         <Text style={[styles.title, localizedText]}>{tr("Verify your email")}</Text>
         <Text style={[styles.subtitle, localizedText]}>
-          {user?.email ? tr("Enter the code sent to {{email}}.", { email: user.email }) : tr("Add an email address from your profile before verification.")}
+          {verificationEmail
+            ? tr("Enter the code sent to {{email}}.", { email: verificationEmail })
+            : tr("Add an email address from your profile before verification.")}
         </Text>
 
         <View style={styles.securityNote}>
@@ -112,14 +203,34 @@ export default function EmailVerificationScreen() {
           </Text>
         ) : null}
 
-        <Button title={loading ? tr("Verifying...") : tr("Verify Email")} onPress={verify} loading={loading} disabled={expiresIn === 0 || !user?.email} fullWidth />
-        <Pressable style={[styles.linkButton, (loading || resendIn > 0 || !user?.email) && styles.disabled]} disabled={loading || resendIn > 0 || !user?.email} onPress={sendCode}>
-          <Text style={styles.linkText}>{resendIn > 0 ? tr("Resend in {{seconds}}s", { seconds: resendIn }) : tr("Resend verification email")}</Text>
+        {sent ? (
+          <Button title={loading ? tr("Verifying...") : tr("Verify Email")} onPress={verify} loading={loading} disabled={expiresIn === 0 || !verificationEmail} fullWidth />
+        ) : null}
+        <Pressable style={[styles.linkButton, (loading || resendIn > 0 || !verificationEmail) && styles.disabled]} disabled={loading || resendIn > 0 || !verificationEmail} onPress={sendCode}>
+          <Text style={styles.linkText}>
+            {!sent
+              ? tr("Send verification code")
+              : resendIn > 0
+                ? tr("Resend in {{seconds}}s", { seconds: resendIn })
+                : tr("Resend verification email")}
+          </Text>
         </Pressable>
-        <Pressable style={styles.skipButton} onPress={() => router.replace(destination as any)}>
-          <Text style={[styles.skipText, localizedText]}>{tr("Continue without email login")}</Text>
+        <Pressable
+          style={styles.skipButton}
+          onPress={continueAfterVerification}
+        >
+          <Text style={[styles.skipText, localizedText]}>
+            {publicLoginVerification
+              ? tr("Back to Sign In")
+              : tr("Continue without email login")}
+          </Text>
         </Pressable>
-        <Text style={[styles.skipHint, localizedText]}>{tr("You can verify later from Email Preferences. Email OTP login remains disabled until verification is complete.")}</Text>
+
+        <Text style={[styles.skipHint, localizedText]}>
+          {publicLoginVerification
+            ? tr("After verification, return to sign in and request your email OTP.")
+            : tr("You can verify later from Email Preferences. Email OTP login remains disabled until verification is complete.")}
+        </Text>
       </View>
     </KeyboardAvoidingView>
   );

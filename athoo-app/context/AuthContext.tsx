@@ -95,7 +95,7 @@ interface AuthContextType {
   requiresBiometric: boolean;
   sendOtp: (phone: string, purpose: "login" | "registration", role: AppUserRole, email?: string) => Promise<{ success: boolean; code?: string; message?: string; error?: string; expiresInSeconds?: number; resendAfterSeconds?: number }>;
   verifyOtpAndLogin: (phone: string, code: string, remember: boolean, purpose: "login" | "registration", role: AppUserRole) => Promise<{ success: boolean; isNewUser: boolean; user?: User | null; registrationToken?: string; error?: string }>;
-  sendEmailOtp: (email: string, role: AppUserRole) => Promise<{ success: boolean; code?: string; message?: string; maskedEmail?: string; expiresInSeconds?: number; resendAfterSeconds?: number; error?: string }>;
+  sendEmailOtp: (email: string, role: AppUserRole) => Promise<{ success: boolean; code?: string; message?: string; maskedEmail?: string; expiresInSeconds?: number; resendAfterSeconds?: number; error?: string; errorCode?: string }>;
   verifyEmailOtpAndLogin: (email: string, code: string, remember: boolean, role: AppUserRole) => Promise<{ success: boolean; user?: User | null; error?: string }>;
   loginWithPassword: (identifier: string, password: string, role: AppUserRole, remember?: boolean) => Promise<{ success: boolean; user?: User | null; error?: string }>;
   register: (data: RegisterData) => Promise<{
@@ -486,7 +486,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         resendAfterSeconds: res.resendAfterSeconds,
       };
     } catch (error: unknown) {
-      return { success: false, error: apiErrorToMessage(error, "We could not send the email sign-in code. Please try another login method.") };
+      const errorCode =
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        typeof (error as { code?: unknown }).code === "string"
+          ? (error as { code: string }).code
+          : undefined;
+
+      return {
+        success: false,
+        error: apiErrorToMessage(
+          error,
+          "We could not send the email sign-in code. Please try another login method.",
+        ),
+        errorCode,
+      };
     }
   }, []);
 

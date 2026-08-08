@@ -2,7 +2,7 @@ import { Icon } from "@/components/ui/Icon";
 import { api } from "@/services/api";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -76,6 +76,19 @@ export default function ForgotPasswordScreen() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [otpExpiresIn, setOtpExpiresIn] = useState(0);
+  const [otpResendIn, setOtpResendIn] = useState(0);
+
+  useEffect(() => {
+    if (step !== "otp") return;
+
+    const timer = setInterval(() => {
+      setOtpExpiresIn((value) => (value > 0 ? value - 1 : 0));
+      setOtpResendIn((value) => (value > 0 ? value - 1 : 0));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [step]);
 
   const goBackToLogin = () => {
     router.replace({
@@ -102,6 +115,9 @@ export default function ForgotPasswordScreen() {
         Alert.alert(tr("Dev Mode OTP"), tr("Your OTP is: {{code}}", { code: res.code }));
       }
       setChallengeToken(res.challengeToken || "");
+      setOtp("");
+      setOtpExpiresIn(Math.max(0, Number(res.expiresInSeconds || 600)));
+      setOtpResendIn(Math.max(0, Number(res.resendAfterSeconds || 45)));
       setStep("otp");
     } catch (e: any) {
       Alert.alert(tr("Failed"), tr(apiErrorToMessage(e, "Failed to send reset OTP.")));
@@ -111,7 +127,12 @@ export default function ForgotPasswordScreen() {
   };
 
   const handleVerifyOtp = async () => {
-    if (!otp || otp.trim().length < 4) {
+    if (otpExpiresIn === 0) {
+      Alert.alert(tr("Code Expired"), tr("Code expired. Request a new OTP."));
+      return;
+    }
+
+    if (!otp || otp.trim().length !== 4) {
       Alert.alert(tr("Invalid OTP"), tr("Please enter the 4-digit OTP."));
       return;
     }
@@ -171,6 +192,8 @@ export default function ForgotPasswordScreen() {
     if (step === "otp") {
       setStep("identifier");
       setOtp("");
+      setOtpExpiresIn(0);
+      setOtpResendIn(0);
       return;
     }
     router.back();
@@ -268,7 +291,7 @@ export default function ForgotPasswordScreen() {
               <View style={[styles.statusBox, localizedRow]}>
                 <Icon name="check-circle" size={18} color={theme.colors.success} />
                 <Text style={[styles.statusText, localizedText]}>
-                  {tr("OTP sent to {{identifier}}", { identifier })}
+                  {tr("If an account matches these details, a reset OTP has been sent.")}
                 </Text>
               </View>
 
@@ -297,10 +320,18 @@ export default function ForgotPasswordScreen() {
                 </View>
               </View>
 
+              <Text style={styles.otpTimer}>
+                {otpExpiresIn > 0
+                  ? tr("Code expires in {{time}}", {
+                      time: Math.floor(otpExpiresIn / 60) + ":" + String(otpExpiresIn % 60).padStart(2, "0"),
+                    })
+                  : tr("Code expired. Request a new OTP.")}
+              </Text>
+
               <Pressable
-                style={[styles.primaryBtn, loading && styles.btnDisabled]}
+                style={[styles.primaryBtn, (loading || otpExpiresIn === 0) && styles.btnDisabled]}
                 onPress={handleVerifyOtp}
-                disabled={loading}
+                disabled={loading || otpExpiresIn === 0}
               >
                 <LinearGradient
                   colors={isProvider ? [theme.colors.secondary, theme.colors.secondaryPressed] : [theme.colors.primary, theme.colors.primaryPressed]}
@@ -313,6 +344,18 @@ export default function ForgotPasswordScreen() {
                     {loading ? tr("Verifying...") : tr("Verify OTP")}
                   </Text>
                 </LinearGradient>
+              </Pressable>
+
+              <Pressable
+                style={[styles.resendBtn, (loading || otpResendIn > 0) && styles.btnDisabled]}
+                onPress={handleSendOtp}
+                disabled={loading || otpResendIn > 0}
+              >
+                <Text style={styles.resendText}>
+                  {otpResendIn > 0
+                    ? tr("Resend in {{seconds}}s", { seconds: otpResendIn })
+                    : tr("Resend OTP")}
+                </Text>
               </Pressable>
             </View>
           )}
@@ -531,6 +574,25 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   hintText: {
     fontSize: 13,
     color: theme.colors.text,
+  },
+
+  otpTimer: {
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    textAlign: "center",
+  },
+
+  resendBtn: {
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+
+  resendText: {
+    color: theme.colors.primary,
+    fontSize: 14,
+    fontWeight: "700",
   },
 
   primaryBtn: {

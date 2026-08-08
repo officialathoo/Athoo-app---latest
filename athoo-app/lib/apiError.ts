@@ -55,7 +55,7 @@ export function apiErrorToMessage(
     return "No active Athoo account was found with these details.";
   }
   if (lower.includes("email_not_verified") || (lower.includes("email") && lower.includes("not verified"))) {
-    return "This email address is not verified yet. Verify it from your profile before using email sign-in.";
+    return "Email not verified. Please verify your email first.";
   }
   if (lower.includes("email_in_use") || (lower.includes("email") && lower.includes("already") && lower.includes("account"))) {
     return "This email address is already connected to another account.";

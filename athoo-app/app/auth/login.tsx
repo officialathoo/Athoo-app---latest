@@ -104,7 +104,44 @@ export default function LoginScreen() {
     setLoading(false);
 
     if (!res.success || res.error) {
-      Alert.alert(tr("Failed"), tr(apiErrorToMessage(res.error || res.message, "Unable to send OTP. Please try again.")));
+      const emailErrorCode =
+        otpChannel === "email" && "errorCode" in res
+          ? String(res.errorCode || "")
+          : "";
+
+      if (otpChannel === "email" && emailErrorCode === "EMAIL_NOT_VERIFIED") {
+        Alert.alert(
+          tr("Email not verified"),
+          tr("Email not verified. Please verify your email first."),
+          [
+            {
+              text: tr("Cancel"),
+              style: "cancel",
+            },
+            {
+              text: tr("Verify Email Now"),
+              onPress: () =>
+                router.push({
+                  pathname: "/auth/email-verification" as any,
+                  params: {
+                    role: roleValue,
+                    email: email.trim().toLowerCase(),
+                    mode: "login",
+                  },
+                }),
+            },
+          ],
+        );
+        return;
+      }
+
+      Alert.alert(
+        tr("Failed"),
+        tr(apiErrorToMessage(
+          res.error || res.message,
+          "Unable to send OTP. Please try again.",
+        )),
+      );
       return;
     }
 

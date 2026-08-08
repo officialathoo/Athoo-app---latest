@@ -97,7 +97,7 @@ export default function EmailPreferencesScreen() {
         </View>
         {!user?.emailVerified && user?.email ? (
           <Pressable style={styles.verifyButton} onPress={() => router.push({ pathname: "/auth/email-verification" as any, params: { role: user.role } })}>
-            <Text style={styles.verifyText}>{tr("Verify")}</Text>
+            <Text style={styles.verifyText}>{tr("Verify Email Now")}</Text>
           </Pressable>
         ) : null}
       </View>

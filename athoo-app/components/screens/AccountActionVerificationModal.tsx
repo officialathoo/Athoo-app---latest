@@ -44,6 +44,8 @@ export function AccountActionVerificationModal({
   const [destination, setDestination] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [expiresIn, setExpiresIn] = useState(0);
+  const [resendIn, setResendIn] = useState(0);
 
   useEffect(() => {
     if (!visible) return;
@@ -54,6 +56,8 @@ export function AccountActionVerificationModal({
     setCodeSent(false);
     setDestination(null);
     setError("");
+    setExpiresIn(0);
+    setResendIn(0);
     setLoading(true);
     api.getAccountStepUpOptions()
       .then((next) => {
@@ -64,6 +68,17 @@ export function AccountActionVerificationModal({
       .finally(() => setLoading(false));
   }, [tr, visible]);
 
+  useEffect(() => {
+    if (!visible || !codeSent) return;
+
+    const timer = setInterval(() => {
+      setExpiresIn((value) => (value > 0 ? value - 1 : 0));
+      setResendIn((value) => (value > 0 ? value - 1 : 0));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [codeSent, visible]);
+
   const chooseMethod = (next: VerificationMethod) => {
     if (loading) return;
     setMethod(next);
@@ -72,6 +87,8 @@ export function AccountActionVerificationModal({
     setCodeSent(false);
     setDestination(null);
     setError("");
+    setExpiresIn(0);
+    setResendIn(0);
   };
 
   const sendCode = async () => {
@@ -82,6 +99,8 @@ export function AccountActionVerificationModal({
       const result = await api.requestAccountStepUpCode({ action, channel: method });
       setDestination(result.destination || (method === "phone" ? options?.maskedPhone : options?.maskedEmail) || null);
       setCode("");
+      setExpiresIn(Math.max(0, Number(result.expiresInSeconds || 600)));
+      setResendIn(Math.max(0, Number(result.resendAfterSeconds || 45)));
       setCodeSent(true);
     } catch (caught) {
       setError(tr(apiErrorToMessage(caught, "The verification code could not be sent. Please try another method.")));
@@ -107,6 +126,10 @@ export function AccountActionVerificationModal({
       return;
     }
     if (method !== "phone" && method !== "email") return;
+    if (expiresIn === 0) {
+      setError(tr("Code expired. Request a new OTP."));
+      return;
+    }
     if (!/^\d{6}$/.test(code)) {
       setError(tr("Enter the 6-digit verification code."));
       return;
@@ -215,7 +238,29 @@ export function AccountActionVerificationModal({
                   onSubmitEditing={confirm}
                   style={styles.codeInput}
                 />
-                <Button title={tr("Send a new code")} onPress={sendCode} disabled={loading} variant="ghost" fullWidth />
+                <AppText
+                  variant="caption"
+                  tone={expiresIn === 0 ? "danger" : "secondary"}
+                  style={styles.timerText}
+                >
+                  {expiresIn > 0
+                    ? tr("Code expires in {{time}}", {
+                        time: Math.floor(expiresIn / 60) + ":" + String(expiresIn % 60).padStart(2, "0"),
+                      })
+                    : tr("Code expired. Request a new OTP.")}
+                </AppText>
+
+                <Button
+                  title={
+                    resendIn > 0
+                      ? tr("Resend in {{seconds}}s", { seconds: resendIn })
+                      : tr("Send a new code")
+                  }
+                  onPress={sendCode}
+                  disabled={loading || resendIn > 0}
+                  variant="ghost"
+                  fullWidth
+                />
               </View>
             ) : null}
 
@@ -227,7 +272,7 @@ export function AccountActionVerificationModal({
                 title={action === "delete" ? tr("Verify and schedule deletion") : tr("Verify and deactivate")}
                 onPress={confirm}
                 loading={loading}
-                disabled={method === "password" ? !password : code.length !== 6}
+                disabled={method === "password" ? !password : code.length !== 6 || expiresIn === 0}
                 variant="danger"
                 fullWidth
               />
@@ -251,4 +296,5 @@ const styles = StyleSheet.create({
   method: { minHeight: 64, borderRadius: 14, borderWidth: 1.5, padding: 12, flexDirection: "row", alignItems: "center", gap: 11 },
   codeArea: { gap: 10 },
   codeInput: { fontSize: 22, letterSpacing: 9, textAlign: "center" },
+  timerText: { textAlign: "center" },
 });

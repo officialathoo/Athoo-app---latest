@@ -28,8 +28,8 @@ test("Phase 30.1Q confirms email-verification loading is already mutation-scoped
   assert.match(screen, /const sendCode = async \(\) =>/);
   assert.match(screen, /const verify = async \(\) =>/);
   assert.match(screen, /loading=\{loading\}/);
-  assert.match(screen, /disabled=\{expiresIn === 0 \|\| !user\?\.email\}/);
-  assert.match(screen, /disabled=\{loading \|\| resendIn > 0 \|\| !user\?\.email\}/);
+  assert.match(screen, /disabled=\{expiresIn === 0 \|\| !verificationEmail\}/);
+  assert.match(screen, /disabled=\{loading \|\| resendIn > 0 \|\| !verificationEmail\}/);
 });
 
 test("Phase 30.1Q confirms forgot-password loading is already mutation-scoped", () => {

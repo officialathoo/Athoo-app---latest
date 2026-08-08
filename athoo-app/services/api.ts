@@ -430,6 +430,34 @@ export const api = {
     });
   },
 
+  sendPublicEmailVerification(email: string, role: "customer" | "provider") {
+    return request<{
+      success: boolean;
+      alreadyVerified?: boolean;
+      code?: string;
+      maskedEmail?: string;
+      expiresInSeconds?: number;
+      resendAfterSeconds?: number;
+    }>("/api/auth/email/verification/send", {
+      method: "POST",
+      body: { email, role },
+    });
+  },
+
+  verifyPublicEmailVerification(
+    email: string,
+    code: string,
+    role: "customer" | "provider",
+  ) {
+    return request<{
+      success: boolean;
+      alreadyVerified?: boolean;
+    }>("/api/auth/email/verification/verify", {
+      method: "POST",
+      body: { email, code, role },
+    });
+  },
+
   verifyEmailOtp(email: string, code: string, role: "customer" | "provider") {
     return request<{
       success: boolean;
