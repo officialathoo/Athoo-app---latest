@@ -30,14 +30,22 @@ test("standalone scanner is bounded and fails closed on engine errors", () => {
   assert.match(scanner, /503/);
 });
 
-test("scanner container runs an isolated patched ClamAV engine and refreshes signatures", () => {
+test("scanner container runs supported Node 22 with patched ClamAV and refreshes signatures", () => {
   const dockerfile = source("Dockerfile.scanner");
   const entrypoint = source("services/upload-scanner/entrypoint.sh");
   const clamd = source("services/upload-scanner/clamd.conf");
+
+  assert.match(dockerfile, /FROM node:22-bookworm-slim AS node-runtime/);
   assert.match(dockerfile, /FROM clamav\/clamav:1\.4\.5-debian13-slim/);
+  assert.match(
+    dockerfile,
+    /COPY --from=node-runtime \/usr\/local\/bin\/node \/usr\/local\/bin\/node/,
+  );
+  assert.doesNotMatch(dockerfile, /apt-get install[\s\S]*nodejs/);
   assert.match(dockerfile, /HEALTHCHECK/);
   assert.match(dockerfile, /http:\/\/127\.0\.0\.1:8080\/healthz/);
   assert.doesNotMatch(dockerfile, /\[http:\/\/|\]\(/);
+
   assert.match(entrypoint, /freshclam --stdout/);
   assert.match(entrypoint, /freshclam --daemon/);
   assert.match(entrypoint, /clamd --config-file/);
