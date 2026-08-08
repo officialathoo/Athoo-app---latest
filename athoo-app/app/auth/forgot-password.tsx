@@ -108,6 +108,7 @@ export default function ForgotPasswordScreen() {
       setLoading(true);
       const res = await postJson("/api/auth/forgot-password/send-otp", {
         identifier: trimmed,
+        role: safeRole,
       });
 
       if (__DEV__ && res?.code) {

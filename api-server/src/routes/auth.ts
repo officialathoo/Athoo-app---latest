@@ -1456,11 +1456,19 @@ router.post("/set-password", requireAuth, async (req: AuthRequest, res: Response
 // 1. Send reset OTP (accepts phone OR email as identifier)
 router.post("/forgot-password/send-otp", async (req, res) => {
   try {
-    const { phone, email, identifier } = req.body;
+    const { phone, email, identifier, role: rawRole } = req.body;
     const rawInput = String(identifier || phone || email || "").trim();
 
     if (!rawInput || rawInput.length < 3) {
       return res.status(400).json({ error: "A valid phone number or email address is required" });
+    }
+
+    const expectedRole = rawRole === undefined ? null : cleanRole(String(rawRole));
+    if (rawRole !== undefined && !expectedRole) {
+      return res.status(400).json({
+        error: "Select Customer or Provider before requesting a password reset.",
+        code: "ROLE_REQUIRED",
+      });
     }
 
     const isEmail = rawInput.includes("@");
@@ -1473,7 +1481,11 @@ router.post("/forgot-password/send-otp", async (req, res) => {
         return res.status(400).json({ error: "Please enter a valid phone number or email address" });
       }
       const matchingUser = await db.query.usersTable.findFirst({
-        where: and(normalizedEmailCondition(cleanedEmail), eq(usersTable.emailVerified, true)),
+        where: and(
+          normalizedEmailCondition(cleanedEmail),
+          eq(usersTable.emailVerified, true),
+          expectedRole ? eq(usersTable.role, expectedRole) : undefined,
+        ),
       });
       // Keep the response generic, but never deliver recovery codes to an
       // unverified email address.
@@ -1490,7 +1502,10 @@ router.post("/forgot-password/send-otp", async (req, res) => {
         return res.status(400).json({ error: "Please enter a valid phone number or email address" });
       }
       user = await db.query.usersTable.findFirst({
-        where: eq(usersTable.phone, normalizedPhone),
+        where: and(
+          eq(usersTable.phone, normalizedPhone),
+          expectedRole ? eq(usersTable.role, expectedRole) : undefined,
+        ),
       });
     }
 
