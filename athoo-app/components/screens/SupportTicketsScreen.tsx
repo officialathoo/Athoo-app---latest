@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -47,6 +47,9 @@ export function SupportTicketsScreen({ role }: { role: Role }) {
   const [replies, setReplies] = useState<Reply[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
+  const ticketsLoadInFlightRef = useRef(false);
+  const ticketsLoadedRef = useRef(false);
+  const ticketsLastLoadedAtRef = useRef(0);
 
   const statusStyles = useMemo(() => ({
     open: { bg: theme.colors.infoSoft, color: theme.colors.info },
@@ -63,23 +66,47 @@ export function SupportTicketsScreen({ role }: { role: Role }) {
     return tr("Open");
   }, [tr]);
 
-  const loadTickets = useCallback(async (quiet = false) => {
-    quiet ? setRefreshing(true) : setLoading(true);
-    setListError("");
+  const loadTickets = useCallback(async (
+    mode: "initial" | "refresh" | "retry" | "background" = "initial"
+  ) => {
+    if (ticketsLoadInFlightRef.current) return;
+    ticketsLoadInFlightRef.current = true;
+
+    const showInitialLoader =
+      (mode === "initial" || mode === "retry") && !ticketsLoadedRef.current;
+
+    if (showInitialLoader) setLoading(true);
+    if (mode === "refresh") setRefreshing(true);
+    if (mode !== "background") setListError("");
+
     try {
       const response = await api.getMySupportTickets();
       setTickets(Array.isArray(response.tickets) ? response.tickets : []);
+      ticketsLoadedRef.current = true;
+      ticketsLastLoadedAtRef.current = Date.now();
     } catch (caught) {
-      setListError(tr(apiErrorToMessage(caught, "We couldn't load your support tickets. Please try again.")));
+      if (mode !== "background") {
+        setListError(tr(apiErrorToMessage(caught, "We couldn't load your support tickets. Please try again.")));
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      ticketsLoadInFlightRef.current = false;
+      if (showInitialLoader) setLoading(false);
+      if (mode === "refresh") setRefreshing(false);
     }
   }, [tr]);
 
-  useFocusEffect(useCallback(() => {
-    void loadTickets();
-  }, [loadTickets]));
+  useFocusEffect(
+    useCallback(() => {
+      if (!ticketsLoadedRef.current) {
+        void loadTickets("initial");
+        return;
+      }
+
+      if (Date.now() - ticketsLastLoadedAtRef.current >= 30_000) {
+        void loadTickets("background");
+      }
+    }, [loadTickets])
+  );
 
   const loadDetail = useCallback(async (ticket: Ticket) => {
     setSelected(ticket);
@@ -207,7 +234,7 @@ export function SupportTicketsScreen({ role }: { role: Role }) {
           </View>
           <AppText variant="h2" align="center">{tr("Unable to load tickets")}</AppText>
           <AppText tone="secondary" align="center" style={styles.centerCopy}>{listError}</AppText>
-          <Button title={tr("Try again")} onPress={() => void loadTickets()} fullWidth style={styles.actionWidth} />
+          <Button title={tr("Try again")} onPress={() => void loadTickets("retry")} fullWidth style={styles.actionWidth} />
         </View>
       ) : tickets.length === 0 ? (
         <View style={[styles.fullCenter, responsiveContent]}>
@@ -223,7 +250,7 @@ export function SupportTicketsScreen({ role }: { role: Role }) {
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadTickets(true)} tintColor={accent} colors={[accent]} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadTickets("refresh")} tintColor={accent} colors={[accent]} />}
           contentContainerStyle={[styles.list, responsiveContent, { paddingBottom: insets.bottom + 36 }]}
         >
           {listError ? (
