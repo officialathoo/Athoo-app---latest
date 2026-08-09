@@ -11,15 +11,32 @@ interface AppCardProps {
   testID?: string;
 }
 
-export function AppCard({ children, onPress, padding = "lg", elevated = true, style, testID }: AppCardProps) {
+export function AppCard({
+  children,
+  onPress,
+  padding = "md",
+  elevated = false,
+  style,
+  testID,
+}: AppCardProps) {
   const { theme } = useTheme();
+
+  const resolvedPadding =
+    padding === "none"
+      ? 0
+      : padding === "sm"
+        ? theme.spacing.sm
+        : padding === "md"
+          ? theme.spacing.lg
+          : theme.spacing.xl;
+
   const cardStyle: StyleProp<ViewStyle> = [
     {
       backgroundColor: theme.colors.surface,
       borderColor: theme.colors.border,
-      borderRadius: theme.radius.lg,
+      borderRadius: theme.radius.md,
       borderWidth: 1,
-      padding: padding === "none" ? 0 : padding === "sm" ? theme.spacing.sm : padding === "md" ? theme.spacing.lg : theme.spacing.xl,
+      padding: resolvedPadding,
     },
     elevated && theme.shadows.sm,
     style,
@@ -31,12 +48,23 @@ export function AppCard({ children, onPress, padding = "lg", elevated = true, st
         testID={testID}
         accessibilityRole="button"
         onPress={onPress}
-        style={({ pressed }) => [cardStyle, pressed && { opacity: 0.92, transform: [{ scale: 0.995 }] }]}
+        style={({ pressed }) => [
+          cardStyle,
+          pressed && {
+            opacity: 0.96,
+            transform: [{ scale: 0.997 }],
+            backgroundColor: theme.colors.surfaceAlt,
+          },
+        ]}
       >
         {children}
       </Pressable>
     );
   }
 
-  return <View testID={testID} style={cardStyle}>{children}</View>;
+  return (
+    <View testID={testID} style={cardStyle}>
+      {children}
+    </View>
+  );
 }
