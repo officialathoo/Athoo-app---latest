@@ -1618,9 +1618,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 16,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
     backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
@@ -1656,21 +1656,21 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   scroll: { flex: 1 },
 
   content: {
-    padding: 20,
-    gap: 14,
+    padding: 16,
+    gap: 12,
     paddingBottom: 60,
   },
 
   card: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 18,
-    padding: 16,
+    borderRadius: 14,
+    padding: 14,
     shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
+    shadowOpacity: 0.05,
     shadowRadius: 8,
-    elevation: 2,
-    gap: 12,
+    elevation: 1,
+    gap: 10,
   },
 
   serviceRow: {
@@ -1680,8 +1680,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   serviceIcon: {
-    width: 50,
-    height: 50,
+    width: 44,
+    height: 44,
     borderRadius: 14,
     backgroundColor: theme.colors.secondary + "20",
     alignItems: "center",
@@ -1689,7 +1689,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   serviceName: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "800",
     color: theme.colors.text,
   },
@@ -1771,7 +1771,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignItems: "center",
     gap: 6,
     backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 20,
+    borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
@@ -1797,7 +1797,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 12,
-    padding: 12,
+    padding: 10,
     gap: 4,
   },
 
@@ -1830,7 +1830,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: theme.colors.primary + "30",
-    paddingVertical: 12,
+    paddingVertical: 10,
   },
 
   liveActionText: {
@@ -1841,8 +1841,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   trackingMap: {
     width: "100%",
-    height: 230,
-    borderRadius: 16,
+    height: 210,
+    borderRadius: 14,
     overflow: "hidden",
     marginBottom: 4,
   },
@@ -1877,7 +1877,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   locationBtn: {
-    marginTop: 14,
+    marginTop: 10,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -1886,7 +1886,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: theme.colors.primary + "30",
-    paddingVertical: 12,
+    paddingVertical: 10,
   },
 
   locationBtnText: {
@@ -1910,20 +1910,20 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   attachmentImage: {
     width: "100%",
-    height: 200,
+    height: 180,
     borderRadius: 12,
   },
 
   timerCard: {
     backgroundColor: theme.dark ? theme.colors.accentSoft : theme.colors.primaryPressed,
-    borderRadius: 18,
-    padding: 20,
-    gap: 16,
+    borderRadius: 14,
+    padding: 16,
+    gap: 12,
     shadowColor: theme.colors.accent,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.18,
     shadowRadius: 12,
-    elevation: 6,
+    elevation: 3,
   },
 
   timerHeader: {
@@ -1947,7 +1947,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   timerDisplay: {
-    fontSize: 48,
+    fontSize: 40,
     fontWeight: "800",
     color: theme.colors.onBrand,
     textAlign: "center",
@@ -1958,7 +1958,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     backgroundColor: "rgba(255,255,255,0.1)",
     borderRadius: 14,
-    padding: 12,
+    padding: 10,
     alignItems: "center",
   },
 
@@ -1995,11 +1995,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   actionRowWrap: {
     flexDirection: "row",
-    gap: 12,
+    gap: 10,
   },
 
   arrivedSection: {
-    gap: 12,
+    gap: 10,
   },
 
   otpInfo: {
@@ -2007,8 +2007,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignItems: "flex-start",
     gap: 10,
     backgroundColor: theme.colors.primary + "10",
-    borderRadius: 14,
-    padding: 14,
+    borderRadius: 12,
+    padding: 12,
     borderWidth: 1,
     borderColor: theme.colors.primary + "30",
   },

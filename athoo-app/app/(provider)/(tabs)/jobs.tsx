@@ -345,14 +345,14 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 10,
     backgroundColor: theme.colors.surface,
   },
 
   title: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "800",
     color: theme.colors.text,
     flex: 1,
@@ -373,9 +373,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   summaryRow: {
     flexDirection: "row",
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
@@ -383,13 +383,13 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   summaryCard: {
     flex: 1,
-    borderRadius: 12,
-    padding: 10,
+    borderRadius: 10,
+    padding: 8,
     alignItems: "center",
   },
 
   summaryNum: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "800",
   },
 
@@ -404,18 +404,18 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   filterContent: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 4,
-    gap: 8,
+    gap: 6,
   },
 
   filterChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 14,
+    borderRadius: 999,
     backgroundColor: theme.colors.background,
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -458,12 +458,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   scrollContent: {
     padding: 16,
     paddingBottom: 100,
-    gap: 12,
+    gap: 10,
   },
 
   empty: {
     alignItems: "center",
-    paddingVertical: 60,
+    paddingVertical: 42,
     gap: 10,
   },
 
@@ -481,16 +481,16 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   negCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 18,
-    padding: 16,
-    gap: 12,
+    borderRadius: 14,
+    padding: 14,
+    gap: 10,
     borderWidth: 1,
     borderColor: theme.colors.secondary + "30",
     shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
+    shadowOpacity: 0.05,
     shadowRadius: 8,
-    elevation: 2,
+    elevation: 1,
   },
 
   negCardPressed: {
@@ -504,8 +504,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   negIcon: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     borderRadius: 12,
     backgroundColor: theme.colors.secondary + "20",
     alignItems: "center",
@@ -543,7 +543,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 10,
-    padding: 10,
+    padding: 8,
     alignItems: "center",
     gap: 2,
   },
@@ -572,7 +572,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 5,
     backgroundColor: theme.colors.success,
     borderRadius: 10,
-    paddingVertical: 8,
+    paddingVertical: 7,
   },
 
   negAcceptText: {
@@ -589,7 +589,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 5,
     backgroundColor: theme.colors.secondary + "15",
     borderRadius: 10,
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderWidth: 1,
     borderColor: theme.colors.secondary + "40",
   },
@@ -608,7 +608,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 5,
     backgroundColor: theme.colors.danger + "10",
     borderRadius: 10,
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderWidth: 1,
     borderColor: theme.colors.danger + "30",
   },

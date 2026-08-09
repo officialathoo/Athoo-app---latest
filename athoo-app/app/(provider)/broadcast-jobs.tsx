@@ -592,39 +592,39 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
 
   header: {
-    backgroundColor: theme.colors.surface, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 14,
+    backgroundColor: theme.colors.surface, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10,
     flexDirection: "row", alignItems: "center", gap: 12,
     borderBottomWidth: 1, borderBottomColor: theme.colors.border,
   },
   backBtn: {
-    width: 40, height: 40, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt,
+    width: 36, height: 36, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center", justifyContent: "center",
   },
   headerTitle: { fontSize: 17, fontWeight: "800", color: theme.colors.text },
   headerSub: { fontSize: 12, color: theme.colors.textMuted, marginTop: 1 },
 
   countBadge: {
-    backgroundColor: theme.colors.secondary, width: 28, height: 28, borderRadius: 14,
+    backgroundColor: theme.colors.secondary, width: 26, height: 26, borderRadius: 13,
     alignItems: "center", justifyContent: "center",
   },
   countBadgeText: { fontSize: 13, fontWeight: "800", color: theme.colors.onBrand },
 
   emptyCard: {
-    alignItems: "center", padding: 40, gap: 12,
-    backgroundColor: theme.colors.surface, borderRadius: 20, borderWidth: 1, borderColor: theme.colors.border,
+    alignItems: "center", padding: 32, gap: 12,
+    backgroundColor: theme.colors.surface, borderRadius: 16, borderWidth: 1, borderColor: theme.colors.border,
   },
   emptyTitle: { fontSize: 18, fontWeight: "800", color: theme.colors.text },
   emptyText: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center", lineHeight: 20 },
 
   reqCard: {
-    backgroundColor: theme.colors.surface, borderRadius: 18, padding: 16, gap: 12,
+    backgroundColor: theme.colors.surface, borderRadius: 14, padding: 14, gap: 10,
     borderWidth: 1, borderColor: theme.colors.border,
-    shadowColor: theme.colors.text, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
+    shadowColor: theme.colors.text, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.025, shadowRadius: 8, elevation: 1,
   },
 
   reqHeader: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
-  reqCatIcon: { width: 44, height: 44, borderRadius: 13, alignItems: "center", justifyContent: "center" },
-  reqService: { fontSize: 16, fontWeight: "800", color: theme.colors.text },
+  reqCatIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  reqService: { fontSize: 15, fontWeight: "800", color: theme.colors.text },
   reqMeta: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
   reqMetaText: { flex: 1, fontSize: 12, color: theme.colors.textSecondary },
   timerBox: { flexDirection: "row", alignItems: "center", gap: 4 },
@@ -636,14 +636,14 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   customerOfferBox: {
     flexDirection: "column", alignItems: "flex-start", justifyContent: "flex-start",
-    backgroundColor: theme.colors.secondary + "12", borderRadius: 12, padding: 12,
+    backgroundColor: theme.colors.secondary + "12", borderRadius: 10, padding: 10,
     borderWidth: 1, borderColor: theme.colors.secondary + "30",
   },
   offerLabel: { fontSize: 12, fontWeight: "600", color: theme.colors.textSecondary },
-  offerAmt: { fontSize: 22, fontWeight: "800", color: theme.colors.secondary, flexShrink: 1, flexWrap: "wrap" },
+  offerAmt: { fontSize: 20, fontWeight: "800", color: theme.colors.secondary, flexShrink: 1, flexWrap: "wrap" },
 
   openPriceBox: {
-    flexDirection: "row", alignItems: "center", gap: 6, padding: 10,
+    flexDirection: "row", alignItems: "center", gap: 6, padding: 9,
     backgroundColor: theme.colors.surfaceAlt, borderRadius: 10,
   },
   openPriceText: { fontSize: 12, color: theme.colors.textMuted, fontWeight: "600", lineHeight: 17, flexShrink: 1 },
@@ -652,7 +652,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   respCountText: { fontSize: 12, color: theme.colors.textMuted },
 
   myRespBox: {
-    backgroundColor: theme.colors.success + "10", borderRadius: 12, padding: 12, gap: 8,
+    backgroundColor: theme.colors.success + "10", borderRadius: 12, padding: 10, gap: 7,
     borderWidth: 1, borderColor: theme.colors.success + "30",
   },
   myRespHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -665,20 +665,20 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   withdrawText: { fontSize: 12, fontWeight: "700", color: theme.colors.danger },
 
   rejectedResponseBox: {
-    backgroundColor: theme.colors.danger + "0D", borderRadius: 12, padding: 12, gap: 10,
+    backgroundColor: theme.colors.danger + "0D", borderRadius: 12, padding: 10, gap: 8,
     borderWidth: 1, borderColor: theme.colors.danger + "30",
   },
   rejectedResponseTitle: { flex: 1, fontSize: 13, fontWeight: "800", color: theme.colors.danger },
   rejectedResponseText: { fontSize: 12, color: theme.colors.textSecondary, lineHeight: 18 },
   responseActionRow: { flexDirection: "row", alignItems: "stretch", gap: 10 },
   acceptOfferBtn: {
-    flex: 1.35, minHeight: 46, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
+    flex: 1.35, minHeight: 42, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
     backgroundColor: theme.colors.success, borderRadius: 12, paddingHorizontal: 10,
   },
   acceptOfferText: { fontSize: 13, fontWeight: "800", color: theme.colors.onBrand, textAlign: "center" },
   counterOfferBtn: {
-    flex: 1, minHeight: 46, alignItems: "center", justifyContent: "center",
-    backgroundColor: theme.colors.surface, borderRadius: 12, borderWidth: 1.5, borderColor: theme.colors.secondary,
+    flex: 1, minHeight: 42, alignItems: "center", justifyContent: "center",
+    backgroundColor: theme.colors.surface, borderRadius: 12, borderWidth: 1, borderColor: theme.colors.secondary,
     paddingHorizontal: 10,
   },
   counterOfferText: { fontSize: 13, fontWeight: "800", color: theme.colors.secondary, textAlign: "center" },
@@ -690,36 +690,36 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   closedResponseText: { flex: 1, fontSize: 12, color: theme.colors.textSecondary, lineHeight: 17 },
 
-  respondForm: { gap: 8 },
+  respondForm: { gap: 7},
   formTitle: { fontSize: 15, fontWeight: "800", color: theme.colors.text },
   formHint: { fontSize: 11, color: theme.colors.textMuted, lineHeight: 16 },
   formLabel: { fontSize: 12, fontWeight: "700", color: theme.colors.text },
   formPriceRow: {
     flexDirection: "row", alignItems: "center", gap: 8,
-    backgroundColor: theme.colors.surfaceAlt, borderRadius: 12, borderWidth: 1.5,
+    backgroundColor: theme.colors.surfaceAlt, borderRadius: 12, borderWidth: 1,
     borderColor: theme.colors.secondary, paddingHorizontal: 12, paddingVertical: 4,
   },
   formRs: { fontSize: 18, fontWeight: "800", color: theme.colors.secondary },
-  formPriceInput: { flex: 1, fontSize: 22, fontWeight: "800", color: theme.colors.text, paddingVertical: 8 },
+  formPriceInput: { flex: 1, fontSize: 20, fontWeight: "800", color: theme.colors.text, paddingVertical: 8 },
   formMsgInput: {
-    backgroundColor: theme.colors.surface, borderRadius: 12, borderWidth: 1.5, borderColor: theme.colors.border,
-    padding: 12, fontSize: 13, color: theme.colors.text, textAlignVertical: "top", minHeight: 72,
+    backgroundColor: theme.colors.surface, borderRadius: 12, borderWidth: 1, borderColor: theme.colors.border,
+    padding: 10, fontSize: 13, color: theme.colors.text, textAlignVertical: "top", minHeight: 64,
   },
   cancelFormBtn: {
-    flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 12,
-    borderRadius: 12, borderWidth: 1.5, borderColor: theme.colors.border,
+    flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 10,
+    borderRadius: 12, borderWidth: 1, borderColor: theme.colors.border,
   },
   cancelFormText: { fontSize: 14, fontWeight: "700", color: theme.colors.textSecondary },
   submitBtn: {
     flex: 2, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: theme.colors.secondary, borderRadius: 12, paddingVertical: 12,
+    backgroundColor: theme.colors.secondary, borderRadius: 12, paddingVertical: 10,
   },
   submitBtnDisabled: { opacity: 0.6 },
   submitText: { fontSize: 14, fontWeight: "800", color: theme.colors.onBrand },
 
   respondBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: theme.colors.secondary, borderRadius: 12, paddingVertical: 14,
+    backgroundColor: theme.colors.secondary, borderRadius: 12, paddingVertical: 12,
   },
   respondBtnText: { fontSize: 14, fontWeight: "800", color: theme.colors.onBrand },
   videoModalOverlay: {
