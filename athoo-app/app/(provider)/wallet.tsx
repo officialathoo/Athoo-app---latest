@@ -7,7 +7,7 @@ import { AthooTheme } from "@/design/theme";
 import { api } from "@/services/api";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -42,29 +42,64 @@ export default function WalletScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const loadRequestInFlightRef = useRef(false);
+  const walletLoadedRef = useRef(false);
+  const walletLastLoadedAtRef = useRef(0);
 
-  async function load() {
-    setError(null);
+  const load = useCallback(async (
+    mode: "initial" | "refresh" | "retry" | "background" = "initial"
+  ) => {
+    if (loadRequestInFlightRef.current) return;
+
+    loadRequestInFlightRef.current = true;
+    const showInitialLoader =
+      (mode === "initial" || mode === "retry") && !walletLoadedRef.current;
+
+    if (showInitialLoader) {
+      setLoading(true);
+    } else if (mode === "refresh") {
+      setRefreshing(true);
+    }
+
+    if (mode !== "background") {
+      setError(null);
+    }
+
     try {
       const [bookingResponse] = await Promise.all([
         api.getBookings(),
         refreshUser().catch(() => undefined),
       ]);
       setBookings((bookingResponse?.bookings || []) as Booking[]);
+      walletLoadedRef.current = true;
+      walletLastLoadedAtRef.current = Date.now();
     } catch (loadError: any) {
-      setError(loadError?.message || tr("Could not load wallet. Please try again."));
+      if (mode !== "background") {
+        setError(loadError?.message || tr("Could not load wallet. Please try again."));
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      loadRequestInFlightRef.current = false;
+      if (showInitialLoader) setLoading(false);
+      if (mode === "refresh") setRefreshing(false);
     }
-  }
+  }, [refreshUser, tr]);
 
-  useFocusEffect(useCallback(() => { load(); }, []));
+  useFocusEffect(
+    useCallback(() => {
+      if (!walletLoadedRef.current) {
+        void load("initial");
+        return;
+      }
 
-  function onRefresh() {
-    setRefreshing(true);
-    load();
-  }
+      if (Date.now() - walletLastLoadedAtRef.current >= 30_000) {
+        void load("background");
+      }
+    }, [load])
+  );
+
+  const onRefresh = useCallback(() => {
+    void load("refresh");
+  }, [load]);
 
   const completed = bookings.filter((booking) => booking.status === "completed");
   const totalEarned = completed.reduce((sum, booking) => sum + Number(booking.providerAmount || 0), 0);
@@ -152,7 +187,7 @@ export default function WalletScreen() {
               <Text style={styles.errorText}>{error}</Text>
             </View>
             <Pressable
-              onPress={load}
+              onPress={() => void load("retry")}
               style={({ pressed }) => [styles.retryBtn, pressed && styles.pressed]}
               accessibilityRole="button"
               accessibilityLabel={tr("Retry")}
