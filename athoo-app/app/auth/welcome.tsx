@@ -75,13 +75,14 @@ export default function WelcomeScreen() {
         ? t.biometricFingerprintHint
         : "Use the biometric method enrolled on this phone.";
 
-  const gradientEnd = theme.dark ? theme.colors.background : theme.colors.primaryPressed;
+  const gradientStart = theme.dark ? "#07111F" : theme.colors.primaryPressed;
+  const gradientEnd = theme.dark ? "#0B1F35" : theme.colors.primary;
 
   return (
     <LinearGradient
-      colors={[theme.colors.primary, gradientEnd]}
-      start={{ x: 0.08, y: 0 }}
-      end={{ x: 0.92, y: 1 }}
+      colors={[gradientStart, gradientEnd]}
+      start={{ x: 0.12, y: 0 }}
+      end={{ x: 0.88, y: 1 }}
       style={styles.gradient}
       testID="welcome-screen"
     >
@@ -230,53 +231,60 @@ function createStyles(theme: AthooTheme) {
   return StyleSheet.create({
     gradient: { flex: 1, overflow: "hidden" },
     orbTop: {
-      position: "absolute", width: 260, height: 260, borderRadius: 130,
-      top: -100, right: -90, backgroundColor: "rgba(255,255,255,0.08)",
+      position: "absolute", width: 320, height: 320, borderRadius: 160,
+      top: -150, right: -120, backgroundColor: "rgba(56,189,248,0.14)",
     },
     orbBottom: {
-      position: "absolute", width: 220, height: 220, borderRadius: 110,
-      bottom: -110, left: -90, backgroundColor: "rgba(249,115,22,0.14)",
+      position: "absolute", width: 260, height: 260, borderRadius: 130,
+      bottom: -145, left: -105, backgroundColor: "rgba(249,115,22,0.16)",
     },
     container: {
       flexGrow: 1,
       width: "100%",
-      maxWidth: 540,
+      maxWidth: 520,
       alignSelf: "center",
       justifyContent: "space-between",
-      paddingHorizontal: 22,
-      gap: 22,
+      paddingHorizontal: 20,
+      gap: 18,
     },
-    brandSection: { alignItems: "center", gap: 18 },
+    brandSection: { alignItems: "center", gap: 14, paddingTop: 2 },
     logoHalo: {
-      width: 132, height: 132, borderRadius: 38,
-      backgroundColor: "rgba(255,255,255,0.10)",
-      borderWidth: 1, borderColor: "rgba(255,255,255,0.22)",
+      width: 116, height: 116, borderRadius: 34,
+      backgroundColor: "rgba(255,255,255,0.08)",
+      borderWidth: 1, borderColor: "rgba(255,255,255,0.18)",
       alignItems: "center", justifyContent: "center",
+      shadowColor: "#38BDF8", shadowOpacity: 0.20, shadowRadius: 22,
+      shadowOffset: { width: 0, height: 8 }, elevation: 8,
     },
     logoContainer: {
-      width: 112, height: 112, borderRadius: 30,
+      width: 94, height: 94, borderRadius: 27,
       backgroundColor: theme.colors.white,
       overflow: "hidden",
       borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.75)",
+      borderColor: "rgba(255,255,255,0.82)",
       ...theme.shadows.md,
     },
-    logoImage: { width: "100%", height: "100%", borderRadius: 29 },
-    titleBlock: { alignItems: "center", gap: 7, maxWidth: 390 },
-    tagline: { fontSize: 24, lineHeight: 30, letterSpacing: -0.35 },
-    subTagline: { opacity: 0.78, maxWidth: 330 },
+    logoImage: { width: "100%", height: "100%", borderRadius: 26 },
+    titleBlock: { alignItems: "center", gap: 5, maxWidth: 390 },
+    tagline: { fontSize: 25, lineHeight: 31, letterSpacing: -0.45 },
+    subTagline: { opacity: 0.72, maxWidth: 340, lineHeight: 18 },
     actionPanel: {
-      borderRadius: 24,
-      padding: 18,
-      gap: 16,
-      backgroundColor: "rgba(8,17,31,0.18)",
+      borderRadius: 26,
+      padding: 17,
+      gap: 15,
+      backgroundColor: "rgba(4,12,24,0.72)",
       borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.18)",
+      borderColor: "rgba(148,163,184,0.22)",
+      shadowColor: "#000",
+      shadowOpacity: 0.28,
+      shadowRadius: 26,
+      shadowOffset: { width: 0, height: 14 },
+      elevation: 12,
     },
-    panelHeading: { gap: 4 },
-    eyebrow: { opacity: 0.66, letterSpacing: 1.25, fontSize: 10 },
-    panelDescription: { opacity: 0.74, marginTop: 2 },
-    actionStack: { gap: 10 },
+    panelHeading: { gap: 4, paddingHorizontal: 2 },
+    eyebrow: { opacity: 0.56, letterSpacing: 1.45, fontSize: 9.5 },
+    panelDescription: { opacity: 0.68, marginTop: 1 },
+    actionStack: { gap: 9 },
     primaryAction: {
       minHeight: 62,
       borderRadius: 17,

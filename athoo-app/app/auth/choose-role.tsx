@@ -1,11 +1,12 @@
 import { AppText } from "@/components/design";
 import { Icon } from "@/components/ui/Icon";
+import { brandConfig } from "@/config/brand";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useMemo } from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Image, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function ChooseRoleScreen() {
@@ -57,6 +58,14 @@ export default function ChooseRoleScreen() {
         </View>
 
         <View style={styles.heading}>
+          <View style={styles.brandMarkWrap}>
+            <Image
+              source={brandConfig.assets.mark}
+              style={styles.brandMark}
+              resizeMode="contain"
+              accessibilityLabel="Athoo logo"
+            />
+          </View>
           <AppText variant="h1" tone="inverse" align="center">
             {mode === "signin" ? "How do you use Athoo?" : "Choose your account type"}
           </AppText>
@@ -168,37 +177,50 @@ function createStyles(theme: AthooTheme) {
     },
     modeBadgeText: { fontSize: 10, letterSpacing: 1.05, opacity: 0.88 },
     topSpacer: { width: 40 },
-    heading: { alignItems: "center", gap: 7, paddingHorizontal: 8, marginTop: 2 },
-    subtitle: { opacity: 0.76, maxWidth: 390 },
-    selectionPanel: {
-      marginTop: 6,
-      borderRadius: 24,
-      padding: 16,
-      gap: 13,
-      backgroundColor: theme.colors.surface,
-      borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.58)",
-      ...theme.shadows.lg,
+    heading: { alignItems: "center", gap: 7, paddingHorizontal: 8, marginTop: 0 },
+    brandMarkWrap: {
+      width: 82, height: 82, borderRadius: 24,
+      backgroundColor: "rgba(255,255,255,0.96)",
+      borderWidth: 1, borderColor: "rgba(255,255,255,0.90)",
+      alignItems: "center", justifyContent: "center",
+      marginBottom: 5,
+      ...theme.shadows.md,
     },
-    sectionLabel: { fontSize: 10, letterSpacing: 1.15 },
-    cards: { gap: 10 },
+    brandMark: { width: 68, height: 68 },
+    subtitle: { opacity: 0.70, maxWidth: 390 },
+    selectionPanel: {
+      marginTop: 4,
+      borderRadius: 25,
+      padding: 15,
+      gap: 12,
+      backgroundColor: "rgba(4,12,24,0.76)",
+      borderWidth: 1,
+      borderColor: "rgba(148,163,184,0.22)",
+      shadowColor: "#000",
+      shadowOpacity: 0.24,
+      shadowRadius: 24,
+      shadowOffset: { width: 0, height: 12 },
+      elevation: 10,
+    },
+    sectionLabel: { fontSize: 9.5, letterSpacing: 1.2, color: "rgba(226,232,240,0.58)" },
+    cards: { gap: 9 },
     roleCard: {
-      minHeight: 94,
+      minHeight: 90,
       borderRadius: 18,
       borderWidth: 1,
-      borderColor: theme.colors.border,
-      paddingVertical: 12,
-      paddingLeft: 16,
-      paddingRight: 12,
+      borderColor: "rgba(148,163,184,0.18)",
+      paddingVertical: 11,
+      paddingLeft: 15,
+      paddingRight: 11,
       flexDirection: "row",
       alignItems: "center",
       gap: 11,
-      backgroundColor: theme.colors.surfaceAlt,
+      backgroundColor: "rgba(255,255,255,0.07)",
       overflow: "hidden",
     },
     accentBar: { position: "absolute", left: 0, top: 15, bottom: 15, width: 3, borderRadius: 3 },
-    roleIcon: { width: 48, height: 48, borderRadius: 15, alignItems: "center", justifyContent: "center" },
-    copy: { flex: 1, minWidth: 0, gap: 5 },
+    roleIcon: { width: 46, height: 46, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+    copy: { flex: 1, minWidth: 0, gap: 4 },
     chevronCircle: {
       width: 30, height: 30, borderRadius: 15,
       alignItems: "center", justifyContent: "center",
