@@ -401,12 +401,18 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   filterScroll: {
     backgroundColor: theme.colors.surface,
+    flexGrow: 0,
+    flexShrink: 0,
+    height: 44,
+    maxHeight: 44,
   },
 
   filterContent: {
     paddingHorizontal: 14,
     paddingVertical: 4,
     gap: 6,
+    alignItems: "center",
+    minHeight: 44,
   },
 
   filterChip: {

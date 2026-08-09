@@ -934,16 +934,16 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   referralCard: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    backgroundColor: theme.colors.primary + "10", borderRadius: 18,
-    paddingVertical: 26, paddingHorizontal: 26, marginHorizontal: 20, marginBottom: 12,
-    borderWidth: 1.5, borderColor: theme.colors.primary + "30",
+    backgroundColor: theme.colors.primary + "10", borderRadius: 14,
+    paddingVertical: 12, paddingHorizontal: 14, marginHorizontal: 14, marginBottom: 10,
+    borderWidth: 1, borderColor: theme.colors.primary + "30",
     shadowColor: theme.colors.primary, shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08, shadowRadius: 8, elevation: 2,
   },
-  referralLeft: { flex: 1, minWidth: 0, gap: 10, paddingRight: 22 },
-  referralTitle: { fontSize: 15, fontWeight: "800", color: theme.colors.text },
+  referralLeft: { flex: 1, minWidth: 0, gap: 4, paddingRight: 10 },
+  referralTitle: { fontSize: 14, fontWeight: "800", color: theme.colors.text },
   referralSub: { fontSize: 11, color: theme.colors.textSecondary, lineHeight: 16 },
-  referralCodeRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", columnGap: 14, rowGap: 12, marginTop: 10, paddingRight: 8 },
+  referralCodeRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", columnGap: 8, rowGap: 6, marginTop: 4, paddingRight: 4 },
   referralCode: {
     fontSize: 18, fontWeight: "900", color: theme.colors.primary,
     letterSpacing: 1.2, fontVariant: ["tabular-nums"], flexShrink: 1,
@@ -955,8 +955,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderWidth: 1, borderColor: theme.colors.primary + "40",
   },
   shareCodeText: { fontSize: 12, fontWeight: "700", color: theme.colors.primary },
-  referralRight: { alignItems: "center", justifyContent: "center", gap: 4, marginLeft: 18, minWidth: 72, paddingLeft: 18, paddingRight: 4, borderLeftWidth: 1, borderLeftColor: theme.colors.primary + "25" },
-  referralCount: { fontSize: 30, fontWeight: "900", color: theme.colors.primary },
+  referralRight: { alignItems: "center", justifyContent: "center", gap: 2, marginLeft: 8, minWidth: 48, paddingLeft: 10, paddingRight: 2, borderLeftWidth: 1, borderLeftColor: theme.colors.primary + "25" },
+  referralCount: { fontSize: 20, fontWeight: "900", color: theme.colors.primary },
   referralCountLbl: { fontSize: 10, fontWeight: "600", color: theme.colors.textSecondary },
 
   avatarOptLabel: {

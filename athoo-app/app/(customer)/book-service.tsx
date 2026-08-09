@@ -270,7 +270,7 @@ export default function BookServiceScreen() {
       showError("Confirm service area", "Athoo could not confirm the city and area for this pin. Search the exact address or move the pin slightly and try again.");
     }
     if (selection.accuracy != null) {
-      setGpsAccuracyText(`GPS: Â±${Math.round(selection.accuracy)} m`);
+      setGpsAccuracyText(`GPS: ±${Math.round(selection.accuracy)} m`);
     } else {
       setGpsAccuracyText("");
     }
@@ -278,7 +278,7 @@ export default function BookServiceScreen() {
 
   const detectCurrentLocation = async () => {
     setLoadingAddress(true);
-    setGpsAccuracyText("Acquiring GPSâ€¦");
+    setGpsAccuracyText("Acquiring GPS…");
     try {
       const result = await getFastForegroundLocation({
         timeoutMs: 12_000,
@@ -297,7 +297,7 @@ export default function BookServiceScreen() {
       }
 
       if (result.location.accuracy != null) {
-        setGpsAccuracyText(`GPS: Â±${Math.round(result.location.accuracy)} m${result.stale ? " (cached)" : ""}`);
+        setGpsAccuracyText(`GPS: ±${Math.round(result.location.accuracy)} m${result.stale ? " (cached)" : ""}`);
       }
       const coords = { latitude: result.location.latitude, longitude: result.location.longitude };
       setUserLocation(coords);
@@ -328,7 +328,7 @@ export default function BookServiceScreen() {
     if (!label.includes(",")) return true;
     const parts = label.split(",").map((s) => s.trim()).filter(Boolean);
     if (parts.length >= 3) return false; // road + area + city = good
-    // All parts identical â†’ city repeated
+    // All parts identical → city repeated
     const unique = new Set(parts.map((p) => p.toLowerCase()));
     if (unique.size === 1) return true;
     // All parts are admin-area words
@@ -341,16 +341,16 @@ export default function BookServiceScreen() {
    * Reverse geocode with the best source available on the device.
    *
    * Priority:
-   *  1. Device OS geocoder â€” the device geocoder available on the operating system.
+   *  1. Device OS geocoder — the device geocoder available on the operating system.
    *     These both have real street/neighbourhood data for Pakistan.
-   *  2. Server Nominatim proxy â€” fallback when OS geocoder is too vague.
-   *  3. Raw coordinates â€” last resort; always prompts for manual entry.
+   *  2. Server Nominatim proxy — fallback when OS geocoder is too vague.
+   *  3. Raw coordinates — last resort; always prompts for manual entry.
    */
   const smartReverseGeocode = async (
     lat: number,
     lng: number,
   ): Promise<{ label: string; cityOnly: boolean }> => {
-    // 1. Device OS geocoder â€” best on-device map data (device)
+    // 1. Device OS geocoder — best on-device map data (device)
     try {
       const deviceLabel = await deviceReversGeocode(lat, lng);
       if (deviceLabel && !isCityOnly(deviceLabel)) {
@@ -362,7 +362,7 @@ export default function BookServiceScreen() {
       if (serverLabel && !isCityOnly(serverLabel) && !serverIsCoords) {
         return { label: serverLabel, cityOnly: false };
       }
-      // Both sources vague â€” use device result (cleaner) + flag for manual prompt
+      // Both sources vague — use device result (cleaner) + flag for manual prompt
       const best = deviceLabel && !serverIsCoords ? deviceLabel : serverLabel ?? deviceLabel;
       if (best && !serverIsCoords) return { label: best, cityOnly: true };
       if (deviceLabel) return { label: deviceLabel, cityOnly: true };
@@ -511,7 +511,7 @@ export default function BookServiceScreen() {
       const stored = await AsyncStorage.getItem(LIVE_LOCATION_CONSENT_KEY);
       if (stored === "1") return true;
     } catch {
-      // If storage fails, fall through and ask â€” better safe.
+      // If storage fails, fall through and ask — better safe.
     }
     return new Promise<boolean>((resolve) => {
       pendingSubmitRef.current = () => resolve(true);
@@ -561,7 +561,7 @@ export default function BookServiceScreen() {
       return;
     }
 
-    // First-time live-location consent â€” explicit modal before the user's
+    // First-time live-location consent — explicit modal before the user's
     // first ever booking so they understand the provider will be able to see
     // their location while the job is active. Stored locally; only asked once.
     const disclaimerAccepted = await ensureMaterialsDisclaimer();
@@ -598,7 +598,7 @@ export default function BookServiceScreen() {
 
       const parsedTravelCharge = travelCharge.trim() ? Math.max(0, parseInt(travelCharge, 10) || 0) : 500;
 
-      const finalAddress = [address.trim(), manualDetails.trim()].filter(Boolean).join(" â€” ");
+      const finalAddress = [address.trim(), manualDetails.trim()].filter(Boolean).join(" — ");
 
       if (isDirectBooking && paramProviderId) {
         if (!directBookingRequestIdRef.current) {
@@ -718,7 +718,7 @@ export default function BookServiceScreen() {
         </Pressable>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Book a Service</Text>
-          <Text style={styles.headerSub}>{STEPS[step]} Â· Step {step + 1} of {STEPS.length}</Text>
+          <Text style={styles.headerSub}>{STEPS[step]} · Step {step + 1} of {STEPS.length}</Text>
         </View>
         <View style={{ width: 190 }}>
           <BookingProgress
@@ -870,7 +870,7 @@ export default function BookServiceScreen() {
                 ? <ActivityIndicator size="small" color={theme.colors.primary} />
                 : <Icon name="navigation" size={15} color={theme.colors.primary} />}
               <Text style={styles.detectText}>
-                {loadingAddress ? (gpsAccuracyText || "Detecting locationâ€¦") : "Use Current Location"}
+                {loadingAddress ? (gpsAccuracyText || "Detecting location…") : "Use Current Location"}
               </Text>
             </Pressable>
 
@@ -889,7 +889,7 @@ export default function BookServiceScreen() {
                   <Icon name="check-circle" size={13} color={theme.colors.success} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.addrLabel}>
-                      {reversingGeo ? "Updating addressâ€¦" : "Detected address"}
+                      {reversingGeo ? "Updating address…" : "Detected address"}
                     </Text>
                     <Text style={styles.addrText}>{address}</Text>
                     <Text style={styles.coordsText}>
@@ -900,7 +900,7 @@ export default function BookServiceScreen() {
               </View>
             )}
 
-            {/* Manual address details â€” always shown when a location is set */}
+            {/* Manual address details — always shown when a location is set */}
             {(userLocation || address.trim().length > 5) && (
               <View style={styles.manualCard}>
                 <View style={styles.manualCardHeader}>
@@ -911,13 +911,13 @@ export default function BookServiceScreen() {
                   <Text style={styles.optionalTag}> optional</Text>
                 </View>
                 <Text style={styles.manualCardHint}>
-                  e.g. "House 12, Street 3" Â· "Near Rehan School" Â· "2nd floor, Azizabad"
+                  e.g. "House 12, Street 3" · "Near Rehan School" · "2nd floor, Azizabad"
                 </Text>
                 <TextInput
                   style={styles.manualInput}
                   value={manualDetails}
                   onChangeText={setManualDetails}
-                  placeholder="House no., street, floor, shop name, landmarkâ€¦"
+                  placeholder="House no., street, floor, shop name, landmark…"
                   placeholderTextColor={theme.colors.textMuted}
                   returnKeyType="done"
                   maxLength={120}
@@ -963,7 +963,7 @@ export default function BookServiceScreen() {
               />
             </View>
 
-            <Text style={styles.fieldLabel}>Attach a Video (optional Â· max 30s)</Text>
+            <Text style={styles.fieldLabel}>Attach a Video (optional · max 30s)</Text>
             <Text style={styles.fieldHint}>A short clip helps providers understand the job better</Text>
 
             {videoUri ? (
@@ -1034,14 +1034,14 @@ export default function BookServiceScreen() {
             <View style={styles.materialsWarning}>
               <View style={styles.materialsWarningHeader}>
                 <Icon name="alert-triangle" size={15} color={theme.colors.warning} />
-                <Text style={styles.materialsWarningTitle}>Important â€” Materials Not Included</Text>
+                <Text style={styles.materialsWarningTitle}>Important — Materials Not Included</Text>
               </View>
               <Text style={styles.materialsWarningText}>
                 The service price covers <Text style={{ fontWeight: "700" }}>labor/service charges only</Text>. Materials, spare parts, gas refilling, consumables, and replacement items are <Text style={{ fontWeight: "700" }}>not included</Text>. Any material arrangements are directly between you and the provider. Athoo is not responsible for material payments, warranties, or disputes.
               </Text>
             </View>
 
-            {/* Hourly rate info card â€” rate comes from the provider's profile, never a platform/category default */}
+            {/* Hourly rate info card — rate comes from the provider's profile, never a platform/category default */}
             {(() => {
               const providerRateNum = paramProviderRate ? parseInt(paramProviderRate, 10) : 0;
               if (isDirectBooking) {
@@ -1096,7 +1096,7 @@ export default function BookServiceScreen() {
             })()}
 
             <Text style={styles.heading}>Set your per-hour offer rate</Text>
-            <Text style={styles.sub}>Enter the hourly labor/service rate only. Do not enter the full service total here. Final invoice = hourly rate Ã— actual job time + travel charges.</Text>
+            <Text style={styles.sub}>Enter the hourly labor/service rate only. Do not enter the full service total here. Final invoice = hourly rate × actual job time + travel charges.</Text>
 
             <View style={styles.offerWrap}>
               <Text style={styles.rsSign}>Rs.</Text>
@@ -1206,7 +1206,7 @@ export default function BookServiceScreen() {
                     {appliedPromo.discountType === "fixed"
                       ? `Rs. ${appliedPromo.discountValue.toLocaleString()} discount applied!`
                       : `${appliedPromo.discountValue}% discount applied!`}
-                    {appliedPromo.description ? `  Â· ${appliedPromo.description}` : ""}
+                    {appliedPromo.description ? `  · ${appliedPromo.description}` : ""}
                   </Text>
                 </View>
               )}
@@ -1236,7 +1236,7 @@ export default function BookServiceScreen() {
               {[
                 { icon: "tool", label: "Service", val: selectedCategory?.name ?? "" },
                 { icon: "map-pin", label: "Address", val: address },
-                { icon: "calendar", label: "When", val: `${selectedDate} Â· ${selectedTime}` },
+                { icon: "calendar", label: "When", val: `${selectedDate} · ${selectedTime}` },
                 {
                   icon: "dollar-sign",
                   label: "Offer",
@@ -1271,7 +1271,7 @@ export default function BookServiceScreen() {
                   <Icon name="tag" size={13} color={theme.colors.success} />
                   <Text style={styles.summaryLbl}>Promo</Text>
                   <Text style={[styles.summaryVal, { color: theme.colors.success, fontWeight: "800" }]}>
-                    {appliedPromo.code} Â·{" "}
+                    {appliedPromo.code} ·{" "}
                     {appliedPromo.discountType === "fixed"
                       ? `Rs. ${appliedPromo.discountValue.toLocaleString()} off`
                       : `${appliedPromo.discountValue}% off`}

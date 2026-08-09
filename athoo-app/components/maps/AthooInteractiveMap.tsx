@@ -177,7 +177,7 @@ export function AthooInteractiveMap({
   const cameraRef = useRef<any>(null);
   const mapSettings = settings.map;
   const tileUrl = String(mapSettings.tileUrl || "").trim();
-  const attribution = String(mapSettings.attribution || "Â© OpenStreetMap contributors").trim();
+  const attribution = String(mapSettings.attribution || "© OpenStreetMap contributors").trim();
   const tileSize = mapSettings.tileSize === 512 ? 512 : 256;
   const tileConfigured = ["{z}", "{x}", "{y}"].every((token) => tileUrl.includes(token));
   const safeProviders = useMemo(

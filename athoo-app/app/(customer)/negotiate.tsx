@@ -31,8 +31,7 @@ import { reverseGeocode, searchAddress } from "@/services/maps";
 import { getFastForegroundLocation } from "@/services/location";
 import { useCategories } from "@/context/CategoriesContext";
 import { apiErrorToMessage } from "@/lib/apiError";
-
-// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Helpers
 
 /** Generate the next `count` calendar days starting from today (local time). */
 function getUpcomingDates(count = 30) {
@@ -760,7 +759,7 @@ export default function NegotiateScreen() {
                   <Icon name="navigation" size={16} color={theme.colors.primary} />
                 )}
                 <Text style={styles.gpsBtnText}>
-                  {isGettingLocation ? "Getting locationâ€¦" : "Use My Current Location"}
+                  {isGettingLocation ? "Getting location..." : "Use My Current Location"}
                 </Text>
               </Pressable>
 
@@ -839,7 +838,7 @@ export default function NegotiateScreen() {
                 disabled={!scheduledDate || !scheduledTime}
               >
                 <Text style={styles.nextBtnText}>
-                  {scheduledDate && scheduledTime ? `Next â€“ ${scheduledDate} at ${scheduledTime}` : "Next: Offer Amount"}
+                  {scheduledDate && scheduledTime ? `Next - ${scheduledDate} at ${scheduledTime}` : "Next: Offer Amount"}
                 </Text>
                 <Icon name="arrow-right" size={16} color={theme.colors.onBrand} />
               </Pressable>
@@ -942,7 +941,7 @@ export default function NegotiateScreen() {
                   <>
                     <Icon name="send" size={18} color={theme.colors.onBrand} />
                     <Text style={styles.submitText}>
-                      Send Offer â€“ Rs.{" "}
+                      Send Offer - Rs.{" "}
                       {offerPrice ? parseInt(offerPrice, 10).toLocaleString() : "0"}
                     </Text>
                   </>

@@ -38,7 +38,7 @@ import type { AthooTheme } from "@/design/theme";
 import { getCategoryAppearance } from "@/utils/categoryAppearance";
 import { apiErrorToMessage } from "@/lib/apiError";
 
-// Only the "All Areas" sentinel is hardcoded here â€” actual city names are
+// Only the "All Areas" sentinel is hardcoded here — actual city names are
 // loaded live from /api/service-areas below so this list always matches the
 // admin-managed, Pakistan-wide service_areas reference table.
 const DEFAULT_CITIES = ["All Areas"];
@@ -754,7 +754,7 @@ export default function SearchScreen() {
               </Text>
               <Text style={[styles.mapLocationSearchHint, localizedText, { color: theme.colors.textSecondary }]}>
                 {locationAccuracyMeters != null
-                  ? `${tr("GPS accuracy")} Ã‚Â±${Math.round(locationAccuracyMeters)} m`
+                  ? `${tr("GPS accuracy")} ±${Math.round(locationAccuracyMeters)} m`
                   : tr("GPS, saved places and map pin")}
               </Text>
             </View>
@@ -862,11 +862,11 @@ export default function SearchScreen() {
                   <Text style={styles.selectedProviderName}>{selectedProvider.name}</Text>
                   <Text style={styles.selectedProviderMeta}>
                     {selectedProvider.routeStatus === "pending"
-                      ? "Calculating road routeÃ¢â‚¬Â¦"
+                      ? "Calculating road route…"
                       : typeof selectedProvider.distanceKm === "number"
                         ? `${selectedProvider.distanceKm.toFixed(1)} km by road${
                             selectedProvider.routeDurationMin != null
-                              ? ` Ã¢â‚¬Â¢ ${Math.round(selectedProvider.routeDurationMin)} min`
+                              ? ` • ${Math.round(selectedProvider.routeDurationMin)} min`
                               : ""
                           }`
                         : "Road route unavailable"}
@@ -888,8 +888,8 @@ export default function SearchScreen() {
                   {(sorted.slice(0, 8) as any[]).map((p) => {
                     const serviceLabels = (p.services || []).map((service: string) => getCategoryBySlug(service)?.name || service).filter(Boolean);
                     const svcLabel = serviceLabels.length > 2
-                      ? `${serviceLabels.slice(0, 2).join(" â€¢ ")} â€¢ +${serviceLabels.length - 2}`
-                      : serviceLabels.join(" â€¢ ") || "Service";
+                      ? `${serviceLabels.slice(0, 2).join(" • ")} • +${serviceLabels.length - 2}`
+                      : serviceLabels.join(" • ") || "Service";
                     const color = p.profileColor || theme.colors.primary;
                     const rating = p.rating ? (p.rating / 10).toFixed(1) : "New";
                     const rateLabel = p.ratePerHour
@@ -934,11 +934,11 @@ export default function SearchScreen() {
                         <Text style={styles.mapProviderPrice}>{rateLabel}</Text>
 
                         {p.routeStatus === "pending" ? (
-                          <Text style={styles.mapProviderDistance}>RouteÃ¢â‚¬Â¦</Text>
+                          <Text style={styles.mapProviderDistance}>Route…</Text>
                         ) : typeof p.distanceKm === "number" ? (
                           <Text style={styles.mapProviderDistance}>
                             {p.distanceKm.toFixed(1)} km road
-                            {p.routeDurationMin != null ? ` Ã¢â‚¬Â¢ ${Math.round(p.routeDurationMin)} min` : ""}
+                            {p.routeDurationMin != null ? ` • ${Math.round(p.routeDurationMin)} min` : ""}
                           </Text>
                         ) : null}
                       </Pressable>
@@ -970,7 +970,11 @@ export default function SearchScreen() {
             <AnimatedCard delay={60}>
               <View style={styles.servicesSection}>
                 <Text style={styles.sectionLabel}>Browse by Service</Text>
-                <View style={styles.servicesGrid}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.servicesGrid}
+                >
                   {categories.map((s) => {
                     const appearance = getCategoryAppearance(s, theme);
                     const selected = selectedService === s.slug;
@@ -1002,7 +1006,7 @@ export default function SearchScreen() {
                       </Pressable>
                     );
                   })}
-                </View>
+                </ScrollView>
               </View>
             </AnimatedCard>
           )}
@@ -1028,7 +1032,7 @@ export default function SearchScreen() {
                 : "All Workers"}
             </Text>
             <Text style={styles.resultCount}>
-              {sorted.length} found â€¢{" "}
+              {sorted.length} found •{" "}
               {sortBy === "recommended"
                 ? "Recommended"
                 : sortBy === "nearby"
@@ -1074,14 +1078,14 @@ export default function SearchScreen() {
                   {p.routeStatus === "pending" ? (
                     <View style={styles.distanceBadge}>
                       <ActivityIndicator size="small" color={theme.colors.primary} />
-                      <Text style={styles.distanceBadgeText}>Calculating routeÃ¢â‚¬Â¦</Text>
+                      <Text style={styles.distanceBadgeText}>Calculating route…</Text>
                     </View>
                   ) : typeof p.distanceKm === "number" ? (
                     <View style={styles.distanceBadge}>
                       <Icon name="navigation" size={11} color={theme.colors.primary} />
                       <Text style={styles.distanceBadgeText}>
                         {p.distanceKm.toFixed(1)} km by road
-                        {p.routeDurationMin != null ? ` Ã¢â‚¬Â¢ ${Math.round(p.routeDurationMin)} min` : ""}
+                        {p.routeDurationMin != null ? ` • ${Math.round(p.routeDurationMin)} min` : ""}
                       </Text>
                     </View>
                   ) : null}
@@ -1442,11 +1446,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     marginBottom: 10,
   },
 
-  servicesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  servicesGrid: { flexDirection: "row", gap: 8, paddingRight: 12 },
 
   serviceGridItem: {
     flexDirection: "row",
     alignItems: "center",
+    flexShrink: 0,
     gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 7,

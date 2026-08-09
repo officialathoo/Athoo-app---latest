@@ -146,8 +146,7 @@ function getProviderCoords(booking: any) {
 async function openMapsAt(latitude: number, longitude: number, label?: string) {
   return openExternalMap({ latitude, longitude, label });
 }
-
-// â”€â”€ Custom map markers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Custom map markers
 
 function AthooMarker() {
   const { theme } = useTheme();
@@ -411,7 +410,7 @@ export default function BookingDetailScreen() {
   const isProviderStale = useMemo(() => {
     if (realtimeProviderCoords) return false;
     const updatedAt = (booking as any)?.providerUpdatedAt;
-    if (!updatedAt) return !!dbProviderCoords; // has coords but no timestamp â†’ treat as stale
+    if (!updatedAt) return !!dbProviderCoords; // has coords but no timestamp -> treat as stale
     return Date.now() - new Date(updatedAt).getTime() > 5 * 60 * 1000;
   }, [realtimeProviderCoords, dbProviderCoords, booking]);
 
@@ -754,11 +753,11 @@ export default function BookingDetailScreen() {
                 <Text style={styles.trackInfoLabel}>Provider</Text>
                 <Text style={[styles.trackInfoValue, isProviderStale && { color: theme.colors.warning }]}>
                   {realtimeProviderCoords
-                    ? "â— Live"
+                    ? "Live"
                     : isProviderStale
-                    ? "Updatingâ€¦"
+                    ? "Updating..."
                     : providerCoords
-                    ? "â— Recent"
+                    ? "Recent"
                     : "Not shared"}
                 </Text>
               </View>
@@ -818,7 +817,7 @@ export default function BookingDetailScreen() {
                 >
                   <Icon name="crosshair" size={15} color={theme.colors.primary} />
                   <Text style={styles.trackActionText}>
-                    {isUpdatingJobLocation ? "Updatingâ€¦" : "My Location"}
+                    {isUpdatingJobLocation ? "Updating..." : "My Location"}
                   </Text>
                 </Pressable>
               )}

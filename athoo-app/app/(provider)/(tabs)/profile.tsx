@@ -317,7 +317,11 @@ export default function ProviderProfileScreen() {
       {user?.services && user.services.length > 0 && (
         <View style={styles.servicesCard}>
           <Text style={styles.cardTitle}>{t.myServices}</Text>
-          <View style={styles.servicesGrid}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.servicesGrid}
+          >
             {user.services.map((sid) => {
               const svc = getCategoryBySlug(sid);
               if (!svc) return <View key={sid} style={styles.serviceChip}><Text style={styles.serviceChipText}>{sid}</Text></View>;
@@ -329,7 +333,7 @@ export default function ProviderProfileScreen() {
                 </View>
               );
             })}
-          </View>
+          </ScrollView>
         </View>
       )}
 
@@ -569,9 +573,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderWidth: 1, borderColor: theme.colors.border,
   },
   cardTitle: { fontSize: 13, fontWeight: "700", color: theme.colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
-  servicesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  servicesGrid: { flexDirection: "row", gap: 8, paddingRight: 8 },
   serviceChip: {
-    flexDirection: "row", alignItems: "center", gap: 6,
+    flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 0,
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
   },
   serviceChipText: { fontSize: 12, fontWeight: "600" },

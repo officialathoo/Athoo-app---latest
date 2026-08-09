@@ -56,7 +56,7 @@ export function BookingPriceSummary({
 
       <Row label="Service offer" value={openOffer && rate <= 0 ? "Open" : money(rate)} />
       <Row label="Travel charge" value={travel > 0 ? money(travel) : "Free"} />
-      {saved > 0 ? <Row label="Discount" value={`âˆ’ ${money(saved)}`} success /> : null}
+      {saved > 0 ? <Row label="Discount" value={`− ${money(saved)}`} success /> : null}
 
       <AppText variant="caption" tone="muted" style={styles.note}>
         Final amount is confirmed before work starts. Material costs, when required, are agreed separately.

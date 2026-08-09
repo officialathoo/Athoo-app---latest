@@ -87,7 +87,7 @@ export function ProviderCard({
   const visibleServices = serviceLabels.slice(0, 2);
   const remainingServiceCount = Math.max(0, serviceLabels.length - visibleServices.length);
   const serviceLabel = visibleServices.length
-    ? `${visibleServices.join(" â€¢ ")}${remainingServiceCount ? ` â€¢ +${remainingServiceCount}` : ""}`
+    ? `${visibleServices.join(" • ")}${remainingServiceCount ? ` • +${remainingServiceCount}` : ""}`
     : t.generalServices;
 
   const rating = provider.rating ? (provider.rating / 10).toFixed(1) : null;

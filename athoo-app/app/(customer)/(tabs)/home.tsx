@@ -291,7 +291,7 @@ export default function HomeScreen() {
       <Animated.View style={[styles.header, { paddingTop: topPad + 10, backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
         <View style={styles.headerTop}>
           <View>
-            <Text style={[styles.greeting, localizedText, { color: theme.colors.text }]}>{tr("Hello, {{name}} ðŸ‘‹", { name: firstName })}</Text>
+            <Text style={[styles.greeting, localizedText, { color: theme.colors.text }]}>{tr("Hello, {{name}} 👋", { name: firstName })}</Text>
             <View style={styles.locationRow}>
               <Icon name="map-pin" size={13} color={theme.colors.secondary} />
               <Text style={[styles.location, { color: theme.colors.textSecondary }]}>{locationLabel}</Text>
@@ -443,7 +443,7 @@ export default function HomeScreen() {
                     {activeBroadcasts[0].responses?.filter((r: any) => r.status === "pending").length > 0
                       ? `${activeBroadcasts[0].responses.filter((r: any) => r.status === "pending").length} provider${activeBroadcasts[0].responses.filter((r: any) => r.status === "pending").length > 1 ? "s" : ""} responded`
                       : tr("Waiting for providers to respond...")}
-                    {activeBroadcasts.length > 1 ? ` Â· +${activeBroadcasts.length - 1} more` : ""}
+                    {activeBroadcasts.length > 1 ? ` · +${activeBroadcasts.length - 1} more` : ""}
                   </Text>
                 </View>
 
@@ -472,7 +472,7 @@ export default function HomeScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.broadcastCTATitle}>Broadcast a Job</Text>
                 <Text style={styles.broadcastCTASub}>
-                  Describe your problem â†’ set your price â†’ providers respond
+                  Describe your problem → set your price → providers respond
                 </Text>
               </View>
               <View style={styles.broadcastCTAArrow}>
@@ -536,7 +536,7 @@ export default function HomeScreen() {
               </View>
               <View style={[styles.statCard, { backgroundColor: theme.colors.successSoft }]}>
                 <Text style={[styles.statValue, { color: theme.colors.success }]}>
-                  {platformStats.avgRating}â˜…
+                  {platformStats.avgRating}★
                 </Text>
                 <Text style={[styles.statLabel, { color: theme.colors.textSecondary }, isUrdu && styles.urduText]}>
                   {t.avgRating}
