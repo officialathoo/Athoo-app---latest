@@ -395,8 +395,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const state = activeCall?.state;
     appLogger.debug("calls", "[CallContext] state changed →", state, "callId:", activeCall?.callId);
-    if ((state === "incoming" || state === "outgoing") && appStateRef.current === "active") {
-      soundService.startRingtone().catch(() => {});
+    if (state === "incoming" && appStateRef.current === "active") {
+      soundService.startRingtone("incoming").catch(() => {});
+    } else if (state === "outgoing" && appStateRef.current === "active") {
+      soundService.startRingtone("outgoing").catch(() => {});
     } else {
       soundService.stopRingtone().catch(() => {});
     }
@@ -1402,8 +1404,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       const state = activeCallRef.current?.state;
       if (next === "active") {
         void refreshCallConfiguration();
-        if (state === "incoming" || state === "outgoing") {
-          soundService.startRingtone().catch(() => {});
+        if (state === "incoming") {
+          soundService.startRingtone("incoming").catch(() => {});
+        } else if (state === "outgoing") {
+          soundService.startRingtone("outgoing").catch(() => {});
         }
         void checkIncoming();
       } else {
@@ -1575,6 +1579,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const current = activeCallRef.current;
     if (!current) return;
 
+    await soundService.stopRingtone().catch(() => {});
     await refreshCallConfiguration();
     mediaFailureAlertedRef.current = false;
     setMediaState("connecting");
@@ -1639,7 +1644,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // ── Reject call ─────────────────────────────────────────────────────────────
   const rejectCall = useCallback(async () => {
-    if (activeCallRef.current?.callId) {
+    await soundService.stopRingtone().catch(() => {});    if (activeCallRef.current?.callId) {
       try { await api.rejectCall(activeCallRef.current.callId); } catch {}
     }
     if (candidatePollRef.current) clearInterval(candidatePollRef.current);
@@ -1653,7 +1658,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // ── End call ─────────────────────────────────────────────────────────────────
   const endCall = useCallback(async () => {
     const callId = activeCallRef.current?.callId;
-    // Clear all timers immediately so no more status polls fire
+    await soundService.stopRingtone().catch(() => {});    // Clear all timers immediately so no more status polls fire
     if (outgoingStatusPollRef.current) { clearInterval(outgoingStatusPollRef.current); outgoingStatusPollRef.current = null; }
     outgoingStatusPollInFlightRef.current = false;
     if (candidatePollRef.current) { clearInterval(candidatePollRef.current); candidatePollRef.current = null; }

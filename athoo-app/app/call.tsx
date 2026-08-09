@@ -65,6 +65,7 @@ export default function CallScreen() {
   if (!activeCall) return null;
 
   const connecting = activeCall.state === "outgoing";
+  const active = activeCall.state === "active";
   const mediaFailed = mediaState === "failed";
   const mediaReady = mediaState === "webrtc";
   const mediaFallback = mediaState === "fallback";
@@ -112,7 +113,7 @@ export default function CallScreen() {
         <View style={styles.statusRow}>
           <View style={[styles.statusDot, { backgroundColor: mediaDotColor }]} />
           <Text style={[styles.statusText, !connecting && styles.activeDuration]}>
-            {connecting ? "Calling…" : formatDuration(callDuration)}
+            {connecting ? "Calling..." : active ? formatDuration(callDuration) : "Connecting..."}
           </Text>
         </View>
 
@@ -131,7 +132,7 @@ export default function CallScreen() {
             mediaReady && { color: theme.colors.success },
             mediaFailed && { color: theme.colors.danger },
           ]}>
-            {connecting ? "Preparing secure audio" : transportLabel}
+            {connecting ? "Waiting for answer" : mediaState === "connecting" ? "Connecting secure audio" : transportLabel}
           </Text>
         </View>
 
@@ -141,10 +142,10 @@ export default function CallScreen() {
               transportDetails.candidateType ? transportDetails.candidateType.toUpperCase() : null,
               transportDetails.protocol ? transportDetails.protocol.toUpperCase() : null,
               transportDetails.roundTripMs !== undefined ? `${transportDetails.roundTripMs} ms RTT` : null,
-            ].filter(Boolean).join(" · ")}
+            ].filter(Boolean).join(" - ")}
           </Text>
         ) : null}
-        <Text style={styles.privacyBadge}>Phone number hidden · Athoo secure call</Text>
+        <Text style={styles.privacyBadge}>Phone number hidden - Athoo secure call</Text>
       </View>
 
       {keypadVisible ? (
@@ -221,12 +222,12 @@ function createStyles(theme: AthooTheme) {
     headerLabel: { flex: 1, fontSize: 14, fontWeight: "600", color: mutedWhite },
     encryptedBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: glass, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
     encryptedText: { fontSize: 11, color: mutedWhite },
-    callerSection: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 24 },
-    avatarRipple: { width: 128, height: 128, borderRadius: 64, backgroundColor: "rgba(255,255,255,0.10)", alignItems: "center", justifyContent: "center" },
-    avatarRippleInner: { width: 108, height: 108, borderRadius: 54, backgroundColor: "rgba(255,255,255,0.12)", alignItems: "center", justifyContent: "center" },
-    callerAvatar: { width: 88, height: 88, borderRadius: 44, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: "rgba(255,255,255,0.38)" },
-    callerAvatarText: { fontSize: 34, fontWeight: "800", color: theme.colors.white },
-    callerName: { fontSize: 28, fontWeight: "800", color: theme.colors.white, letterSpacing: -0.5, textAlign: "center" },
+    callerSection: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10, paddingHorizontal: 20, paddingVertical: 10 },
+    avatarRipple: { width: 116, height: 116, borderRadius: 58, backgroundColor: "rgba(255,255,255,0.10)", alignItems: "center", justifyContent: "center" },
+    avatarRippleInner: { width: 98, height: 98, borderRadius: 49, backgroundColor: "rgba(255,255,255,0.12)", alignItems: "center", justifyContent: "center" },
+    callerAvatar: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: "rgba(255,255,255,0.38)" },
+    callerAvatarText: { fontSize: 30, fontWeight: "800", color: theme.colors.white },
+    callerName: { fontSize: 24, fontWeight: "800", color: theme.colors.white, letterSpacing: -0.4, textAlign: "center" },
     callerService: { fontSize: 15, color: mutedWhite, fontWeight: "500", textAlign: "center" },
     statusRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
     statusDot: { width: 8, height: 8, borderRadius: 4 },
@@ -257,9 +258,9 @@ function createStyles(theme: AthooTheme) {
     keypadGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 12, paddingHorizontal: 40, paddingBottom: 16 },
     keypadButton: { width: 70, height: 60, borderRadius: 16, backgroundColor: glass, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)" },
     keypadNumber: { fontSize: 22, fontWeight: "700", color: theme.colors.white },
-    controls: { alignItems: "center", paddingHorizontal: 20, gap: 16 },
-    controlsRow: { flexDirection: "row", gap: 16, justifyContent: "center" },
-    controlButton: { width: 82, minHeight: 72, borderRadius: 20, backgroundColor: glass, alignItems: "center", justifyContent: "center", gap: 6, borderWidth: 1, borderColor: "rgba(255,255,255,0.16)" },
+    controls: { alignItems: "center", paddingHorizontal: 16, gap: 12 },
+    controlsRow: { width: "100%", flexDirection: "row", gap: 10, justifyContent: "center" },
+    controlButton: { flex: 1, maxWidth: 86, minWidth: 68, minHeight: 64, borderRadius: 18, backgroundColor: glass, alignItems: "center", justifyContent: "center", gap: 5, borderWidth: 1, borderColor: "rgba(255,255,255,0.16)" },
     controlButtonActive: { backgroundColor: glassStrong, borderColor: "rgba(255,255,255,0.30)" },
     controlLabel: { fontSize: 11, color: mutedWhite, fontWeight: "600" },
     endCallButton: { width: 80, height: 80, borderRadius: 40, backgroundColor: theme.colors.danger, alignItems: "center", justifyContent: "center", shadowColor: theme.colors.danger, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.5, shadowRadius: 16, elevation: 12 },
