@@ -85,15 +85,26 @@ export default function SubscriptionScreen() {
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef<string | null>(null);
+  const loadRequestInFlightRef = useRef(false);
+  const subscriptionLoadedRef = useRef(false);
+  const subscriptionLastLoadedAtRef = useRef(0);
   const selectedAmount = selectedPlan
     ? (billing === "monthly" ? selectedPlan.priceMonthly : selectedPlan.priceYearly)
     : 0;
   const paymentRequired = selectedAmount > 0;
   const paymentAccountReady = !paymentRequired || paymentAccounts.length > 0;
 
-  async function load() {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async (
+    mode: "initial" | "retry" | "background" | "mutation" = "initial"
+  ) => {
+    if (loadRequestInFlightRef.current) return;
+    loadRequestInFlightRef.current = true;
+
+    const showLoader =
+      (mode === "initial" || mode === "retry") && !subscriptionLoadedRef.current;
+    if (showLoader) setLoading(true);
+    if (mode !== "background") setError(null);
+
     try {
       const [plansRes, subRes, accountsRes] = await Promise.all([
         api.getSubscriptionPlans("provider"),
@@ -105,14 +116,29 @@ export default function SubscriptionScreen() {
       setActiveSub(subRes.active ?? null);
       setHistory(subRes.history ?? []);
       setPaymentAccounts((accountsRes.accounts ?? []) as PaymentAccount[]);
+      subscriptionLoadedRef.current = true;
+      subscriptionLastLoadedAtRef.current = Date.now();
     } catch (e: any) {
-      setError(apiErrorToMessage(e, tr("We couldn't load subscription plans. Please try again.")));
+      if (mode !== "background") {
+        setError(apiErrorToMessage(e, tr("We couldn't load subscription plans. Please try again.")));
+      }
     } finally {
-      setLoading(false);
+      loadRequestInFlightRef.current = false;
+      if (showLoader) setLoading(false);
     }
-  }
+  }, [tr]);
 
-  useFocusEffect(useCallback(() => { load(); }, []));
+  useFocusEffect(
+    useCallback(() => {
+      if (!subscriptionLoadedRef.current) {
+        void load("initial");
+        return;
+      }
+      if (Date.now() - subscriptionLastLoadedAtRef.current >= 30_000) {
+        void load("background");
+      }
+    }, [load])
+  );
 
   async function pickScreenshot() {
     const result = await pickImageWithSourceChoice(
@@ -228,7 +254,7 @@ export default function SubscriptionScreen() {
           <Icon name="alert-circle" size={40} color={theme.colors.danger} />
           <Text style={{ color: theme.colors.danger, marginTop: 12, fontSize: 15, fontWeight: "700" }}>{tr("Failed to Load")}</Text>
           <Text style={{ color: theme.colors.textSecondary, marginTop: 6, fontSize: 13, textAlign: "center", paddingHorizontal: 32, lineHeight: 18 }}>{error}</Text>
-          <Pressable onPress={load} style={{ marginTop: 18, paddingVertical: 11, paddingHorizontal: 32, backgroundColor: theme.colors.primary, borderRadius: 12 }}>
+          <Pressable onPress={() => void load("retry")} style={{ marginTop: 18, paddingVertical: 11, paddingHorizontal: 32, backgroundColor: theme.colors.primary, borderRadius: 12 }}>
             <Text style={{ color: theme.colors.white, fontWeight: "600", fontSize: 14 }}>{tr("Retry")}</Text>
           </Pressable>
         </View>

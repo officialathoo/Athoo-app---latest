@@ -9,7 +9,7 @@ import { uploadPickedImage } from "@/services/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import { pickImageWithSourceChoice } from "@/utils/mediaPicker";
-import React, { useCallback, useEffect, useState, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -62,6 +62,9 @@ export default function RefundRequestsScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [refundRequestId, setRefundRequestId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const loadRequestInFlightRef = useRef(false);
+  const refundsLoadedRef = useRef(false);
+  const refundsLastLoadedAtRef = useRef(0);
 
   const [bookingId, setBookingId] = useState("");
   const [reason, setReason] = useState("");
@@ -77,18 +80,34 @@ export default function RefundRequestsScreen() {
   const [showBookingPicker, setShowBookingPicker] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState<RefundEligibleBooking | null>(null);
 
-  async function load() {
-    setError(null);
+  const load = useCallback(async (
+    mode: "initial" | "refresh" | "retry" | "background" | "mutation" = "initial"
+  ) => {
+    if (loadRequestInFlightRef.current) return;
+    loadRequestInFlightRef.current = true;
+
+    const showInitialLoader =
+      (mode === "initial" || mode === "retry") && !refundsLoadedRef.current;
+
+    if (showInitialLoader) setLoading(true);
+    if (mode === "refresh") setRefreshing(true);
+    if (mode !== "background") setError(null);
+
     try {
       const res = await api.getMyRefunds();
       setRefunds(res.refunds || []);
+      refundsLoadedRef.current = true;
+      refundsLastLoadedAtRef.current = Date.now();
     } catch (e: any) {
-      setError(apiErrorToMessage(e, tr("We couldn't load your refund requests. Please try again.")));
+      if (mode !== "background") {
+        setError(apiErrorToMessage(e, tr("We couldn't load your refund requests. Please try again.")));
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      loadRequestInFlightRef.current = false;
+      if (showInitialLoader) setLoading(false);
+      if (mode === "refresh") setRefreshing(false);
     }
-  }
+  }, [tr]);
 
   async function loadBookings() {
     setLoadingBookings(true);
@@ -102,7 +121,17 @@ export default function RefundRequestsScreen() {
     }
   }
 
-  useFocusEffect(useCallback(() => { load(); }, []));
+  useFocusEffect(
+    useCallback(() => {
+      if (!refundsLoadedRef.current) {
+        void load("initial");
+        return;
+      }
+      if (Date.now() - refundsLastLoadedAtRef.current >= 30_000) {
+        void load("background");
+      }
+    }, [load])
+  );
 
   useEffect(() => {
     setRefundRequestId(null);
@@ -204,7 +233,7 @@ export default function RefundRequestsScreen() {
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 24 }]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={[theme.colors.primary]} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load("refresh")} colors={[theme.colors.primary]} />}
           keyboardShouldPersistTaps="handled"
         >
           {!showForm ? (
@@ -375,7 +404,7 @@ export default function RefundRequestsScreen() {
               </View>
               <Text style={[styles.emptyTitle, { color: theme.colors.danger }]}>{tr("Unable to load refunds")}</Text>
               <Text style={styles.emptySub}>{error}</Text>
-              <Pressable onPress={load} style={{ marginTop: 14, paddingVertical: 10, paddingHorizontal: 28, backgroundColor: theme.colors.primary, borderRadius: 12 }}>
+              <Pressable onPress={() => void load("retry")} style={{ marginTop: 14, paddingVertical: 10, paddingHorizontal: 28, backgroundColor: theme.colors.primary, borderRadius: 12 }}>
                 <Text style={{ color: theme.colors.white, fontWeight: "600", fontSize: 14 }}>{tr("Retry")}</Text>
               </Pressable>
             </View>
