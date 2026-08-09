@@ -38,7 +38,7 @@ import type { AthooTheme } from "@/design/theme";
 import { getCategoryAppearance } from "@/utils/categoryAppearance";
 import { apiErrorToMessage } from "@/lib/apiError";
 
-// Only the "All Areas" sentinel is hardcoded here — actual city names are
+// Only the "All Areas" sentinel is hardcoded here â€” actual city names are
 // loaded live from /api/service-areas below so this list always matches the
 // admin-managed, Pakistan-wide service_areas reference table.
 const DEFAULT_CITIES = ["All Areas"];
@@ -754,7 +754,7 @@ export default function SearchScreen() {
               </Text>
               <Text style={[styles.mapLocationSearchHint, localizedText, { color: theme.colors.textSecondary }]}>
                 {locationAccuracyMeters != null
-                  ? `${tr("GPS accuracy")} Â±${Math.round(locationAccuracyMeters)} m`
+                  ? `${tr("GPS accuracy")} Ã‚Â±${Math.round(locationAccuracyMeters)} m`
                   : tr("GPS, saved places and map pin")}
               </Text>
             </View>
@@ -862,11 +862,11 @@ export default function SearchScreen() {
                   <Text style={styles.selectedProviderName}>{selectedProvider.name}</Text>
                   <Text style={styles.selectedProviderMeta}>
                     {selectedProvider.routeStatus === "pending"
-                      ? "Calculating road routeâ€¦"
+                      ? "Calculating road routeÃ¢â‚¬Â¦"
                       : typeof selectedProvider.distanceKm === "number"
                         ? `${selectedProvider.distanceKm.toFixed(1)} km by road${
                             selectedProvider.routeDurationMin != null
-                              ? ` â€¢ ${Math.round(selectedProvider.routeDurationMin)} min`
+                              ? ` Ã¢â‚¬Â¢ ${Math.round(selectedProvider.routeDurationMin)} min`
                               : ""
                           }`
                         : "Road route unavailable"}
@@ -888,8 +888,8 @@ export default function SearchScreen() {
                   {(sorted.slice(0, 8) as any[]).map((p) => {
                     const serviceLabels = (p.services || []).map((service: string) => getCategoryBySlug(service)?.name || service).filter(Boolean);
                     const svcLabel = serviceLabels.length > 2
-                      ? `${serviceLabels.slice(0, 2).join(" • ")} • +${serviceLabels.length - 2}`
-                      : serviceLabels.join(" • ") || "Service";
+                      ? `${serviceLabels.slice(0, 2).join(" â€¢ ")} â€¢ +${serviceLabels.length - 2}`
+                      : serviceLabels.join(" â€¢ ") || "Service";
                     const color = p.profileColor || theme.colors.primary;
                     const rating = p.rating ? (p.rating / 10).toFixed(1) : "New";
                     const rateLabel = p.ratePerHour
@@ -934,11 +934,11 @@ export default function SearchScreen() {
                         <Text style={styles.mapProviderPrice}>{rateLabel}</Text>
 
                         {p.routeStatus === "pending" ? (
-                          <Text style={styles.mapProviderDistance}>Routeâ€¦</Text>
+                          <Text style={styles.mapProviderDistance}>RouteÃ¢â‚¬Â¦</Text>
                         ) : typeof p.distanceKm === "number" ? (
                           <Text style={styles.mapProviderDistance}>
                             {p.distanceKm.toFixed(1)} km road
-                            {p.routeDurationMin != null ? ` â€¢ ${Math.round(p.routeDurationMin)} min` : ""}
+                            {p.routeDurationMin != null ? ` Ã¢â‚¬Â¢ ${Math.round(p.routeDurationMin)} min` : ""}
                           </Text>
                         ) : null}
                       </Pressable>
@@ -1028,7 +1028,7 @@ export default function SearchScreen() {
                 : "All Workers"}
             </Text>
             <Text style={styles.resultCount}>
-              {sorted.length} found •{" "}
+              {sorted.length} found â€¢{" "}
               {sortBy === "recommended"
                 ? "Recommended"
                 : sortBy === "nearby"
@@ -1064,25 +1064,24 @@ export default function SearchScreen() {
             <AnimatedCard>
               <View style={styles.emptyState}>
                 <Icon name="search" size={36} color={theme.colors.textMuted} />
-                <Text style={styles.emptyTitle}>{isUrdu ? "کوئی ملازم نہیں ملا" : "No workers found"}</Text>
-                <Text style={styles.emptySubtitle}>{isUrdu ? "مختلف تلاش یا خدمت آزمائیں" : "Try a different search or service"}</Text>
+                <Text style={styles.emptyTitle}>{isUrdu ? "Ú©ÙˆØ¦ÛŒ Ù…Ù„Ø§Ø²Ù… Ù†ÛÛŒÚº Ù…Ù„Ø§" : "No workers found"}</Text>
+                <Text style={styles.emptySubtitle}>{isUrdu ? "Ù…Ø®ØªÙ„Ù ØªÙ„Ø§Ø´ ÛŒØ§ Ø®Ø¯Ù…Øª Ø¢Ø²Ù…Ø§Ø¦ÛŒÚº" : "Try a different search or service"}</Text>
               </View>
             </AnimatedCard>
           ) : (
-            sorted.map((p, i) => (
-              <AnimatedCard key={p.id} delay={80 + i * 50}>
-                <View style={styles.listCardWrap}>
+            sorted.map((p) => (
+                <View key={p.id} style={styles.listCardWrap}>
                   {p.routeStatus === "pending" ? (
                     <View style={styles.distanceBadge}>
                       <ActivityIndicator size="small" color={theme.colors.primary} />
-                      <Text style={styles.distanceBadgeText}>Calculating routeâ€¦</Text>
+                      <Text style={styles.distanceBadgeText}>Calculating routeÃ¢â‚¬Â¦</Text>
                     </View>
                   ) : typeof p.distanceKm === "number" ? (
                     <View style={styles.distanceBadge}>
                       <Icon name="navigation" size={11} color={theme.colors.primary} />
                       <Text style={styles.distanceBadgeText}>
                         {p.distanceKm.toFixed(1)} km by road
-                        {p.routeDurationMin != null ? ` â€¢ ${Math.round(p.routeDurationMin)} min` : ""}
+                        {p.routeDurationMin != null ? ` Ã¢â‚¬Â¢ ${Math.round(p.routeDurationMin)} min` : ""}
                       </Text>
                     </View>
                   ) : null}
@@ -1097,7 +1096,6 @@ export default function SearchScreen() {
                     }
                   />
                 </View>
-              </AnimatedCard>
             ))
           )}
         </ScrollView>
@@ -1111,19 +1109,19 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   header: {
     backgroundColor: theme.colors.surface,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingBottom: 12,
     shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
+    shadowOpacity: 0.025,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 1,
     zIndex: 10,
-    paddingTop: 16,
-    gap: 10,
+    paddingTop: 12,
+    gap: 8,
   },
 
-  searchRow: { flexDirection: "row", gap: 10 },
+  searchRow: { flexDirection: "row", gap: 8 },
 
   searchBar: {
     flex: 1,
@@ -1131,9 +1129,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignItems: "center",
     backgroundColor: theme.colors.background,
     borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    gap: 8,
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
@@ -1141,9 +1139,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   searchInput: { flex: 1, fontSize: 14, color: theme.colors.text },
 
   mapToggle: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
+    width: 42,
+    height: 42,
+    borderRadius: 12,
     backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
@@ -1153,12 +1151,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   mapToggleActive: { backgroundColor: theme.colors.primary },
 
-  cityRow: { flexDirection: "row", gap: 8 },
+  cityRow: { flexDirection: "row", gap: 6 },
 
   cityChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 7,
-    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
     backgroundColor: theme.colors.background,
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -1172,12 +1170,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   cityText: { fontSize: 12, fontWeight: "600", color: theme.colors.textSecondary },
   cityTextActive: { color: theme.colors.onBrand },
 
-  sortRow: { flexDirection: "row", gap: 8, paddingTop: 2 },
+  sortRow: { flexDirection: "row", gap: 6, paddingTop: 1 },
 
   sortChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 999,
     backgroundColor: theme.colors.surfaceAlt,
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -1199,7 +1197,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   mapContainer: { flex: 1 },
-  mapLocationSearch: { position: "absolute", top: 12, left: 14, right: 14, zIndex: 20, minHeight: 58, borderRadius: 16, borderWidth: 1, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 13, shadowColor: theme.colors.text, shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 5 },
+  mapLocationSearch: { position: "absolute", top: 10, left: 12, right: 12, zIndex: 20, minHeight: 52, borderRadius: 14, borderWidth: 1, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, shadowColor: theme.colors.text, shadowOpacity: 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
   mapLocationSearchText: { fontSize: 14, fontWeight: "800" },
   mapLocationSearchHint: { marginTop: 2, fontSize: 10 },
   mapBg: { flex: 1 },
@@ -1227,9 +1225,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     justifyContent: "center",
     shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.08,
     shadowRadius: 8,
-    elevation: 6,
+    elevation: 3,
   },
 
   pickedAddressBar: {
@@ -1271,8 +1269,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   mapBottomSheet: {
     backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     padding: 16,
     paddingBottom: 8,
     gap: 12,
@@ -1280,7 +1278,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.08,
     shadowRadius: 16,
-    elevation: 12,
+    elevation: 6,
   },
 
   mapHandle: {
@@ -1347,13 +1345,13 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     fontSize: 13,
   },
 
-  mapProviderRow: { flexDirection: "row", gap: 12 },
+  mapProviderRow: { flexDirection: "row", gap: 8 },
 
   mapProviderCard: {
-    width: 108,
+    width: 102,
     backgroundColor: theme.colors.background,
-    borderRadius: 16,
-    padding: 12,
+    borderRadius: 14,
+    padding: 10,
     alignItems: "center",
     gap: 4,
     borderWidth: 1,
@@ -1366,9 +1364,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   mapProviderAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
@@ -1431,30 +1429,30 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   scroll: { flex: 1 },
-  matchHint: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 20, marginTop: 14, padding: 12, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.primary + "33" },
+  matchHint: { flexDirection: "row", alignItems: "center", gap: 7, marginHorizontal: 16, marginTop: 10, padding: 10, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.primary + "33" },
   matchHintText: { flex: 1, color: theme.colors.primaryPressed, fontSize: 13, fontWeight: "700" },
 
-  scrollContent: { padding: 20, paddingBottom: 100 },
+  scrollContent: { padding: 16, paddingBottom: 100 },
 
-  servicesSection: { marginBottom: 20 },
+  servicesSection: { marginBottom: 14 },
   sectionLabel: {
     fontSize: 15,
     fontWeight: "700",
     color: theme.colors.text,
-    marginBottom: 12,
+    marginBottom: 10,
   },
 
-  servicesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  servicesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
 
   serviceGridItem: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
     backgroundColor: theme.colors.surface,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: theme.colors.border,
   },
 
@@ -1479,7 +1477,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   loadingListWrap: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 50,
+    paddingVertical: 36,
   },
 
   loadingListText: {
@@ -1490,7 +1488,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   emptyState: {
     alignItems: "center",
     gap: 8,
-    paddingVertical: 60,
+    paddingVertical: 42,
   },
 
   emptyTitle: {
