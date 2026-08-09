@@ -837,6 +837,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await setToken(token, true);
         await setRefreshToken(refreshToken, true);
         await enableBiometric(user.phone, user.role);
+
+        const [localEnabled, savedPhone, savedRole] = await Promise.all([
+          isBiometricEnabled(),
+          getBiometricPhone(),
+          getBiometricRole(),
+        ]);
+        const expectedRole = user.role === "provider" ? "provider" : "customer";
+
+        if (
+          response.user?.biometricEnabled !== true ||
+          !localEnabled ||
+          savedPhone !== user.phone ||
+          savedRole !== expectedRole
+        ) {
+          throw new Error("Athoo could not securely save the biometric login setting on this device.");
+        }
       } catch (storageError) {
         await api.setBiometricPreference({ enabled: false }).catch(() => undefined);
         await disableBiometric().catch(() => undefined);

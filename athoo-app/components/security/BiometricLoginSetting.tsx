@@ -106,7 +106,7 @@ export function BiometricLoginSetting() {
       Alert.alert("Unable to disable", result.error || "Please try again.");
       return;
     }
-    setEnabled(false);
+    await refreshState();
   };
 
   const requestToggle = (next: boolean) => {
@@ -142,8 +142,8 @@ export function BiometricLoginSetting() {
 
     setPassword("");
     setPasswordModal(false);
-    setEnabled(true);
-    Alert.alert(`${label} enabled`, "Your remembered Athoo session is now protected by your phone’s configured authentication method.");
+    await refreshState();
+    Alert.alert(`${label} enabled`, "Your remembered Athoo session is now protected by your phone's configured authentication method.");
   };
 
   const subtitle = available

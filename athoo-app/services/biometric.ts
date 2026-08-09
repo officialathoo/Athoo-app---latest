@@ -58,19 +58,29 @@ function labelForType(type: BiometricType): string {
  */
 export async function getDeviceAuthenticationState(): Promise<DeviceAuthenticationState> {
   try {
-    const [hardwareAvailable, supportedTypes, biometricEnrolled, enrolledLevel] = await Promise.all([
+    const results = await Promise.allSettled([
       LocalAuthentication.hasHardwareAsync(),
       LocalAuthentication.supportedAuthenticationTypesAsync(),
       LocalAuthentication.isEnrolledAsync(),
       LocalAuthentication.getEnrolledLevelAsync(),
     ]);
-    const type = resolveType(supportedTypes, biometricEnrolled);
-    // Some Android vendors expose an enrolled face/iris authenticator through
-    // the security level API while hasHardwareAsync()/supportedTypes are
-    // temporarily incomplete. Treat an enrolled non-NONE biometric level as
-    // available and let the native prompt remain the final authority.
-    const enrolledAuthenticator = biometricEnrolled && enrolledLevel !== LocalAuthentication.SecurityLevel.NONE;
-    const available = enrolledAuthenticator && (hardwareAvailable || supportedTypes.length > 0 || type === "biometric");
+
+    const hardwareAvailable = results[0].status === "fulfilled" ? results[0].value : false;
+    const supportedTypes = results[1].status === "fulfilled" ? results[1].value : [];
+    const biometricEnrolled = results[2].status === "fulfilled" ? results[2].value : false;
+    const enrolledLevel = results[3].status === "fulfilled"
+      ? results[3].value
+      : LocalAuthentication.SecurityLevel.NONE;
+
+    const biometricLevel =
+      enrolledLevel === LocalAuthentication.SecurityLevel.BIOMETRIC_WEAK ||
+      enrolledLevel === LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG;
+
+    // Enrollment is the primary signal. Some Android vendors temporarily
+    // expose incomplete hardware/type metadata even though authentication
+    // remains usable. The native prompt remains the final authority.
+    const available = biometricEnrolled || biometricLevel;
+    const type = resolveType(supportedTypes, available);
     return {
       available,
       biometricEnrolled,
@@ -172,10 +182,10 @@ export async function authenticateWithBiometric(promptMessage?: string): Promise
     if (!state.available) {
       return {
         success: false,
-        code: state.hardwareAvailable ? "not_enrolled" : "not_available",
-        error: state.hardwareAvailable
-          ? "No supported biometric is enrolled. Set up Face ID, Touch ID, fingerprint, face unlock, or iris authentication first."
-          : "No supported biometric hardware is available. Sign in with your Athoo password or OTP.",
+        code: state.biometricEnrolled ? "not_available" : "not_enrolled",
+        error: state.biometricEnrolled
+          ? "Your phone reports a biometric enrollment, but the native authentication prompt is not available right now. Lock and unlock your phone, then try again."
+          : "No supported biometric is enrolled. Set up Face ID, Touch ID, fingerprint, face unlock, or iris authentication first.",
       };
     }
 
