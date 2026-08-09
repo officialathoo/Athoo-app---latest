@@ -291,7 +291,7 @@ export default function HomeScreen() {
       <Animated.View style={[styles.header, { paddingTop: topPad + 10, backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
         <View style={styles.headerTop}>
           <View>
-            <Text style={[styles.greeting, localizedText, { color: theme.colors.text }]}>{tr("Hello, {{name}} 👋", { name: firstName })}</Text>
+            <Text style={[styles.greeting, localizedText, { color: theme.colors.text }]}>{tr("Hello, {{name}} ðŸ‘‹", { name: firstName })}</Text>
             <View style={styles.locationRow}>
               <Icon name="map-pin" size={13} color={theme.colors.secondary} />
               <Text style={[styles.location, { color: theme.colors.textSecondary }]}>{locationLabel}</Text>
@@ -443,7 +443,7 @@ export default function HomeScreen() {
                     {activeBroadcasts[0].responses?.filter((r: any) => r.status === "pending").length > 0
                       ? `${activeBroadcasts[0].responses.filter((r: any) => r.status === "pending").length} provider${activeBroadcasts[0].responses.filter((r: any) => r.status === "pending").length > 1 ? "s" : ""} responded`
                       : tr("Waiting for providers to respond...")}
-                    {activeBroadcasts.length > 1 ? ` · +${activeBroadcasts.length - 1} more` : ""}
+                    {activeBroadcasts.length > 1 ? ` Â· +${activeBroadcasts.length - 1} more` : ""}
                   </Text>
                 </View>
 
@@ -472,7 +472,7 @@ export default function HomeScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.broadcastCTATitle}>Broadcast a Job</Text>
                 <Text style={styles.broadcastCTASub}>
-                  Describe your problem → set your price → providers respond
+                  Describe your problem â†’ set your price â†’ providers respond
                 </Text>
               </View>
               <View style={styles.broadcastCTAArrow}>
@@ -536,7 +536,7 @@ export default function HomeScreen() {
               </View>
               <View style={[styles.statCard, { backgroundColor: theme.colors.successSoft }]}>
                 <Text style={[styles.statValue, { color: theme.colors.success }]}>
-                  {platformStats.avgRating}★
+                  {platformStats.avgRating}â˜…
                 </Text>
                 <Text style={[styles.statLabel, { color: theme.colors.textSecondary }, isUrdu && styles.urduText]}>
                   {t.avgRating}
@@ -567,9 +567,10 @@ export default function HomeScreen() {
                 </Text>
               </Pressable>
             </View>
-            {displayProviders.map((p, i) => (
-              <AnimatedCard key={p.id} delay={310 + i * 60}>
+            <View style={styles.providerList}>
+              {displayProviders.map((p) => (
                 <ProviderCard
+                  key={p.id}
                   provider={p}
                   onPress={() =>
                     router.push({
@@ -578,8 +579,8 @@ export default function HomeScreen() {
                     })
                   }
                 />
-              </AnimatedCard>
-            ))}
+              ))}
+            </View>
           </View>
         </AnimatedCard>
         ) : null}
@@ -702,8 +703,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   header: {
     backgroundColor: theme.colors.surface,
-    paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
     shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -715,9 +716,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 14,
+    marginBottom: 10,
   },
-  greeting: { fontSize: 20, fontWeight: "800", color: theme.colors.text },
+  greeting: { fontSize: 19, fontWeight: "700", color: theme.colors.text },
   locationRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -754,9 +755,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: theme.colors.background,
-    borderRadius: 16,
+    borderRadius: 14,
     paddingHorizontal: 12,
-    paddingVertical: 11,
+    paddingVertical: 9,
     gap: 10,
     borderWidth: 1.5,
     borderColor: theme.colors.border,
@@ -780,13 +781,13 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 100 },
-  bannerScroll: { paddingHorizontal: 20, paddingTop: 18 },
+  bannerScroll: { paddingHorizontal: 16, paddingTop: 14 },
   banner: {
-    width: 290,
-    height: 150,
-    borderRadius: 22,
-    marginRight: 14,
-    padding: 22,
+    width: 278,
+    height: 132,
+    borderRadius: 18,
+    marginRight: 10,
+    padding: 18,
     flexDirection: "row",
     overflow: "hidden",
   },
@@ -809,37 +810,38 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   bannerBtnText: { color: theme.colors.onBrand, fontSize: 12, fontWeight: "700" },
   bannerIconCircle: { position: "absolute", right: 14, bottom: 12 },
-  section: { paddingHorizontal: 20, paddingTop: 22 },
+  section: { paddingHorizontal: 16, paddingTop: 18, gap: 12 },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 14,
+    marginBottom: 10,
   },
   sectionTitle: { fontSize: 18, fontWeight: "800", color: theme.colors.text },
   seeAll: { fontSize: 13, fontWeight: "600", color: theme.colors.primary },
-  servicesRow: { flexDirection: "row", gap: 10, paddingRight: 20 },
-  statsRow: { flexDirection: "row", gap: 10 },
+  servicesRow: { flexDirection: "row", gap: 8, paddingRight: 16, paddingTop: 2 },
+  statsRow: { flexDirection: "row", gap: 8 },
   statCard: {
     flex: 1,
-    borderRadius: 16,
+    borderRadius: 14,
     padding: 14,
     alignItems: "center",
     gap: 4,
   },
-  statValue: { fontSize: 20, fontWeight: "800" },
-  statLabel: { fontSize: 11, fontWeight: "600", color: theme.colors.textSecondary },
+  statValue: { fontSize: 18, fontWeight: "700" },
+  statLabel: { fontSize: 10.5, fontWeight: "600", color: theme.colors.textSecondary },
+  providerList: { gap: 8 },
   negotiateCard: {
     marginHorizontal: 20,
     marginTop: 20,
-    borderRadius: 22,
+    borderRadius: 18,
     overflow: "hidden",
   },
   negotiateGrad: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 20,
+    padding: 16,
   },
   negotiateLeft: { flex: 1, gap: 6 },
   negotiateTitle: { fontSize: 17, fontWeight: "800", color: theme.colors.onBrand },
@@ -861,7 +863,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   negotiateBtnText: { color: theme.colors.onBrand, fontSize: 12, fontWeight: "700" },
   emergencyCard: {
-    margin: 20,
+    marginHorizontal: 16,
+    marginTop: 14,
     backgroundColor: theme.colors.danger + "10",
     borderRadius: 20,
     padding: 18,
@@ -894,8 +897,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   emergencyCallText: { fontSize: 13, fontWeight: "700", color: theme.colors.onBrand },
   homeErrorCard: {
-    marginHorizontal: 20,
-    marginTop: 12,
+    marginHorizontal: 16,
+    marginTop: 10,
     padding: 14,
     borderRadius: 14,
     borderWidth: 1,
@@ -919,15 +922,15 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   activeBroadcastCard: {
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     marginTop: 8,
     borderRadius: 18,
     overflow: "hidden",
     shadowColor: theme.colors.success,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.12,
     shadowRadius: 10,
-    elevation: 6,
+    elevation: 2,
   },
   activeBroadcastGrad: {
     flexDirection: "row",
@@ -988,9 +991,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   broadcastCTA: {
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     marginTop: 8,
-    borderRadius: 20,
+    borderRadius: 16,
     overflow: "hidden",
   },
   broadcastGrad: {
@@ -999,7 +1002,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     padding: 18,
     gap: 12,
   },
-  broadcastCTATitle: { fontSize: 17, fontWeight: "800", color: theme.colors.onBrand },
+  broadcastCTATitle: { fontSize: 16, fontWeight: "700", color: theme.colors.onBrand },
   broadcastCTASub: {
     fontSize: 12,
     color: "rgba(255,255,255,0.85)",
@@ -1007,8 +1010,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     marginTop: 4,
   },
   broadcastCTAArrow: {
-    width: 48,
-    height: 48,
+    width: 42,
+    height: 42,
     borderRadius: 14,
     backgroundColor: "rgba(255,255,255,0.2)",
     alignItems: "center",
@@ -1020,17 +1023,17 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.55)",
     alignItems: "center",
     justifyContent: "center",
-    padding: 28,
+    padding: 20,
   },
   announcementCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 24,
-    padding: 24,
+    borderRadius: 20,
+    padding: 20,
     width: "100%",
     maxWidth: 380,
     shadowColor: theme.colors.text,
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
+    shadowOpacity: 0.12,
     shadowRadius: 24,
     elevation: 12,
     gap: 12,
@@ -1080,7 +1083,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   initialSkeletonWrap: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingTop: 18,
     paddingBottom: 8,
   },
