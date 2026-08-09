@@ -64,7 +64,7 @@ function buildMenuSections(t: ReturnType<typeof useLang>["t"], theme: AthooTheme
       items: [
         { icon: "help-circle", label: t.help, subtitle: t.helpHint, route: "/(customer)/help", color: theme.colors.primary },
         { icon: "headphones", label: t.contactSupport, subtitle: t.contactSupportHint, route: "/(customer)/contact-support", color: theme.colors.danger },
-        { icon: "info", label: t.about, subtitle: t.aboutHint, route: "/(customer)/about", color: theme.colors.accent },
+        { icon: "info", label: t.about, subtitle: `v${appIdentity.version} | ${t.aboutHint}`, route: "/(customer)/about", color: theme.colors.accent },
       ],
     },
   ];

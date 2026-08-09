@@ -412,7 +412,7 @@ function createStyles(theme: AthooTheme) {
     dayLabel: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
     dayLabelDisabled: { color: theme.colors.textSecondary },
     dayStatus: { marginTop: 1, fontSize: 11, color: theme.colors.textMuted },
-    compactSwitch: { transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] },
+    compactSwitch: { transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] as import("react-native").ViewStyle["transform"] },
     timeRow: { flexDirection: "row", alignItems: "flex-end", gap: 8, marginTop: 12 },
     selectorColumn: { flex: 1, minWidth: 0 },
     timeCaption: { marginBottom: 5, fontSize: 10, fontWeight: "700", color: theme.colors.textMuted, textTransform: "uppercase", letterSpacing: 0.4 },
