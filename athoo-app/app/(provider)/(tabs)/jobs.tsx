@@ -141,7 +141,10 @@ export default function ProviderJobsScreen() {
             <Pressable
               key={f.value}
               onPress={() => setActiveFilter(f.value)}
-              style={[styles.filterChip, { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.border }, isActive && { backgroundColor: theme.colors.secondary, borderColor: theme.colors.secondary }]}
+              style={[styles.filterChip, isActive && styles.filterChipActive]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isActive }}
+              accessibilityLabel={f.label}
             >
               <Text
                 style={[styles.filterText, { color: theme.colors.textSecondary }, isActive && styles.filterTextActive]}
@@ -193,6 +196,8 @@ export default function ProviderJobsScreen() {
                     params: { negId: neg.id },
                   })
                 }
+                accessibilityRole="button"
+                accessibilityLabel={`${tr("Negotiation")} - ${neg.service}`}
               >
                 <View style={styles.negHeader}>
                   <View style={styles.negIcon}>
@@ -200,8 +205,8 @@ export default function ProviderJobsScreen() {
                   </View>
 
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.negService}>{neg.service}</Text>
-                    <Text style={styles.negCustomer}>{tr("From")}: {neg.customerName}</Text>
+                    <Text style={styles.negService} numberOfLines={1}>{neg.service}</Text>
+                    <Text style={styles.negCustomer} numberOfLines={1}>{tr("From")}: {neg.customerName}</Text>
                   </View>
 
                   <View
@@ -419,26 +424,29 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     backgroundColor: theme.colors.surface,
     flexGrow: 0,
     flexShrink: 0,
-    height: 44,
-    maxHeight: 44,
+    minHeight: 44,
+    maxHeight: 52,
   },
 
   filterContent: {
-    paddingHorizontal: 14,
-    paddingVertical: 4,
+    paddingLeft: 14,
+    paddingRight: 22,
+    paddingVertical: 5,
     gap: 6,
     alignItems: "center",
     minHeight: 44,
   },
 
   filterChip: {
+    minHeight: 34,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: theme.colors.background,
+    backgroundColor: theme.colors.surfaceAlt,
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
@@ -455,7 +463,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   filterTextActive: {
-    color: theme.colors.surface,
+    color: theme.colors.onBrand,
   },
 
   filterBadge: {
@@ -523,6 +531,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+    minWidth: 0,
   },
 
   negIcon: {
@@ -538,14 +547,17 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     color: theme.colors.text,
+    flexShrink: 1,
   },
 
   negCustomer: {
     fontSize: 12,
     color: theme.colors.textSecondary,
+    flexShrink: 1,
   },
 
   negStatusBadge: {
+    flexShrink: 0,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 20,
