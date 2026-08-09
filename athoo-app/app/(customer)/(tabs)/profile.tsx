@@ -31,6 +31,7 @@ import type { AthooTheme } from "@/design/theme";
 import { apiErrorToMessage } from "@/lib/apiError";
 import { runtimeConfig } from "@/config/runtime";
 import { brandConfig } from "@/config/brand";
+import { appIdentity } from "@/config/appIdentity";
 
 
 function buildMenuSections(t: ReturnType<typeof useLang>["t"], theme: AthooTheme) {
@@ -429,7 +430,7 @@ export default function ProfileScreen() {
         </View>
       </AnimatedCard>
 
-      <Text style={styles.version}>Athoo v1.0 · Available across Pakistan</Text>
+      <Text style={styles.version}>Athoo v{appIdentity.version} | Available across Pakistan</Text>
 
       <Modal visible={showAvatarModal} animationType="slide" transparent>
         <Pressable style={styles.modalOverlay} onPress={() => setShowAvatarModal(false)}>

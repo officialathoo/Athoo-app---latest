@@ -32,6 +32,7 @@ import type { AthooTheme } from "@/design/theme";
 import { getCategoryAppearance } from "@/utils/categoryAppearance";
 import { apiErrorToMessage } from "@/lib/apiError";
 import { runtimeConfig } from "@/config/runtime";
+import { appIdentity } from "@/config/appIdentity";
 
 
 const PROVIDER_PROFILE_BACKGROUND_REFRESH_MS = 60_000;
@@ -442,7 +443,7 @@ export default function ProviderProfileScreen() {
         </Pressable>
       </View>
 
-      <Text style={styles.version}>Athoo Provider v1.0 • Pakistan</Text>
+      <Text style={styles.version}>Athoo Provider v{appIdentity.version} | Pakistan</Text>
 
       <Modal visible={showAvatarModal} animationType="slide" transparent>
         <Pressable style={styles.modalOverlay} onPress={() => setShowAvatarModal(false)}>
