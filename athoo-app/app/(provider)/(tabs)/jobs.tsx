@@ -1,6 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useState , useMemo} from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   Platform,
   Pressable,
@@ -46,6 +46,8 @@ export default function ProviderJobsScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const [activeFilter, setActiveFilter] =
     useState<typeof FILTERS[0]["value"]>("all");
+  const [refreshing, setRefreshing] = useState(false);
+  const lastFocusRefreshAtRef = useRef(0);
 
   const allBookings = user ? getMyBookings(user.id, "provider") : [];
   const myNegotiations = user ? getMyNegotiations(user.id) : [];
@@ -81,10 +83,24 @@ export default function ProviderJobsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadBookings();
+      const now = Date.now();
+      if (now - lastFocusRefreshAtRef.current >= 30_000) {
+        lastFocusRefreshAtRef.current = now;
+        void loadBookings({ silent: true });
+      }
       return undefined;
     }, [loadBookings])
   );
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadBookings({ silent: true });
+      lastFocusRefreshAtRef.current = Date.now();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadBookings]);
 
   return (
     <View style={[styles.container, { paddingTop: topPad, backgroundColor: theme.colors.background }]}>
@@ -150,7 +166,7 @@ export default function ProviderJobsScreen() {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 80 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={isLoading} onRefresh={loadBookings} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => void handleRefresh()} />
         }
       >
         {isLoading && allBookings.length === 0 && activeFilter !== "negotiations" ? (
