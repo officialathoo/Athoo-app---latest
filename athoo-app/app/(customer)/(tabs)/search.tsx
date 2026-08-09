@@ -87,6 +87,10 @@ export default function SearchScreen() {
   const [selectedService, setSelectedService] = useState<string | null>(null);
   const [showMap, setShowMap] = useState(false);
   const [sortBy, setSortBy] = useState<"recommended" | "nearby" | "rating" | "jobs">("recommended");
+  const hasActiveFilters =
+    selectedCity !== "All Areas" ||
+    selectedService !== null ||
+    sortBy !== "recommended";
 
   const [allProviders, setAllProviders] = useState<ExtendedProvider[]>([]);
   const [userLat, setUserLat] = useState<number | undefined>(undefined);
@@ -688,18 +692,28 @@ export default function SearchScreen() {
           <Pressable
             style={[styles.mapToggle, showMap && styles.mapToggleActive]}
             onPress={() => setShowMap(!showMap)}
+            accessibilityRole="button"
+            accessibilityLabel={showMap ? tr("Show provider list") : tr("Show provider map")}
+            accessibilityState={{ selected: showMap }}
           >
             <Icon name="map" size={20} color={showMap ? theme.colors.onBrand : theme.colors.primary} />
           </Pressable>
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterScrollContent}
+        >
           <View style={styles.cityRow}>
             {cities.map((c) => (
               <Pressable
                 key={c === "All Areas" ? t.allAreas : c}
                 onPress={() => setSelectedCity(c)}
                 style={[styles.cityChip, selectedCity === c && styles.cityChipActive]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: selectedCity === c }}
+                accessibilityLabel={c === "All Areas" ? tr("All Areas") : c}
               >
                 <Text style={[styles.cityText, selectedCity === c && styles.cityTextActive]}>
                   {c}
@@ -709,7 +723,11 @@ export default function SearchScreen() {
           </View>
         </ScrollView>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterScrollContent}
+        >
           <View style={styles.sortRow}>
             {[
               { label: tr("Recommended"), value: "recommended" as const },
@@ -724,6 +742,9 @@ export default function SearchScreen() {
                   styles.sortChip,
                   sortBy === item.value && styles.sortChipActive,
                 ]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: sortBy === item.value }}
+                accessibilityLabel={item.label}
               >
                 <Text
                   style={[
@@ -737,6 +758,28 @@ export default function SearchScreen() {
             ))}
           </View>
         </ScrollView>
+
+        {hasActiveFilters ? (
+          <View style={styles.filterSummaryRow}>
+            <View style={styles.filterSummaryLabel}>
+              <Icon name="sliders" size={14} color={theme.colors.primary} />
+              <Text style={styles.filterSummaryText}>{tr("Filters applied")}</Text>
+            </View>
+            <Pressable
+              onPress={() => {
+                setSelectedCity("All Areas");
+                setSelectedService(null);
+                setSortBy("recommended");
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={tr("Reset filters")}
+              style={({ pressed }) => [styles.resetFiltersButton, pressed && { opacity: 0.72 }]}
+            >
+              <Icon name="rotate-ccw" size={13} color={theme.colors.primary} />
+              <Text style={styles.resetFiltersText}>{tr("Reset")}</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
 
       {showMap ? (
@@ -1024,7 +1067,7 @@ export default function SearchScreen() {
           ) : null}
 
           <View style={styles.resultsHeader}>
-            <Text style={styles.sectionLabel}>
+                        <Text style={[styles.sectionLabel, styles.resultsTitle]}>
               {selectedService
                 ? `${getCategoryBySlug(selectedService || "")?.name} Workers`
                 : query
@@ -1068,8 +1111,8 @@ export default function SearchScreen() {
             <AnimatedCard>
               <View style={styles.emptyState}>
                 <Icon name="search" size={36} color={theme.colors.textMuted} />
-                <Text style={styles.emptyTitle}>{isUrdu ? "Ú©ÙˆØ¦ÛŒ Ù…Ù„Ø§Ø²Ù… Ù†ÛÛŒÚº Ù…Ù„Ø§" : "No workers found"}</Text>
-                <Text style={styles.emptySubtitle}>{isUrdu ? "Ù…Ø®ØªÙ„Ù ØªÙ„Ø§Ø´ ÛŒØ§ Ø®Ø¯Ù…Øª Ø¢Ø²Ù…Ø§Ø¦ÛŒÚº" : "Try a different search or service"}</Text>
+                <Text style={styles.emptyTitle}>{tr("No workers found")}</Text>
+                <Text style={styles.emptySubtitle}>{tr("Try a different search or service")}</Text>
               </View>
             </AnimatedCard>
           ) : (
@@ -1155,12 +1198,16 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   mapToggleActive: { backgroundColor: theme.colors.primary },
 
-  cityRow: { flexDirection: "row", gap: 6 },
+  filterScrollContent: { paddingRight: 8 },
+  cityRow: { flexDirection: "row", gap: 6, alignItems: "center" },
 
   cityChip: {
+    minHeight: 32,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: theme.colors.background,
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -1174,12 +1221,15 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   cityText: { fontSize: 12, fontWeight: "600", color: theme.colors.textSecondary },
   cityTextActive: { color: theme.colors.onBrand },
 
-  sortRow: { flexDirection: "row", gap: 6, paddingTop: 1 },
+  sortRow: { flexDirection: "row", gap: 6, paddingTop: 1, alignItems: "center" },
 
   sortChip: {
+    minHeight: 32,
     paddingHorizontal: 11,
     paddingVertical: 6,
     borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: theme.colors.surfaceAlt,
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -1198,6 +1248,43 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   sortTextActive: {
     color: theme.colors.onBrand,
+  },
+
+  filterSummaryRow: {
+    minHeight: 32,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    paddingTop: 2,
+  },
+  filterSummaryLabel: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flex: 1,
+  },
+  filterSummaryText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: theme.colors.textSecondary,
+  },
+  resetFiltersButton: {
+    minHeight: 30,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: theme.colors.infoSoft,
+    borderWidth: 1,
+    borderColor: theme.colors.primary + "2A",
+  },
+  resetFiltersText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: theme.colors.primary,
   },
 
   mapContainer: { flex: 1 },
@@ -1470,13 +1557,21 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   resultsHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
+    gap: 10,
     marginBottom: 12,
+  },
+  resultsTitle: {
+    flex: 1,
+    marginBottom: 0,
   },
 
   resultCount: {
+    maxWidth: "46%",
     fontSize: 12,
+    lineHeight: 17,
     color: theme.colors.textSecondary,
+    textAlign: "right",
   },
 
   loadingListWrap: {
