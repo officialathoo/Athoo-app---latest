@@ -32,7 +32,7 @@ import { getFastForegroundLocation } from "@/services/location";
 import { useCategories } from "@/context/CategoriesContext";
 import { apiErrorToMessage } from "@/lib/apiError";
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Generate the next `count` calendar days starting from today (local time). */
 function getUpcomingDates(count = 30) {
@@ -760,7 +760,7 @@ export default function NegotiateScreen() {
                   <Icon name="navigation" size={16} color={theme.colors.primary} />
                 )}
                 <Text style={styles.gpsBtnText}>
-                  {isGettingLocation ? "Getting location…" : "Use My Current Location"}
+                  {isGettingLocation ? "Getting locationâ€¦" : "Use My Current Location"}
                 </Text>
               </Pressable>
 
@@ -839,7 +839,7 @@ export default function NegotiateScreen() {
                 disabled={!scheduledDate || !scheduledTime}
               >
                 <Text style={styles.nextBtnText}>
-                  {scheduledDate && scheduledTime ? `Next – ${scheduledDate} at ${scheduledTime}` : "Next: Offer Amount"}
+                  {scheduledDate && scheduledTime ? `Next â€“ ${scheduledDate} at ${scheduledTime}` : "Next: Offer Amount"}
                 </Text>
                 <Icon name="arrow-right" size={16} color={theme.colors.onBrand} />
               </Pressable>
@@ -942,7 +942,7 @@ export default function NegotiateScreen() {
                   <>
                     <Icon name="send" size={18} color={theme.colors.onBrand} />
                     <Text style={styles.submitText}>
-                      Send Offer – Rs.{" "}
+                      Send Offer â€“ Rs.{" "}
                       {offerPrice ? parseInt(offerPrice, 10).toLocaleString() : "0"}
                     </Text>
                   </>
@@ -1002,17 +1002,17 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   headerGrad: {
-    paddingTop: 16,
-    paddingBottom: 32,
-    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 24,
+    paddingHorizontal: 16,
     gap: 4,
     alignItems: "center",
   },
 
   backBtn: {
     position: "absolute",
-    top: 16,
-    left: 20,
+    top: 12,
+    left: 16,
     width: 36,
     height: 36,
     borderRadius: 12,
@@ -1036,13 +1036,13 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   providerBadge: {
     alignItems: "center",
     gap: 4,
-    marginTop: 8,
+    marginTop: 6,
   },
 
   providerBadgeAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
@@ -1070,14 +1070,14 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   content: {
     padding: 16,
-    gap: 12,
+    gap: 10,
     paddingBottom: 60,
   },
 
   howSection: {
     backgroundColor: theme.colors.primary + "10",
     borderRadius: 14,
-    padding: 14,
+    padding: 12,
     borderWidth: 1,
     borderColor: theme.colors.primary + "25",
     gap: 8,
@@ -1103,9 +1103,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   section: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
+    borderRadius: 14,
+    padding: 14,
+    gap: 10,
   },
 
   sectionTitle: {
@@ -1125,8 +1125,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 24,
-    paddingVertical: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
@@ -1138,9 +1138,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 6,
   },
   stepDot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: theme.colors.surfaceAlt,
     borderWidth: 2,
     borderColor: theme.colors.border,
@@ -1180,15 +1180,15 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   servicePicker: {
     gap: 10,
-    paddingBottom: 18,
-    marginBottom: 18,
+    paddingBottom: 14,
+    marginBottom: 14,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
   servicePickerChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   servicePickerChip: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    paddingHorizontal: 12, paddingVertical: 9, borderRadius: 18,
+    paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999,
     borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surfaceAlt,
   },
   servicePickerChipSelected: { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary + "12" },
@@ -1210,11 +1210,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignItems: "center",
     gap: 8,
     backgroundColor: theme.colors.primary + "12",
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: theme.colors.primary + "40",
     borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
   gpsBtnText: {
     fontSize: 14,
@@ -1241,14 +1241,14 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   addressInput: {
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: theme.colors.border,
     borderRadius: 12,
     padding: 12,
     fontSize: 14,
     color: theme.colors.text,
     backgroundColor: theme.colors.surfaceAlt,
-    minHeight: 80,
+    minHeight: 72,
   },
 
   // Date chip row
@@ -1257,10 +1257,10 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   dateChip: {
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 14,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: theme.colors.border,
     backgroundColor: theme.colors.surfaceAlt,
     minWidth: 64,
@@ -1291,10 +1291,10 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 8,
   },
   timeChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderRadius: 10,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: theme.colors.border,
     backgroundColor: theme.colors.surfaceAlt,
   },
@@ -1318,7 +1318,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 8,
     backgroundColor: theme.colors.primary,
     borderRadius: 14,
-    paddingVertical: 14,
+    paddingVertical: 12,
     marginTop: 4,
   },
   nextBtnText: {
@@ -1333,10 +1333,10 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     marginBottom: 4,
   },
   fieldInput: {
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: theme.colors.border,
     borderRadius: 12,
-    padding: 12,
+    padding: 10,
     fontSize: 14,
     color: theme.colors.text,
     backgroundColor: theme.colors.surfaceAlt,
@@ -1344,7 +1344,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   summaryBox: {
     backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 12,
-    padding: 12,
+    padding: 10,
     gap: 8,
     borderWidth: 1,
     borderColor: theme.colors.border,

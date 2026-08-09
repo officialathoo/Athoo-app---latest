@@ -270,7 +270,7 @@ export default function BookServiceScreen() {
       showError("Confirm service area", "Athoo could not confirm the city and area for this pin. Search the exact address or move the pin slightly and try again.");
     }
     if (selection.accuracy != null) {
-      setGpsAccuracyText(`GPS: ±${Math.round(selection.accuracy)} m`);
+      setGpsAccuracyText(`GPS: Â±${Math.round(selection.accuracy)} m`);
     } else {
       setGpsAccuracyText("");
     }
@@ -278,7 +278,7 @@ export default function BookServiceScreen() {
 
   const detectCurrentLocation = async () => {
     setLoadingAddress(true);
-    setGpsAccuracyText("Acquiring GPS…");
+    setGpsAccuracyText("Acquiring GPSâ€¦");
     try {
       const result = await getFastForegroundLocation({
         timeoutMs: 12_000,
@@ -297,7 +297,7 @@ export default function BookServiceScreen() {
       }
 
       if (result.location.accuracy != null) {
-        setGpsAccuracyText(`GPS: ±${Math.round(result.location.accuracy)} m${result.stale ? " (cached)" : ""}`);
+        setGpsAccuracyText(`GPS: Â±${Math.round(result.location.accuracy)} m${result.stale ? " (cached)" : ""}`);
       }
       const coords = { latitude: result.location.latitude, longitude: result.location.longitude };
       setUserLocation(coords);
@@ -328,7 +328,7 @@ export default function BookServiceScreen() {
     if (!label.includes(",")) return true;
     const parts = label.split(",").map((s) => s.trim()).filter(Boolean);
     if (parts.length >= 3) return false; // road + area + city = good
-    // All parts identical → city repeated
+    // All parts identical â†’ city repeated
     const unique = new Set(parts.map((p) => p.toLowerCase()));
     if (unique.size === 1) return true;
     // All parts are admin-area words
@@ -341,16 +341,16 @@ export default function BookServiceScreen() {
    * Reverse geocode with the best source available on the device.
    *
    * Priority:
-   *  1. Device OS geocoder — the device geocoder available on the operating system.
+   *  1. Device OS geocoder â€” the device geocoder available on the operating system.
    *     These both have real street/neighbourhood data for Pakistan.
-   *  2. Server Nominatim proxy — fallback when OS geocoder is too vague.
-   *  3. Raw coordinates — last resort; always prompts for manual entry.
+   *  2. Server Nominatim proxy â€” fallback when OS geocoder is too vague.
+   *  3. Raw coordinates â€” last resort; always prompts for manual entry.
    */
   const smartReverseGeocode = async (
     lat: number,
     lng: number,
   ): Promise<{ label: string; cityOnly: boolean }> => {
-    // 1. Device OS geocoder — best on-device map data (device)
+    // 1. Device OS geocoder â€” best on-device map data (device)
     try {
       const deviceLabel = await deviceReversGeocode(lat, lng);
       if (deviceLabel && !isCityOnly(deviceLabel)) {
@@ -362,7 +362,7 @@ export default function BookServiceScreen() {
       if (serverLabel && !isCityOnly(serverLabel) && !serverIsCoords) {
         return { label: serverLabel, cityOnly: false };
       }
-      // Both sources vague — use device result (cleaner) + flag for manual prompt
+      // Both sources vague â€” use device result (cleaner) + flag for manual prompt
       const best = deviceLabel && !serverIsCoords ? deviceLabel : serverLabel ?? deviceLabel;
       if (best && !serverIsCoords) return { label: best, cityOnly: true };
       if (deviceLabel) return { label: deviceLabel, cityOnly: true };
@@ -511,7 +511,7 @@ export default function BookServiceScreen() {
       const stored = await AsyncStorage.getItem(LIVE_LOCATION_CONSENT_KEY);
       if (stored === "1") return true;
     } catch {
-      // If storage fails, fall through and ask — better safe.
+      // If storage fails, fall through and ask â€” better safe.
     }
     return new Promise<boolean>((resolve) => {
       pendingSubmitRef.current = () => resolve(true);
@@ -561,7 +561,7 @@ export default function BookServiceScreen() {
       return;
     }
 
-    // First-time live-location consent — explicit modal before the user's
+    // First-time live-location consent â€” explicit modal before the user's
     // first ever booking so they understand the provider will be able to see
     // their location while the job is active. Stored locally; only asked once.
     const disclaimerAccepted = await ensureMaterialsDisclaimer();
@@ -598,7 +598,7 @@ export default function BookServiceScreen() {
 
       const parsedTravelCharge = travelCharge.trim() ? Math.max(0, parseInt(travelCharge, 10) || 0) : 500;
 
-      const finalAddress = [address.trim(), manualDetails.trim()].filter(Boolean).join(" — ");
+      const finalAddress = [address.trim(), manualDetails.trim()].filter(Boolean).join(" â€” ");
 
       if (isDirectBooking && paramProviderId) {
         if (!directBookingRequestIdRef.current) {
@@ -718,7 +718,7 @@ export default function BookServiceScreen() {
         </Pressable>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Book a Service</Text>
-          <Text style={styles.headerSub}>{STEPS[step]} · Step {step + 1} of {STEPS.length}</Text>
+          <Text style={styles.headerSub}>{STEPS[step]} Â· Step {step + 1} of {STEPS.length}</Text>
         </View>
         <View style={{ width: 190 }}>
           <BookingProgress
@@ -870,7 +870,7 @@ export default function BookServiceScreen() {
                 ? <ActivityIndicator size="small" color={theme.colors.primary} />
                 : <Icon name="navigation" size={15} color={theme.colors.primary} />}
               <Text style={styles.detectText}>
-                {loadingAddress ? (gpsAccuracyText || "Detecting location…") : "Use Current Location"}
+                {loadingAddress ? (gpsAccuracyText || "Detecting locationâ€¦") : "Use Current Location"}
               </Text>
             </Pressable>
 
@@ -889,7 +889,7 @@ export default function BookServiceScreen() {
                   <Icon name="check-circle" size={13} color={theme.colors.success} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.addrLabel}>
-                      {reversingGeo ? "Updating address…" : "Detected address"}
+                      {reversingGeo ? "Updating addressâ€¦" : "Detected address"}
                     </Text>
                     <Text style={styles.addrText}>{address}</Text>
                     <Text style={styles.coordsText}>
@@ -900,7 +900,7 @@ export default function BookServiceScreen() {
               </View>
             )}
 
-            {/* Manual address details — always shown when a location is set */}
+            {/* Manual address details â€” always shown when a location is set */}
             {(userLocation || address.trim().length > 5) && (
               <View style={styles.manualCard}>
                 <View style={styles.manualCardHeader}>
@@ -911,13 +911,13 @@ export default function BookServiceScreen() {
                   <Text style={styles.optionalTag}> optional</Text>
                 </View>
                 <Text style={styles.manualCardHint}>
-                  e.g. "House 12, Street 3" · "Near Rehan School" · "2nd floor, Azizabad"
+                  e.g. "House 12, Street 3" Â· "Near Rehan School" Â· "2nd floor, Azizabad"
                 </Text>
                 <TextInput
                   style={styles.manualInput}
                   value={manualDetails}
                   onChangeText={setManualDetails}
-                  placeholder="House no., street, floor, shop name, landmark…"
+                  placeholder="House no., street, floor, shop name, landmarkâ€¦"
                   placeholderTextColor={theme.colors.textMuted}
                   returnKeyType="done"
                   maxLength={120}
@@ -963,7 +963,7 @@ export default function BookServiceScreen() {
               />
             </View>
 
-            <Text style={styles.fieldLabel}>Attach a Video (optional · max 30s)</Text>
+            <Text style={styles.fieldLabel}>Attach a Video (optional Â· max 30s)</Text>
             <Text style={styles.fieldHint}>A short clip helps providers understand the job better</Text>
 
             {videoUri ? (
@@ -1034,14 +1034,14 @@ export default function BookServiceScreen() {
             <View style={styles.materialsWarning}>
               <View style={styles.materialsWarningHeader}>
                 <Icon name="alert-triangle" size={15} color={theme.colors.warning} />
-                <Text style={styles.materialsWarningTitle}>Important — Materials Not Included</Text>
+                <Text style={styles.materialsWarningTitle}>Important â€” Materials Not Included</Text>
               </View>
               <Text style={styles.materialsWarningText}>
                 The service price covers <Text style={{ fontWeight: "700" }}>labor/service charges only</Text>. Materials, spare parts, gas refilling, consumables, and replacement items are <Text style={{ fontWeight: "700" }}>not included</Text>. Any material arrangements are directly between you and the provider. Athoo is not responsible for material payments, warranties, or disputes.
               </Text>
             </View>
 
-            {/* Hourly rate info card — rate comes from the provider's profile, never a platform/category default */}
+            {/* Hourly rate info card â€” rate comes from the provider's profile, never a platform/category default */}
             {(() => {
               const providerRateNum = paramProviderRate ? parseInt(paramProviderRate, 10) : 0;
               if (isDirectBooking) {
@@ -1096,7 +1096,7 @@ export default function BookServiceScreen() {
             })()}
 
             <Text style={styles.heading}>Set your per-hour offer rate</Text>
-            <Text style={styles.sub}>Enter the hourly labor/service rate only. Do not enter the full service total here. Final invoice = hourly rate × actual job time + travel charges.</Text>
+            <Text style={styles.sub}>Enter the hourly labor/service rate only. Do not enter the full service total here. Final invoice = hourly rate Ã— actual job time + travel charges.</Text>
 
             <View style={styles.offerWrap}>
               <Text style={styles.rsSign}>Rs.</Text>
@@ -1206,7 +1206,7 @@ export default function BookServiceScreen() {
                     {appliedPromo.discountType === "fixed"
                       ? `Rs. ${appliedPromo.discountValue.toLocaleString()} discount applied!`
                       : `${appliedPromo.discountValue}% discount applied!`}
-                    {appliedPromo.description ? `  · ${appliedPromo.description}` : ""}
+                    {appliedPromo.description ? `  Â· ${appliedPromo.description}` : ""}
                   </Text>
                 </View>
               )}
@@ -1236,7 +1236,7 @@ export default function BookServiceScreen() {
               {[
                 { icon: "tool", label: "Service", val: selectedCategory?.name ?? "" },
                 { icon: "map-pin", label: "Address", val: address },
-                { icon: "calendar", label: "When", val: `${selectedDate} · ${selectedTime}` },
+                { icon: "calendar", label: "When", val: `${selectedDate} Â· ${selectedTime}` },
                 {
                   icon: "dollar-sign",
                   label: "Offer",
@@ -1271,7 +1271,7 @@ export default function BookServiceScreen() {
                   <Icon name="tag" size={13} color={theme.colors.success} />
                   <Text style={styles.summaryLbl}>Promo</Text>
                   <Text style={[styles.summaryVal, { color: theme.colors.success, fontWeight: "800" }]}>
-                    {appliedPromo.code} ·{" "}
+                    {appliedPromo.code} Â·{" "}
                     {appliedPromo.discountType === "fixed"
                       ? `Rs. ${appliedPromo.discountValue.toLocaleString()} off`
                       : `${appliedPromo.discountValue}% off`}
@@ -1436,12 +1436,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   homeBtnText: { fontSize: 14, fontWeight: "700", color: theme.colors.textSecondary },
 
   header: {
-    backgroundColor: theme.colors.surface, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 14,
+    backgroundColor: theme.colors.surface, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10,
     flexDirection: "row", alignItems: "center", gap: 12,
     borderBottomWidth: 1, borderBottomColor: theme.colors.border,
   },
   backBtn: {
-    width: 40, height: 40, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt,
+    width: 36, height: 36, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center", justifyContent: "center",
   },
   headerTitle: { fontSize: 17, fontWeight: "800", color: theme.colors.text },
@@ -1451,27 +1451,27 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   dotActive: { backgroundColor: theme.colors.primary, width: 20 },
   dotDone: { backgroundColor: theme.colors.primary + "60" },
 
-  section: { padding: 20, gap: 14 },
-  heading: { fontSize: 22, fontWeight: "800", color: theme.colors.text },
+  section: { padding: 16, gap: 12},
+  heading: { fontSize: 20, fontWeight: "800", color: theme.colors.text },
   sub: { fontSize: 13, color: theme.colors.textSecondary, marginTop: -8 },
 
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: 10},
   catCard: {
-    width: "47%", backgroundColor: theme.colors.surface, borderRadius: 16, padding: 14,
-    borderWidth: 2, borderColor: theme.colors.border, gap: 8, alignItems: "flex-start",
+    width: "47%", backgroundColor: theme.colors.surface, borderRadius: 14, padding: 12,
+    borderWidth: 1, borderColor: theme.colors.border, gap: 8, alignItems: "flex-start",
   },
   catCardActive: {
-    shadowColor: theme.colors.text, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.10,
-    shadowRadius: 12, elevation: 5,
+    shadowColor: theme.colors.text, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06,
+    shadowRadius: 12, elevation: 2,
   },
-  catIcon: { width: 44, height: 44, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  catIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   catName: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
   catDesc: { fontSize: 11, color: theme.colors.textMuted, lineHeight: 15 },
 
   searchBar: {
     flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: theme.colors.surface, borderRadius: 14, borderWidth: 1.5,
-    borderColor: theme.colors.primary + "50", paddingHorizontal: 14, paddingVertical: 12,
+    backgroundColor: theme.colors.surface, borderRadius: 14, borderWidth: 1,
+    borderColor: theme.colors.primary + "50", paddingHorizontal: 12, paddingVertical: 10,
   },
   searchInput: { flex: 1, fontSize: 14, color: theme.colors.text },
 
@@ -1489,7 +1489,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   detectBtn: {
     flexDirection: "row", alignItems: "center", gap: 8, alignSelf: "flex-start",
     backgroundColor: theme.colors.primary + "12", borderWidth: 1, borderColor: theme.colors.primary + "30",
-    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11,
+    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9,
   },
   detectText: { fontSize: 13, fontWeight: "700", color: theme.colors.primary },
 
@@ -1498,14 +1498,14 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   savedChip: {
     flexDirection: "row", alignItems: "center", gap: 6,
     backgroundColor: theme.colors.primary + "12", borderWidth: 1, borderColor: theme.colors.primary + "30",
-    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8, maxWidth: 200,
+    borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7, maxWidth: 200,
   },
   savedChipActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
   savedChipText: { fontSize: 12, fontWeight: "600", color: theme.colors.primary },
   savedChipTextActive: { color: theme.colors.onBrand },
 
   mapCard: {
-    borderRadius: 16, borderWidth: 1.5, borderColor: theme.colors.primary + "35",
+    borderRadius: 14, borderWidth: 1, borderColor: theme.colors.primary + "35",
     backgroundColor: theme.colors.surface, overflow: "hidden",
   },
   mapCardHeader: {
@@ -1516,7 +1516,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   mapCardHint: {
     fontSize: 11, color: theme.colors.textMuted, paddingHorizontal: 14, paddingBottom: 8,
   },
-  mapWrap: { height: 200, marginHorizontal: 0 },
+  mapWrap: { height: 180, marginHorizontal: 0 },
   map: { flex: 1 },
 
   addrPreview: {
@@ -1540,8 +1540,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   gpsPillText: { fontSize: 10, fontWeight: "700", color: theme.colors.primary },
 
   manualCard: {
-    borderRadius: 14, borderWidth: 1.5, borderColor: theme.colors.secondary + "40",
-    backgroundColor: theme.colors.surface, padding: 14, gap: 8,
+    borderRadius: 14, borderWidth: 1, borderColor: theme.colors.secondary + "40",
+    backgroundColor: theme.colors.surface, padding: 12, gap: 8,
   },
   manualCardHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
   manualCardTitle: { fontSize: 13, fontWeight: "700", color: theme.colors.secondary },
@@ -1559,9 +1559,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   cityOnlyWarnText: { flex: 1, fontSize: 11, color: theme.colors.warning, lineHeight: 16, fontWeight: "600" },
 
   textAreaWrap: {
-    backgroundColor: theme.colors.surface, borderRadius: 14, borderWidth: 1.5, borderColor: theme.colors.border, padding: 14,
+    backgroundColor: theme.colors.surface, borderRadius: 14, borderWidth: 1, borderColor: theme.colors.border, padding: 12,
   },
-  textArea: { fontSize: 14, color: theme.colors.text, minHeight: 120, textAlignVertical: "top", lineHeight: 22 },
+  textArea: { fontSize: 14, color: theme.colors.text, minHeight: 104, textAlignVertical: "top", lineHeight: 21},
 
   fieldLabel: { fontSize: 15, fontWeight: "700", color: theme.colors.text },
   fieldHint: { fontSize: 12, color: theme.colors.textMuted, marginTop: -8 },
@@ -1574,13 +1574,13 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   videoBtns: { flexDirection: "row", gap: 12 },
   videoBtn: {
     flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: theme.colors.surface, borderWidth: 1.5, borderColor: theme.colors.border, borderRadius: 12, paddingVertical: 14,
+    backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12, paddingVertical: 12,
   },
   videoBtnText: { fontSize: 13, fontWeight: "600", color: theme.colors.primary },
 
   dateCard: {
-    width: 70, alignItems: "center", padding: 12, borderRadius: 14,
-    backgroundColor: theme.colors.surface, borderWidth: 1.5, borderColor: theme.colors.border,
+    width: 64, alignItems: "center", padding: 10, borderRadius: 14,
+    backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border,
   },
   dateCardActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
   dayLbl: { fontSize: 10, fontWeight: "600", color: theme.colors.textSecondary, textTransform: "uppercase" },
@@ -1589,7 +1589,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   dateActiveText: { color: theme.colors.onBrand },
 
   chargesCard: {
-    backgroundColor: theme.colors.surface, borderRadius: 16, borderWidth: 1.5,
+    backgroundColor: theme.colors.surface, borderRadius: 14, borderWidth: 1,
     borderColor: theme.colors.border, overflow: "hidden",
   },
   chargesTitle: {
@@ -1615,22 +1615,22 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   offerWrap: {
     flexDirection: "row", alignItems: "center", backgroundColor: theme.colors.surface,
-    borderRadius: 16, borderWidth: 2, borderColor: theme.colors.primary, paddingHorizontal: 16, paddingVertical: 4, gap: 8,
+    borderRadius: 14, borderWidth: 1, borderColor: theme.colors.primary, paddingHorizontal: 16, paddingVertical: 4, gap: 8,
   },
   rsSign: { fontSize: 20, fontWeight: "800", color: theme.colors.primary },
-  offerInput: { flex: 1, fontSize: 28, fontWeight: "800", color: theme.colors.text, paddingVertical: 12 },
+  offerInput: { flex: 1, fontSize: 24, fontWeight: "800", color: theme.colors.text, paddingVertical: 10},
 
   promoSection: { gap: 8 },
   optionalTag: { fontSize: 12, fontWeight: "400", color: theme.colors.textMuted },
   promoRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   promoInput: {
-    flex: 1, backgroundColor: theme.colors.surface, borderRadius: 12, borderWidth: 1.5,
-    borderColor: theme.colors.border, paddingHorizontal: 14, paddingVertical: 12,
+    flex: 1, backgroundColor: theme.colors.surface, borderRadius: 12, borderWidth: 1,
+    borderColor: theme.colors.border, paddingHorizontal: 14, paddingVertical: 10,
     fontSize: 14, fontWeight: "700", color: theme.colors.text, letterSpacing: 1,
   },
   promoInputApplied: { borderColor: theme.colors.success, backgroundColor: theme.colors.success + "08" },
   promoBtn: {
-    backgroundColor: theme.colors.primary, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 13,
+    backgroundColor: theme.colors.primary, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 11,
   },
   promoBtnText: { fontSize: 13, fontWeight: "800", color: theme.colors.onBrand },
   promoRemoveBtn: {
@@ -1647,15 +1647,15 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   quickRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   quickChip: {
-    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
-    backgroundColor: theme.colors.surfaceAlt, borderWidth: 1.5, borderColor: theme.colors.border,
+    paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999,
+    backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.border,
   },
   quickChipActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
   quickText: { fontSize: 13, fontWeight: "700", color: theme.colors.textSecondary },
   quickTextActive: { color: theme.colors.onBrand },
 
   summaryCard: {
-    backgroundColor: theme.colors.surface, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: theme.colors.border,
   },
   summaryTitle: { fontSize: 14, fontWeight: "800", color: theme.colors.text, marginBottom: 12 },
   summaryRow: {
@@ -1671,7 +1671,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   noteText: { flex: 1, fontSize: 12, color: theme.colors.primary, lineHeight: 18, fontWeight: "600" },
 
-  materialsWarning: { padding: 14, backgroundColor: theme.colors.warningSoft, borderRadius: 12, borderWidth: 1, borderColor: theme.colors.warning, gap: 8 },
+  materialsWarning: { padding: 12, backgroundColor: theme.colors.warningSoft, borderRadius: 12, borderWidth: 1, borderColor: theme.colors.warning, gap: 8 },
   materialsWarningHeader: { flexDirection: "row" as const, alignItems: "center" as const, gap: 7 },
   materialsWarningTitle: { fontSize: 13.5, fontWeight: "800" as const, color: theme.colors.warning, flex: 1 },
   materialsWarningText: { fontSize: 12.5, color: theme.colors.warning, lineHeight: 18 },
@@ -1683,16 +1683,16 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   bottomBar: {
     position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: theme.colors.surface,
-    paddingHorizontal: 20, paddingTop: 14,
+    paddingHorizontal: 16, paddingTop: 10,
     borderTopWidth: 1, borderTopColor: theme.colors.border,
   },
   primaryBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-    backgroundColor: theme.colors.primary, borderRadius: 16, paddingVertical: 16,
+    backgroundColor: theme.colors.primary, borderRadius: 14, paddingVertical: 14,
   },
   broadcastBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-    backgroundColor: theme.colors.secondary, borderRadius: 16, paddingVertical: 16,
+    backgroundColor: theme.colors.secondary, borderRadius: 14, paddingVertical: 14,
   },
   btnDisabled: { opacity: 0.5 },
   btnText: { fontSize: 16, fontWeight: "800", color: theme.colors.onBrand },

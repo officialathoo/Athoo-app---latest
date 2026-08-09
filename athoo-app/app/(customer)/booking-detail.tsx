@@ -147,7 +147,7 @@ async function openMapsAt(latitude: number, longitude: number, label?: string) {
   return openExternalMap({ latitude, longitude, label });
 }
 
-// ── Custom map markers ────────────────────────────────────────────────────────
+// â”€â”€ Custom map markers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function AthooMarker() {
   const { theme } = useTheme();
@@ -411,7 +411,7 @@ export default function BookingDetailScreen() {
   const isProviderStale = useMemo(() => {
     if (realtimeProviderCoords) return false;
     const updatedAt = (booking as any)?.providerUpdatedAt;
-    if (!updatedAt) return !!dbProviderCoords; // has coords but no timestamp → treat as stale
+    if (!updatedAt) return !!dbProviderCoords; // has coords but no timestamp â†’ treat as stale
     return Date.now() - new Date(updatedAt).getTime() > 5 * 60 * 1000;
   }, [realtimeProviderCoords, dbProviderCoords, booking]);
 
@@ -754,11 +754,11 @@ export default function BookingDetailScreen() {
                 <Text style={styles.trackInfoLabel}>Provider</Text>
                 <Text style={[styles.trackInfoValue, isProviderStale && { color: theme.colors.warning }]}>
                   {realtimeProviderCoords
-                    ? "● Live"
+                    ? "â— Live"
                     : isProviderStale
-                    ? "Updating…"
+                    ? "Updatingâ€¦"
                     : providerCoords
-                    ? "● Recent"
+                    ? "â— Recent"
                     : "Not shared"}
                 </Text>
               </View>
@@ -818,7 +818,7 @@ export default function BookingDetailScreen() {
                 >
                   <Icon name="crosshair" size={15} color={theme.colors.primary} />
                   <Text style={styles.trackActionText}>
-                    {isUpdatingJobLocation ? "Updating…" : "My Location"}
+                    {isUpdatingJobLocation ? "Updatingâ€¦" : "My Location"}
                   </Text>
                 </Pressable>
               )}
@@ -1209,9 +1209,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 16,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
     backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
@@ -1228,22 +1228,22 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   statusBadge: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20 },
   statusText: { fontSize: 11, fontWeight: "700" },
   scroll: { flex: 1 },
-  content: { padding: 20, gap: 16, paddingBottom: 60 },
+  content: { padding: 16, gap: 12, paddingBottom: 60 },
   card: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 18,
-    padding: 16,
+    borderRadius: 14,
+    padding: 14,
     shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
+    shadowOpacity: 0.05,
     shadowRadius: 8,
-    elevation: 2,
+    elevation: 1,
     gap: 12,
   },
   serviceHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
   serviceIcon: {
-    width: 50,
-    height: 50,
+    width: 44,
+    height: 44,
     borderRadius: 14,
     backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
@@ -1303,7 +1303,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   trackingMap: {
     width: "100%",
-    height: 240,
+    height: 210,
     borderRadius: 16,
     overflow: "hidden",
   },
@@ -1327,7 +1327,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 12,
-    padding: 10,
+    padding: 8,
     alignItems: "center",
     gap: 4,
   },
@@ -1352,7 +1352,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: theme.colors.primary + "30",
-    paddingVertical: 12,
+    paddingVertical: 10,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
@@ -1410,16 +1410,16 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   existingReview: { fontSize: 14, color: theme.colors.textSecondary, lineHeight: 20 },
   pinDisplayCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 18,
-    padding: 18,
+    borderRadius: 14,
+    padding: 14,
     gap: 12,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: theme.colors.primary + "40",
     shadowColor: theme.colors.primary,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
+    shadowOpacity: 0.06,
     shadowRadius: 12,
-    elevation: 4,
+    elevation: 2,
   },
   pinDisplayHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   pinDisplayTitle: { fontSize: 16, fontWeight: "800", color: theme.colors.primary },
@@ -1427,13 +1427,13 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   pinValueBox: {
     backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 16,
-    paddingVertical: 20,
+    paddingVertical: 16,
     paddingHorizontal: 16,
     alignItems: "center",
     borderWidth: 1,
     borderColor: theme.colors.primary + "30",
   },
-  pinValue: { fontSize: 38, fontWeight: "900", color: theme.colors.text, letterSpacing: 8 },
+  pinValue: { fontSize: 32, fontWeight: "900", color: theme.colors.text, letterSpacing: 7},
   pinHint: {
     fontSize: 11,
     color: theme.colors.textSecondary,
@@ -1442,14 +1442,14 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   timerCard: {
     backgroundColor: theme.dark ? theme.colors.accentSoft : theme.colors.primaryPressed,
-    borderRadius: 18,
-    padding: 20,
+    borderRadius: 14,
+    padding: 16,
     gap: 10,
     shadowColor: theme.colors.accent,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.18,
     shadowRadius: 12,
-    elevation: 6,
+    elevation: 3,
   },
   timerHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
   timerLiveDot: {
@@ -1465,7 +1465,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     letterSpacing: 2,
   },
   timerDisplay: {
-    fontSize: 48,
+    fontSize: 40,
     fontWeight: "800",
     color: theme.colors.onBrand,
     textAlign: "center",
@@ -1512,9 +1512,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   modalCard: {
     backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
     paddingBottom: 36,
     gap: 8,
   },
