@@ -509,22 +509,22 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
   return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  scroll: { width: "100%", maxWidth: 760, alignSelf: "center", padding: 16, gap: 14 },
+  scroll: { width: "100%", maxWidth: 760, alignSelf: "center", padding: 14, gap: 12},
 
   header: {
-    backgroundColor: theme.colors.surface, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 14,
+    backgroundColor: theme.colors.surface, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12,
     flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 12,
     borderBottomWidth: 1, borderBottomColor: theme.colors.border,
   },
   backBtn: {
-    width: 44, height: 44, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt,
+    width: 38, height: 38, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center", justifyContent: "center",
   },
   headerTitle: { fontSize: 17, fontWeight: "800", color: theme.colors.text },
   headerSub: { fontSize: 12, color: theme.colors.textMuted, marginTop: 1 },
 
   activeBanner: {
-    borderRadius: 16, padding: 16,
+    borderRadius: 14, padding: 14,
     flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between", gap: 12,
   },
   activeBannerLeft: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 12, flex: 1 },
@@ -535,29 +535,29 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
 
   pendingBanner: {
     flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "flex-start", gap: 10,
-    backgroundColor: theme.colors.warning + "15", borderRadius: 14, padding: 14,
+    backgroundColor: theme.colors.warning + "15", borderRadius: 14, padding: 12,
     borderWidth: 1, borderColor: theme.colors.warning + "30",
   },
   pendingTitle: { fontSize: 14, fontWeight: "700", color: theme.colors.warning },
   pendingSub: { fontSize: 12, color: theme.colors.textSecondary, lineHeight: 18, marginTop: 2 },
 
   billingToggle: {
-    flexDirection: isUrdu ? "row-reverse" : "row", backgroundColor: theme.colors.surfaceAlt, borderRadius: 14, padding: 4,
+    flexDirection: isUrdu ? "row-reverse" : "row", backgroundColor: theme.colors.surfaceAlt, borderRadius: 12, padding: 4,
     borderWidth: 1, borderColor: theme.colors.border,
   },
-  billingBtn: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 11 },
+  billingBtn: { flex: 1, paddingVertical: 8, alignItems: "center", borderRadius: 11 },
   billingBtnActive: { backgroundColor: theme.colors.surface, ...theme.shadows.sm },
   billingText: { fontSize: 14, fontWeight: "700", color: theme.colors.textSecondary },
   billingTextActive: { color: theme.colors.primary },
   saveBadge: { fontSize: 11, color: theme.colors.success, fontWeight: "700" },
 
-  emptyBox: { alignItems: "center", paddingVertical: 40, gap: 10 },
+  emptyBox: { alignItems: "center", paddingVertical: 32, gap: 10 },
   emptyTitle: { fontSize: 16, fontWeight: "700", color: theme.colors.text },
   emptyText: { fontSize: 13, color: theme.colors.textMuted, textAlign: "center" },
 
   planCard: {
-    backgroundColor: theme.colors.surface, borderRadius: 18, padding: 18,
-    borderWidth: 1.5, borderColor: theme.colors.border, gap: 14,
+    backgroundColor: theme.colors.surface, borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: theme.colors.border, gap: 12,
   },
   planCardActive: { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary + "06" },
   activePill: {
@@ -565,32 +565,32 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     paddingHorizontal: 10, paddingVertical: 4,
   },
   activePillText: { fontSize: 10, fontWeight: "800", color: theme.colors.onBrand, letterSpacing: 1 },
-  planHeader: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 12 },
+  planHeader: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 10},
   planIconWrap: {
-    width: 42, height: 42, borderRadius: 12, backgroundColor: theme.colors.primary + "12",
+    width: 38, height: 38, borderRadius: 12, backgroundColor: theme.colors.primary + "12",
     alignItems: "center", justifyContent: "center",
   },
   planName: { fontSize: 16, fontWeight: "800", color: theme.colors.text },
   planDesc: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 },
   priceWrap: { alignItems: "flex-end" },
-  priceVal: { fontSize: 18, fontWeight: "900", color: theme.colors.primary },
+  priceVal: { fontSize: 17, fontWeight: "900", color: theme.colors.primary },
   pricePer: { fontSize: 11, color: theme.colors.textMuted, fontWeight: "600" },
 
-  featureList: { gap: 8 },
+  featureList: { gap: 6},
   featureRow: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 8 },
   featureText: { fontSize: 13, color: theme.colors.text, lineHeight: 18 },
 
   subscribeBtn: {
     flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: theme.colors.primary, borderRadius: 14, paddingVertical: 14,
+    backgroundColor: theme.colors.primary, borderRadius: 12, paddingVertical: 12,
   },
   subscribeBtnText: { fontSize: 14, fontWeight: "800", color: theme.colors.onBrand },
 
-  historySection: { backgroundColor: theme.colors.surface, borderRadius: 16, padding: 16, gap: 12, borderWidth: 1, borderColor: theme.colors.border },
+  historySection: { backgroundColor: theme.colors.surface, borderRadius: 14, padding: 14, gap: 10, borderWidth: 1, borderColor: theme.colors.border },
   historySectionTitle: { fontSize: 14, fontWeight: "800", color: theme.colors.text },
   historyRow: {
-    flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 12,
-    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.colors.border,
+    flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 10,
+    paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.colors.border,
   },
   historyAmt: { fontSize: 13, fontWeight: "700", color: theme.colors.text },
   historyDate: { fontSize: 12, color: theme.colors.textMuted, marginTop: 2 },
@@ -599,30 +599,30 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
 
   noteBox: {
     flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "flex-start", gap: 8, backgroundColor: theme.colors.primary + "0D",
-    borderRadius: 12, padding: 14, borderWidth: 1, borderColor: theme.colors.primary + "25",
+    borderRadius: 12, padding: 12, borderWidth: 1, borderColor: theme.colors.primary + "25",
   },
   noteText: { flex: 1, fontSize: 12, color: theme.colors.primary, lineHeight: 18, fontWeight: "600" },
 
   modalOverlay: { flex: 1, backgroundColor: theme.colors.overlay, justifyContent: "flex-end", alignItems: "center" },
   modalBox: {
-    backgroundColor: theme.colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    backgroundColor: theme.colors.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22,
     maxHeight: "85%", overflow: "hidden", width: "100%", maxWidth: 760, alignSelf: "center",
   },
   modalHeader: {
     flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12,
+    paddingHorizontal: 16, paddingTop: 16, paddingBottom: 10,
     borderBottomWidth: 1, borderBottomColor: theme.colors.border,
   },
   modalTitle: { fontSize: 18, fontWeight: "800", color: theme.colors.text },
-  modalCloseBtn: { width: 44, height: 44, borderRadius: 10, backgroundColor: theme.colors.surfaceAlt, alignItems: "center", justifyContent: "center" },
-  modalBody: { width: "100%", maxWidth: 760, alignSelf: "center", padding: 20, gap: 16 },
+  modalCloseBtn: { width: 38, height: 38, borderRadius: 10, backgroundColor: theme.colors.surfaceAlt, alignItems: "center", justifyContent: "center" },
+  modalBody: { width: "100%", maxWidth: 760, alignSelf: "center", padding: 16, gap: 12},
 
-  modalPriceRow: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between", backgroundColor: theme.colors.primary + "0D", borderRadius: 14, padding: 14 },
+  modalPriceRow: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between", backgroundColor: theme.colors.primary + "0D", borderRadius: 14, padding: 12},
   modalPriceLabel: { fontSize: 14, fontWeight: "600", color: theme.colors.textSecondary },
-  modalPriceVal: { fontSize: 22, fontWeight: "900", color: theme.colors.primary },
+  modalPriceVal: { fontSize: 20, fontWeight: "900", color: theme.colors.primary },
   modalPricePer: { fontSize: 13, color: theme.colors.textMuted, fontWeight: "600" },
 
-  payInstructions: { backgroundColor: theme.colors.surfaceAlt, borderRadius: 12, padding: 14, gap: 10, borderWidth: 1, borderColor: theme.colors.border },
+  payInstructions: { backgroundColor: theme.colors.surfaceAlt, borderRadius: 12, padding: 12, gap: 10, borderWidth: 1, borderColor: theme.colors.border },
   paymentAccountCard: { backgroundColor: theme.colors.surface, borderRadius: 12, padding: 12, gap: 4, borderWidth: 1, borderColor: theme.colors.border },
   paymentAccountHeader: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 8, marginBottom: 4 },
   paymentAccountLabel: { color: theme.colors.text, fontSize: 14, fontWeight: "800", textAlign: isUrdu ? "right" : "left" },
@@ -640,35 +640,35 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
 
   inputLabel: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
   refInput: {
-    backgroundColor: theme.colors.surfaceAlt, borderRadius: 14, borderWidth: 1.5, borderColor: theme.colors.border,
-    paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, fontWeight: "700", color: theme.colors.text,
+    backgroundColor: theme.colors.surfaceAlt, borderRadius: 14, borderWidth: 1, borderColor: theme.colors.border,
+    paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontWeight: "700", color: theme.colors.text,
     letterSpacing: 1,
   },
   submitBtn: {
     flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "center", gap: 10,
-    backgroundColor: theme.colors.primary, borderRadius: 16, paddingVertical: 16,
+    backgroundColor: theme.colors.primary, borderRadius: 14, paddingVertical: 14,
   },
   submitBtnText: { fontSize: 15, fontWeight: "800", color: theme.colors.onBrand },
   btnDisabled: { opacity: 0.5 },
 
   cancelScheduledBanner: {
     flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "flex-start", gap: 10,
-    backgroundColor: theme.colors.warning + "15", borderRadius: 14, padding: 14,
+    backgroundColor: theme.colors.warning + "15", borderRadius: 14, padding: 12,
     borderWidth: 1, borderColor: theme.colors.warning + "30",
   },
   cancelScheduledTitle: { fontSize: 14, fontWeight: "800", color: theme.colors.warning },
   cancelScheduledSub: { fontSize: 12, color: theme.colors.textSecondary, lineHeight: 18, marginTop: 2 },
 
   photoBtn: {
-    borderWidth: 1.5, borderColor: theme.colors.border, borderRadius: 12,
+    borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12,
     borderStyle: "dashed", overflow: "hidden",
     backgroundColor: theme.colors.surfaceAlt,
   },
-  photoBtnInner: { padding: 20, alignItems: "center", gap: 6 },
+  photoBtnInner: { padding: 16, alignItems: "center", gap: 6 },
   photoBtnText: { fontSize: 14, fontWeight: "600", color: theme.colors.primary },
   photoBtnSub: { fontSize: 12, color: theme.colors.textMuted },
   photoPreviewRow: { padding: 10, gap: 8 },
-  photoPreview: { width: "100%", height: 160, borderRadius: 8, resizeMode: "cover" },
+  photoPreview: { width: "100%", height: 140, borderRadius: 8, resizeMode: "cover" },
   photoRemove: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 4, alignSelf: "flex-start" },
   photoRemoveText: { fontSize: 12, color: theme.colors.danger, fontWeight: "600" },
   });
