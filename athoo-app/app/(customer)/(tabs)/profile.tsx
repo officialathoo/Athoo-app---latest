@@ -51,7 +51,7 @@ function buildMenuSections(t: ReturnType<typeof useLang>["t"], theme: AthooTheme
       items: [
         { icon: "map-pin", label: t.myAddresses, subtitle: t.savedServiceLocations, route: "/(customer)/addresses", color: theme.colors.premium },
         { icon: "heart", label: t.savedProviders, subtitle: t.favouriteWorkers, route: "/(customer)/saved", color: theme.colors.danger },
-        { icon: "bell", label: t.notifications, subtitle: t.manageAlerts, route: "/(customer)/notifications", color: theme.colors.info },
+        { icon: "settings", label: "Notification Preferences", subtitle: "Push, sound, vibration and alert controls", route: "/notification-preferences", color: theme.colors.info },
         { icon: "mail", label: "Email & communication", subtitle: "Verification, security and offers", route: "/email-preferences", color: theme.colors.primary },
         { icon: "sun", label: t.appearance, subtitle: t.appearanceHint, route: "/appearance", color: theme.colors.accent },
         { icon: "lock", label: t.changePassword, subtitle: t.updatePassword, route: "/(customer)/change-password", color: theme.colors.premium },

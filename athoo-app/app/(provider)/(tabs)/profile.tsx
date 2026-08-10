@@ -214,7 +214,7 @@ export default function ProviderProfileScreen() {
       title: t.account,
       items: [
         { icon: "file-check", label: tr("Verification documents & validity"), color: theme.colors.success, onPress: () => router.push("/(provider)/verification-documents") },
-        { icon: "bell", label: t.notifications, color: theme.colors.accent, onPress: () => router.push("/(provider)/notifications") },
+        { icon: "settings", label: tr("Notification Preferences"), color: theme.colors.accent, onPress: () => router.push("/notification-preferences" as any) },
         { icon: "mail", label: "Email & communication", color: theme.colors.primary, onPress: () => router.push("/email-preferences" as any) },
         { icon: "sun", label: t.appearance, color: theme.colors.accent, onPress: () => router.push("/appearance" as any) },
         { icon: "lock", label: t.changePassword, color: theme.colors.warning, onPress: () => router.push("/(provider)/change-password") },
