@@ -4,15 +4,14 @@ import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useMemo, useRef } from "react";
+import { ActivityIndicator, Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 function formatDuration(seconds: number) {
   return `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
 }
 
-const KEYPAD_NUMBERS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"];
 
 export default function CallScreen() {
   const { theme } = useTheme();
@@ -28,8 +27,8 @@ export default function CallScreen() {
     mediaState,
     transportLabel,
     transportDetails,
+    callAction,
   } = useCall();
-  const [keypadVisible, setKeypadVisible] = useState(false);
   const pulseAnimation = useRef(new Animated.Value(1)).current;
   const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
   const insets = useSafeAreaInsets();
@@ -148,25 +147,12 @@ export default function CallScreen() {
         <Text style={styles.privacyBadge}>Phone number hidden - Athoo secure call</Text>
       </View>
 
-      {keypadVisible ? (
-        <View style={styles.keypadGrid}>
-          {KEYPAD_NUMBERS.map((number) => (
-            <Pressable
-              key={number}
-              style={({ pressed }) => [styles.keypadButton, pressed && styles.pressed]}
-              accessibilityRole="button"
-              accessibilityLabel={`Key ${number}`}
-            >
-              <Text style={styles.keypadNumber}>{number}</Text>
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
 
       <View style={[styles.controls, { paddingBottom: bottomPadding + 24 }]}>
         <View style={styles.controlsRow}>
           <Pressable
             style={({ pressed }) => [styles.controlButton, isMuted && styles.controlButtonActive, pressed && styles.pressed]}
+            disabled={callAction === "ending"}
             onPress={() => setMuted(!isMuted)}
             accessibilityRole="button"
             accessibilityState={{ selected: isMuted }}
@@ -177,7 +163,8 @@ export default function CallScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.controlButton, isSpeaker && styles.controlButtonActive, pressed && styles.pressed]}
-            onPress={() => setSpeaker(!isSpeaker)}
+            disabled={callAction === "ending"}
+            onPress={() => void setSpeaker(!isSpeaker)}
             accessibilityRole="button"
             accessibilityState={{ selected: isSpeaker }}
           >
@@ -185,26 +172,29 @@ export default function CallScreen() {
             <Text style={styles.controlLabel}>Speaker</Text>
           </Pressable>
 
-          <Pressable
-            style={({ pressed }) => [styles.controlButton, keypadVisible && styles.controlButtonActive, pressed && styles.pressed]}
-            onPress={() => setKeypadVisible(!keypadVisible)}
-            accessibilityRole="button"
-            accessibilityState={{ selected: keypadVisible }}
-          >
-            <Icon name="grid" size={22} color={keypadVisible ? theme.colors.warning : theme.colors.white} />
-            <Text style={styles.controlLabel}>Keypad</Text>
-          </Pressable>
         </View>
 
         <Pressable
-          style={({ pressed }) => [styles.endCallButton, pressed && styles.endCallPressed]}
-          onPress={endCall}
+          style={({ pressed }) => [
+            styles.endCallButton,
+            callAction === "ending" && styles.controlDisabled,
+            pressed && callAction !== "ending" && styles.endCallPressed,
+          ]}
+          disabled={callAction === "ending"}
+          onPress={() => void endCall()}
           accessibilityRole="button"
           accessibilityLabel="End call"
+          accessibilityState={{ busy: callAction === "ending" }}
         >
-          <Icon name="phone-off" size={28} color={theme.colors.white} />
+          {callAction === "ending" ? (
+            <ActivityIndicator size="small" color={theme.colors.white} />
+          ) : (
+            <Icon name="phone-off" size={28} color={theme.colors.white} />
+          )}
         </Pressable>
-        <Text style={styles.endCallLabel}>End Call</Text>
+        <Text style={styles.endCallLabel}>
+          {callAction === "ending" ? "Ending..." : "End Call"}
+        </Text>
       </View>
     </LinearGradient>
   );
@@ -255,12 +245,10 @@ function createStyles(theme: AthooTheme) {
     transportText: { fontSize: 11, color: mutedWhite, fontWeight: "600" },
     transportDetails: { fontSize: 10, color: "rgba(255,255,255,0.68)", fontWeight: "600", textAlign: "center" },
     privacyBadge: { fontSize: 11, color: "rgba(255,255,255,0.60)", marginTop: 3, textAlign: "center" },
-    keypadGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 12, paddingHorizontal: 40, paddingBottom: 16 },
-    keypadButton: { width: 70, height: 60, borderRadius: 16, backgroundColor: glass, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)" },
-    keypadNumber: { fontSize: 22, fontWeight: "700", color: theme.colors.white },
     controls: { alignItems: "center", paddingHorizontal: 16, gap: 12 },
     controlsRow: { width: "100%", flexDirection: "row", gap: 10, justifyContent: "center" },
-    controlButton: { flex: 1, maxWidth: 86, minWidth: 68, minHeight: 64, borderRadius: 18, backgroundColor: glass, alignItems: "center", justifyContent: "center", gap: 5, borderWidth: 1, borderColor: "rgba(255,255,255,0.16)" },
+    controlButton: { flex: 1, maxWidth: 120, minWidth: 100, minHeight: 64, borderRadius: 18, backgroundColor: glass, alignItems: "center", justifyContent: "center", gap: 5, borderWidth: 1, borderColor: "rgba(255,255,255,0.16)" },
+    controlDisabled: { opacity: 0.5 },
     controlButtonActive: { backgroundColor: glassStrong, borderColor: "rgba(255,255,255,0.30)" },
     controlLabel: { fontSize: 11, color: mutedWhite, fontWeight: "600" },
     endCallButton: { width: 80, height: 80, borderRadius: 40, backgroundColor: theme.colors.danger, alignItems: "center", justifyContent: "center", shadowColor: theme.colors.danger, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.5, shadowRadius: 16, elevation: 12 },
