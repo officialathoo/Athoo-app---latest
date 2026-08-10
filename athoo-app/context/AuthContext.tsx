@@ -50,6 +50,9 @@ export interface User {
   experience?: string;
   joinedAt?: string;
   savedProviders?: string[];
+  referralCode?: string | null;
+  referralCount?: number;
+  referredBy?: string | null;
   ratePerHour?: number | null;
   pendingCommission?: number;
   totalCommission?: number;

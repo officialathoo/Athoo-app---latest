@@ -20,6 +20,7 @@ import {
   View,
 } from "react-native";
 import { BiometricLoginSetting } from "@/components/security/BiometricLoginSetting";
+import { InviteFriendsCard } from "@/components/profile/InviteFriendsCard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useBookings } from "@/context/BookingContext";
@@ -202,7 +203,6 @@ export default function ProviderProfileScreen() {
       title: t.workEarnings,
       items: [
         { icon: "crown", label: t.premiumPlan, color: theme.colors.warning, onPress: () => router.push("/(provider)/subscription") },
-        { icon: "dollar-sign", label: t.earningsHistory, color: theme.colors.success, onPress: () => router.push("/(provider)/earnings") },
         { icon: "file-text", label: t.invoices, color: theme.colors.primary, onPress: () => router.push("/(provider)/invoices") },
         { icon: "briefcase", label: t.myNegotiations, color: theme.colors.secondary, onPress: () => router.push("/(provider)/negotiations") },
         { icon: "calendar", label: t.availabilitySchedule, color: theme.colors.info, onPress: () => router.push("/(provider)/availability" as any) },
@@ -313,6 +313,13 @@ export default function ProviderProfileScreen() {
           </View>
         </View>
       </LinearGradient>
+
+      <InviteFriendsCard
+        role="provider"
+        referralCode={user?.referralCode}
+        referralCount={user?.referralCount}
+        delay={70}
+      />
 
       {user?.services && user.services.length > 0 && (
         <View style={styles.servicesCard}>

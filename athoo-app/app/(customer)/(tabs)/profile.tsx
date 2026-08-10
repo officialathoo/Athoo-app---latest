@@ -13,7 +13,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -22,6 +21,7 @@ import {
 import { BiometricLoginSetting } from "@/components/security/BiometricLoginSetting";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnimatedCard } from "@/components/ui/AnimatedCard";
+import { InviteFriendsCard } from "@/components/profile/InviteFriendsCard";
 import { useAuth } from "@/context/AuthContext";
 import { useBookings } from "@/context/BookingContext";
 import { useLang } from "@/context/LanguageContext";
@@ -30,7 +30,7 @@ import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
 import { apiErrorToMessage } from "@/lib/apiError";
 import { runtimeConfig } from "@/config/runtime";
-import { brandConfig } from "@/config/brand";
+
 import { appIdentity } from "@/config/appIdentity";
 
 
@@ -39,7 +39,6 @@ function buildMenuSections(t: ReturnType<typeof useLang>["t"], theme: AthooTheme
     {
       title: t.bookingsPayments,
       items: [
-        { icon: "calendar", label: t.myBookings, subtitle: t.bookingHistory, route: "/(customer)/(tabs)/bookings", color: theme.colors.primary },
         { icon: "crown", label: t.premiumPlan, subtitle: t.unlockBenefits, route: "/(customer)/subscription", color: theme.colors.premium },
         { icon: "file-text", label: t.billingHistory, subtitle: t.billingHistoryLong, route: "/(customer)/billing", color: theme.colors.accent },
         { icon: "download", label: t.invoices, subtitle: t.downloadInvoices, route: "/(customer)/invoices", color: theme.colors.info },
@@ -307,30 +306,12 @@ export default function ProfileScreen() {
         </View>
       </AnimatedCard>
 
-      {(user as any)?.referralCode && (
-        <AnimatedCard delay={80}>
-          <View style={styles.referralCard}>
-            <View style={styles.referralLeft}>
-              <Text style={styles.referralTitle}>🎁 {t.inviteFriends}</Text>
-              <Text style={styles.referralSub}>{t.inviteFriendsHint}</Text>
-              <View style={styles.referralCodeRow}>
-                <Text style={styles.referralCode}>{(user as any).referralCode}</Text>
-                <Pressable
-                  style={styles.shareCodeBtn}
-                  onPress={() => Share.share({ message: `Join ${brandConfig.displayName} — Pakistan's home services app! Use my referral code ${(user as any).referralCode} when you sign up.${runtimeConfig.app.downloadUrl ? ` Download: ${runtimeConfig.app.downloadUrl}` : ""}` })}
-                >
-                  <Icon name="share-2" size={13} color={theme.colors.primary} />
-                  <Text style={styles.shareCodeText}>{t.share}</Text>
-                </Pressable>
-              </View>
-            </View>
-            <View style={styles.referralRight}>
-              <Text style={styles.referralCount}>{(user as any).referralCount || 0}</Text>
-              <Text style={styles.referralCountLbl}>{t.referred}</Text>
-            </View>
-          </View>
-        </AnimatedCard>
-      )}
+      <InviteFriendsCard
+        role="customer"
+        referralCode={user?.referralCode}
+        referralCount={user?.referralCount}
+        delay={80}
+      />
 
       {menuSections.map((section, si) => (
         <AnimatedCard key={si} delay={100 + si * 60}>
