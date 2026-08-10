@@ -5,7 +5,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { Icon } from "@/components/ui/Icon";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -23,7 +23,7 @@ import { AnimatedCard } from "@/components/ui/AnimatedCard";
 import { useAuth } from "@/context/AuthContext";
 import { useBookings } from "@/context/BookingContext";
 import { api } from "@/services/api";
-import { shareBookingInvoice } from "@/utils/bookingInvoicePdf";
+import { downloadBookingInvoice, shareBookingInvoice } from "@/utils/bookingInvoicePdf";
 
 type ApiInvoice = {
   id: string;
@@ -121,31 +121,61 @@ export default function InvoicesScreen() {
     }
   }, [params.bookingId, completed]);
 
-  const handleShare = async (b: any) => {
-    await handleDownloadPdf(b);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+  const invoiceActionInFlightRef = useRef(false);
+
+  const buildInvoicePayload = (b: any) => {
+    const match =
+      apiInvoices.find((invoice) => invoice.bookingId === b.id);
+
+    return {
+      ...b,
+      invoiceNumber: match?.invoiceNumber,
+      subtotal: match?.subtotal,
+      totalAmount: match?.totalAmount,
+      visitCharge: match?.visitCharge ?? b.visitCharge,
+      discountAmount: match?.discountAmount,
+      commissionAmount: match?.commissionAmount,
+      providerAmount: match?.providerAmount,
+      status: match?.status ?? b.status,
+      createdAt: match?.createdAt ?? b.createdAt,
+      verification: match?.verification,
+    };
   };
 
-  const [generatingPdf, setGeneratingPdf] = useState(false);
+  const runInvoiceAction = async (
+    action: "share" | "download",
+    b: any,
+  ) => {
+    if (invoiceActionInFlightRef.current) return;
+
+    invoiceActionInFlightRef.current = true;
+    setGeneratingPdf(true);
+
+    try {
+      const payload = buildInvoicePayload(b);
+
+      if (action === "share") {
+        await shareBookingInvoice(payload, {
+          role: "customer",
+        });
+      } else {
+        await downloadBookingInvoice(payload, {
+          role: "customer",
+        });
+      }
+    } finally {
+      invoiceActionInFlightRef.current = false;
+      setGeneratingPdf(false);
+    }
+  };
+
+  const handleShare = async (b: any) => {
+    await runInvoiceAction("share", b);
+  };
 
   const handleDownloadPdf = async (b: any) => {
-    if (generatingPdf) return;
-    const match = apiInvoices.find((invoice) => invoice.bookingId === b.id);
-    await shareBookingInvoice(
-      {
-        ...b,
-        invoiceNumber: match?.invoiceNumber,
-        subtotal: match?.subtotal,
-        totalAmount: match?.totalAmount,
-        visitCharge: match?.visitCharge ?? b.visitCharge,
-        discountAmount: match?.discountAmount,
-        commissionAmount: match?.commissionAmount,
-        providerAmount: match?.providerAmount,
-        status: match?.status ?? b.status,
-        createdAt: match?.createdAt ?? b.createdAt,
-        verification: match?.verification,
-      },
-      { role: "customer", onState: setGeneratingPdf },
-    );
+    await runInvoiceAction("download", b);
   };
 
   if (selected) {

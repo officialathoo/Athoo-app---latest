@@ -4,14 +4,14 @@ import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import { Icon } from "@/components/ui/Icon";
 import { router } from "expo-router";
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useBookings } from "@/context/BookingContext";
 import { api } from "@/services/api";
 import { brandConfig } from "@/config/brand";
-import { shareBookingInvoice } from "@/utils/bookingInvoicePdf";
+import { downloadBookingInvoice, shareBookingInvoice } from "@/utils/bookingInvoicePdf";
 
 type ApiInvoice = {
   id: string;
@@ -98,30 +98,70 @@ export default function ProviderInvoicesScreen() {
   const selected = selectedId ? invoices.find((i) => i.id === selectedId) : null;
 
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  const invoiceActionInFlightRef = useRef(false);
 
-  const handleShareInvoice = async (inv: NonNullable<typeof selected>) => {
-    await handleDownloadPdf(inv);
+  const buildInvoicePayload = (
+    inv: NonNullable<typeof selected>,
+  ) => {
+    const match = inv.apiInvoice;
+
+    return {
+      ...inv.booking,
+      invoiceNumber:
+        match?.invoiceNumber ?? inv.invoiceNo,
+      subtotal: match?.subtotal,
+      totalAmount: match?.totalAmount,
+      visitCharge:
+        match?.visitCharge ?? inv.visitCharge,
+      discountAmount: match?.discountAmount,
+      commissionAmount: match?.commissionAmount,
+      providerAmount:
+        match?.providerAmount ?? inv.providerAmount,
+      status:
+        match?.status ?? inv.booking.status,
+      createdAt:
+        match?.createdAt ?? inv.booking.createdAt,
+      verification: match?.verification,
+    };
   };
 
-  const handleDownloadPdf = async (inv: NonNullable<typeof selected>) => {
-    if (generatingPdf) return;
-    const match = inv.apiInvoice;
-    await shareBookingInvoice(
-      {
-        ...inv.booking,
-        invoiceNumber: match?.invoiceNumber ?? inv.invoiceNo,
-        subtotal: match?.subtotal,
-        totalAmount: match?.totalAmount,
-        visitCharge: match?.visitCharge ?? inv.visitCharge,
-        discountAmount: match?.discountAmount,
-        commissionAmount: match?.commissionAmount,
-        providerAmount: match?.providerAmount ?? inv.providerAmount,
-        status: match?.status ?? inv.booking.status,
-        createdAt: match?.createdAt ?? inv.booking.createdAt,
-        verification: match?.verification,
-      },
-      { role: "provider", onState: setGeneratingPdf },
-    );
+  const runInvoiceAction = async (
+    action: "share" | "download",
+    inv: NonNullable<typeof selected>,
+  ) => {
+    if (invoiceActionInFlightRef.current) return;
+
+    invoiceActionInFlightRef.current = true;
+    setGeneratingPdf(true);
+
+    try {
+      const payload = buildInvoicePayload(inv);
+
+      if (action === "share") {
+        await shareBookingInvoice(payload, {
+          role: "provider",
+        });
+      } else {
+        await downloadBookingInvoice(payload, {
+          role: "provider",
+        });
+      }
+    } finally {
+      invoiceActionInFlightRef.current = false;
+      setGeneratingPdf(false);
+    }
+  };
+
+  const handleShareInvoice = async (
+    inv: NonNullable<typeof selected>,
+  ) => {
+    await runInvoiceAction("share", inv);
+  };
+
+  const handleDownloadPdf = async (
+    inv: NonNullable<typeof selected>,
+  ) => {
+    await runInvoiceAction("download", inv);
   };
 
   if (selected) {

@@ -704,6 +704,9 @@ module.exports = {
 
         NSPhotoLibraryAddUsageDescription:
           `${brandDisplayName} saves media to your photo library only when you request it.`,
+
+        UIFileSharingEnabled: true,
+        LSSupportsOpeningDocumentsInPlace: true,
       },
     },
 
