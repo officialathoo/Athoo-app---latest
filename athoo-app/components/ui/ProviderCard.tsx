@@ -173,7 +173,7 @@ export function ProviderCard({
           <View style={[styles.metaDot, { backgroundColor: theme.colors.textMuted }]} />
 
           <AppText variant="caption" tone="secondary">
-            {provider.totalJobs || 0} {isUrdu ? "Ú©Ø§Ù…" : "jobs"}
+            {provider.totalJobs || 0} {t.jobs}
           </AppText>
 
           {distanceText ? (
