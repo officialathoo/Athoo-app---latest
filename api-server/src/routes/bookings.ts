@@ -152,6 +152,7 @@ async function enrichBookings(bookings: any[], role: string, userId: string) {
       {
         ...b,
         customerProfileImage: profileMap[b.customerId]?.profileImage ?? null,
+        customerProfileColor: profileMap[b.customerId]?.profileColor ?? null,
         providerProfileImage: profileMap[b.providerId]?.profileImage ?? null,
         providerProfileColor: profileMap[b.providerId]?.profileColor ?? null,
       },
@@ -414,7 +415,16 @@ router.get("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    res.json({ booking: sanitizeBookingForViewer(booking as any, req.user!.role, userId) });
+    const [enrichedBooking] = await enrichBookings(
+      [booking],
+      req.user!.role,
+      userId,
+    );
+    res.json({
+      booking:
+        enrichedBooking ||
+        sanitizeBookingForViewer(booking as any, req.user!.role, userId),
+    });
   } catch (e) {
     logger.error({ err: e }, "booking get error");
     res.status(500).json({ error: "Failed to load booking" });

@@ -59,6 +59,7 @@ export interface Booking {
   createdAt: string;
   updatedAt: string;
   customerProfileImage?: string | null;
+  customerProfileColor?: string | null;
   providerProfileImage?: string | null;
   providerProfileColor?: string | null;
   providerArrivedAt?: string;

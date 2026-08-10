@@ -178,27 +178,77 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       bookingId?: string, service?: string
     ): Promise<Chat> => {
       if (!user) throw new Error("Not logged in");
-      const res = await api.getOrCreateChat({
+
+      const existing = chats.find((candidate) => {
+        const participants = new Set([
+          candidate.participant1Id,
+          candidate.participant2Id,
+        ]);
+        return participants.has(user1Id) && participants.has(user2Id);
+      });
+
+      const request = {
         otherUserId: user2Id,
         otherUserName: user2Name,
         myName: user1Name,
         bookingId,
         service,
-      });
+      };
+
+      if (existing) {
+        setActiveChatId(existing.id);
+        void loadMessages(existing.id);
+
+        // Reconcile booking/service/profile metadata in the background without
+        // making the user wait to enter an already-known conversation.
+        void api.getOrCreateChat(request)
+          .then((res) => {
+            const refreshed = res.chat as Chat;
+            setChats((prev) => {
+              const participantIds = new Set([
+                refreshed.participant1Id,
+                refreshed.participant2Id,
+              ]);
+              const withoutDuplicatePair = prev.filter((candidate) => {
+                if (candidate.id === refreshed.id) return false;
+                return !(
+                  participantIds.has(candidate.participant1Id) &&
+                  participantIds.has(candidate.participant2Id)
+                );
+              });
+              return [refreshed, ...withoutDuplicatePair];
+            });
+          })
+          .catch(() => undefined);
+
+        return existing;
+      }
+
+      const res = await api.getOrCreateChat(request);
       const chat = res.chat as Chat;
+
       setChats((prev) => {
-        const participantIds = new Set([chat.participant1Id, chat.participant2Id]);
+        const participantIds = new Set([
+          chat.participant1Id,
+          chat.participant2Id,
+        ]);
         const withoutDuplicatePair = prev.filter((candidate) => {
           if (candidate.id === chat.id) return false;
-          return !(participantIds.has(candidate.participant1Id) && participantIds.has(candidate.participant2Id));
+          return !(
+            participantIds.has(candidate.participant1Id) &&
+            participantIds.has(candidate.participant2Id)
+          );
         });
         return [chat, ...withoutDuplicatePair];
       });
-      await loadMessages(chat.id);
+
+      // Enter the room after chat creation. Message history loads in parallel
+      // inside the room instead of blocking navigation for another round trip.
       setActiveChatId(chat.id);
+      void loadMessages(chat.id);
       return chat;
     },
-    [user, loadMessages]
+    [user, chats, loadMessages]
   );
 
   const sendMessage = useCallback(

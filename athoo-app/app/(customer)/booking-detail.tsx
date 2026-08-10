@@ -29,6 +29,7 @@ import { useChat } from "@/context/ChatContext";
 import { useCall } from "@/context/CallContext";
 import { getDistanceKm } from "@/utils/distance";
 import { api, realtime, getToken } from "@/services/api";
+import { PrivateImage } from "@/services/storage";
 import { shareBookingInvoice } from "@/utils/bookingInvoicePdf";
 import { buildRepeatBookingParams } from "@/utils/repeatBooking";
 import { apiErrorToMessage } from "@/lib/apiError";
@@ -229,6 +230,8 @@ export default function BookingDetailScreen() {
   const [isUpdatingJobLocation, setIsUpdatingJobLocation] = useState(false);
   const [bookingLoadAttempted, setBookingLoadAttempted] = useState(false);
   const [bookingRetrying, setBookingRetrying] = useState(false);
+  const [openingChat, setOpeningChat] = useState(false);
+  const chatOpenRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const providerAnimCoords = useRef({
@@ -556,9 +559,19 @@ export default function BookingDetailScreen() {
   };
 
   const handleChat = async () => {
-    if (!user) return;
+    if (!user || chatOpenRef.current) return;
+
+    chatOpenRef.current = true;
+    setOpeningChat(true);
     try {
-      const chat = await getOrCreateChat(user.id, user.name, booking.providerId, providerName, booking.id, booking.service);
+      const chat = await getOrCreateChat(
+        user.id,
+        user.name,
+        booking.providerId,
+        providerName,
+        booking.id,
+        booking.service,
+      );
       router.push({
         pathname: "/(customer)/chat-room",
         params: {
@@ -570,7 +583,16 @@ export default function BookingDetailScreen() {
         },
       });
     } catch (error) {
-      Alert.alert("Chat unavailable", apiErrorToMessage(error, "We couldn't open this conversation. Please try again."));
+      Alert.alert(
+        "Chat unavailable",
+        apiErrorToMessage(
+          error,
+          "We couldn't open this conversation. Please try again.",
+        ),
+      );
+    } finally {
+      chatOpenRef.current = false;
+      setOpeningChat(false);
     }
   };
 
@@ -659,23 +681,58 @@ export default function BookingDetailScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Service Provider</Text>
           <View style={styles.providerRow}>
-            <View style={styles.provAvatar}>
-              <Text style={styles.provAvatarTxt}>
-                {booking.providerName
-                  .split(" ")
-                  .map((n) => n[0])
-                  .join("")
-                  .toUpperCase()
-                  .slice(0, 2)}
-              </Text>
-            </View>
+            {booking.providerProfileImage ? (
+              <PrivateImage
+                objectPath={booking.providerProfileImage}
+                style={styles.provAvatar}
+                resizeMode="cover"
+                accessibilityLabel={`${providerName} profile photo`}
+              />
+            ) : (
+              <View
+                style={[
+                  styles.provAvatar,
+                  {
+                    backgroundColor:
+                      (booking.providerProfileColor || theme.colors.primary) + "18",
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.provAvatarTxt,
+                    {
+                      color:
+                        booking.providerProfileColor || theme.colors.primary,
+                    },
+                  ]}
+                >
+                  {providerName
+                    .split(" ")
+                    .map((n) => n[0])
+                    .join("")
+                    .toUpperCase()
+                    .slice(0, 2)}
+                </Text>
+              </View>
+            )}
             <View style={{ flex: 1 }}>
               <Text style={styles.provName}>{booking.providerName}</Text>
               <Text style={styles.provPhone}>{booking.providerPhone}</Text>
             </View>
             <View style={{ flexDirection: "row", gap: 8 }}>
-              <Pressable style={styles.chatBtn} onPress={handleChat}>
-                <Icon name="message-circle" size={18} color={theme.colors.primary} />
+              <Pressable
+                style={[styles.chatBtn, openingChat && { opacity: 0.65 }]}
+                onPress={handleChat}
+                disabled={openingChat}
+                accessibilityRole="button"
+                accessibilityLabel="Message service provider"
+              >
+                {openingChat ? (
+                  <ActivityIndicator size="small" color={theme.colors.primary} />
+                ) : (
+                  <Icon name="message-circle" size={18} color={theme.colors.primary} />
+                )}
               </Pressable>
               {(booking.status === "accepted" || booking.status === "in_progress") && (
                 <Pressable
@@ -1261,6 +1318,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     justifyContent: "center",
     borderWidth: 2,
     borderColor: theme.colors.border,
+    overflow: "hidden",
   },
   provAvatarTxt: { fontSize: 14, fontWeight: "700", color: theme.colors.primary },
   provName: { fontSize: 14, fontWeight: "700", color: theme.colors.text },

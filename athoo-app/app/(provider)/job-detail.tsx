@@ -236,6 +236,7 @@ export default function JobDetailScreen() {
   const [elapsed, setElapsed] = useState("00:00");
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [isMarkingReceived, setIsMarkingReceived] = useState(false);
+  const [openingChat, setOpeningChat] = useState(false);
 
   const [providerLiveCoords, setProviderLiveCoords] = useState<LiveCoords | null>(null);
   const [roadPolyline, setRoadPolyline] = useState<{ latitude: number; longitude: number }[]>([]);
@@ -249,6 +250,7 @@ export default function JobDetailScreen() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const otpInputRef = useRef<TextInput>(null);
+  const chatOpenRef = useRef(false);
   const locationSubRef = useRef<Location.LocationSubscription | null>(null);
 
   const syncBooking = useCallback(
@@ -794,27 +796,42 @@ export default function JobDetailScreen() {
   };
 
   const handleChat = async () => {
-    if (!user || !booking) return;
+    if (!user || !booking || chatOpenRef.current) return;
 
-    const chat = await getOrCreateChat(
-      user.id,
-      user.name,
-      booking.customerId,
-      booking.customerName,
-      booking.id,
-      booking.service
-    );
+    chatOpenRef.current = true;
+    setOpeningChat(true);
+    try {
+      const chat = await getOrCreateChat(
+        user.id,
+        user.name,
+        booking.customerId,
+        booking.customerName,
+        booking.id,
+        booking.service,
+      );
 
-    router.push({
-      pathname: "/(provider)/chat-room",
-      params: {
-        chatId: chat.id,
-        otherUserId: booking.customerId,
-        otherUserName: booking.customerName,
-        otherUserImage: booking.customerProfileImage || undefined,
-        otherUserColor: undefined,
-      },
-    });
+      router.push({
+        pathname: "/(provider)/chat-room",
+        params: {
+          chatId: chat.id,
+          otherUserId: booking.customerId,
+          otherUserName: booking.customerName,
+          otherUserImage: booking.customerProfileImage || undefined,
+          otherUserColor: booking.customerProfileColor || undefined,
+        },
+      });
+    } catch (error) {
+      Alert.alert(
+        "Chat unavailable",
+        apiErrorToMessage(
+          error,
+          "We couldn't open this conversation. Please try again.",
+        ),
+      );
+    } finally {
+      chatOpenRef.current = false;
+      setOpeningChat(false);
+    }
   };
 
   const handleCall = async () => {
@@ -939,8 +956,18 @@ export default function JobDetailScreen() {
               {booking.status !== "pending" &&
               booking.status !== "completed" &&
               booking.status !== "cancelled" ? (
-                <Pressable style={styles.chatBtn} onPress={handleChat}>
-                  <Icon name="message-circle" size={18} color={theme.colors.secondary} />
+                <Pressable
+                  style={[styles.chatBtn, openingChat && { opacity: 0.65 }]}
+                  onPress={handleChat}
+                  disabled={openingChat}
+                  accessibilityRole="button"
+                  accessibilityLabel="Message customer"
+                >
+                  {openingChat ? (
+                    <ActivityIndicator size="small" color={theme.colors.secondary} />
+                  ) : (
+                    <Icon name="message-circle" size={18} color={theme.colors.secondary} />
+                  )}
                 </Pressable>
               ) : null}
             </View>
@@ -950,16 +977,41 @@ export default function JobDetailScreen() {
             <Text style={styles.cardTitle}>Customer</Text>
 
             <View style={styles.customerRow}>
-              <View style={styles.custAvatar}>
-                <Text style={styles.custAvatarTxt}>
-                  {booking.customerName
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")
-                    .toUpperCase()
-                    .slice(0, 2)}
-                </Text>
-              </View>
+              {booking.customerProfileImage ? (
+                <PrivateImage
+                  objectPath={booking.customerProfileImage}
+                  style={styles.custAvatar}
+                  resizeMode="cover"
+                  accessibilityLabel={`${booking.customerName} profile photo`}
+                />
+              ) : (
+                <View
+                  style={[
+                    styles.custAvatar,
+                    {
+                      backgroundColor:
+                        (booking.customerProfileColor || theme.colors.primary) + "18",
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.custAvatarTxt,
+                      {
+                        color:
+                          booking.customerProfileColor || theme.colors.primary,
+                      },
+                    ]}
+                  >
+                    {booking.customerName
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")
+                      .toUpperCase()
+                      .slice(0, 2)}
+                  </Text>
+                </View>
+              )}
 
               <View style={{ flex: 1 }}>
                 <Text style={styles.custName}>{booking.customerName}</Text>
@@ -1740,6 +1792,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     justifyContent: "center",
     borderWidth: 2,
     borderColor: theme.colors.border,
+    overflow: "hidden",
   },
 
   custAvatarTxt: {

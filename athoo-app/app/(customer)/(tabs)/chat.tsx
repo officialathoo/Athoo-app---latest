@@ -4,10 +4,9 @@ import { useChat } from "@/context/ChatContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
-import { api } from "@/services/api";
 import { PrivateImage } from "@/services/storage";
 import { router } from "expo-router";
-import React, { useEffect, useRef, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import {
   Alert,
   Platform,
@@ -37,8 +36,6 @@ export default function ChatScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const [profiles, setProfiles] = useState<Record<string, { profileImage?: string | null; profileColor?: string }>>({});
-  const requestedProfileIds = useRef(new Set<string>());
 
   const myChats = user ? getMyChats(user.id) : [];
   const localizedText = { textAlign, writingDirection } as const;
@@ -65,22 +62,6 @@ export default function ChatScreen() {
       ]
     );
   };
-
-  useEffect(() => {
-    if (!myChats.length) return;
-    const ids = [...new Set(myChats.map((chat) => {
-      const isParticipantOne = user?.id === chat.participant1Id;
-      return isParticipantOne ? chat.participant2Id : chat.participant1Id;
-    }).filter(Boolean))] as string[];
-
-    ids.forEach((id) => {
-      if (profiles[id] || requestedProfileIds.current.has(id)) return;
-      requestedProfileIds.current.add(id);
-      api.getUser(id)
-        .then((response: any) => setProfiles((current) => ({ ...current, [id]: response.user })))
-        .catch(() => { requestedProfileIds.current.delete(id); });
-    });
-  }, [myChats, profiles, user?.id]);
 
   return (
     <View style={[styles.container, { paddingTop: topPad, backgroundColor: theme.colors.background }]}>
@@ -140,7 +121,14 @@ export default function ChatScreen() {
               .join("")
               .toUpperCase()
               .slice(0, 2);
-            const otherProfile = otherId ? profiles[otherId] : null;
+            const otherProfile = {
+              profileImage: isParticipantOne
+                ? chat.participant2ProfileImage
+                : chat.participant1ProfileImage,
+              profileColor: isParticipantOne
+                ? chat.participant2ProfileColor
+                : chat.participant1ProfileColor,
+            };
 
             return (
               <Pressable
@@ -247,14 +235,14 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderBottomWidth: 1,
   },
   avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
   },
-  avatarImage: { width: 52, height: 52, borderRadius: 26 },
+  avatarImage: { width: 48, height: 48, borderRadius: 24 },
   avatarText: { fontSize: 16, fontWeight: "700", color: theme.colors.white },
   chatContent: { flex: 1, minWidth: 0 },
   chatHeader: { alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 3 },
