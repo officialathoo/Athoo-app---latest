@@ -10,12 +10,11 @@ import {
   isBiometricEnabled,
   type DeviceAuthenticationState,
 } from "@/services/biometric";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   AppState,
-  type AlertButton,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -39,8 +38,13 @@ export function BiometricLoginSetting() {
   const [busy, setBusy] = useState(false);
   const [passwordModal, setPasswordModal] = useState(false);
   const [password, setPassword] = useState("");
+  const [setupModal, setSetupModal] = useState(false);
+  const [checkingSetup, setCheckingSetup] = useState(false);
+  const [openingSettings, setOpeningSettings] = useState(false);
+  const [setupStatus, setSetupStatus] = useState<string | null>(null);
+  const pendingEnableRef = useRef(false);
 
-  const refreshState = useCallback(async () => {
+  const refreshState = useCallback(async (): Promise<DeviceAuthenticationState> => {
     const [authenticationState, localEnabled, savedPhone, savedRole] = await Promise.all([
       getDeviceAuthenticationState(),
       isBiometricEnabled(),
@@ -54,7 +58,11 @@ export function BiometricLoginSetting() {
       savedPhone === user.phone &&
       savedRole === user.role,
     );
-    const active = deviceAvailable && localEnabled && belongsToCurrentAccount && user?.biometricEnabled === true;
+    const active =
+      deviceAvailable &&
+      localEnabled &&
+      belongsToCurrentAccount &&
+      user?.biometricEnabled === true;
 
     // Do not erase a valid remembered login because a vendor biometric API
     // temporarily returns unavailable while the app resumes. Only remove local
@@ -67,50 +75,117 @@ export function BiometricLoginSetting() {
     setAvailable(deviceAvailable);
     setEnabled(active);
     setLabel(authenticationState.label);
+    return authenticationState;
   }, [user?.biometricEnabled, user?.phone, user?.role]);
+
+  const continueAfterEnrollment = useCallback(() => {
+    pendingEnableRef.current = false;
+    setSetupStatus(null);
+    setSetupModal(false);
+    setPassword("");
+    setPasswordModal(true);
+  }, []);
 
   useEffect(() => {
     void refreshState();
+
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") void refreshState();
+      if (state !== "active") return;
+
+      void (async () => {
+        const nextState = await refreshState();
+        if (pendingEnableRef.current && nextState.available) {
+          continueAfterEnrollment();
+        }
+      })();
     });
+
     return () => subscription.remove();
-  }, [refreshState]);
+  }, [continueAfterEnrollment, refreshState]);
 
   const showDeviceSetup = () => {
-    const message = Platform.OS === "ios"
-      ? "Open iPhone Settings > Face ID & Passcode (or Touch ID & Passcode), enroll Face ID or Touch ID, then return to Athoo and tap Check Again. Face ID must be tested in the installed Athoo build, not Expo Go."
-      : "Open phone Settings > Security or Privacy > Face, fingerprint or biometrics, enroll a supported method, then return to Athoo. Some Android brands expose enrollment only through the main Security screen; Athoo will re-check after you return. Your PIN or pattern remains available when Android offers the native fallback.";
-    const actions: AlertButton[] = [
-      { text: "Cancel", style: "cancel" },
-      { text: "Check Again", onPress: () => void refreshState() },
-    ];
-    if (Platform.OS === "android") {
-      actions.splice(1, 0, {
-        text: "Open Settings",
-        onPress: () => void Linking.sendIntent("android.settings.BIOMETRIC_ENROLL")
-          .catch(() => Linking.sendIntent("android.settings.FINGERPRINT_ENROLL"))
-          .catch(() => Linking.sendIntent("android.settings.FACE_SETTINGS"))
-          .catch(() => Linking.sendIntent("android.settings.SECURITY_SETTINGS"))
-          .catch(() => undefined),
-      });
+    pendingEnableRef.current = true;
+    setSetupStatus(null);
+    setSetupModal(true);
+  };
+
+  const openDeviceSettings = async () => {
+    if (openingSettings) return;
+
+    pendingEnableRef.current = true;
+    setOpeningSettings(true);
+    setSetupStatus(null);
+
+    try {
+      if (Platform.OS === "android") {
+        try {
+          // The general Security screen is supported more consistently across
+          // Android vendors than OEM-specific biometric enrollment activities.
+          await Linking.sendIntent("android.settings.SECURITY_SETTINGS");
+        } catch {
+          await Linking.openSettings();
+        }
+      } else {
+        await Linking.openSettings();
+      }
+    } catch {
+      setSetupStatus(
+        Platform.OS === "android"
+          ? "Athoo could not open Security settings automatically. Open Phone Settings > Security or Privacy > Biometrics, enroll a method, then return here."
+          : "Athoo could not open Settings automatically. Open iPhone Settings > Face ID & Passcode or Touch ID & Passcode, enroll a method, then return here.",
+      );
+    } finally {
+      setOpeningSettings(false);
     }
-    Alert.alert("Biometric authentication not set up", message, actions);
+  };
+
+  const checkDeviceSetup = async () => {
+    if (checkingSetup) return;
+
+    setCheckingSetup(true);
+    setSetupStatus(null);
+
+    try {
+      const nextState = await refreshState();
+
+      if (nextState.available) {
+        continueAfterEnrollment();
+        return;
+      }
+
+      setSetupStatus(
+        nextState.hardwareAvailable
+          ? "No enrolled biometric is visible to Athoo yet. Finish enrollment in phone Security settings, then tap Check Again."
+          : "This phone is not exposing supported biometric hardware to Athoo. You can continue using your Athoo password or OTP.",
+      );
+    } catch {
+      setSetupStatus(
+        "Athoo could not re-check device authentication right now. Return from phone Settings and try again.",
+      );
+    } finally {
+      setCheckingSetup(false);
+    }
   };
 
   const performDisable = async () => {
+    if (busy) return;
+
     setBusy(true);
-    const result = await configureBiometricLogin(false);
-    setBusy(false);
-    if (!result.success) {
-      Alert.alert("Unable to disable", result.error || "Please try again.");
-      return;
+    try {
+      const result = await configureBiometricLogin(false);
+      if (!result.success) {
+        Alert.alert("Unable to disable", result.error || "Please try again.");
+        return;
+      }
+      await refreshState();
+    } finally {
+      setBusy(false);
     }
-    await refreshState();
   };
 
   const requestToggle = (next: boolean) => {
     if (busy) return;
+
     if (!next) {
       Alert.alert(
         `Disable ${label}`,
@@ -127,23 +202,36 @@ export function BiometricLoginSetting() {
       showDeviceSetup();
       return;
     }
+
+    pendingEnableRef.current = false;
     setPassword("");
     setPasswordModal(true);
   };
 
   const performEnable = async () => {
-    setBusy(true);
-    const result = await configureBiometricLogin(true, password);
-    setBusy(false);
-    if (!result.success) {
-      Alert.alert("Unable to enable device authentication", result.error || "Please try again.");
-      return;
-    }
+    if (busy) return;
 
-    setPassword("");
-    setPasswordModal(false);
-    await refreshState();
-    Alert.alert(`${label} enabled`, "Your remembered Athoo session is now protected by your phone's configured authentication method.");
+    setBusy(true);
+    try {
+      const result = await configureBiometricLogin(true, password);
+      if (!result.success) {
+        Alert.alert(
+          "Unable to enable device authentication",
+          result.error || "Please try again.",
+        );
+        return;
+      }
+
+      setPassword("");
+      setPasswordModal(false);
+      await refreshState();
+      Alert.alert(
+        `${label} enabled`,
+        "Your remembered Athoo session is now protected by your phone's configured authentication method.",
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   const subtitle = available
@@ -151,35 +239,179 @@ export function BiometricLoginSetting() {
       ? "Required when reopening Athoo after inactivity"
       : "Confirm your password and phone unlock method to enable"
     : deviceState?.hardwareAvailable
-      ? "Enroll Face ID, Touch ID, fingerprint, face unlock, or iris first"
+      ? "Enroll a fingerprint, face, iris, Face ID or Touch ID first"
       : "Use your Athoo password or OTP on this device";
+
+  const setupTitle =
+    Platform.OS === "ios"
+      ? "Set up Face ID or Touch ID"
+      : "Set up device biometrics";
+
+  const setupIntro =
+    Platform.OS === "ios"
+      ? "Athoo needs an enrolled Face ID or Touch ID method before biometric sign-in can be enabled."
+      : "Athoo needs an enrolled fingerprint, supported face unlock or iris method before biometric sign-in can be enabled.";
 
   return (
     <>
       <View style={styles.row}>
         <View style={styles.iconBox}>
-          <Icon name={deviceState?.type === "face" ? "scan-face" : deviceState?.type === "iris" ? "eye" : deviceState?.type === "fingerprint" ? "fingerprint" : "shield"} size={18} color={theme.colors.accent} />
+          <Icon
+            name={
+              deviceState?.type === "face"
+                ? "scan-face"
+                : deviceState?.type === "iris"
+                  ? "eye"
+                  : deviceState?.type === "fingerprint"
+                    ? "fingerprint"
+                    : "shield"
+            }
+            size={18}
+            color={theme.colors.accent}
+          />
         </View>
+
         <Pressable
           style={styles.textColumn}
           onPress={() => requestToggle(!enabled)}
           accessibilityRole="button"
+          accessibilityLabel={`${label}. ${subtitle}`}
         >
           <Text style={styles.label}>{label}</Text>
           <Text style={styles.subtitle}>{subtitle}</Text>
         </Pressable>
+
         {busy ? (
           <ActivityIndicator size="small" color={theme.colors.accent} />
         ) : (
           <Switch
             value={enabled}
             onValueChange={requestToggle}
-            trackColor={{ false: theme.colors.border, true: theme.colors.accentSoft }}
+            trackColor={{
+              false: theme.colors.border,
+              true: theme.colors.accentSoft,
+            }}
             thumbColor={enabled ? theme.colors.accent : theme.colors.textMuted}
             accessibilityLabel={`Turn ${label} ${enabled ? "off" : "on"}`}
           />
         )}
       </View>
+
+      <Modal
+        visible={setupModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (checkingSetup || openingSettings) return;
+          pendingEnableRef.current = false;
+          setSetupModal(false);
+        }}
+      >
+        <View style={styles.overlay}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => {
+              if (checkingSetup || openingSettings) return;
+              pendingEnableRef.current = false;
+              setSetupModal(false);
+            }}
+          />
+
+          <View style={styles.modalCard}>
+            <View style={styles.modalIcon}>
+              <Icon
+                name={Platform.OS === "ios" ? "scan-face" : "fingerprint"}
+                size={24}
+                color={theme.colors.accent}
+              />
+            </View>
+
+            <Text style={styles.modalTitle}>{setupTitle}</Text>
+            <Text style={styles.modalText}>{setupIntro}</Text>
+
+            <View style={styles.setupSteps}>
+              <View style={styles.setupStep}>
+                <View style={styles.setupStepIndex}>
+                  <Text style={styles.setupStepIndexText}>1</Text>
+                </View>
+                <Text style={styles.setupStepText}>
+                  {Platform.OS === "ios"
+                    ? "Open iPhone Settings and enroll Face ID or Touch ID."
+                    : "Open Phone Settings > Security or Privacy > Biometrics and enroll a supported method."}
+                </Text>
+              </View>
+
+              <View style={styles.setupStep}>
+                <View style={styles.setupStepIndex}>
+                  <Text style={styles.setupStepIndexText}>2</Text>
+                </View>
+                <Text style={styles.setupStepText}>
+                  Return to Athoo. We re-check automatically, or you can tap Check Again.
+                </Text>
+              </View>
+            </View>
+
+            {setupStatus ? (
+              <View style={styles.setupStatus}>
+                <Icon name="info" size={16} color={theme.colors.accent} />
+                <Text style={styles.setupStatusText}>{setupStatus}</Text>
+              </View>
+            ) : null}
+
+            <Pressable
+              style={[
+                styles.settingsButton,
+                (openingSettings || checkingSetup) && styles.disabledButton,
+              ]}
+              disabled={openingSettings || checkingSetup}
+              onPress={() => void openDeviceSettings()}
+              accessibilityRole="button"
+              accessibilityLabel="Open phone security settings"
+            >
+              {openingSettings ? (
+                <ActivityIndicator size="small" color={theme.colors.onBrand} />
+              ) : (
+                <>
+                  <Icon name="settings" size={17} color={theme.colors.onBrand} />
+                  <Text style={styles.settingsText}>Open Phone Settings</Text>
+                </>
+              )}
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.checkButton,
+                (openingSettings || checkingSetup) && styles.disabledButton,
+              ]}
+              disabled={openingSettings || checkingSetup}
+              onPress={() => void checkDeviceSetup()}
+              accessibilityRole="button"
+              accessibilityLabel="Check biometric setup again"
+            >
+              {checkingSetup ? (
+                <ActivityIndicator size="small" color={theme.colors.accent} />
+              ) : (
+                <>
+                  <Icon name="refresh-cw" size={16} color={theme.colors.accent} />
+                  <Text style={styles.checkText}>Check Again</Text>
+                </>
+              )}
+            </Pressable>
+
+            <Pressable
+              style={styles.modalCancelLink}
+              disabled={openingSettings || checkingSetup}
+              onPress={() => {
+                pendingEnableRef.current = false;
+                setSetupModal(false);
+              }}
+              accessibilityRole="button"
+            >
+              <Text style={styles.modalCancelLinkText}>Not now</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={passwordModal}
@@ -191,15 +423,21 @@ export function BiometricLoginSetting() {
           style={styles.overlay}
           behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => !busy && setPasswordModal(false)} />
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => !busy && setPasswordModal(false)}
+          />
+
           <View style={styles.modalCard}>
             <View style={styles.modalIcon}>
               <Icon name="shield" size={24} color={theme.colors.accent} />
             </View>
+
             <Text style={styles.modalTitle}>Enable {label}</Text>
             <Text style={styles.modalText}>
-              Enter your current Athoo password. You will then confirm with the biometric enrolled on this phone. The system may offer your device passcode, PIN, or pattern as a native fallback.
+              Confirm your Athoo password, then approve the secure authentication prompt from this phone.
             </Text>
+
             <TextInput
               value={password}
               onChangeText={setPassword}
@@ -213,7 +451,11 @@ export function BiometricLoginSetting() {
               accessibilityLabel="Current Athoo password"
               onSubmitEditing={() => void performEnable()}
             />
-            <Text style={styles.passwordHint}>Accounts created without a password may leave this blank.</Text>
+
+            <Text style={styles.passwordHint}>
+              Accounts created without a password may leave this blank.
+            </Text>
+
             <View style={styles.actions}>
               <Pressable
                 style={styles.cancelButton}
@@ -222,6 +464,7 @@ export function BiometricLoginSetting() {
               >
                 <Text style={styles.cancelText}>Cancel</Text>
               </Pressable>
+
               <Pressable
                 style={[styles.enableButton, busy && styles.disabledButton]}
                 disabled={busy}
@@ -259,14 +502,26 @@ function createStyles(theme: AthooTheme) {
       justifyContent: "center",
       backgroundColor: theme.colors.accentSoft,
     },
-    textColumn: { flex: 1, justifyContent: "center" },
-    label: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
-    subtitle: { marginTop: 2, fontSize: 11, lineHeight: 16, color: theme.colors.textSecondary },
+    textColumn: {
+      flex: 1,
+      justifyContent: "center",
+    },
+    label: {
+      fontSize: 14,
+      fontWeight: "700",
+      color: theme.colors.text,
+    },
+    subtitle: {
+      marginTop: 2,
+      fontSize: 11,
+      lineHeight: 16,
+      color: theme.colors.textSecondary,
+    },
     overlay: {
       flex: 1,
       justifyContent: "center",
       padding: 20,
-      backgroundColor: "rgba(0,0,0,0.55)",
+      backgroundColor: "rgba(0,0,0,0.58)",
     },
     modalCard: {
       width: "100%",
@@ -287,8 +542,107 @@ function createStyles(theme: AthooTheme) {
       backgroundColor: theme.colors.accentSoft,
       marginBottom: 14,
     },
-    modalTitle: { fontSize: 19, fontWeight: "800", color: theme.colors.text },
-    modalText: { marginTop: 8, fontSize: 13, lineHeight: 19, color: theme.colors.textSecondary },
+    modalTitle: {
+      fontSize: 19,
+      fontWeight: "800",
+      color: theme.colors.text,
+    },
+    modalText: {
+      marginTop: 8,
+      fontSize: 13,
+      lineHeight: 19,
+      color: theme.colors.textSecondary,
+    },
+    setupSteps: {
+      marginTop: 18,
+      gap: 12,
+    },
+    setupStep: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 10,
+    },
+    setupStepIndex: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: theme.colors.accentSoft,
+      borderWidth: 1,
+      borderColor: theme.colors.accent,
+    },
+    setupStepIndexText: {
+      fontSize: 11,
+      fontWeight: "800",
+      color: theme.colors.accent,
+    },
+    setupStepText: {
+      flex: 1,
+      fontSize: 12,
+      lineHeight: 18,
+      color: theme.colors.textSecondary,
+    },
+    setupStatus: {
+      marginTop: 16,
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 8,
+      borderRadius: 12,
+      padding: 12,
+      backgroundColor: theme.colors.accentSoft,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    setupStatusText: {
+      flex: 1,
+      fontSize: 11,
+      lineHeight: 17,
+      color: theme.colors.textSecondary,
+    },
+    settingsButton: {
+      minHeight: 50,
+      marginTop: 18,
+      borderRadius: 13,
+      flexDirection: "row",
+      gap: 8,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: theme.colors.accent,
+    },
+    settingsText: {
+      fontSize: 14,
+      fontWeight: "800",
+      color: theme.colors.onBrand,
+    },
+    checkButton: {
+      minHeight: 48,
+      marginTop: 10,
+      borderRadius: 13,
+      flexDirection: "row",
+      gap: 8,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: theme.colors.surfaceAlt,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    checkText: {
+      fontSize: 14,
+      fontWeight: "800",
+      color: theme.colors.accent,
+    },
+    modalCancelLink: {
+      alignSelf: "center",
+      paddingHorizontal: 18,
+      paddingVertical: 12,
+      marginTop: 2,
+    },
+    modalCancelLinkText: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: theme.colors.textSecondary,
+    },
     passwordInput: {
       minHeight: 50,
       marginTop: 18,
@@ -300,8 +654,17 @@ function createStyles(theme: AthooTheme) {
       paddingHorizontal: 14,
       fontSize: 15,
     },
-    passwordHint: { marginTop: 7, fontSize: 11, lineHeight: 15, color: theme.colors.textMuted },
-    actions: { flexDirection: "row", gap: 10, marginTop: 20 },
+    passwordHint: {
+      marginTop: 7,
+      fontSize: 11,
+      lineHeight: 15,
+      color: theme.colors.textMuted,
+    },
+    actions: {
+      flexDirection: "row",
+      gap: 10,
+      marginTop: 20,
+    },
     cancelButton: {
       flex: 1,
       minHeight: 48,
@@ -310,7 +673,11 @@ function createStyles(theme: AthooTheme) {
       justifyContent: "center",
       backgroundColor: theme.colors.surfaceAlt,
     },
-    cancelText: { fontSize: 14, fontWeight: "700", color: theme.colors.textSecondary },
+    cancelText: {
+      fontSize: 14,
+      fontWeight: "700",
+      color: theme.colors.textSecondary,
+    },
     enableButton: {
       flex: 1,
       minHeight: 48,
@@ -319,7 +686,13 @@ function createStyles(theme: AthooTheme) {
       justifyContent: "center",
       backgroundColor: theme.colors.accent,
     },
-    disabledButton: { opacity: 0.65 },
-    enableText: { fontSize: 14, fontWeight: "800", color: theme.colors.onBrand },
+    disabledButton: {
+      opacity: 0.65,
+    },
+    enableText: {
+      fontSize: 14,
+      fontWeight: "800",
+      color: theme.colors.onBrand,
+    },
   });
 }
