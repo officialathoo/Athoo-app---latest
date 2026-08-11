@@ -234,12 +234,18 @@ export function BiometricLoginSetting() {
     }
   };
 
+  const exposedMethods = deviceState?.methodLabels?.length
+    ? deviceState.methodLabels.join(" / ")
+    : Platform.OS === "ios"
+      ? "Face ID / Touch ID"
+      : "any biometric exposed by Android";
+
   const subtitle = available
     ? enabled
-      ? "Required when reopening Athoo after inactivity"
-      : "Confirm your password and phone unlock method to enable"
+      ? `Enabled for ${exposedMethods}`
+      : `Supports ${exposedMethods}. Confirm your password to enable.`
     : deviceState?.hardwareAvailable
-      ? "Enroll a fingerprint, face, iris, Face ID or Touch ID first"
+      ? "Enroll a fingerprint, supported face unlock, iris, Face ID or Touch ID first"
       : "Use your Athoo password or OTP on this device";
 
   const setupTitle =
@@ -250,7 +256,7 @@ export function BiometricLoginSetting() {
   const setupIntro =
     Platform.OS === "ios"
       ? "Athoo needs an enrolled Face ID or Touch ID method before biometric sign-in can be enabled."
-      : "Athoo needs an enrolled fingerprint, supported face unlock or iris method before biometric sign-in can be enabled.";
+      : "Athoo accepts any enrolled fingerprint, face unlock or iris method that Android exposes through its secure biometric prompt.";
 
   return (
     <>
@@ -320,7 +326,7 @@ export function BiometricLoginSetting() {
           <View style={styles.modalCard}>
             <View style={styles.modalIcon}>
               <Icon
-                name={Platform.OS === "ios" ? "scan-face" : "fingerprint"}
+                name={Platform.OS === "ios" ? "scan-face" : "shield"}
                 size={24}
                 color={theme.colors.accent}
               />

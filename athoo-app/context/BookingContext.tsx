@@ -125,6 +125,7 @@ const SEEN_BOOKINGS_KEY = "athoo_seen_booking_ids";
 const SEEN_STATUSES_KEY = "athoo_seen_booking_statuses";
 const SEEN_ARRIVED_KEY = "athoo_seen_booking_arrivals";
 const BOOKING_POLL_INTERVAL_MS = 120_000;
+const BOOKING_FOREGROUND_REFRESH_COOLDOWN_MS = 60_000;
 const BOOKING_CACHE_VERSION = 1;
 const BOOKING_CACHE_MAX_ROWS = 250;
 const BOOKING_PAGE_SIZE = 60;
@@ -262,6 +263,7 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
   const bookingsRef = useRef<Booking[]>([]);
   const nextCursorRef = useRef<string | null>(null);
   const loadMoreInFlightRef = useRef(false);
+  const lastFullLoadAtRef = useRef(0);
 
   useEffect(() => {
     bookingsRef.current = bookings;
@@ -297,6 +299,7 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
       bookingsRef.current = merged;
       nextCursorRef.current = res.nextCursor || null;
       setHasMore(Boolean(res.hasMore && res.nextCursor));
+      lastFullLoadAtRef.current = Date.now();
       void writeBookingCache(currentUser.id, merged);
     } catch (e: any) {
       const msg = String(e?.message || e || "");
@@ -323,6 +326,7 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
       bookingsRef.current = merged;
       nextCursorRef.current = res.nextCursor || null;
       setHasMore(Boolean(res.hasMore && res.nextCursor));
+      lastFullLoadAtRef.current = Date.now();
       void writeBookingCache(currentUser.id, merged);
     } catch (error) {
       appLogger.warn("bookings", "Failed to load older bookings:", error);
@@ -365,8 +369,13 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const sub = AppState.addEventListener("change", (nextState) => {
       appStateRef.current = nextState;
-      if (nextState === "active" && user) {
-        void loadBookings();
+      if (
+        nextState === "active" &&
+        user &&
+        Date.now() - lastFullLoadAtRef.current >=
+          BOOKING_FOREGROUND_REFRESH_COOLDOWN_MS
+      ) {
+        void loadBookings({ silent: true });
       }
     });
     return () => sub.remove();

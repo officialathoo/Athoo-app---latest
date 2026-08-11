@@ -38,6 +38,7 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
   const mountedRef = useRef(true);
   const inFlightRef = useRef(false);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const lastRefreshAtRef = useRef(0);
 
   const refreshBroadcasts = useCallback(async () => {
     if (!user || user.role !== "provider") return;
@@ -49,6 +50,7 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
       const res = await api.getBroadcastRequests();
       if (!mountedRef.current) return;
       setOpenBroadcastCount(res.requests?.length ?? 0);
+      lastRefreshAtRef.current = Date.now();
     } catch {
       // silently fail
     } finally {
@@ -59,7 +61,10 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const sub = AppState.addEventListener("change", (nextState) => {
       appStateRef.current = nextState;
-      if (nextState === "active") {
+      if (
+        nextState === "active" &&
+        Date.now() - lastRefreshAtRef.current >= 60_000
+      ) {
         void refreshBroadcasts();
       }
     });

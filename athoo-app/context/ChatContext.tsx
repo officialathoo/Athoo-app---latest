@@ -72,6 +72,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const chatsInFlightRef = useRef(false);
   const messagesInFlightRef = useRef<Set<string>>(new Set());
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const lastChatsLoadedAtRef = useRef(0);
+  const lastMessagesLoadedAtRef = useRef<Record<string, number>>({});
 
   const loadChats = useCallback(async () => {
     if (!user || appStateRef.current !== "active" || chatsInFlightRef.current) return;
@@ -79,6 +81,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     try {
       const res = await api.getChats();
       setChats(res.chats as Chat[]);
+      lastChatsLoadedAtRef.current = Date.now();
     } catch {
       // Cached chat state remains visible during temporary network failures.
     } finally {
@@ -104,6 +107,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       chatsInFlightRef.current = false;
       messagesInFlightRef.current.clear();
       lastMsgTimeRef.current = {};
+      lastChatsLoadedAtRef.current = 0;
+      lastMessagesLoadedAtRef.current = {};
       setChats([]);
       setMessages({});
       setActiveChatId(null);
@@ -113,7 +118,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
     chatPollRef.current = setInterval(() => {
       if (appStateRef.current === "active") void loadChats();
-    }, 60_000);
+    }, 120_000);
     return () => { if (chatPollRef.current) clearInterval(chatPollRef.current); };
   }, [user, loadChats, activeChatId]);
 
@@ -136,6 +141,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         );
         return { ...prev, [chatId]: merged };
       });
+      lastMessagesLoadedAtRef.current[chatId] = Date.now();
       if (incoming.length > 0) {
         lastMsgTimeRef.current[chatId] = incoming[incoming.length - 1].createdAt;
       }
@@ -157,7 +163,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     loadMessages(activeChatId, !hasExisting);
     msgPollRef.current = setInterval(() => {
       if (appStateRef.current === "active") void loadMessages(activeChatId);
-    }, 30_000);
+    }, 60_000);
     return () => { if (msgPollRef.current) clearInterval(msgPollRef.current); };
   }, [activeChatId, loadMessages]);
 
@@ -165,8 +171,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const subscription = AppState.addEventListener("change", (nextState) => {
       appStateRef.current = nextState;
       if (nextState !== "active" || !user) return;
-      void loadChats();
-      if (activeChatId) void loadMessages(activeChatId);
+      const now = Date.now();
+      if (now - lastChatsLoadedAtRef.current >= 60_000) void loadChats();
+      if (
+        activeChatId &&
+        now - Number(lastMessagesLoadedAtRef.current[activeChatId] || 0) >= 30_000
+      ) {
+        void loadMessages(activeChatId);
+      }
     });
     return () => subscription.remove();
   }, [user, activeChatId, loadChats, loadMessages]);

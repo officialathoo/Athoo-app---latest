@@ -309,11 +309,11 @@ export default function JobDetailScreen() {
 
     const tick = () => {
       if (AppState.currentState === "active") {
-        loadBookings();
+        void syncBooking();
       }
     };
 
-    pollRef.current = setInterval(tick, 15000);
+    pollRef.current = setInterval(tick, 60_000);
 
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
@@ -322,10 +322,9 @@ export default function JobDetailScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadBookings();
-      syncBooking();
+      void syncBooking();
       return undefined;
-    }, [loadBookings, syncBooking])
+    }, [syncBooking])
   );
 
   useEffect(() => {
@@ -589,8 +588,8 @@ export default function JobDetailScreen() {
             setIsAccepting(true);
             const res = await api.updateBookingStatus(booking.id, "accepted");
             const updated = res.booking as Booking;
-            await loadBookings();
             await syncBooking(updated);
+            void loadBookings({ silent: true });
 
             addNotification({
               type: "booking",
@@ -625,8 +624,8 @@ export default function JobDetailScreen() {
           try {
             setIsDeclining(true);
             await updateBookingStatus(booking.id, "cancelled");
-            await loadBookings();
             router.back();
+            void loadBookings({ silent: true });
           } catch (e: any) {
             Alert.alert("Unable to decline", apiErrorToMessage(e, "We couldn't decline this booking. Please try again."));
           } finally {
@@ -660,8 +659,8 @@ export default function JobDetailScreen() {
       const res = await api.generateStartPin(booking.id);
       const updated = res.booking as Booking;
       await syncBooking(updated);
-      await loadBookings();
       setShowArriveOtp(true);
+      void loadBookings({ silent: true });
     } catch (e: any) {
       Alert.alert(
         "Start Code Error",
@@ -689,8 +688,8 @@ export default function JobDetailScreen() {
       setShowArriveOtp(false);
       setOtpInput("");
 
-      await loadBookings();
       await syncBooking(updated);
+      void loadBookings({ silent: true });
 
       addNotification({
         type: "system",
@@ -720,8 +719,8 @@ export default function JobDetailScreen() {
       const updated = res.booking as Booking;
 
       setBooking(updated);
-      await loadBookings();
       await syncBooking(updated);
+      void loadBookings({ silent: true });
 
       setOtpInput("");
       setOtpError("");
@@ -752,8 +751,8 @@ export default function JobDetailScreen() {
       setShowCompleteOtp(false);
       setOtpInput("");
 
-      await loadBookings();
       await syncBooking(updated);
+      void loadBookings({ silent: true });
 
       addNotification({
         type: "success",
@@ -780,8 +779,8 @@ export default function JobDetailScreen() {
       const res = await api.markBookingReceived(booking.id);
       const updated = res.booking as Booking;
       setBooking(updated);
-      await loadBookings();
       setShowInvoiceModal(false);
+      void loadBookings({ silent: true });
       addNotification({
         type: "success",
         title: "Cash Received",

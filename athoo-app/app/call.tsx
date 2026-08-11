@@ -63,8 +63,10 @@ export default function CallScreen() {
 
   if (!activeCall) return null;
 
+  const preparing = callAction === "starting";
   const connecting = activeCall.state === "outgoing";
   const active = activeCall.state === "active";
+  const controlsLocked = preparing || callAction === "ending";
   const mediaFailed = mediaState === "failed";
   const mediaReady = mediaState === "webrtc";
   const mediaFallback = mediaState === "fallback";
@@ -112,7 +114,7 @@ export default function CallScreen() {
         <View style={styles.statusRow}>
           <View style={[styles.statusDot, { backgroundColor: mediaDotColor }]} />
           <Text style={[styles.statusText, !connecting && styles.activeDuration]}>
-            {connecting ? "Calling..." : active ? formatDuration(callDuration) : "Connecting..."}
+            {preparing ? "Preparing..." : connecting ? "Calling..." : active ? formatDuration(callDuration) : "Connecting..."}
           </Text>
         </View>
 
@@ -131,7 +133,7 @@ export default function CallScreen() {
             mediaReady && { color: theme.colors.success },
             mediaFailed && { color: theme.colors.danger },
           ]}>
-            {connecting ? "Waiting for answer" : mediaState === "connecting" ? "Connecting secure audio" : transportLabel}
+            {preparing ? "Preparing microphone and secure relay" : connecting ? "Waiting for answer" : mediaState === "connecting" ? "Connecting secure audio" : transportLabel}
           </Text>
         </View>
 
@@ -152,7 +154,7 @@ export default function CallScreen() {
         <View style={styles.controlsRow}>
           <Pressable
             style={({ pressed }) => [styles.controlButton, isMuted && styles.controlButtonActive, pressed && styles.pressed]}
-            disabled={callAction === "ending"}
+            disabled={controlsLocked}
             onPress={() => setMuted(!isMuted)}
             accessibilityRole="button"
             accessibilityState={{ selected: isMuted }}
@@ -163,7 +165,7 @@ export default function CallScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.controlButton, isSpeaker && styles.controlButtonActive, pressed && styles.pressed]}
-            disabled={callAction === "ending"}
+            disabled={controlsLocked}
             onPress={() => void setSpeaker(!isSpeaker)}
             accessibilityRole="button"
             accessibilityState={{ selected: isSpeaker }}
@@ -177,14 +179,14 @@ export default function CallScreen() {
         <Pressable
           style={({ pressed }) => [
             styles.endCallButton,
-            callAction === "ending" && styles.controlDisabled,
-            pressed && callAction !== "ending" && styles.endCallPressed,
+            controlsLocked && styles.controlDisabled,
+            pressed && !controlsLocked && styles.endCallPressed,
           ]}
-          disabled={callAction === "ending"}
+          disabled={controlsLocked}
           onPress={() => void endCall()}
           accessibilityRole="button"
           accessibilityLabel="End call"
-          accessibilityState={{ busy: callAction === "ending" }}
+          accessibilityState={{ busy: controlsLocked, disabled: controlsLocked }}
         >
           {callAction === "ending" ? (
             <ActivityIndicator size="small" color={theme.colors.white} />
@@ -193,7 +195,7 @@ export default function CallScreen() {
           )}
         </Pressable>
         <Text style={styles.endCallLabel}>
-          {callAction === "ending" ? "Ending..." : "End Call"}
+          {preparing ? "Preparing call..." : callAction === "ending" ? "Ending..." : "End Call"}
         </Text>
       </View>
     </LinearGradient>

@@ -128,6 +128,8 @@ const SAVED_KEY = "athoo_saved_providers";
 const REMEMBER_KEY = "athoo_remember_me";
 const SESSION_USER_CACHE_KEY = "athoo_session_user_cache";
 const BIOMETRIC_RELOCK_MS = Math.max(60, Number(process.env.EXPO_PUBLIC_BIOMETRIC_RELOCK_SECONDS || 300)) * 1000;
+const QUICK_FOREGROUND_RESUME_MS = 15_000;
+const FOREGROUND_PROFILE_REFRESH_COOLDOWN_MS = 60_000;
 
 function toAppRole(role?: string): AppUserRole {
   return role === "provider" ? "provider" : "customer";
@@ -172,24 +174,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const backgroundedAtRef = useRef<number | null>(null);
   const lastProviderLocationSyncAtRef = useRef(0);
   const providerLocationSyncPromiseRef = useRef<Promise<void> | null>(null);
+  const foregroundSyncInFlightRef = useRef(false);
+  const lastForegroundProfileRefreshAtRef = useRef(0);
 
   const attachSavedProviders = useCallback(async (u: User | null) => {
     if (!u) return null;
     const storageKey = `${SAVED_KEY}_${u.id}`;
+    let cachedIds: string[] = [];
     try {
-      const response = await api.getSavedProviders();
-      const serverIds = Array.isArray(response?.ids) ? response.ids : [];
-      await AsyncStorage.setItem(storageKey, JSON.stringify(serverIds));
-      return { ...u, savedProviders: serverIds };
+      const savedRaw = await AsyncStorage.getItem(storageKey);
+      const parsed = savedRaw ? JSON.parse(savedRaw) : [];
+      cachedIds = Array.isArray(parsed) ? parsed.map(String) : [];
     } catch {
-      try {
-        const savedRaw = await AsyncStorage.getItem(storageKey);
-        const parsed = savedRaw ? JSON.parse(savedRaw) : [];
-        return { ...u, savedProviders: Array.isArray(parsed) ? parsed : [] };
-      } catch {
-        return { ...u, savedProviders: [] };
-      }
+      cachedIds = [];
     }
+
+    void api.getSavedProviders()
+      .then(async (response) => {
+        const serverIds = Array.isArray(response?.ids) ? response.ids.map(String) : [];
+        await AsyncStorage.setItem(storageKey, JSON.stringify(serverIds)).catch(() => undefined);
+        setUser((current) => {
+          if (!current || current.id !== u.id) return current;
+          const previous = Array.isArray(current.savedProviders) ? current.savedProviders : [];
+          if (
+            previous.length === serverIds.length &&
+            previous.every((value, index) => value === serverIds[index])
+          ) return current;
+          return { ...current, savedProviders: serverIds };
+        });
+      })
+      .catch(() => undefined);
+
+    return { ...u, savedProviders: cachedIds };
   }, []);
 
   const loadUser = useCallback(async () => {
@@ -305,20 +321,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const res = await api.getMe();
       const rawUser = (res?.user as any) || null;
       if (!rawUser) return false;
-      const hydrated = await attachSavedProviders(sanitizeUser(rawUser));
-      setUser(hydrated);
+      const sanitized = sanitizeUser(rawUser);
+
+      setUser((current) => {
+        const next: User = {
+          ...sanitized,
+          savedProviders: current?.id === sanitized.id
+            ? current.savedProviders
+            : sanitized.savedProviders,
+        };
+        if (!current || current.id !== next.id) return next;
+        return JSON.stringify(current) === JSON.stringify(next) ? current : next;
+      });
       return true;
     } catch (error) {
       if (!isUnauthorizedError(error) && !isTransientNetworkError(error)) {
         appLogger.warn("auth", "Failed to refresh user profile", error);
       }
-      // The shared API unauthorized handler performs complete idempotent
-      // cleanup. Returning false also prevents this foreground cycle from
-      // registering push tokens or syncing provider location with a revoked
-      // access token while that cleanup completes asynchronously.
       return false;
     }
-  }, [attachSavedProviders]);
+  }, []);
 
   const syncProviderLocation = useCallback(async (force = false) => {
     if (!user?.id || user.role !== "provider" || requiresBiometric) return;
@@ -384,7 +406,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       void (async () => {
         const token = await getToken();
         if (!token) return;
-        await notificationService.syncPushToken(api.baseUrl, token, { force: true });
+        void notificationService.syncPushToken(api.baseUrl, token);
       })();
     }, runtimeConfig.notifications.pushTokenSyncIntervalMs);
     return () => clearInterval(timer);
@@ -401,21 +423,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const backgroundedAt = backgroundedAtRef.current;
       backgroundedAtRef.current = null;
-      void (async () => {
-        const sessionValid = await refreshUser();
-        if (!sessionValid) return;
-        const token = await getToken();
-        if (!token) return;
-        await notificationService.syncPushToken(api.baseUrl, token, { force: true });
-        if (user.role === "provider" && user.isAvailable !== false) await syncProviderLocation(true);
+      const now = Date.now();
 
+      void (async () => {
         if (
           backgroundedAt &&
-          Date.now() - backgroundedAt >= BIOMETRIC_RELOCK_MS &&
+          now - backgroundedAt >= BIOMETRIC_RELOCK_MS &&
           await isBiometricEnabled() &&
           await isBiometricAvailable()
         ) {
           setRequiresBiometric(true);
+          return;
+        }
+
+        if (backgroundedAt && now - backgroundedAt < QUICK_FOREGROUND_RESUME_MS) return;
+        if (
+          foregroundSyncInFlightRef.current ||
+          now - lastForegroundProfileRefreshAtRef.current <
+            FOREGROUND_PROFILE_REFRESH_COOLDOWN_MS
+        ) return;
+
+        foregroundSyncInFlightRef.current = true;
+        lastForegroundProfileRefreshAtRef.current = now;
+        try {
+          const sessionValid = await refreshUser();
+          if (!sessionValid) return;
+          const token = await getToken();
+          if (token) void notificationService.syncPushToken(api.baseUrl, token);
+          if (user.role === "provider" && user.isAvailable !== false) {
+            void syncProviderLocation(false);
+          }
+        } finally {
+          foregroundSyncInFlightRef.current = false;
         }
       })();
     });

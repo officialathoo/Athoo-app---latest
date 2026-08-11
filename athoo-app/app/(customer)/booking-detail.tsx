@@ -370,8 +370,8 @@ export default function BookingDetailScreen() {
     try {
       const res = await api.markBookingPaid(booking.id);
       const updated = res.booking as Booking;
-      await loadBookings();
       showToast(`Cash payment confirmed for ${updated.service}.`);
+      void loadBookings({ silent: true });
     } catch (e: any) {
       showToast(apiErrorToMessage(e, "We couldn't mark this booking as paid. Please try again."));
     } finally {
@@ -396,8 +396,8 @@ export default function BookingDetailScreen() {
         return;
       }
       await api.updateCustomerLocation(bookingId, result.location.latitude, result.location.longitude);
-      await loadBookings();
       showToast("Job location updated to your current position.");
+      void loadBookings({ silent: true });
     } catch {
       showToast("Could not update location. Try again.");
     } finally {

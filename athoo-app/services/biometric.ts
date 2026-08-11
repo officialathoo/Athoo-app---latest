@@ -14,6 +14,7 @@ export interface DeviceAuthenticationState {
   hardwareAvailable: boolean;
   enrolledLevel: LocalAuthentication.SecurityLevel;
   supportedTypes: LocalAuthentication.AuthenticationType[];
+  methodLabels: string[];
   type: BiometricType;
   label: string;
 }
@@ -35,6 +36,22 @@ function resolveType(
   return "biometric";
 }
 
+function methodLabelsForTypes(
+  supportedTypes: LocalAuthentication.AuthenticationType[],
+): string[] {
+  const labels: string[] = [];
+  if (supportedTypes.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
+    labels.push(Platform.OS === "ios" ? "Face ID" : "Face Unlock");
+  }
+  if (supportedTypes.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
+    labels.push(Platform.OS === "ios" ? "Touch ID" : "Fingerprint");
+  }
+  if (supportedTypes.includes(LocalAuthentication.AuthenticationType.IRIS)) {
+    labels.push("Iris Scan");
+  }
+  return labels;
+}
+
 function labelForType(type: BiometricType): string {
   if (Platform.OS === "ios") {
     if (type === "face") return "Face ID";
@@ -42,11 +59,7 @@ function labelForType(type: BiometricType): string {
     if (type === "biometric") return "Biometric Authentication";
     return "Device Authentication";
   }
-  if (type === "face") return "Face Unlock";
-  if (type === "fingerprint") return "Fingerprint";
-  if (type === "iris") return "Iris Scan";
-  if (type === "biometric") return "Biometric Authentication";
-  return "Device Authentication";
+  return type === "none" ? "Device Authentication" : "Device Biometrics";
 }
 
 /**
@@ -81,12 +94,14 @@ export async function getDeviceAuthenticationState(): Promise<DeviceAuthenticati
     // remains usable. The native prompt remains the final authority.
     const available = biometricEnrolled || biometricLevel;
     const type = resolveType(supportedTypes, available);
+    const methodLabels = methodLabelsForTypes(supportedTypes);
     return {
       available,
       biometricEnrolled,
       hardwareAvailable,
       enrolledLevel,
       supportedTypes,
+      methodLabels,
       type,
       label: labelForType(type),
     };
@@ -97,6 +112,7 @@ export async function getDeviceAuthenticationState(): Promise<DeviceAuthenticati
       hardwareAvailable: false,
       enrolledLevel: LocalAuthentication.SecurityLevel.NONE,
       supportedTypes: [],
+      methodLabels: [],
       type: "none",
       label: labelForType("none"),
     };
@@ -189,15 +205,22 @@ export async function authenticateWithBiometric(promptMessage?: string): Promise
       };
     }
 
+    const methodSummary = state.methodLabels.length > 0
+      ? state.methodLabels.join(", ")
+      : "an enrolled biometric";
     const result = await LocalAuthentication.authenticateAsync({
       promptMessage: promptMessage || "Confirm your identity",
-      promptSubtitle: Platform.OS === "android" ? `Use ${state.label} or your phone unlock fallback` : undefined,
-      promptDescription: Platform.OS === "android" ? "Confirm to continue securely in Athoo" : undefined,
+      promptSubtitle: Platform.OS === "android"
+        ? `Use ${methodSummary} or your phone unlock fallback`
+        : undefined,
+      promptDescription: Platform.OS === "android"
+        ? "Athoo accepts any biometric method exposed by your phone to Android BiometricPrompt."
+        : undefined,
       disableDeviceFallback: false,
       fallbackLabel: "Use Device Passcode",
       cancelLabel: "Cancel",
       biometricsSecurityLevel: "weak",
-      requireConfirmation: true,
+      requireConfirmation: false,
     });
     if (result.success) return { success: true };
 

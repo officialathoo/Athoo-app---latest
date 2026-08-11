@@ -18,6 +18,7 @@ function normalizeApiBaseUrl(value: string): string {
 
 let Notifications: typeof import("expo-notifications") | null = null;
 let handlerConfigured = false;
+const PUSH_TOKEN_FAST_PATH_MS = 5 * 60_000;
 
 async function loadNotifications() {
   if (Notifications) return Notifications;
@@ -225,6 +226,11 @@ class NotificationService {
     options: { force?: boolean } = {},
   ): Promise<void> {
     if (!apiBaseUrl || !authToken) return;
+    if (
+      !options.force &&
+      this.syncedToken &&
+      Date.now() - this.lastSyncedAt < PUSH_TOKEN_FAST_PATH_MS
+    ) return;
     const syncSessionKey = `${normalizeApiBaseUrl(apiBaseUrl)}\u0000${authToken}`;
     if (this.tokenSyncPromise) {
       if (this.tokenSyncSessionKey === syncSessionKey) return this.tokenSyncPromise;
