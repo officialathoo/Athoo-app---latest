@@ -231,7 +231,7 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <LinearGradient
-          colors={isProvider ? [theme.colors.secondary, theme.colors.secondaryPressed] : [theme.colors.primary, theme.colors.primaryPressed]}
+          colors={["#061231", "#0B4BB8", "#0A68E8"]}
           style={[styles.hero, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -252,8 +252,8 @@ export default function LoginScreen() {
 
           <View style={[styles.logoRow, localizedRow]}>
             <Image
-              source={brandConfig.assets.mark}
-              style={{ width: 70, height: 50 }}
+              source={brandConfig.assets.appIcon}
+              style={styles.brandIcon}
               resizeMode="contain"
             />
           </View>
@@ -291,7 +291,7 @@ export default function LoginScreen() {
                 color={tab === "otp" ? theme.colors.primary : theme.colors.textSecondary}
               />
               <Text style={[styles.tabLabel, tab === "otp" && styles.tabLabelActive]}>
-                {tr("Mobile OTP")}
+                {tr("Verification Code")}
               </Text>
             </Pressable>
 
@@ -330,14 +330,14 @@ export default function LoginScreen() {
                   onPress={() => { setOtpChannel("phone"); setOtpStep("phone"); setOtp(""); }}
                 >
                   <Icon name="phone" size={14} color={otpChannel === "phone" ? theme.colors.primary : theme.colors.textSecondary} />
-                  <Text style={[styles.otpChannelText, otpChannel === "phone" && styles.otpChannelTextActive]}>{tr("Mobile OTP")}</Text>
+                  <Text style={[styles.otpChannelText, otpChannel === "phone" && styles.otpChannelTextActive]}>{tr("Mobile Number")}</Text>
                 </Pressable>
                 <Pressable
                   style={[styles.otpChannelTab, otpChannel === "email" && styles.otpChannelTabActive]}
                   onPress={() => { setOtpChannel("email"); setOtpStep("phone"); setOtp(""); }}
                 >
                   <Icon name="mail" size={14} color={otpChannel === "email" ? theme.colors.primary : theme.colors.textSecondary} />
-                  <Text style={[styles.otpChannelText, otpChannel === "email" && styles.otpChannelTextActive]}>{tr("Email OTP")}</Text>
+                  <Text style={[styles.otpChannelText, otpChannel === "email" && styles.otpChannelTextActive]}>{tr("Email Address")}</Text>
                 </Pressable>
               </View>
               {otpStep === "phone" ? (
@@ -647,24 +647,25 @@ export default function LoginScreen() {
   );
 }
 
-const createStyles = (theme: AthooTheme) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.background },
+const createStyles = (_theme: AthooTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#061231" },
   rowReverse: { flexDirection: "row-reverse" },
 
   hero: {
     paddingHorizontal: 20,
-    paddingBottom: 30,
+    paddingBottom: 34,
+    backgroundColor: "#061231",
   },
   backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 14,
     backgroundColor: "rgba(255,255,255,0.10)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
+    borderColor: "rgba(103,181,255,0.30)",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 16,
+    marginBottom: 14,
   },
   logoRow: {
     flexDirection: "row",
@@ -672,34 +673,41 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 10,
     marginBottom: 14,
   },
+  brandIcon: {
+    width: 66,
+    height: 66,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(79,180,255,0.45)",
+  },
   logoCircle: {
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: theme.colors.white,
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
   },
-  logoText: { fontSize: 22, fontWeight: "800", color: theme.colors.white, letterSpacing: -0.5 },
-  heroTitle: { fontSize: 28, fontWeight: "800", color: theme.colors.white, marginBottom: 5, letterSpacing: -0.45 },
-  heroSub: { fontSize: 13.5, lineHeight: 19, color: "rgba(255,255,255,0.72)", marginBottom: 13 },
+  logoText: { fontSize: 22, fontWeight: "800", color: "#FFFFFF", letterSpacing: -0.5 },
+  heroTitle: { fontSize: 30, fontWeight: "800", color: "#FFFFFF", marginBottom: 5, letterSpacing: -0.5 },
+  heroSub: { fontSize: 13.5, lineHeight: 19, color: "rgba(220,232,255,0.76)", marginBottom: 13 },
   roleBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "rgba(255,255,255,0.09)",
+    backgroundColor: "rgba(22,111,255,0.16)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
+    borderColor: "rgba(75,166,255,0.30)",
     alignSelf: "flex-start",
     paddingHorizontal: 11,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderRadius: 999,
   },
-  roleBadgeText: { fontSize: 12, color: theme.colors.white, fontWeight: "600" },
+  roleBadgeText: { fontSize: 12, color: "#FFFFFF", fontWeight: "700" },
 
   card: {
     flex: 1,
-    backgroundColor: theme.dark ? "rgba(7,17,31,0.96)" : theme.colors.surface,
+    backgroundColor: "rgba(5,17,45,0.98)",
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     marginTop: -18,
@@ -707,23 +715,23 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 44,
     borderWidth: 1,
-    borderColor: theme.dark ? "rgba(148,163,184,0.16)" : theme.colors.border,
+    borderColor: "rgba(72,139,255,0.24)",
     shadowColor: "#000",
-    shadowOpacity: 0.20,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: -4 },
-    elevation: 10,
+    shadowOpacity: 0.32,
+    shadowRadius: 26,
+    shadowOffset: { width: 0, height: -5 },
+    elevation: 12,
   },
 
   tabs: {
     flexDirection: "row",
-    backgroundColor: theme.dark ? "rgba(255,255,255,0.055)" : theme.colors.surfaceAlt,
+    backgroundColor: "rgba(255,255,255,0.055)",
     borderRadius: 16,
     padding: 4,
     marginBottom: 18,
     gap: 4,
     borderWidth: 1,
-    borderColor: theme.dark ? "rgba(148,163,184,0.14)" : theme.colors.border,
+    borderColor: "rgba(111,164,255,0.18)",
   },
   tab: {
     flex: 1,
@@ -735,24 +743,24 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderRadius: 12,
   },
   tabActive: {
-    backgroundColor: theme.dark ? "rgba(37,99,235,0.16)" : theme.colors.surface,
+    backgroundColor: "rgba(18,104,255,0.32)",
     borderWidth: 1,
-    borderColor: theme.dark ? "rgba(59,130,246,0.26)" : theme.colors.border,
-    shadowColor: theme.colors.overlay,
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
+    borderColor: "rgba(70,165,255,0.55)",
+    shadowColor: "#1478FF",
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
     elevation: 2,
   },
-  tabLabel: { fontSize: 13, fontWeight: "600", color: theme.colors.textSecondary },
-  tabLabelActive: { color: theme.colors.primary },
+  tabLabel: { fontSize: 13, fontWeight: "600", color: "#92A5C7" },
+  tabLabelActive: { color: "#5AB7FF" },
 
   otpChannelTabs: {
     flexDirection: "row",
     padding: 3,
     borderRadius: 13,
-    backgroundColor: theme.dark ? "rgba(255,255,255,0.045)" : theme.colors.surfaceAlt,
+    backgroundColor: "rgba(255,255,255,0.045)",
     borderWidth: 1,
-    borderColor: theme.dark ? "rgba(148,163,184,0.14)" : theme.colors.border,
+    borderColor: "rgba(111,164,255,0.16)",
   },
   otpChannelTab: {
     flex: 1,
@@ -763,80 +771,88 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     paddingVertical: 9,
     borderRadius: 9,
   },
-  otpChannelTabActive: { backgroundColor: theme.colors.surface },
-  otpChannelText: { color: theme.colors.textSecondary, fontSize: 12, fontWeight: "600" },
-  otpChannelTextActive: { color: theme.colors.primary },
-  emailOtpHelp: { fontSize: 12, lineHeight: 18, color: theme.colors.textSecondary },
+  otpChannelTabActive: { backgroundColor: "rgba(14,75,166,0.48)" },
+  otpChannelText: { color: "#92A5C7", fontSize: 12, fontWeight: "600" },
+  otpChannelTextActive: { color: "#69BEFF" },
+  emailOtpHelp: { fontSize: 12, lineHeight: 18, color: "#92A5C7" },
 
   form: { gap: 14 },
   inputGroup: { gap: 7 },
-  label: { fontSize: 13, fontWeight: "600", color: theme.colors.text },
+  label: { fontSize: 13, fontWeight: "700", color: "#F8FAFF" },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: theme.dark ? "rgba(255,255,255,0.045)" : theme.colors.surfaceAlt,
+    backgroundColor: "rgba(255,255,255,0.055)",
     borderRadius: 16,
     paddingHorizontal: 14,
     minHeight: 54,
     borderWidth: 1,
-    borderColor: theme.dark ? "rgba(148,163,184,0.18)" : theme.colors.border,
+    borderColor: "rgba(111,164,255,0.20)",
     gap: 10,
   },
   otpWrapper: {
     justifyContent: "center",
-    borderColor: theme.colors.primary + "60",
-    backgroundColor: theme.colors.primary + "08",
+    borderColor: "rgba(47,140,255,0.55)",
+    backgroundColor: "rgba(28,111,255,0.10)",
   },
-  input: { flex: 1, fontSize: 15.5, color: theme.colors.text, paddingVertical: 0 },
+  input: { flex: 1, fontSize: 15.5, color: "#FFFFFF", paddingVertical: 0 },
   otpInput: { textAlign: "center", fontSize: 28, fontWeight: "800", letterSpacing: 16 },
 
   countryCode: {
-    backgroundColor: theme.colors.border,
+    backgroundColor: "rgba(255,255,255,0.09)",
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
-  countryCodeText: { fontSize: 13, fontWeight: "600", color: theme.colors.text },
+  countryCodeText: { fontSize: 13, fontWeight: "700", color: "#FFFFFF" },
 
   rememberRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: theme.dark ? "rgba(255,255,255,0.04)" : theme.colors.surfaceAlt,
+    backgroundColor: "rgba(255,255,255,0.04)",
     borderRadius: 13,
     paddingHorizontal: 12,
     paddingVertical: 9,
     borderWidth: 1,
-    borderColor: theme.dark ? "rgba(148,163,184,0.12)" : theme.colors.border,
+    borderColor: "rgba(111,164,255,0.14)",
   },
-  rememberLabel: { fontSize: 13, fontWeight: "600", color: theme.colors.text },
-  rememberHint: { fontSize: 11, color: theme.colors.textMuted },
+  rememberLabel: { fontSize: 13, fontWeight: "700", color: "#F8FAFF" },
+  rememberHint: { fontSize: 11, color: "#8295B6" },
 
   otpSentBox: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: theme.colors.success + "15",
+    backgroundColor: "rgba(61,214,160,0.10)",
     borderRadius: 12,
     padding: 12,
     borderWidth: 1,
-    borderColor: theme.colors.success + "30",
+    borderColor: "rgba(61,214,160,0.28)",
   },
-  otpSentText: { fontSize: 13, color: theme.colors.text, flex: 1 },
+  otpSentText: { fontSize: 13, color: "#F8FAFF", flex: 1 },
 
   otpHintBox: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: theme.colors.secondary + "15",
+    backgroundColor: "rgba(249,115,22,0.10)",
     borderRadius: 12,
     padding: 12,
     borderWidth: 1,
-    borderColor: theme.colors.secondary + "30",
+    borderColor: "rgba(249,115,22,0.28)",
   },
-  otpHintText: { fontSize: 13, color: theme.colors.text },
+  otpHintText: { fontSize: 13, color: "#F8FAFF" },
 
-  primaryBtn: { borderRadius: 17, overflow: "hidden", shadowColor: "#2563EB", shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 4 },
+  primaryBtn: {
+    borderRadius: 17,
+    overflow: "hidden",
+    shadowColor: "#1685FF",
+    shadowOpacity: 0.30,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 7 },
+    elevation: 6,
+  },
   primaryBtnGrad: {
     flexDirection: "row",
     alignItems: "center",
@@ -844,13 +860,13 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 10,
     minHeight: 54,
   },
-  primaryBtnText: { fontSize: 16, fontWeight: "700", color: theme.colors.white },
+  primaryBtnText: { fontSize: 16, fontWeight: "800", color: "#FFFFFF" },
   btnDisabled: { opacity: 0.6 },
 
-  otpTimerText: { textAlign: "center", fontSize: 12, color: theme.colors.textSecondary },
-  otpTimerExpired: { color: theme.colors.danger, fontWeight: "700" },
+  otpTimerText: { textAlign: "center", fontSize: 12, color: "#92A5C7" },
+  otpTimerExpired: { color: "#FB7185", fontWeight: "700" },
   resendOtpBtn: { alignSelf: "center", paddingVertical: 8, paddingHorizontal: 12 },
-  resendOtpText: { fontSize: 14, color: theme.colors.primary, fontWeight: "700" },
+  resendOtpText: { fontSize: 14, color: "#5AB7FF", fontWeight: "700" },
   changePhoneBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -858,17 +874,19 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignSelf: "center",
     paddingVertical: 8,
   },
-  changePhoneText: { fontSize: 14, color: theme.colors.primary, fontWeight: "600" },
+  changePhoneText: { fontSize: 14, color: "#5AB7FF", fontWeight: "600" },
 
   infoNote: {
     flexDirection: "row",
     gap: 8,
     alignItems: "flex-start",
-    backgroundColor: theme.colors.surfaceAlt,
+    backgroundColor: "rgba(255,255,255,0.045)",
     borderRadius: 12,
     padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(111,164,255,0.12)",
   },
-  infoNoteText: { flex: 1, fontSize: 12, color: theme.colors.textSecondary, lineHeight: 18 },
+  infoNoteText: { flex: 1, fontSize: 12, color: "#92A5C7", lineHeight: 18 },
 
   dividerRow: {
     flexDirection: "row",
@@ -877,8 +895,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     marginTop: 22,
     marginBottom: 14,
   },
-  divider: { flex: 1, height: 1, backgroundColor: theme.colors.border },
-  dividerText: { fontSize: 12, color: theme.colors.textMuted, fontWeight: "500" },
+  divider: { flex: 1, height: 1, backgroundColor: "rgba(111,164,255,0.18)" },
+  dividerText: { fontSize: 12, color: "#8295B6", fontWeight: "500" },
 
   registerBtn: {
     flexDirection: "row",
@@ -888,10 +906,10 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     minHeight: 50,
     borderRadius: 15,
     borderWidth: 1,
-    borderColor: theme.dark ? "rgba(148,163,184,0.18)" : theme.colors.border,
-    backgroundColor: theme.dark ? "rgba(255,255,255,0.04)" : theme.colors.surfaceAlt,
+    borderColor: "rgba(48,145,255,0.36)",
+    backgroundColor: "rgba(14,78,170,0.16)",
   },
-  registerBtnText: { fontSize: 15, fontWeight: "700" },
+  registerBtnText: { fontSize: 15, fontWeight: "800" },
 
   forgotPasswordBtn: {
     flexDirection: "row",
@@ -900,11 +918,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 8,
     paddingVertical: 6,
   },
-
-  forgotPasswordText: {
-    fontSize: 14,
-    fontWeight: "700",
-  },
+  forgotPasswordText: { fontSize: 14, fontWeight: "700" },
 
   biometricBtn: {
     flexDirection: "row",
@@ -912,12 +926,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     justifyContent: "center",
     gap: 10,
     minHeight: 50,
-    backgroundColor: theme.dark ? "rgba(37,99,235,0.10)" : theme.colors.surfaceAlt,
+    backgroundColor: "rgba(28,111,255,0.10)",
     borderRadius: 15,
     paddingHorizontal: 18,
     marginBottom: 18,
     borderWidth: 1,
-    borderColor: theme.dark ? "rgba(59,130,246,0.22)" : theme.colors.border,
+    borderColor: "rgba(70,165,255,0.24)",
   },
-  biometricText: { fontSize: 16, fontWeight: "600", color: theme.colors.primary },
+  biometricText: { fontSize: 16, fontWeight: "700", color: "#5AB7FF" },
 });

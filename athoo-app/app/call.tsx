@@ -1,4 +1,5 @@
 import { Icon } from "@/components/ui/Icon";
+import { PrivateImage } from "@/services/storage";
 import { useCall } from "@/context/CallContext";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
@@ -102,9 +103,17 @@ export default function CallScreen() {
       <View style={styles.callerSection}>
         <Animated.View style={[styles.avatarRipple, { transform: [{ scale: pulseAnimation }] }]}>
           <View style={styles.avatarRippleInner}>
-            <View style={[styles.callerAvatar, { backgroundColor: activeCall.callerColor || theme.colors.primary }]}>
-              <Text style={styles.callerAvatarText}>{activeCall.callerInitials}</Text>
-            </View>
+            <PrivateImage
+              objectPath={activeCall.profileImage}
+              style={styles.callerAvatarImage}
+              resizeMode="cover"
+              accessibilityLabel={`${activeCall.callerName} profile photo`}
+              fallback={
+                <View style={[styles.callerAvatar, { backgroundColor: activeCall.callerColor || theme.colors.primary }]}>
+                  <Text style={styles.callerAvatarText}>{activeCall.callerInitials}</Text>
+                </View>
+              }
+            />
           </View>
         </Animated.View>
 
@@ -215,10 +224,11 @@ function createStyles(theme: AthooTheme) {
     encryptedBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: glass, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
     encryptedText: { fontSize: 11, color: mutedWhite },
     callerSection: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10, paddingHorizontal: 20, paddingVertical: 10 },
-    avatarRipple: { width: 116, height: 116, borderRadius: 58, backgroundColor: "rgba(255,255,255,0.10)", alignItems: "center", justifyContent: "center" },
-    avatarRippleInner: { width: 98, height: 98, borderRadius: 49, backgroundColor: "rgba(255,255,255,0.12)", alignItems: "center", justifyContent: "center" },
-    callerAvatar: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: "rgba(255,255,255,0.38)" },
-    callerAvatarText: { fontSize: 30, fontWeight: "800", color: theme.colors.white },
+    avatarRipple: { width: 176, height: 176, borderRadius: 88, backgroundColor: "rgba(25,132,255,0.12)", alignItems: "center", justifyContent: "center" },
+    avatarRippleInner: { width: 154, height: 154, borderRadius: 77, backgroundColor: "rgba(255,255,255,0.10)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(74,175,255,0.34)" },
+    callerAvatar: { width: 136, height: 136, borderRadius: 68, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: "rgba(255,255,255,0.54)", overflow: "hidden" },
+    callerAvatarImage: { width: 136, height: 136, borderRadius: 68, borderWidth: 3, borderColor: "rgba(255,255,255,0.66)" },
+    callerAvatarText: { fontSize: 38, fontWeight: "800", color: theme.colors.white },
     callerName: { fontSize: 24, fontWeight: "800", color: theme.colors.white, letterSpacing: -0.4, textAlign: "center" },
     callerService: { fontSize: 15, color: mutedWhite, fontWeight: "500", textAlign: "center" },
     statusRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },

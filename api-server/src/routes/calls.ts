@@ -117,6 +117,19 @@ function callInvolvesUser(call: { callerId: string; receiverId: string }, userId
   return call.callerId === userId || call.receiverId === userId;
 }
 
+async function withCallerProfile<T extends { callerId: string }>(
+  call: T,
+): Promise<T & { callerProfileImage: string | null }> {
+  const caller = await db.query.usersTable.findFirst({
+    columns: { profileImage: true },
+    where: eq(usersTable.id, call.callerId),
+  });
+  return {
+    ...call,
+    callerProfileImage: caller?.profileImage || null,
+  };
+}
+
 // ── In-memory audio chunk store (cleared when call ends) ────────────────────
 interface AudioChunk { index: number; senderId: string; data: string; ext: string; ts: number; }
 const audioStore = new Map<string, AudioChunk[]>();   // callId → chunks
@@ -301,7 +314,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       return { call: createdCall, created: true, signalingRefreshed: false };
     });
 
-    const call = result.call;
+    const call = await withCallerProfile(result.call);
     incomingCallCache.delete(receiverId);
     if (result.created || result.signalingRefreshed) {
       emitToUser(receiverId, "call:incoming", { call, signalingRefreshed: result.signalingRefreshed });
@@ -388,7 +401,7 @@ router.get("/incoming", requireAuth, async (req: AuthRequest, res: Response) => 
       return;
     }
 
-    const payload = { call };
+    const payload = { call: await withCallerProfile(call) };
     incomingCallCache.set(userId, { ts: Date.now(), payload });
     res.json(payload);
   } catch (error) {

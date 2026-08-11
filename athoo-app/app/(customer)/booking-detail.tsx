@@ -598,7 +598,7 @@ export default function BookingDetailScreen() {
 
   const handleCall = async () => {
     if (!user) return;
-    startOutgoingCall(booking.providerId, providerName, booking.service, theme.colors.primary).catch(() => {});
+    startOutgoingCall(booking.providerId, providerName, booking.service, theme.colors.primary, booking.providerProfileImage || undefined).catch(() => {});
   };
 
   const showToast = (msg: string) => {

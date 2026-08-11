@@ -262,12 +262,12 @@ const notificationIconPath = readEnv(
 
 const splashBackgroundLight = readEnv(
   "SPLASH_BACKGROUND_LIGHT",
-  "#FFFFFF",
+  "#061231",
 );
 
 const splashBackgroundDark = readEnv(
   "SPLASH_BACKGROUND_DARK",
-  "#08111F",
+  "#061231",
 );
 
 const adaptiveIconBackground = readEnv(
@@ -715,7 +715,7 @@ module.exports = {
         splashBackgroundLight,
 
       translucent: false,
-      barStyle: "dark-content",
+      barStyle: "light-content",
     },
 
     android: {
@@ -759,7 +759,7 @@ module.exports = {
         "expo-splash-screen",
         {
           image: splashImagePath,
-          imageWidth: 220,
+          imageWidth: 200,
           resizeMode: "contain",
 
           backgroundColor:

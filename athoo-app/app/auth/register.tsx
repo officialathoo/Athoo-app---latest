@@ -1,8 +1,11 @@
 import { Icon } from "@/components/ui/Icon";
+import { brandConfig } from "@/config/brand";
+import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -147,18 +150,38 @@ export default function RegisterScreen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: topPad + 10 }]} keyboardShouldPersistTaps="handled">
-        <Pressable style={styles.backBtn} onPress={() => {
-          if (step === "otp") { setStep("phone"); setOtp(""); }
-          else if (step === "details" && !phoneParam) { setStep("otp"); }
-          else { router.back(); }
-        }}>
-          <Icon name="arrow-left" size={22} color={theme.colors.text} />
-        </Pressable>
+        <LinearGradient
+          colors={["#061B4E", "#0B63E5", "#1558B4"]}
+          style={styles.hero}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        >
+          <View style={styles.heroTop}>
+            <Pressable style={styles.backBtn} onPress={() => {
+              if (step === "otp") { setStep("phone"); setOtp(""); }
+              else if (step === "details" && !phoneParam) { setStep("otp"); }
+              else { router.back(); }
+            }}>
+              <Icon name="arrow-left" size={22} color={theme.colors.white} />
+            </Pressable>
+            <View style={styles.brandRow}>
+              <Image source={brandConfig.assets.appIcon} style={styles.brandIcon} resizeMode="cover" />
+              <Text style={styles.brandName}>{brandConfig.displayName}</Text>
+            </View>
+          </View>
 
-        <View style={styles.header}>
-          <Text style={[styles.title, localizedText]}>{step === "phone" ? tr("Create Account") : step === "otp" ? tr("Verify Phone") : tr("Your Details")}</Text>
-          <Text style={[styles.subtitle, localizedText]}>{step === "phone" ? tr("Enter your phone number to get started") : step === "otp" ? tr("We sent a code to {{phone}}", { phone }) : tr("Almost done! Fill in your details")}</Text>
-        </View>
+          <View style={styles.header}>
+            <Text style={[styles.title, localizedText]}>{step === "phone" ? tr("Create Account") : step === "otp" ? tr("Verify Phone") : tr("Your Details")}</Text>
+            <Text style={[styles.subtitle, localizedText]}>{step === "phone" ? tr("Enter your phone number to get started") : step === "otp" ? tr("We sent a code to {{phone}}", { phone }) : tr("Almost done! Fill in your details")}</Text>
+          </View>
+
+          <View style={styles.stepBadge}>
+            <Icon name={step === "phone" ? "phone" : step === "otp" ? "shield-check" : "user-check"} size={13} color={theme.colors.white} />
+            <Text style={styles.stepBadgeText}>
+              {step === "phone" ? tr("Step 1 - Mobile") : step === "otp" ? tr("Step 2 - Verification") : tr("Step 3 - Account Details")}
+            </Text>
+          </View>
+        </LinearGradient>
 
         {step === "phone" && <View style={styles.form}><View style={styles.inputGroup}><Text style={[styles.label, localizedText]}>{tr("Phone Number")}</Text><View style={[styles.inputWrapper, localizedRow]}><Icon name="phone" size={18} color={theme.colors.textMuted} /><TextInput style={[styles.input, localizedText]} value={phone} onChangeText={setPhone} placeholder="03XX-XXXXXXX" placeholderTextColor={theme.colors.textMuted} keyboardType="phone-pad" autoFocus /></View></View><Button title={loading ? tr("Sending...") : tr("Get Verification Code")} onPress={handleSendOtp} loading={loading} fullWidth style={{ marginTop: 8 }} /></View>}
 
@@ -182,29 +205,111 @@ export default function RegisterScreen() {
 }
 
 const createStyles = (theme: AthooTheme) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.background },
+  container: { flex: 1, backgroundColor: "#061B4E" },
   rowReverse: { flexDirection: "row-reverse" },
-  content: { width: "100%", maxWidth: 520, alignSelf: "center", paddingHorizontal: 20, paddingBottom: 52 },
-  backBtn: { width: 40, height: 40, borderRadius: 13, backgroundColor: theme.dark ? "rgba(255,255,255,0.05)" : theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.dark ? "rgba(148,163,184,0.16)" : theme.colors.border, alignItems: "center", justifyContent: "center", marginBottom: 18 },
-  header: { marginBottom: 24, gap: 6 },
-  title: { fontSize: 29, fontWeight: "800", color: theme.colors.text, letterSpacing: -0.45 },
-  subtitle: { fontSize: 14, color: theme.colors.textSecondary, lineHeight: 20 },
-  form: { gap: 14, backgroundColor: theme.dark ? "rgba(255,255,255,0.025)" : theme.colors.surface, borderRadius: 22, padding: 16, borderWidth: 1, borderColor: theme.dark ? "rgba(148,163,184,0.12)" : theme.colors.border },
+  content: { width: "100%", maxWidth: 560, alignSelf: "center", paddingBottom: 52 },
+  hero: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 26,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+  },
+  heroTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    backgroundColor: "rgba(255,255,255,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  brandRow: { flexDirection: "row", alignItems: "center", gap: 9 },
+  brandIcon: { width: 48, height: 48, borderRadius: 14, borderWidth: 1, borderColor: "rgba(255,255,255,0.34)" },
+  brandName: { fontSize: 20, fontWeight: "800", color: "#FFFFFF", letterSpacing: -0.3 },
+  header: { marginTop: 24, gap: 6 },
+  title: { fontSize: 30, fontWeight: "800", color: "#FFFFFF", letterSpacing: -0.5 },
+  subtitle: { fontSize: 14, color: "rgba(255,255,255,0.76)", lineHeight: 20 },
+  stepBadge: {
+    alignSelf: "flex-start",
+    marginTop: 14,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  stepBadgeText: { color: "#FFFFFF", fontSize: 11.5, fontWeight: "700" },
+  form: {
+    gap: 14,
+    backgroundColor: theme.colors.surface,
+    borderRadius: 24,
+    padding: 17,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginHorizontal: 18,
+    marginTop: -12,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 7 },
+    elevation: 6,
+  },
   inputGroup: { gap: 7 },
   label: { fontSize: 13, fontWeight: "700", color: theme.colors.text },
-  inputWrapper: { flexDirection: "row", alignItems: "center", backgroundColor: theme.dark ? "rgba(255,255,255,0.045)" : theme.colors.surfaceAlt, borderRadius: 16, paddingHorizontal: 14, minHeight: 54, borderWidth: 1, borderColor: theme.dark ? "rgba(148,163,184,0.18)" : theme.colors.border, gap: 10 },
+  inputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: theme.dark ? "rgba(255,255,255,0.045)" : theme.colors.surfaceAlt,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    minHeight: 54,
+    borderWidth: 1,
+    borderColor: theme.dark ? "rgba(148,163,184,0.18)" : theme.colors.border,
+    gap: 10,
+  },
   input: { flex: 1, fontSize: 15.5, color: theme.colors.text, paddingVertical: 0 },
   otpInput: { fontSize: 26, fontWeight: "800", letterSpacing: 14, textAlign: "center" },
-  otpHintBox: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: theme.colors.secondary + "12", borderRadius: 13, padding: 11, borderWidth: 1, borderColor: theme.colors.secondary + "28" },
+  otpHintBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: theme.colors.secondary + "12",
+    borderRadius: 13,
+    padding: 11,
+    borderWidth: 1,
+    borderColor: theme.colors.secondary + "28",
+  },
   otpHintText: { fontSize: 13, color: theme.colors.text },
   otpTimerText: { textAlign: "center", fontSize: 12, color: theme.colors.textSecondary, marginTop: -2 },
   otpTimerExpired: { color: theme.colors.danger, fontWeight: "700" },
   resendBtn: { alignSelf: "center", paddingVertical: 7, paddingHorizontal: 10 },
   resendText: { fontSize: 13.5, color: theme.colors.primary, fontWeight: "700" },
-  phoneDisplay: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: theme.colors.success + "12", borderRadius: 13, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: theme.colors.success + "28" },
+  phoneDisplay: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: theme.colors.success + "12",
+    borderRadius: 13,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.success + "28",
+  },
   phoneDisplayText: { fontSize: 13, color: theme.colors.text, fontWeight: "600" },
-  loginRow: { flexDirection: "row", justifyContent: "center", marginTop: 24, paddingVertical: 8 },
-  loginText: { fontSize: 14, color: theme.colors.textSecondary },
-  loginLink: { fontSize: 14, color: theme.colors.primary, fontWeight: "700" },
+  loginRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    marginTop: 22,
+    marginHorizontal: 18,
+    paddingVertical: 10,
+  },
+  loginText: { fontSize: 14, color: "rgba(255,255,255,0.76)" },
+  loginLink: { fontSize: 14, color: "#71C6FF", fontWeight: "800" },
 });
-

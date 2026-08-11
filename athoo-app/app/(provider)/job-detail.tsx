@@ -840,7 +840,8 @@ export default function JobDetailScreen() {
       booking.customerId,
       booking.customerName,
       booking.service,
-      theme.colors.secondary
+      theme.colors.secondary,
+      booking.customerProfileImage || undefined,
     );
   };
 

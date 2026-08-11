@@ -11,7 +11,7 @@ interface AthooLoaderProps {
 
 export function AthooLoader({ tagline }: AthooLoaderProps) {
   const { theme } = useTheme();
-  const resolvedTagline = tagline || brandConfig.descriptor;
+  const resolvedTagline = tagline || `${brandConfig.descriptor} Across Pakistan`;
   const styles = useMemo(() => createStyles(theme), [theme]);
   const logoScale = useRef(new Animated.Value(0.5)).current;
   const logoOpacity = useRef(new Animated.Value(0)).current;
@@ -80,9 +80,7 @@ export function AthooLoader({ tagline }: AthooLoaderProps) {
     };
   }, [dot1Y, dot2Y, dot3Y, glowOpacity, logoOpacity, logoScale, ringOpacity, ringScale, textOpacity]);
 
-  const gradient = theme.dark
-    ? ["#06101D", "#0B2A4A", "#071827"] as const
-    : [theme.colors.primary, theme.colors.primaryPressed, "#0B6BA8"] as const;
+  const gradient = ["#061231", "#0B3FA8", "#08172F"] as const;
 
   return (
     <LinearGradient colors={gradient} style={styles.container} start={{ x: 0.3, y: 0 }} end={{ x: 0.7, y: 1 }}>
@@ -94,7 +92,7 @@ export function AthooLoader({ tagline }: AthooLoaderProps) {
         <Animated.View style={[styles.ring, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]} />
         <Animated.View style={[styles.glowCircle, { opacity: glowOpacity }]} />
         <View style={styles.logoCard}>
-          <Image source={brandConfig.assets.mark} style={styles.logo} resizeMode="cover" />
+          <Image source={brandConfig.assets.appIcon} style={styles.logo} resizeMode="cover" />
         </View>
       </Animated.View>
 
@@ -113,7 +111,7 @@ export function AthooLoader({ tagline }: AthooLoaderProps) {
       </View>
 
       <View style={styles.footer}>
-        <Text style={styles.footerText}>Pakistan</Text>
+        <Text style={styles.footerText}>Secure Services - Pakistan</Text>
       </View>
     </LinearGradient>
   );
@@ -130,22 +128,22 @@ function createStyles(theme: AthooTheme) {
     ring: { position: "absolute", width: 136, height: 136, borderRadius: 68, borderWidth: 1.5, borderColor: "rgba(125,211,252,0.48)" },
     glowCircle: { position: "absolute", width: 112, height: 112, borderRadius: 56, backgroundColor: "rgba(56,189,248,0.13)" },
     logoCard: {
-      width: 98,
-      height: 98,
-      borderRadius: 26,
-      backgroundColor: theme.colors.white,
+      width: 112,
+      height: 112,
+      borderRadius: 30,
+      backgroundColor: "rgba(7,31,78,0.82)",
       borderWidth: 1,
-      borderColor: glass,
+      borderColor: "rgba(78,182,255,0.52)",
       alignItems: "center",
       justifyContent: "center",
-      shadowColor: "#38BDF8",
+      shadowColor: "#1685FF",
       shadowOffset: { width: 0, height: 12 },
-      shadowOpacity: 0.24,
-      shadowRadius: 24,
-      elevation: 18,
+      shadowOpacity: 0.36,
+      shadowRadius: 28,
+      elevation: 20,
       overflow: "hidden",
     },
-    logo: { width: "100%", height: "100%", borderRadius: 25 },
+    logo: { width: "100%", height: "100%", borderRadius: 29 },
     textBlock: { alignItems: "center", marginTop: 24, gap: 5, paddingHorizontal: 28 },
     brandName: { fontSize: 36, fontWeight: "800", color: theme.colors.white, letterSpacing: 1.1 },
     tagline: { fontSize: 13, color: "rgba(255,255,255,0.78)", letterSpacing: 0.8, fontWeight: "500" },

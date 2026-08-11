@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
 import { Icon } from "@/components/ui/Icon";
+import { PrivateImage } from "@/services/storage";
 import { brandConfig } from "@/config/brand";
 import { soundService } from "@/services/SoundService";
 import { api, realtime } from "@/services/api";
@@ -149,6 +150,7 @@ export interface ActiveCall {
   callerName: string;
   callerInitials: string;
   callerColor?: string;
+  profileImage?: string | null;
   service?: string;
   direction: "incoming" | "outgoing";
   state: CallState;
@@ -167,7 +169,7 @@ interface CallContextType {
   callAction: CallActionState;
   setMuted: (v: boolean) => void;
   setSpeaker: (v: boolean) => Promise<void>;
-  startOutgoingCall: (receiverId: string, receiverName: string, service?: string, receiverColor?: string) => Promise<void>;
+  startOutgoingCall: (receiverId: string, receiverName: string, service?: string, receiverColor?: string, receiverProfileImage?: string | null) => Promise<void>;
   simulateIncomingCall: (callerName: string, service?: string) => void;
   acceptCall: () => Promise<void>;
   rejectCall: () => Promise<void>;
@@ -212,9 +214,16 @@ function IncomingCallOverlay({ call, action, onAccept, onReject }: {
           </View>
         </View>
         <View style={styles.callerSection}>
-          <View style={[styles.callerAvatar, { backgroundColor: call.callerColor || theme.colors.primary }]}>
-            <Text style={styles.callerAvatarText}>{call.callerInitials}</Text>
-          </View>
+          <PrivateImage
+            objectPath={call.profileImage}
+            style={styles.callerAvatarImage}
+            resizeMode="cover"
+            fallback={
+              <View style={[styles.callerAvatar, { backgroundColor: call.callerColor || theme.colors.primary }]}>
+                <Text style={styles.callerAvatarText}>{call.callerInitials}</Text>
+              </View>
+            }
+          />
           <Text style={styles.callerName}>{call.callerName}</Text>
           {call.service && <Text style={styles.callerService}>{call.service}</Text>}
           <Text style={styles.callerSubtitle}>{`${brandConfig.displayName} ${brandConfig.descriptor}`}</Text>
@@ -263,9 +272,16 @@ function ActiveCallBanner({ call, duration, action, onEnd }: {
     <Pressable style={styles.activeBanner} onPress={() => router.push("/call" as any)}>
       <View style={styles.activeLiveDot} />
       <View style={styles.activeCaller}>
-        <View style={[styles.activeAvatar, { backgroundColor: call.callerColor || theme.colors.primary }]}>
-          <Text style={styles.activeAvatarText}>{call.callerInitials}</Text>
-        </View>
+        <PrivateImage
+          objectPath={call.profileImage}
+          style={styles.activeAvatarImage}
+          resizeMode="cover"
+          fallback={
+            <View style={[styles.activeAvatar, { backgroundColor: call.callerColor || theme.colors.primary }]}>
+              <Text style={styles.activeAvatarText}>{call.callerInitials}</Text>
+            </View>
+          }
+        />
         <View style={styles.activeIdentity}>
           <Text style={styles.activeName}>{call.callerName}</Text>
           <Text style={styles.activeTimer}>
@@ -1349,6 +1365,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         ...previous,
         offer: rawCall.offer || previous.offer,
         service: rawCall.service || previous.service,
+        profileImage: rawCall.callerProfileImage || previous.profileImage,
       } : null);
       return;
     }
@@ -1366,6 +1383,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       callerName: rawCall.callerName || "Unknown",
       callerInitials: initials,
       callerColor: rawCall.callerColor || brandConfig.colors.secondary,
+      profileImage: rawCall.callerProfileImage || undefined,
       service: rawCall.service,
       direction: "incoming",
       state: "incoming",
@@ -1489,7 +1507,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // ── Start outgoing call ─────────────────────────────────────────────────────
   const startOutgoingCall = useCallback(async (
-    receiverId: string, receiverName: string, service?: string, receiverColor?: string
+    receiverId: string,
+    receiverName: string,
+    service?: string,
+    receiverColor?: string,
+    receiverProfileImage?: string | null,
   ) => {
     if (!user || activeCallRef.current || !beginCallAction("starting")) return;
 
@@ -1502,6 +1524,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       callerName: receiverName,
       callerInitials: receiverInitials,
       callerColor: receiverColor || brandConfig.colors.primary,
+      profileImage: receiverProfileImage || undefined,
       service,
       direction: "outgoing",
       state: "outgoing",
@@ -1849,7 +1872,8 @@ const createCallStyles = (theme: AthooTheme) => StyleSheet.create({
   incomingRingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.success },
   incomingRingText: { fontSize: 12, color: theme.colors.success, fontWeight: "700" },
   callerSection: { alignItems: "center", gap: 8, marginBottom: 24 },
-  callerAvatar: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: theme.colors.white + "4D" },
+  callerAvatar: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: theme.colors.white + "4D", overflow: "hidden" },
+  callerAvatarImage: { width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: theme.colors.white + "66" },
   callerAvatarText: { fontSize: 30, fontWeight: "800", color: theme.colors.white },
   callerName: { fontSize: 24, fontWeight: "800", color: theme.colors.white },
   callerService: { fontSize: 14, color: theme.colors.white + "B3", fontWeight: "500" },
@@ -1871,7 +1895,8 @@ const createCallStyles = (theme: AthooTheme) => StyleSheet.create({
   activeLiveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.white },
   activeCaller: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
   activeIdentity: { flex: 1, minWidth: 0 },
-  activeAvatar: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  activeAvatar: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  activeAvatarImage: { width: 32, height: 32, borderRadius: 16 },
   activeAvatarText: { fontSize: 12, fontWeight: "700", color: theme.colors.white },
   activeName: { fontSize: 13, fontWeight: "700", color: theme.colors.white },
   activeTimer: { fontSize: 12, color: theme.colors.white + "D9" },

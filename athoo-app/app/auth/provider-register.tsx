@@ -1,4 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
+import { ServiceMultiSelect } from "@/components/auth/ServiceMultiSelect";
+import { brandConfig } from "@/config/brand";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
@@ -23,7 +25,6 @@ import { useAuth } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
-import { getCategoryAppearance } from "@/utils/categoryAppearance";
 import { useCategories } from "@/context/CategoriesContext";
 import { api } from "@/services/api";
 import { uploadPickedImage } from "@/services/storage";
@@ -481,10 +482,17 @@ export default function ProviderRegisterScreen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <View style={[styles.container, { paddingTop: topPad }]}>
-        <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.headerGrad}>
+        <LinearGradient colors={["#061B4E", "#0B63E5", "#1558B4"]} style={styles.headerGrad}>
           <Pressable style={styles.backBtn} onPress={() => step > 0 ? setStep(step - 1) : router.back()}>
             <Icon name="arrow-left" size={20} color={theme.colors.white} />
           </Pressable>
+          <View style={styles.providerBrandRow}>
+            <Image source={brandConfig.assets.appIcon} style={styles.providerBrandIcon} resizeMode="cover" />
+            <View>
+              <Text style={styles.providerBrandName}>{brandConfig.displayName}</Text>
+              <Text style={styles.providerBrandCaption}>{tr("Verified professional onboarding")}</Text>
+            </View>
+          </View>
           <Text style={[styles.headerTitle, localizedText]}>{tr("Provider Registration")}</Text>
           <Text style={[styles.headerSubtitle, localizedText]}>{tr("Join Athoo as a verified professional")}</Text>
 
@@ -495,7 +503,7 @@ export default function ProviderRegisterScreen() {
                   <View style={[styles.stepCircle, i === step && styles.stepActive, i < step && styles.stepDone]}>
                     {i < step
                       ? <Icon name="check" size={14} color={theme.colors.white} />
-                      : <Icon name={s.icon as any} size={14} color={i === step ? theme.colors.white : "rgba(255,255,255,0.4)"} />
+                      : <Icon name={s.icon as any} size={14} color={i === step ? theme.colors.primary : "rgba(255,255,255,0.4)"} />
                     }
                   </View>
                   <Text style={[styles.stepLabel, localizedText, i === step && styles.stepLabelActive]}>{s.title}</Text>
@@ -588,25 +596,18 @@ export default function ProviderRegisterScreen() {
                 <Icon name="tool" size={15} color={theme.colors.primary} />{"  "}{tr("Services & Details")}
               </Text>
 
-              <View style={styles.inputGroup}>
-                <Text style={[styles.label, localizedText]}>{tr("Services Offered")} <Text style={{ color: theme.colors.danger }}>*</Text></Text>
-                <View style={[styles.servicesGrid, localizedRow]}>
-                  {categories.map((s) => {
-                    const sel = form.services.includes(s.slug || s.id);
-                    const appearance = getCategoryAppearance(s, theme);
-                    return (
-                      <Pressable
-                        key={s.id}
-                        onPress={() => toggleService(s.slug || s.id)}
-                        style={[styles.serviceChip, sel && { backgroundColor: appearance.selectedBackground, borderColor: appearance.accent }]}
-                      >
-                        <Icon name={s.icon as any} size={13} color={sel ? appearance.accent : theme.colors.textSecondary} />
-                        <Text style={[styles.serviceChipText, sel && { color: appearance.accent }]}>{s.name}</Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
+              <ServiceMultiSelect
+                options={categories.map((service) => ({
+                  id: String(service.id),
+                  slug: service.slug || undefined,
+                  name: service.name,
+                  icon: service.icon || "tool",
+                }))}
+                selected={form.services}
+                onToggle={toggleService}
+                label={tr("Services Offered")}
+                required
+              />
 
               <InputField label={tr("Years of Experience")} value={form.experience} onChange={(v: string) => update("experience", v)} placeholder={tr("e.g. 5 years")} />
               <InputField
@@ -895,7 +896,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     marginBottom: 8,
     marginTop: 8,
   },
-  headerTitle: { fontSize: 21, fontWeight: "800", color: theme.colors.white, letterSpacing: -0.35 },
+  providerBrandRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
+  providerBrandIcon: { width: 50, height: 50, borderRadius: 15, borderWidth: 1, borderColor: "rgba(255,255,255,0.34)" },
+  providerBrandName: { fontSize: 20, fontWeight: "800", color: theme.colors.white, letterSpacing: -0.3 },
+  providerBrandCaption: { marginTop: 1, fontSize: 10.5, color: "rgba(255,255,255,0.66)" },
+  headerTitle: { fontSize: 23, fontWeight: "800", color: theme.colors.white, letterSpacing: -0.35 },
   headerSubtitle: { fontSize: 11.5, color: "rgba(255,255,255,0.70)", marginTop: 2, marginBottom: 14 },
   stepsRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 2 },
   stepItem: { alignItems: "center", gap: 4 },
