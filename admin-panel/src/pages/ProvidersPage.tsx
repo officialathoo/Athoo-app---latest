@@ -181,19 +181,31 @@ export function ProvidersPage() {
   }
 
   async function handleReviewDoc(doc: ProviderDoc, status: "approved" | "rejected") {
+    const providerId = selectedProvider?.id;
+    if (!providerId) return;
     const rejectionNote = status === "rejected" ? askReason(`Reason for rejecting ${doc.label || doc.type}:`) : null;
     if (status === "rejected" && !rejectionNote) return;
     setActionLoading(true);
+    setDocsLoading(true);
     try {
       await api(`/api/admin/documents/${doc.id}`, {
         method: "PATCH",
         body: { status, rejectionNote },
       });
-      if (selectedProvider) await openProvider(selectedProvider);
+
+      const [identity, documents] = await Promise.all([
+        api<{ user: User }>(`/api/admin/users/${providerId}`),
+        api<{ documents: ProviderDoc[] }>(`/api/admin/users/${providerId}/documents`),
+      ]);
+
+      setSelectedProvider(identity.user);
+      setProviders((current) => current.map((provider) => provider.id === providerId ? identity.user : provider));
+      setDocs(documents.documents || []);
       toast({ title: status === "approved" ? "Document approved" : "Document rejected" });
     } catch (error) {
       toast({ title: "Document review failed", description: (error as Error).message, variant: "destructive" });
     } finally {
+      setDocsLoading(false);
       setActionLoading(false);
     }
   }
@@ -340,7 +352,7 @@ export function ProvidersPage() {
         {canManage ? <div className="border-b border-slate-100 px-5 py-3 space-y-3">
           <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-600">
             <input type="checkbox" aria-label="Select all providers in this result" checked={providers.length > 0 && providers.every((provider) => selectedIds.has(provider.id))} onChange={() => setSelectedIds(providers.length > 0 && providers.every((provider) => selectedIds.has(provider.id)) ? new Set() : new Set(providers.map((provider) => provider.id)))} />
-            Select all loaded providers
+            Select all providers on this page
           </label>
           <BulkActionBar count={selectedIds.size} busy={bulkLoading} onClear={() => setSelectedIds(new Set())} actions={[
             { label: "Deactivate", tone: "danger", onClick: () => runBulkAccountAction("deactivate") },
