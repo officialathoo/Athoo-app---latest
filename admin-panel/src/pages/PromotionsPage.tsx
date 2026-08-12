@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { usePermissions } from "@/hooks/usePermissions";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Tag, Plus, Pencil, Trash2, X, Check, Loader2, Copy, ToggleLeft, ToggleRight } from "lucide-react";
 
@@ -199,6 +200,8 @@ function PromotionModal({ mode, initial, onClose, onSave, saving }: {
 export function PromotionsPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { hasPermission } = usePermissions();
+  const canWrite = hasPermission("promotions.write");
   const [modal, setModal] = useState<{ mode: "create" | "edit"; promo?: Promotion } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -211,26 +214,45 @@ export function PromotionsPage() {
 
   const createMut = useMutation({
     mutationFn: (d: FormData) => api("/api/admin/promotions", { method: "POST", body: JSON.stringify({ ...d, discountValue: Number(d.discountValue), minBookingValue: d.minBookingValue ? Number(d.minBookingValue) : undefined, maxUses: d.maxUses ? Number(d.maxUses) : undefined }) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["promotions"] }); setModal(null); setError(""); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["promotions"] });
+      setModal(null);
+      setError("");
+      toast({ title: "Promotion created" });
+    },
     onError: (e: Error) => setError(e.message),
   });
 
   const updateMut = useMutation({
     mutationFn: ({ id, d }: { id: string; d: FormData }) =>
       api(`/api/admin/promotions/${id}`, { method: "PATCH", body: JSON.stringify({ ...d, discountValue: Number(d.discountValue), minBookingValue: d.minBookingValue ? Number(d.minBookingValue) : undefined, maxUses: d.maxUses ? Number(d.maxUses) : undefined }) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["promotions"] }); setModal(null); setError(""); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["promotions"] });
+      setModal(null);
+      setError("");
+      toast({ title: "Promotion updated" });
+    },
     onError: (e: Error) => setError(e.message),
   });
 
   const toggleMut = useMutation({
     mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
       api(`/api/admin/promotions/${id}`, { method: "PATCH", body: JSON.stringify({ isActive }) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["promotions"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["promotions"] });
+      toast({ title: "Promotion status updated" });
+    },
+    onError: (e: Error) => toast({ title: "Could not update promotion", description: e.message, variant: "destructive" }),
   });
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => api(`/api/admin/promotions/${id}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["promotions"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["promotions"] });
+      setConfirmDeleteId(null);
+      toast({ title: "Promotion deleted" });
+    },
+    onError: (e: Error) => toast({ title: "Could not delete promotion", description: e.message, variant: "destructive" }),
   });
 
   function copyCode(code: string) {
@@ -255,12 +277,16 @@ export function PromotionsPage() {
           <h2 className="text-lg font-semibold text-slate-900">Promotions & Promo Codes</h2>
           <p className="text-sm text-slate-500 mt-0.5">Create and manage discount codes for customers</p>
         </div>
-        <button
-          onClick={() => { setError(""); setModal({ mode: "create" }); }}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors shadow-sm"
-        >
-          <Plus size={16} /> New Promotion
-        </button>
+        {canWrite ? (
+          <button
+            onClick={() => { setError(""); setModal({ mode: "create" }); }}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <Plus size={16} /> New Promotion
+          </button>
+        ) : (
+          <span className="text-xs text-slate-400">Read only</span>
+        )}
       </div>
 
       {error && (
@@ -293,9 +319,20 @@ export function PromotionsPage() {
                         {copied === promo.code ? <Check size={14} className="text-green-500" /> : <Copy size={13} className="text-slate-400" />}
                       </button>
                     </div>
-                    <button onClick={() => toggleMut.mutate({ id: promo.id, isActive: !promo.isActive })}>
-                      {promo.isActive ? <ToggleRight size={24} className="text-blue-600" /> : <ToggleLeft size={24} className="text-slate-400" />}
-                    </button>
+                    {canWrite ? (
+                      <button
+                        onClick={() => toggleMut.mutate({ id: promo.id, isActive: !promo.isActive })}
+                        disabled={toggleMut.isPending}
+                        className="disabled:opacity-50"
+                        title={promo.isActive ? "Deactivate promotion" : "Activate promotion"}
+                      >
+                        {toggleMut.isPending
+                          ? <Loader2 size={20} className="animate-spin text-slate-400" />
+                          : promo.isActive
+                            ? <ToggleRight size={24} className="text-blue-600" />
+                            : <ToggleLeft size={24} className="text-slate-400" />}
+                      </button>
+                    ) : null}
                   </div>
                   <p className="text-sm text-slate-600">{promo.description || "—"}</p>
                 </div>
@@ -337,24 +374,43 @@ export function PromotionsPage() {
                         {isExpired ? "Expired" : "Limit reached"}
                       </span>
                     )}
-                    <div className="flex items-center gap-1 ml-auto">
-                      <button
-                        onClick={() => { setError(""); setModal({ mode: "edit", promo }); }}
-                        className="p-1.5 rounded-lg text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition-colors"
-                      >
-                        <Pencil size={15} />
-                      </button>
-                      {confirmDeleteId === promo.id ? (
-                        <span className="inline-flex items-center gap-1">
-                          <button onClick={() => { deleteMut.mutate(promo.id); setConfirmDeleteId(null); }} className="px-2 py-1 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700">Delete</button>
-                          <button onClick={() => setConfirmDeleteId(null)} className="px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 rounded-lg">Cancel</button>
-                        </span>
-                      ) : (
-                        <button onClick={() => setConfirmDeleteId(promo.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors">
-                          <Trash2 size={15} />
+                    {canWrite ? (
+                      <div className="flex items-center gap-1 ml-auto">
+                        <button
+                          onClick={() => { setError(""); setModal({ mode: "edit", promo }); }}
+                          className="p-1.5 rounded-lg text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                          title="Edit promotion"
+                        >
+                          <Pencil size={15} />
                         </button>
-                      )}
-                    </div>
+                        {confirmDeleteId === promo.id ? (
+                          <span className="inline-flex items-center gap-1">
+                            <button
+                              onClick={() => deleteMut.mutate(promo.id)}
+                              disabled={deleteMut.isPending}
+                              className="px-2 py-1 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                            >
+                              {deleteMut.isPending ? "Deleting..." : "Delete"}
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteId(null)}
+                              disabled={deleteMut.isPending}
+                              className="px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 rounded-lg disabled:opacity-50"
+                            >
+                              Cancel
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmDeleteId(promo.id)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                            title="Delete promotion"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </div>
