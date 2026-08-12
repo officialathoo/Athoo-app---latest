@@ -263,6 +263,9 @@ refundsAdminRouter.get("/", requireAuth, requireAdmin, requirePermission("financ
     const search = String(req.query.search || "").trim().slice(0, 120);
     const status = String(req.query.status || "all").trim();
     const focus = String(req.query.focus || "").trim();
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const offset = (page - 1) * limit;
     const from = typeof req.query.from === "string" && req.query.from ? new Date(`${req.query.from}T00:00:00.000Z`) : null;
     const to = typeof req.query.to === "string" && req.query.to ? new Date(`${req.query.to}T23:59:59.999Z`) : null;
     const conditions: any[] = [];
@@ -283,7 +286,9 @@ refundsAdminRouter.get("/", requireAuth, requireAdmin, requirePermission("financ
         ));
       }
     }
-    const rows = await db
+    const whereClause = conditions.length ? and(...conditions) : undefined;
+
+    const listQuery = db
       .select({
         r: refundRequestsTable,
         booking: { id: bookingsTable.id, publicId: bookingsTable.publicId, service: bookingsTable.service, price: bookingsTable.price },
@@ -292,11 +297,43 @@ refundsAdminRouter.get("/", requireAuth, requireAdmin, requirePermission("financ
       .from(refundRequestsTable)
       .innerJoin(bookingsTable, eq(bookingsTable.id, refundRequestsTable.bookingId))
       .innerJoin(usersTable, eq(usersTable.id, refundRequestsTable.customerId))
-      .where(conditions.length ? and(...conditions) : undefined)
-      .orderBy(desc(refundRequestsTable.createdAt))
-      .limit(focus ? 1 : 500);
+      .$dynamic();
+    if (whereClause) listQuery.where(whereClause);
+
+    const countQuery = db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(refundRequestsTable)
+      .innerJoin(bookingsTable, eq(bookingsTable.id, refundRequestsTable.bookingId))
+      .innerJoin(usersTable, eq(usersTable.id, refundRequestsTable.customerId))
+      .$dynamic();
+    if (whereClause) countQuery.where(whereClause);
+
+    const [rows, totalRows, statsRows] = await Promise.all([
+      listQuery
+        .orderBy(desc(refundRequestsTable.createdAt))
+        .limit(focus ? 1 : limit)
+        .offset(focus ? 0 : offset),
+      countQuery,
+      db.select({
+        totalRequests: sql<number>`count(*)::int`,
+        pending: sql<number>`count(*) filter (where ${refundRequestsTable.status} = 'pending')::int`,
+        totalPaid: sql<number>`coalesce(sum(${refundRequestsTable.amountRequested}) filter (where ${refundRequestsTable.status} = 'paid'), 0)::int`,
+      }).from(refundRequestsTable),
+    ]);
+
+    const total = Number(totalRows[0]?.count || 0);
+    const stats = statsRows[0] || { totalRequests: 0, pending: 0, totalPaid: 0 };
+
     res.json({
       refunds: rows.map((r) => ({ ...r.r, booking: r.booking, customer: r.customer })),
+      total,
+      page,
+      limit,
+      stats: {
+        totalRequests: Number(stats.totalRequests || 0),
+        pending: Number(stats.pending || 0),
+        totalPaid: Number(stats.totalPaid || 0),
+      },
     });
   } catch (e) {
     logger.error({ err: e }, "admin refunds list error");
