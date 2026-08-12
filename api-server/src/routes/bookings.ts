@@ -2,8 +2,8 @@ import crypto from "crypto";
 import { logger } from "../lib/logger";
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
-import { bookingsTable, negotiationsTable, serviceCategoriesTable, usersTable, invoicesTable } from "@workspace/db/schema";
-import { and, eq, inArray, desc, not, gte, gt, lt, or, sql, isNull } from "drizzle-orm";
+import { bookingsTable, negotiationsTable, serviceCategoriesTable, usersTable, invoicesTable, promotionsTable } from "@workspace/db/schema";
+import { and, eq, inArray, desc, not, gte, gt, lt, lte, or, sql, isNull } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { getPlatformSettings } from "../lib/admin";
 import { emitToUser, emitToRole, type EventName } from "../lib/eventBus";
@@ -99,6 +99,40 @@ function toNumber(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+function normalizePromoCode(value: unknown): string {
+  const code = typeof value === "string" ? value.trim().toUpperCase() : "";
+  if (!code) return "";
+  if (code.length > 64 || !/^[A-Z0-9_-]+$/.test(code)) {
+    throw new PromoBookingError(400, "Invalid promo code format", "PROMO_CODE_INVALID");
+  }
+  return code;
+}
+
+function calculatePromoDiscount(
+  discountType: string | null | undefined,
+  discountValue: number | null | undefined,
+  grossAmount: number,
+): number {
+  const gross = Math.max(0, Math.round(Number(grossAmount || 0)));
+  const value = Math.max(0, Number(discountValue || 0));
+  if (!gross || !value) return 0;
+  if (discountType === "fixed") return Math.min(gross, Math.round(value));
+  if (discountType === "percentage") {
+    return Math.min(gross, Math.round((gross * Math.min(100, value)) / 100));
+  }
+  return 0;
+}
+
+class PromoBookingError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+    readonly code: string,
+  ) {
+    super(message);
+  }
 }
 
 const isAllowedStatus = isBookingStatus;
@@ -211,6 +245,12 @@ async function completeBookingWithInvoice(args: {
       commissionRate,
       commissionIncludesVisitCharge,
     });
+    const promoDiscountAmount = calculatePromoDiscount(
+      booking.promoDiscountType,
+      booking.promoDiscountValue,
+      calculation.totalAmount,
+    );
+    const customerTotalAmount = Math.max(0, calculation.totalAmount - promoDiscountAmount);
 
     await tx.execute(sql`SELECT id FROM users WHERE id = ${booking.providerId} FOR UPDATE`);
     const provider = await tx.query.usersTable.findFirst({
@@ -296,8 +336,8 @@ async function completeBookingWithInvoice(args: {
         subtotal: calculation.serviceAmount,
         visitCharge: calculation.visitCharge,
         platformFee: 0,
-        discountAmount: 0,
-        totalAmount: calculation.totalAmount,
+        discountAmount: promoDiscountAmount,
+        totalAmount: customerTotalAmount,
         commissionAmount: calculation.commissionAmount,
         providerAmount: calculation.providerAmount,
         status: "issued",
@@ -459,6 +499,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       latitude,
       longitude,
       clientRequestId,
+      promoCode,
     } = req.body;
 
     if (!providerId || !service || !address || !scheduledDate || !scheduledTime) {
@@ -627,6 +668,58 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
     const parsedCustomerLat = toNumber(customerLat) ?? parsedPickedLat;
     const parsedCustomerLng = toNumber(customerLng) ?? parsedPickedLng;
 
+    const normalizedPromoCode = normalizePromoCode(promoCode);
+    let promoSnapshot: {
+      id: string;
+      code: string;
+      discountType: string;
+      discountValue: number;
+    } | null = null;
+
+    if (normalizedPromoCode) {
+      const promo = await db.query.promotionsTable.findFirst({
+        where: eq(promotionsTable.code, normalizedPromoCode),
+      });
+      const now = new Date();
+      const estimatedBookingValue = Math.max(0, Number(parsedPrice || 0) + Number(visitCharge || 0));
+
+      if (!promo || !promo.isActive) {
+        throw new PromoBookingError(404, "Invalid or expired promo code", "PROMO_NOT_AVAILABLE");
+      }
+      if (promo.validFrom && promo.validFrom > now) {
+        throw new PromoBookingError(400, "This promo is not active yet", "PROMO_NOT_STARTED");
+      }
+      if (promo.validUntil && promo.validUntil < now) {
+        throw new PromoBookingError(400, "This promo has expired", "PROMO_EXPIRED");
+      }
+      if (promo.maxUses != null && Number(promo.usedCount || 0) >= promo.maxUses) {
+        throw new PromoBookingError(409, "This promo has reached its usage limit", "PROMO_USAGE_LIMIT");
+      }
+      if (promo.minBookingValue && estimatedBookingValue < promo.minBookingValue) {
+        throw new PromoBookingError(
+          400,
+          `Minimum booking value is Rs. ${promo.minBookingValue}`,
+          "PROMO_MIN_BOOKING_VALUE",
+        );
+      }
+      if (
+        !["fixed", "percentage"].includes(promo.discountType) ||
+        !Number.isFinite(Number(promo.discountValue)) ||
+        Number(promo.discountValue) <= 0 ||
+        (promo.discountType === "percentage" && Number(promo.discountValue) > 100)
+      ) {
+        throw new PromoBookingError(409, "This promo is misconfigured. Please choose another offer.", "PROMO_INVALID_CONFIGURATION");
+      }
+
+      promoSnapshot = {
+        id: promo.id,
+        code: promo.code,
+        discountType: promo.discountType,
+        discountValue: Number(promo.discountValue),
+      };
+    }
+
+    const bookingCreatedAt = new Date();
     const booking = {
       id: generateId(),
       publicId: generatePublicId(),
@@ -654,6 +747,12 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       // Snapshot the agreed hourly amount. Future provider profile changes must not alter this job.
       ratePerHour: parsedPrice,
       categorySlug: categorySlug || null,
+      promotionId: promoSnapshot?.id || null,
+      promoCode: promoSnapshot?.code || null,
+      promoDiscountType: promoSnapshot?.discountType || null,
+      promoDiscountValue: promoSnapshot?.discountValue || null,
+      promoUsageReservedAt: promoSnapshot ? bookingCreatedAt : null,
+      promoUsageReleasedAt: null,
       pickedLat: parsedPickedLat,
       pickedLng: parsedPickedLng,
       customerLat: parsedCustomerLat,
@@ -663,34 +762,71 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       providerAccuracy: null,
       providerUpdatedAt: null,
       providerArrivedAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: bookingCreatedAt,
+      updatedAt: bookingCreatedAt,
     };
 
-    const [insertedBooking] = await db.insert(bookingsTable)
-      .values(booking)
-      .onConflictDoNothing()
-      .returning();
+    const createResult = await db.transaction(async (tx) => {
+      const [insertedBooking] = await tx.insert(bookingsTable)
+        .values(booking)
+        .onConflictDoNothing()
+        .returning();
 
-    if (!insertedBooking) {
-      const duplicateBooking = await db.query.bookingsTable.findFirst({
-        where: and(
-          eq(bookingsTable.customerId, userId),
-          eq(bookingsTable.clientRequestId, normalizedClientRequestId),
-        ),
-      });
-      if (duplicateBooking) {
-        res.json({
-          booking: sanitizeBookingForViewer(duplicateBooking as any, role, userId),
-          duplicate: true,
+      if (!insertedBooking) {
+        const duplicateBooking = await tx.query.bookingsTable.findFirst({
+          where: and(
+            eq(bookingsTable.customerId, userId),
+            eq(bookingsTable.clientRequestId, normalizedClientRequestId),
+          ),
         });
-        return;
+        return duplicateBooking
+          ? { booking: duplicateBooking, duplicate: true as const }
+          : { booking: null, duplicate: false as const };
       }
+
+      if (promoSnapshot) {
+        const [reservedPromo] = await tx.update(promotionsTable)
+          .set({
+            usedCount: sql`${promotionsTable.usedCount} + 1`,
+            updatedAt: bookingCreatedAt,
+          })
+          .where(and(
+            eq(promotionsTable.id, promoSnapshot.id),
+            eq(promotionsTable.isActive, true),
+            or(isNull(promotionsTable.validFrom), lte(promotionsTable.validFrom, bookingCreatedAt)),
+            or(isNull(promotionsTable.validUntil), gte(promotionsTable.validUntil, bookingCreatedAt)),
+            or(
+              isNull(promotionsTable.maxUses),
+              sql`${promotionsTable.usedCount} < ${promotionsTable.maxUses}`,
+            ),
+          ))
+          .returning({ id: promotionsTable.id });
+
+        if (!reservedPromo) {
+          throw new PromoBookingError(
+            409,
+            "This promo became unavailable while the booking was being created. Please choose another offer.",
+            "PROMO_RESERVATION_CONFLICT",
+          );
+        }
+      }
+
+      return { booking: insertedBooking, duplicate: false as const };
+    });
+
+    if (!createResult.booking) {
       res.status(409).json({ error: "This booking request could not be created. Please refresh and try again." });
       return;
     }
+    if (createResult.duplicate) {
+      res.json({
+        booking: sanitizeBookingForViewer(createResult.booking as any, role, userId),
+        duplicate: true,
+      });
+      return;
+    }
 
-    const createdBooking = insertedBooking;
+    const createdBooking = createResult.booking;
 
     emitToUser(providerId, "booking:new", { booking: createdBooking });
     emitToUser(userId, "booking:updated", { booking: createdBooking });
@@ -709,6 +845,10 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json({ booking: sanitizeBookingForViewer(createdBooking as any, role, userId), duplicate: false });
   } catch (e) {
+    if (e instanceof PromoBookingError) {
+      res.status(e.status).json({ error: e.message, code: e.code });
+      return;
+    }
     if (e instanceof LocationIntegrityError) {
       res.status(e.status).json({ error: e.message, code: e.code });
       return;
@@ -792,7 +932,8 @@ router.patch("/:id/status", requireAuth, async (req: AuthRequest, res: Response)
     // NOTE: `price` is intentionally NOT mutable on /:id/status. Price changes
     // belong in the negotiation/counter-offer flow; allowing arbitrary price
     // updates here let either party silently overwrite the agreed amount.
-    const updates: Record<string, unknown> = { status, updatedAt: new Date() };
+    const transitionAt = new Date();
+    const updates: Record<string, unknown> = { status, updatedAt: transitionAt };
     if (status === "accepted") {
       updates.startPin = existing.startPin || generatePin();
       if (!existing.startPinExpiresAt || isPinExpired(existing.startPinExpiresAt)) {
@@ -803,13 +944,44 @@ router.patch("/:id/status", requireAuth, async (req: AuthRequest, res: Response)
     // Optimistic concurrency guard: update only if the status still matches
     // the value we validated above. This prevents two simultaneous requests
     // from silently overwriting one another after both read the same booking.
-    const [updated] = await db.update(bookingsTable)
-      .set(updates)
-      .where(and(
-        eq(bookingsTable.id, req.params.id as string),
-        eq(bookingsTable.status, existing.status),
-      ))
-      .returning();
+    const updated = await db.transaction(async (tx) => {
+      const [row] = await tx.update(bookingsTable)
+        .set(updates)
+        .where(and(
+          eq(bookingsTable.id, req.params.id as string),
+          eq(bookingsTable.status, existing.status),
+        ))
+        .returning();
+
+      if (
+        row &&
+        status === "cancelled" &&
+        existing.status !== "completed" &&
+        row.promotionId &&
+        row.promoUsageReservedAt &&
+        !row.promoUsageReleasedAt
+      ) {
+        const [released] = await tx.update(bookingsTable)
+          .set({ promoUsageReleasedAt: transitionAt })
+          .where(and(
+            eq(bookingsTable.id, row.id),
+            isNull(bookingsTable.promoUsageReleasedAt),
+          ))
+          .returning({ promotionId: bookingsTable.promotionId });
+
+        if (released?.promotionId) {
+          await tx.update(promotionsTable)
+            .set({
+              usedCount: sql`greatest(coalesce(${promotionsTable.usedCount}, 0) - 1, 0)`,
+              updatedAt: transitionAt,
+            })
+            .where(eq(promotionsTable.id, released.promotionId));
+          return { ...row, promoUsageReleasedAt: transitionAt };
+        }
+      }
+
+      return row;
+    });
 
     if (!updated) {
       res.status(409).json({

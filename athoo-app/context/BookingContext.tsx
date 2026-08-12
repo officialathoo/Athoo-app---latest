@@ -56,6 +56,12 @@ export interface Booking {
   providerAmount?: number | null;
   ratePerHour?: number | null;
   visitCharge?: number | null;
+  promotionId?: string | null;
+  promoCode?: string | null;
+  promoDiscountType?: "fixed" | "percentage" | null;
+  promoDiscountValue?: number | null;
+  promoUsageReservedAt?: string | null;
+  promoUsageReleasedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   customerProfileImage?: string | null;
@@ -99,6 +105,7 @@ interface BookingContextType {
     scheduledTime: string;
     price?: number;
     visitCharge?: number;
+    promoCode?: string;
     pickedLat?: number;
     pickedLng?: number;
     customerLat?: number;
@@ -634,6 +641,7 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
       scheduledTime: string;
       price?: number;
       visitCharge?: number;
+      promoCode?: string;
       pickedLat?: number;
       pickedLng?: number;
       customerLat?: number;
@@ -659,6 +667,7 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
         scheduledTime: data.scheduledTime,
         price: data.price,
         visitCharge: data.visitCharge,
+        promoCode: data.promoCode,
         pickedLat: data.pickedLat,
         pickedLng: data.pickedLng,
         customerLat: data.customerLat,

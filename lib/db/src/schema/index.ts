@@ -376,6 +376,14 @@ export const bookingsTable = pgTable("bookings", {
   ratePerHour: integer("rate_per_hour"),
   visitCharge: integer("visit_charge").default(0),
   categorySlug: text("category_slug"),
+  // Promotion snapshot is stored on the booking so later admin edits cannot
+  // silently change an already-agreed discount.
+  promotionId: text("promotion_id"),
+  promoCode: text("promo_code"),
+  promoDiscountType: text("promo_discount_type"),
+  promoDiscountValue: integer("promo_discount_value"),
+  promoUsageReservedAt: timestamp("promo_usage_reserved_at"),
+  promoUsageReleasedAt: timestamp("promo_usage_released_at"),
   // Cash payment confirmation: pending → paid (customer) → received (provider)
   paymentStatus: text("payment_status").notNull().default("pending"),
   paidAt: timestamp("paid_at"),
@@ -392,6 +400,7 @@ export const bookingsTable = pgTable("bookings", {
   index("bookings_customer_updated_cursor_idx").on(t.customerId, t.updatedAt, t.id),
   index("bookings_provider_updated_cursor_idx").on(t.providerId, t.updatedAt, t.id),
   index("bookings_public_id_idx").on(t.publicId),
+  index("bookings_promotion_id_idx").on(t.promotionId),
   index("bookings_customer_refund_eligibility_idx")
     .on(t.customerId, t.createdAt)
     .where(sql`${t.status} in ('completed', 'cancelled') and ${t.paymentStatus} in ('paid', 'received')`),
