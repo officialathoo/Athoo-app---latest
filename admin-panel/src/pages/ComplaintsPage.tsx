@@ -7,7 +7,7 @@ import { StatCard } from "@/components/ui/StatCard";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Search, RefreshCw, MessageSquare, AlertTriangle, CheckCircle,
-  Clock, Send, Loader2, ChevronRight, StickyNote, X, User
+  Clock, Send, Loader2, ChevronRight, ChevronLeft, StickyNote, X, User
 } from "lucide-react";
 
 interface SupportTicket {
@@ -67,10 +67,13 @@ export function ComplaintsPage() {
   const initialParams = new URLSearchParams(window.location.search);
   const focusId = initialParams.get("focus") || "";
   const [search, setSearch] = useState(initialParams.get("q") || "");
+  const [debouncedSearch, setDebouncedSearch] = useState(initialParams.get("q") || "");
   const [statusFilter, setStatusFilter] = useState(initialParams.get("status") || "all");
   const [priorityFilter, setPriorityFilter] = useState(initialParams.get("priority") || "all");
   const [from, setFrom] = useState(initialParams.get("from") || "");
   const [to, setTo] = useState(initialParams.get("to") || "");
+  const [page, setPage] = useState(1);
+  const limit = 25;
   const [selected, setSelected] = useState<SupportTicket | null>(null);
   const [focusOpened, setFocusOpened] = useState(false);
   const [newNote, setNewNote] = useState("");
@@ -78,10 +81,35 @@ export function ComplaintsPage() {
   const [resolutionNote, setResolutionNote] = useState("");
   const [showResolution, setShowResolution] = useState(false);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, statusFilter, priorityFilter, from, to]);
+
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ["support-tickets", statusFilter, priorityFilter, search, from, to, focusId],
-    queryFn: () => api<{ tickets: SupportTicket[] }>("/api/admin/support", {
-      params: focusId ? { focus: focusId } : { q: search || undefined, status: statusFilter, priority: priorityFilter, from: from || undefined, to: to || undefined },
+    queryKey: ["support-tickets", statusFilter, priorityFilter, debouncedSearch, from, to, focusId, page],
+    queryFn: () => api<{
+      tickets: SupportTicket[];
+      total: number;
+      page: number;
+      limit: number;
+      stats: { open: number; inProgress: number; urgent: number; resolved: number };
+    }>("/api/admin/support", {
+      params: focusId
+        ? { focus: focusId }
+        : {
+            q: debouncedSearch || undefined,
+            status: statusFilter,
+            priority: priorityFilter,
+            from: from || undefined,
+            to: to || undefined,
+            page,
+            limit,
+          },
     }),
     refetchInterval: 180000,
   });
@@ -132,6 +160,10 @@ export function ComplaintsPage() {
   const tickets = data?.tickets || [];
   const notes = notesData?.notes || [];
   const filtered = tickets;
+  const total = data?.total ?? 0;
+  const pages = Math.max(1, Math.ceil(total / limit));
+  const rangeFrom = total ? (page - 1) * limit + 1 : 0;
+  const rangeTo = Math.min(page * limit, total);
 
   useEffect(() => {
     if (!focusId || focusOpened || tickets.length === 0) return;
@@ -142,10 +174,10 @@ export function ComplaintsPage() {
     }
   }, [focusId, focusOpened, tickets]);
 
-  const openCount = tickets.filter(t => t.status === "open").length;
-  const urgentCount = tickets.filter(t => t.priority === "urgent" && t.status !== "resolved" && t.status !== "closed").length;
-  const resolvedCount = tickets.filter(t => t.status === "resolved" || t.status === "closed").length;
-  const inProgressCount = tickets.filter(t => t.status === "in_progress").length;
+  const openCount = data?.stats?.open ?? 0;
+  const urgentCount = data?.stats?.urgent ?? 0;
+  const resolvedCount = data?.stats?.resolved ?? 0;
+  const inProgressCount = data?.stats?.inProgress ?? 0;
 
   function handleStatusChange(status: string) {
     if (!selected) return;
@@ -264,6 +296,32 @@ export function ComplaintsPage() {
             },
           ]}
         />
+        {!focusId && (
+          <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between gap-3 text-xs text-slate-500">
+            <span>Showing {rangeFrom}-{rangeTo} of {total} matching tickets</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={page <= 1 || isLoading}
+                onClick={() => setPage((value) => Math.max(1, value - 1))}
+                className="p-1.5 rounded border border-slate-200 disabled:opacity-40"
+                aria-label="Previous complaints page"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span>Page {page} of {pages}</span>
+              <button
+                type="button"
+                disabled={page >= pages || isLoading}
+                onClick={() => setPage((value) => Math.min(pages, value + 1))}
+                className="p-1.5 rounded border border-slate-200 disabled:opacity-40"
+                aria-label="Next complaints page"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Detail Modal */}

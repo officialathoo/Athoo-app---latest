@@ -1868,6 +1868,9 @@ router.get("/support", requirePermission("complaints.read"), async (req, res) =>
     const status = String(req.query.status || "all");
     const priority = String(req.query.priority || "all");
     const focus = String(req.query.focus || "").trim();
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const offset = (page - 1) * limit;
     const from = typeof req.query.from === "string" && req.query.from ? new Date(`${req.query.from}T00:00:00.000Z`) : null;
     const to = typeof req.query.to === "string" && req.query.to ? new Date(`${req.query.to}T23:59:59.999Z`) : null;
     const validStatuses = new Set(["all", "open", "in_progress", "resolved", "closed"]);
@@ -1901,12 +1904,23 @@ router.get("/support", requirePermission("complaints.read"), async (req, res) =>
       }
     }
 
-    const tickets = await db
-      .select()
-      .from(supportTicketsTable)
-      .where(conditions.length ? and(...conditions) : undefined)
-      .orderBy(desc(supportTicketsTable.createdAt))
-      .limit(focus ? 1 : 200);
+    const whereClause = conditions.length ? and(...conditions) : undefined;
+    const [tickets, total, statsRows] = await Promise.all([
+      db
+        .select()
+        .from(supportTicketsTable)
+        .where(whereClause)
+        .orderBy(desc(supportTicketsTable.createdAt))
+        .limit(focus ? 1 : limit)
+        .offset(focus ? 0 : offset),
+      db.$count(supportTicketsTable, whereClause),
+      db.select({
+        open: sql<number>`count(*) filter (where ${supportTicketsTable.status} = 'open')::int`,
+        inProgress: sql<number>`count(*) filter (where ${supportTicketsTable.status} = 'in_progress')::int`,
+        urgent: sql<number>`count(*) filter (where ${supportTicketsTable.priority} = 'urgent' and ${supportTicketsTable.status} not in ('resolved','closed'))::int`,
+        resolved: sql<number>`count(*) filter (where ${supportTicketsTable.status} in ('resolved','closed'))::int`,
+      }).from(supportTicketsTable),
+    ]);
 
     const assignedIds = [...new Set(tickets.map((ticket) => ticket.assignedTo).filter((id): id is string => Boolean(id)))];
     const ticketUserIds = [...new Set(tickets.map((ticket) => ticket.userId).filter(Boolean))];
@@ -1916,12 +1930,22 @@ router.get("/support", requirePermission("complaints.read"), async (req, res) =>
       : [];
     const peopleMap = new Map(people.map((person) => [person.id, person]));
 
+    const stats = statsRows[0] || { open: 0, inProgress: 0, urgent: 0, resolved: 0 };
     return res.json({
       tickets: tickets.map((ticket) => ({
         ...ticket,
         userPublicId: peopleMap.get(ticket.userId)?.publicId || null,
         assignedToName: ticket.assignedTo ? peopleMap.get(ticket.assignedTo)?.name || null : null,
       })),
+      total: Number(total || 0),
+      page,
+      limit,
+      stats: {
+        open: Number(stats.open || 0),
+        inProgress: Number(stats.inProgress || 0),
+        urgent: Number(stats.urgent || 0),
+        resolved: Number(stats.resolved || 0),
+      },
     });
   } catch (e) {
     logger.error({ err: e }, "admin support tickets error");
