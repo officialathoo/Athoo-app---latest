@@ -744,12 +744,6 @@ const createStyles = (_theme: AthooTheme) => StyleSheet.create({
   },
   tabActive: {
     backgroundColor: "rgba(18,104,255,0.32)",
-    borderWidth: 1,
-    borderColor: "rgba(70,165,255,0.55)",
-    shadowColor: "#1478FF",
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    elevation: 2,
   },
   tabLabel: { fontSize: 13, fontWeight: "600", color: "#92A5C7" },
   tabLabelActive: { color: "#5AB7FF" },

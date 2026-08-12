@@ -2234,17 +2234,57 @@ async function logAdminAction(
 
 router.get("/audit-log", requirePermission("audit.read"), async (req, res) => {
   try {
-    const limit = Math.min(Number(req.query.limit) || 100, 500);
-    const offset = Number(req.query.offset) || 0;
-    const logs = await db
-      .select()
-      .from(auditLogTable)
-      .orderBy(desc(auditLogTable.createdAt))
-      .limit(limit)
-      .offset(offset);
-    const total = await db.$count(auditLogTable);
-    return res.json({ logs, total });
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(Math.max(1, Number(req.query.limit) || 100), 500);
+    const explicitOffset = Number(req.query.offset);
+    const offset = Number.isFinite(explicitOffset) && explicitOffset >= 0
+      ? explicitOffset
+      : (page - 1) * limit;
+    const search = String(req.query.search || "").trim();
+    const action = String(req.query.action || "").trim();
+
+    const conditions = [];
+    if (search) {
+      const like = `%${search}%`;
+      conditions.push(or(
+        ilike(auditLogTable.adminName, like),
+        ilike(auditLogTable.adminRole, like),
+        ilike(auditLogTable.action, like),
+        ilike(auditLogTable.target, like),
+        ilike(auditLogTable.targetId, like),
+      ));
+    }
+    if (action) {
+      conditions.push(ilike(auditLogTable.action, `%${action}%`));
+    }
+
+    const whereClause =
+      conditions.length === 0
+        ? undefined
+        : conditions.length === 1
+          ? conditions[0]
+          : and(...conditions);
+
+    let logsQuery = db.select().from(auditLogTable).$dynamic();
+    if (whereClause) logsQuery = logsQuery.where(whereClause);
+
+    const [rows, total] = await Promise.all([
+      logsQuery
+        .orderBy(desc(auditLogTable.createdAt))
+        .limit(limit)
+        .offset(offset),
+      whereClause ? db.$count(auditLogTable, whereClause) : db.$count(auditLogTable),
+    ]);
+
+    const logs = rows.map((row) => ({
+      ...row,
+      targetType: row.target,
+      ipAddress: row.ip,
+    }));
+
+    return res.json({ logs, entries: logs, total: Number(total), page, limit, offset });
   } catch (e) {
+    logger.error({ err: e }, "audit log fetch error");
     return res.status(500).json({ error: "Failed to load audit log" });
   }
 });

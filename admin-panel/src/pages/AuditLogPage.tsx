@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
 import { Search, Shield, ChevronLeft, ChevronRight, Loader2, Info, RefreshCw, Download, Filter } from "lucide-react";
@@ -49,16 +49,22 @@ const ACTION_TYPES = ["All", "create", "update", "delete", "login", "ban", "unba
 
 export function AuditLogPage() {
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [actionFilter, setActionFilter] = useState("All");
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState<string | null>(null);
   const limit = 25;
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
   const { data, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ["audit-log", page, search, actionFilter],
+    queryKey: ["audit-log", page, debouncedSearch, actionFilter],
     queryFn: () =>
-      api<{ entries?: AuditEntry[]; logs?: AuditEntry[]; total: number }>(
-        `/api/admin/audit-log?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}${actionFilter !== "All" ? `&action=${encodeURIComponent(actionFilter)}` : ""}`
+      api<{ entries?: AuditEntry[]; logs?: AuditEntry[]; total: number; page?: number; limit?: number }>(
+        `/api/admin/audit-log?page=${page}&limit=${limit}&search=${encodeURIComponent(debouncedSearch)}${actionFilter !== "All" ? `&action=${encodeURIComponent(actionFilter)}` : ""}`
       ),
     staleTime: 30000,
   });
@@ -124,9 +130,9 @@ export function AuditLogPage() {
           <button
             onClick={handleExportCsv}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 text-sm font-medium"
-            title="Export CSV"
+            title="Export current filtered page as CSV"
           >
-            <Download size={14} /> CSV
+            <Download size={14} /> Page CSV
           </button>
         </div>
       </div>
