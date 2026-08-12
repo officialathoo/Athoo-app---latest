@@ -2,7 +2,7 @@ import { Router, type Response } from "express";
 import { logger } from "../lib/logger";
 import { db } from "@workspace/db";
 import { promotionsTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 
 const router = Router();
@@ -68,6 +68,7 @@ router.post("/redeem", requireAuth, async (req: AuthRequest, res: Response) => {
       res.status(400).json({ error: "Promo code required" });
       return;
     }
+
     const promo = await db.query.promotionsTable.findFirst({
       where: eq(promotionsTable.code, code),
     });
@@ -75,14 +76,50 @@ router.post("/redeem", requireAuth, async (req: AuthRequest, res: Response) => {
       res.status(404).json({ error: "Invalid promo code" });
       return;
     }
+
+    const now = new Date();
+    if (promo.validFrom && promo.validFrom > now) {
+      res.status(400).json({ error: "This promo is not active yet" });
+      return;
+    }
+    if (promo.validUntil && promo.validUntil < now) {
+      res.status(400).json({ error: "This promo has expired" });
+      return;
+    }
     if (promo.maxUses != null && (promo.usedCount || 0) >= promo.maxUses) {
       res.status(400).json({ error: "This promo has reached its usage limit" });
       return;
     }
-    await db.update(promotionsTable)
-      .set({ usedCount: (promo.usedCount || 0) + 1, updatedAt: new Date() })
-      .where(eq(promotionsTable.id, promo.id));
-    res.json({ ok: true });
+
+    const [redeemed] = await db
+      .update(promotionsTable)
+      .set({
+        usedCount: sql`${promotionsTable.usedCount} + 1`,
+        updatedAt: now,
+      })
+      .where(and(
+        eq(promotionsTable.id, promo.id),
+        eq(promotionsTable.isActive, true),
+        or(isNull(promotionsTable.validFrom), lte(promotionsTable.validFrom, now)),
+        or(isNull(promotionsTable.validUntil), gte(promotionsTable.validUntil, now)),
+        or(
+          isNull(promotionsTable.maxUses),
+          sql`${promotionsTable.usedCount} < ${promotionsTable.maxUses}`,
+        ),
+      ))
+      .returning({
+        id: promotionsTable.id,
+        usedCount: promotionsTable.usedCount,
+      });
+
+    if (!redeemed) {
+      res.status(409).json({
+        error: "Promo code is no longer available. Please validate it again.",
+      });
+      return;
+    }
+
+    res.json({ ok: true, usedCount: redeemed.usedCount });
   } catch (e) {
     logger.error({ err: e }, "promo redeem error");
     res.status(500).json({ error: "Failed to redeem promo code" });
