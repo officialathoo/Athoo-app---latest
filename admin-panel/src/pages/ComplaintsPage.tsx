@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, formatDate, openAuthenticatedFile } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { usePermissions } from "@/hooks/usePermissions";
 import { DataTable } from "@/components/ui/DataTable";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { StatCard } from "@/components/ui/StatCard";
@@ -25,6 +26,7 @@ interface SupportTicket {
   relatedBookingId?: string | null;
   status: string;
   priority: string;
+  assignedTo?: string | null;
   assignedToName?: string | null;
   adminNotes?: string | null;
   resolutionNote?: string | null;
@@ -43,6 +45,12 @@ interface TicketNote {
   note: string;
   isInternal: boolean;
   createdAt: string;
+}
+
+interface ComplaintAssignee {
+  id: string;
+  name: string;
+  adminRole?: string | null;
 }
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -64,6 +72,8 @@ function timeAgo(date: string) {
 export function ComplaintsPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { hasPermission } = usePermissions();
+  const canWrite = hasPermission("complaints.write");
   const initialParams = new URLSearchParams(window.location.search);
   const focusId = initialParams.get("focus") || "";
   const [search, setSearch] = useState(initialParams.get("q") || "");
@@ -119,6 +129,28 @@ export function ComplaintsPage() {
     queryFn: () => selected ? api<{ notes: TicketNote[] }>(`/api/admin/support/${selected.id}/notes`) : Promise.resolve({ notes: [] }),
     enabled: !!selected,
     staleTime: 10000,
+  });
+
+  const { data: assigneeData, isLoading: assigneesLoading } = useQuery({
+    queryKey: ["complaint-assignees"],
+    queryFn: () => api<{ assignees: ComplaintAssignee[] }>("/api/admin/support/assignees"),
+    enabled: canWrite && !!selected,
+    staleTime: 60000,
+  });
+
+  const assignMut = useMutation({
+    mutationFn: ({ ticketId, assignedTo }: { ticketId: string; assignedTo: string | null }) =>
+      api<{ ticket: SupportTicket }>(`/api/admin/support/${ticketId}/assign`, {
+        method: "PATCH",
+        body: JSON.stringify({ assignedTo }),
+      }),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: ["support-tickets"] });
+      if (result?.ticket) setSelected(result.ticket);
+      toast({ title: result?.ticket?.assignedTo ? "Ticket assigned" : "Ticket unassigned" });
+    },
+    onError: (error: any) =>
+      toast({ title: "Could not assign ticket", description: error.message, variant: "destructive" }),
   });
 
   const addNoteMut = useMutation({
@@ -404,24 +436,53 @@ export function ComplaintsPage() {
                 </div>
               )}
 
-              {/* Priority change */}
-              <div className="flex items-center gap-3">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Change Priority:</p>
-                <div className="flex gap-1.5">
-                  {["urgent", "high", "normal", "low"].map(p => (
-                    <button
-                      key={p}
-                      onClick={() => updatePriorityMut.mutate({ ticketId: selected.id, priority: p })}
-                      disabled={selected.priority === p}
-                      className={`text-xs px-2.5 py-1 rounded-full border font-medium capitalize transition-colors ${
-                        selected.priority === p ? PRIORITY_COLORS[p] : "border-slate-200 text-slate-500 hover:bg-slate-50"
-                      } disabled:cursor-not-allowed`}
-                    >
-                      {p}
-                    </button>
-                  ))}
+              {/* Assignment */}
+              {canWrite && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Assigned Administrator</p>
+                    {assignMut.isPending && <Loader2 size={13} className="animate-spin text-slate-400" />}
+                  </div>
+                  <select
+                    value={selected.assignedTo || ""}
+                    disabled={assigneesLoading || assignMut.isPending}
+                    onChange={(e) => assignMut.mutate({
+                      ticketId: selected.id,
+                      assignedTo: e.target.value || null,
+                    })}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+                    aria-label="Assign complaint administrator"
+                  >
+                    <option value="">Unassigned</option>
+                    {(assigneeData?.assignees || []).map((admin) => (
+                      <option key={admin.id} value={admin.id}>
+                        {admin.name}{admin.adminRole ? ` - ${admin.adminRole.replace(/_/g, " ")}` : ""}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              </div>
+              )}
+
+              {/* Priority change */}
+              {canWrite && (
+                <div className="flex items-center gap-3">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Change Priority:</p>
+                  <div className="flex gap-1.5">
+                    {["urgent", "high", "normal", "low"].map(p => (
+                      <button
+                        key={p}
+                        onClick={() => updatePriorityMut.mutate({ ticketId: selected.id, priority: p })}
+                        disabled={selected.priority === p || updatePriorityMut.isPending}
+                        className={`text-xs px-2.5 py-1 rounded-full border font-medium capitalize transition-colors ${
+                          selected.priority === p ? PRIORITY_COLORS[p] : "border-slate-200 text-slate-500 hover:bg-slate-50"
+                        } disabled:cursor-not-allowed disabled:opacity-60`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Notes thread */}
               <div>
@@ -457,38 +518,40 @@ export function ComplaintsPage() {
                 )}
 
                 {/* Add note */}
-                <div className="mt-3 border border-slate-200 rounded-xl overflow-hidden">
-                  <textarea
-                    className="w-full text-sm p-3 focus:outline-none resize-none"
-                    rows={3}
-                    placeholder="Add a note or reply to user..."
-                    value={newNote}
-                    onChange={e => setNewNote(e.target.value)}
-                  />
-                  <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-t border-slate-200">
-                    <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={noteInternal}
-                        onChange={e => setNoteInternal(e.target.checked)}
-                        className="w-3.5 h-3.5 rounded border-slate-300"
-                      />
-                      Internal only (not visible to user)
-                    </label>
-                    <button
-                      onClick={() => { if (newNote.trim() && selected) addNoteMut.mutate({ ticketId: selected.id, note: newNote, isInternal: noteInternal }); }}
-                      disabled={!newNote.trim() || addNoteMut.isPending}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                    >
-                      {addNoteMut.isPending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-                      Send Note
-                    </button>
+                {canWrite && (
+                  <div className="mt-3 border border-slate-200 rounded-xl overflow-hidden">
+                    <textarea
+                      className="w-full text-sm p-3 focus:outline-none resize-none"
+                      rows={3}
+                      placeholder="Add a note or reply to user..."
+                      value={newNote}
+                      onChange={e => setNewNote(e.target.value)}
+                    />
+                    <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-t border-slate-200">
+                      <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={noteInternal}
+                          onChange={e => setNoteInternal(e.target.checked)}
+                          className="w-3.5 h-3.5 rounded border-slate-300"
+                        />
+                        Internal only (not visible to user)
+                      </label>
+                      <button
+                        onClick={() => { if (newNote.trim() && selected) addNoteMut.mutate({ ticketId: selected.id, note: newNote, isInternal: noteInternal }); }}
+                        disabled={!newNote.trim() || addNoteMut.isPending}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                      >
+                        {addNoteMut.isPending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                        Send Note
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
               {/* Resolution note input (when resolving) */}
-              {showResolution && (
+              {canWrite && showResolution && (
                 <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
                   <p className="text-sm font-semibold text-green-800">Add a resolution note (required)</p>
                   <textarea
@@ -515,7 +578,7 @@ export function ComplaintsPage() {
               )}
 
               {/* Action buttons */}
-              {!showResolution && (
+              {canWrite && !showResolution && (
                 <div className="flex gap-2 flex-wrap border-t border-slate-100 pt-4">
                   {selected.status === "open" && (
                     <button

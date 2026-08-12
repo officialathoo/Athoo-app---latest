@@ -2016,6 +2016,34 @@ router.patch("/support/:id/status", requirePermission("complaints.write"), async
 
 // ─── Ticket Notes ──────────────────────────────────────────────────────────
 
+// Complaint assignee directory. Only admins who can actually work complaint
+// mutations are returned; this avoids assigning tickets to read-only operators.
+router.get("/support/assignees", requirePermission("complaints.write"), async (_req, res) => {
+  try {
+    const admins = await db
+      .select()
+      .from(usersTable)
+      .where(and(
+        eq(usersTable.role, "admin"),
+        eq(usersTable.isDeactivated, false),
+      ))
+      .orderBy(usersTable.name);
+
+    const assignees = admins
+      .filter((admin) => hasAdminPermission(admin as any, "complaints.write"))
+      .map((admin) => ({
+        id: admin.id,
+        name: admin.name,
+        adminRole: admin.adminRole,
+      }));
+
+    return res.json({ assignees });
+  } catch (e) {
+    logger.error({ err: e }, "support assignee directory error");
+    return res.status(500).json({ error: "Failed to load complaint assignees" });
+  }
+});
+
 router.get("/support/:id/notes", requirePermission("complaints.read"), async (req, res) => {
   try {
     const ticket = await db.query.supportTicketsTable.findFirst({ where: eq(supportTicketsTable.id, String(req.params.id)) });
@@ -2079,16 +2107,39 @@ router.patch("/support/:id/assign", requirePermission("complaints.write"), async
 
     const { assignedTo } = req.body as { assignedTo?: string | null };
     const targetAdminId = assignedTo ? String(assignedTo) : null;
+    let targetAdminName: string | null = null;
+
     if (targetAdminId) {
-      const target = await db.query.usersTable.findFirst({ where: and(eq(usersTable.id, targetAdminId), eq(usersTable.role, "admin"), eq(usersTable.isDeactivated, false)) });
+      const target = await db.query.usersTable.findFirst({
+        where: and(
+          eq(usersTable.id, targetAdminId),
+          eq(usersTable.role, "admin"),
+          eq(usersTable.isDeactivated, false),
+        ),
+      });
       if (!target) return res.status(400).json({ error: "Assigned administrator is not active" });
+      if (!hasAdminPermission(target as any, "complaints.write")) {
+        return res.status(400).json({ error: "Assigned administrator does not have complaint write access" });
+      }
+      targetAdminName = target.name;
     }
 
-    await db.update(supportTicketsTable).set({ assignedTo: targetAdminId, updatedAt: new Date() }).where(eq(supportTicketsTable.id, ticketId));
+    await db.update(supportTicketsTable)
+      .set({ assignedTo: targetAdminId, updatedAt: new Date() })
+      .where(eq(supportTicketsTable.id, ticketId));
+
     const updated = await db.query.supportTicketsTable.findFirst({ where: eq(supportTicketsTable.id, ticketId) });
-    await logAdminAction(req, "support_ticket_assigned", "support_ticket", ticketId, { assignedTo: targetAdminId, subject: ticket.subject });
-    return res.json({ ticket: updated });
+    await logAdminAction(req, "support_ticket_assigned", "support_ticket", ticketId, {
+      assignedTo: targetAdminId,
+      assignedToName: targetAdminName,
+      subject: ticket.subject,
+    });
+
+    return res.json({
+      ticket: updated ? { ...updated, assignedToName: targetAdminName } : updated,
+    });
   } catch (e) {
+    logger.error({ err: e }, "support ticket assignment error");
     return res.status(500).json({ error: "Failed to assign ticket" });
   }
 });
