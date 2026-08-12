@@ -306,9 +306,17 @@ export function ProvidersPage() {
         method: "PATCH",
         body: { ...editForm, reason },
       });
+
       setSelectedProvider(response.user);
+      setProviders((current) =>
+        current.map((provider) => provider.id === response.user.id ? response.user : provider),
+      );
+      setEditForm({
+        name: response.user.name || "",
+        location: response.user.location || "",
+        bio: response.user.bio || "",
+      });
       setEditMode(false);
-      await load();
       toast({ title: "Provider profile updated", description: reason });
     } catch (error) {
       toast({ title: "Profile update failed", description: (error as Error).message, variant: "destructive" });
