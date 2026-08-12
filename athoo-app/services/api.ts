@@ -1728,7 +1728,7 @@ export const api = {
 
   // Promotions
   validatePromo(code: string, bookingValue?: number) {
-    return request<{ promo?: { id: string; code: string; description: string | null; discountType: "fixed" | "percent"; discountValue: number }; discount?: number; finalAmount?: number; valid?: boolean; promotion?: any; error?: string }>("/api/promotions/validate", {
+    return request<{ promo?: { id: string; code: string; description: string | null; discountType: "fixed" | "percentage"; discountValue: number }; discount?: number; finalAmount?: number; valid?: boolean; promotion?: any; error?: string }>("/api/promotions/validate", {
       method: "POST",
       auth: true,
       body: { code, bookingValue: bookingValue ?? 0 },

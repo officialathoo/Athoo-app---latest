@@ -212,7 +212,7 @@ export default function BookServiceScreen() {
 
   const [promoCode, setPromoCode] = useState("");
   const [promoValidating, setPromoValidating] = useState(false);
-  const [appliedPromo, setAppliedPromo] = useState<{ code: string; discountType: "fixed" | "percent"; discountValue: number; description: string | null } | null>(null);
+  const [appliedPromo, setAppliedPromo] = useState<{ code: string; discountType: "fixed" | "percentage"; discountValue: number; description: string | null } | null>(null);
   const [promoError, setPromoError] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
@@ -458,8 +458,10 @@ export default function BookServiceScreen() {
     setPromoError("");
     setAppliedPromo(null);
     try {
-      const offerVal = offerHourlyRate.trim() ? parseInt(offerHourlyRate, 10) : 0;
-      const res = await api.validatePromo(code, offerVal);
+      const offerVal = offerHourlyRate.trim() ? Math.max(0, parseInt(offerHourlyRate, 10) || 0) : 0;
+      const travelVal = travelCharge.trim() ? Math.max(0, parseInt(travelCharge, 10) || 0) : 0;
+      const estimatedBookingValue = offerVal + travelVal;
+      const res = await api.validatePromo(code, estimatedBookingValue);
       if (res.promo) {
         setAppliedPromo({ code: res.promo.code, discountType: res.promo.discountType, discountValue: res.promo.discountValue, description: res.promo.description });
       } else {
@@ -1103,7 +1105,7 @@ export default function BookServiceScreen() {
               <TextInput
                 style={styles.offerInput}
                 value={offerHourlyRate}
-                onChangeText={(v) => setOfferHourlyRate(v.replace(/[^0-9]/g, ""))}
+                onChangeText={(v) => { setOfferHourlyRate(v.replace(/[^0-9]/g, "")); if (appliedPromo) { setAppliedPromo(null); setPromoError("Price changed. Apply the promo again."); } }}
                 placeholder="0"
                 placeholderTextColor={theme.colors.textMuted}
                 keyboardType="numeric"
@@ -1116,7 +1118,7 @@ export default function BookServiceScreen() {
                 <Pressable
                   key={p}
                   style={[styles.quickChip, offerHourlyRate === String(p) && styles.quickChipActive]}
-                  onPress={() => setOfferHourlyRate(String(p))}
+                  onPress={() => { setOfferHourlyRate(String(p)); if (appliedPromo) { setAppliedPromo(null); setPromoError("Price changed. Apply the promo again."); } }}
                 >
                   <Text style={[styles.quickText, offerHourlyRate === String(p) && styles.quickTextActive]}>
                     Rs. {p.toLocaleString()}
@@ -1125,7 +1127,7 @@ export default function BookServiceScreen() {
               ))}
               <Pressable
                 style={[styles.quickChip, offerHourlyRate === "" && styles.quickChipActive]}
-                onPress={() => setOfferHourlyRate("")}
+                onPress={() => { setOfferHourlyRate(""); if (appliedPromo) { setAppliedPromo(null); setPromoError("Price changed. Apply the promo again."); } }}
               >
                 <Text style={[styles.quickText, offerHourlyRate === "" && styles.quickTextActive]}>Open Hourly Rate</Text>
               </Pressable>
@@ -1139,7 +1141,7 @@ export default function BookServiceScreen() {
               <TextInput
                 style={styles.offerInput}
                 value={travelCharge}
-                onChangeText={(v) => setTravelCharge(v.replace(/[^0-9]/g, ""))}
+                onChangeText={(v) => { setTravelCharge(v.replace(/[^0-9]/g, "")); if (appliedPromo) { setAppliedPromo(null); setPromoError("Travel charge changed. Apply the promo again."); } }}
                 placeholder="0"
                 placeholderTextColor={theme.colors.textMuted}
                 keyboardType="numeric"
@@ -1151,7 +1153,7 @@ export default function BookServiceScreen() {
                 <Pressable
                   key={p}
                   style={[styles.quickChip, travelCharge === String(p) && styles.quickChipActive]}
-                  onPress={() => setTravelCharge(String(p))}
+                  onPress={() => { setTravelCharge(String(p)); if (appliedPromo) { setAppliedPromo(null); setPromoError("Travel charge changed. Apply the promo again."); } }}
                 >
                   <Text style={[styles.quickText, travelCharge === String(p) && styles.quickTextActive]}>
                     {p === 0 ? "Free" : `Rs. ${p}`}
@@ -1160,7 +1162,9 @@ export default function BookServiceScreen() {
               ))}
             </View>
 
-            {/* Promo Code */}
+            {/* Promo codes are currently booking-bound for direct bookings only.
+                Broadcast conversion does not yet carry a promo snapshot. */}
+            {isDirectBooking ? (
             <View style={styles.promoSection}>
               <Text style={styles.fieldLabel}>Promo Code <Text style={styles.optionalTag}>(optional)</Text></Text>
               <View style={styles.promoRow}>
@@ -1217,13 +1221,17 @@ export default function BookServiceScreen() {
                 </View>
               ) : null}
             </View>
+            ) : null}
 
             <BookingPriceSummary
               hourlyRate={offerHourlyRate ? Number(offerHourlyRate) : 0}
               travelCharge={Number(travelCharge || 0)}
-              discount={appliedPromo
+              discount={isDirectBooking && appliedPromo
                 ? appliedPromo.discountType === "fixed"
-                  ? appliedPromo.discountValue
+                  ? Math.min(
+                      Number(offerHourlyRate || 0) + Number(travelCharge || 0),
+                      appliedPromo.discountValue,
+                    )
                   : Math.round(((Number(offerHourlyRate || 0) + Number(travelCharge || 0)) * appliedPromo.discountValue) / 100)
                 : 0}
               openOffer={!offerHourlyRate}
@@ -1266,7 +1274,7 @@ export default function BookServiceScreen() {
                   <Text style={[styles.summaryVal, { color: theme.colors.success }]}>Attached</Text>
                 </View>
               )}
-              {appliedPromo && (
+              {isDirectBooking && appliedPromo && (
                 <View style={styles.summaryRow}>
                   <Icon name="tag" size={13} color={theme.colors.success} />
                   <Text style={styles.summaryLbl}>Promo</Text>
@@ -1314,7 +1322,7 @@ export default function BookServiceScreen() {
             ) : (
               <>
                 <Icon name="send" size={18} color={theme.colors.onBrand} />
-                <Text style={styles.btnText}>Broadcast Request</Text>
+                <Text style={styles.btnText}>{isDirectBooking ? "Send Booking Request" : "Broadcast Request"}</Text>
               </>
             )}
           </Pressable>
