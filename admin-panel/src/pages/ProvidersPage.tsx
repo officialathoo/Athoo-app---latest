@@ -7,7 +7,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useToast } from "@/hooks/use-toast";
 import { BulkActionBar } from "@/components/admin/BulkActionBar";
-import { CheckCircle, ExternalLink, FileText, RefreshCw, Search, X, XCircle } from "lucide-react";
+import { CheckCircle, ChevronLeft, ChevronRight, ExternalLink, FileText, RefreshCw, Search, X, XCircle } from "lucide-react";
 
 interface ProviderDoc {
   id: string;
@@ -36,6 +36,8 @@ export function ProvidersPage() {
 
   const [providers, setProviders] = useState<User[]>([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const limit = 25;
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -60,7 +62,14 @@ export function ProvidersPage() {
     setLoadError(null);
     try {
       const res = await api<{ providers: User[]; total: number }>("/api/admin/providers", {
-        params: { search: search.trim() || undefined, status: filter, from: from || undefined, to: to || undefined, limit: 200 },
+        params: {
+          search: search.trim() || undefined,
+          status: filter,
+          from: from || undefined,
+          to: to || undefined,
+          page,
+          limit,
+        },
       });
       setProviders(res.providers || []);
       setTotal(Number(res.total || 0));
@@ -69,14 +78,21 @@ export function ProvidersPage() {
     } finally {
       setLoading(false);
     }
-  }, [filter, from, search, to]);
+  }, [filter, from, page, search, to]);
 
   useEffect(() => {
     const timer = window.setTimeout(load, 250);
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  useEffect(() => { setSelectedIds(new Set()); }, [filter, from, search, to]);
+  useEffect(() => {
+    setPage(1);
+    setSelectedIds(new Set());
+  }, [filter, from, search, to]);
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [page]);
   useEffect(() => {
     if (!focusId || focusOpened) return;
     setFocusOpened(true);
@@ -91,6 +107,14 @@ export function ProvidersPage() {
   const selectedFromList = useMemo(
     () => selectedProvider ? providers.find((provider) => provider.id === selectedProvider.id) || selectedProvider : null,
     [providers, selectedProvider],
+  );
+  const pages = Math.max(1, Math.ceil(total / limit));
+  const range = useMemo(
+    () => ({
+      from: total ? (page - 1) * limit + 1 : 0,
+      to: Math.min(page * limit, total),
+    }),
+    [page, total],
   );
 
   async function runBulkAccountAction(action: "deactivate" | "reactivate" | "revoke-sessions") {
@@ -145,9 +169,14 @@ export function ProvidersPage() {
   }
 
   async function refreshSelected() {
-    await load();
-    if (!selectedProvider) return;
-    const response = await api<{ user: User }>(`/api/admin/users/${selectedProvider.id}`);
+    if (!selectedProvider) {
+      await load();
+      return;
+    }
+    const [, response] = await Promise.all([
+      load(),
+      api<{ user: User }>(`/api/admin/users/${selectedProvider.id}`),
+    ]);
     setSelectedProvider(response.user);
   }
 
@@ -334,7 +363,28 @@ export function ProvidersPage() {
             { header: "", render: (item) => <button className="text-xs text-blue-600 font-medium" onClick={() => openProvider(item)}>Manage</button> },
           ]}
         />
-        <div className="px-5 py-3 border-t border-slate-100 text-xs text-slate-400">Showing {providers.length} of {total} matching providers</div>
+        <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between gap-3 text-xs text-slate-500">
+          <span>Showing {range.from}-{range.to} of {total} matching providers</span>
+          <div className="flex items-center gap-2">
+            <button
+              disabled={page <= 1 || loading}
+              onClick={() => setPage((value) => Math.max(1, value - 1))}
+              className="p-1.5 rounded border border-slate-200 disabled:opacity-40"
+              aria-label="Previous providers page"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <span>Page {page} of {pages}</span>
+            <button
+              disabled={page >= pages || loading}
+              onClick={() => setPage((value) => Math.min(pages, value + 1))}
+              className="p-1.5 rounded border border-slate-200 disabled:opacity-40"
+              aria-label="Next providers page"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
       </div>
 
       {provider && (
