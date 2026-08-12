@@ -2,7 +2,7 @@ import { Router, type Response } from "express";
 import { logger } from "../lib/logger";
 import { db } from "@workspace/db";
 import { promotionsTable } from "@workspace/db/schema";
-import { and, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 
 const router = Router();
@@ -61,69 +61,15 @@ router.post("/validate", requireAuth, async (req: AuthRequest, res: Response) =>
   }
 });
 
-router.post("/redeem", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    const code = String(req.body?.code || "").trim().toUpperCase();
-    if (!code) {
-      res.status(400).json({ error: "Promo code required" });
-      return;
-    }
-
-    const promo = await db.query.promotionsTable.findFirst({
-      where: eq(promotionsTable.code, code),
-    });
-    if (!promo || !promo.isActive) {
-      res.status(404).json({ error: "Invalid promo code" });
-      return;
-    }
-
-    const now = new Date();
-    if (promo.validFrom && promo.validFrom > now) {
-      res.status(400).json({ error: "This promo is not active yet" });
-      return;
-    }
-    if (promo.validUntil && promo.validUntil < now) {
-      res.status(400).json({ error: "This promo has expired" });
-      return;
-    }
-    if (promo.maxUses != null && (promo.usedCount || 0) >= promo.maxUses) {
-      res.status(400).json({ error: "This promo has reached its usage limit" });
-      return;
-    }
-
-    const [redeemed] = await db
-      .update(promotionsTable)
-      .set({
-        usedCount: sql`${promotionsTable.usedCount} + 1`,
-        updatedAt: now,
-      })
-      .where(and(
-        eq(promotionsTable.id, promo.id),
-        eq(promotionsTable.isActive, true),
-        or(isNull(promotionsTable.validFrom), lte(promotionsTable.validFrom, now)),
-        or(isNull(promotionsTable.validUntil), gte(promotionsTable.validUntil, now)),
-        or(
-          isNull(promotionsTable.maxUses),
-          sql`${promotionsTable.usedCount} < ${promotionsTable.maxUses}`,
-        ),
-      ))
-      .returning({
-        id: promotionsTable.id,
-        usedCount: promotionsTable.usedCount,
-      });
-
-    if (!redeemed) {
-      res.status(409).json({
-        error: "Promo code is no longer available. Please validate it again.",
-      });
-      return;
-    }
-
-    res.json({ ok: true, usedCount: redeemed.usedCount });
-  } catch (e) {
-    logger.error({ err: e }, "promo redeem error");
-    res.status(500).json({ error: "Failed to redeem promo code" });
-  }
+// Promo consumption must be tied to an actual booking transaction.
+// The current booking schema/workflow has no promotionId/promoCode redemption
+// record, so a standalone counter mutation would let any authenticated user
+// consume promo inventory without creating a booking.
+router.post("/redeem", requireAuth, async (_req: AuthRequest, res: Response) => {
+  res.status(409).json({
+    error: "Promo redemption is available only through a booking transaction.",
+    code: "PROMO_REDEMPTION_REQUIRES_BOOKING",
+  });
 });
 
 export default router;
