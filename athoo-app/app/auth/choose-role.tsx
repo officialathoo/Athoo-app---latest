@@ -1,6 +1,9 @@
 import { Icon } from "@/components/ui/Icon";
 import { brandConfig } from "@/config/brand";
 import { useLang } from "@/context/LanguageContext";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import React, {
@@ -21,22 +24,22 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const AUTH = {
-  background: "#071014",
-  backgroundDeep: "#0B1115",
-  panel: "#10181D",
-  panelRaised: "#151E24",
-  border: "rgba(156, 218, 240, 0.16)",
-  borderStrong: "rgba(156, 218, 240, 0.28)",
-  text: "#F8FAFC",
-  muted: "#9AA8B1",
-  subtle: "#66747D",
-  cyan: "#25B7E8",
-  cyanSoft: "rgba(37, 183, 232, 0.16)",
-  orange: "#F97316",
-  orangeSoft: "rgba(249, 115, 22, 0.16)",
-  success: "#3DD6A0",
-};
+const createAuthPalette = (theme: AthooTheme) => ({
+  background: theme.colors.background,
+  backgroundDeep: theme.colors.surfaceAlt,
+  panel: theme.colors.surface,
+  panelRaised: theme.colors.elevated,
+  border: theme.colors.border,
+  borderStrong: theme.colors.border,
+  text: theme.colors.text,
+  muted: theme.colors.textSecondary,
+  subtle: theme.colors.textMuted,
+  cyan: theme.colors.primary,
+  cyanSoft: theme.colors.infoSoft,
+  orange: theme.colors.secondary,
+  orangeSoft: theme.colors.premiumSoft,
+  success: theme.colors.success,
+});
 
 export default function ChooseRoleScreen() {
   const insets = useSafeAreaInsets();
@@ -47,6 +50,9 @@ export default function ChooseRoleScreen() {
       ? "signup"
       : "signin";
   const { translate: tr } = useLang();
+  const { theme } = useTheme();
+  const auth = useMemo(() => createAuthPalette(theme), [theme]);
+  const styles = useMemo(() => createStyles(theme, auth), [auth, theme]);
 
   const intro =
     useRef(new Animated.Value(0)).current;
@@ -70,8 +76,8 @@ export default function ChooseRoleScreen() {
         description: tr(
           "Find trusted professionals, manage bookings, chats, invoices and refunds.",
         ),
-        color: AUTH.cyan,
-        background: AUTH.cyanSoft,
+        color: auth.cyan,
+        background: auth.cyanSoft,
       },
       {
         role: "provider" as const,
@@ -81,8 +87,8 @@ export default function ChooseRoleScreen() {
         description: tr(
           "Receive jobs, negotiate, manage verification, availability and earnings.",
         ),
-        color: AUTH.orange,
-        background: AUTH.orangeSoft,
+        color: auth.orange,
+        background: auth.orangeSoft,
       },
     ],
     [tr],
@@ -120,11 +126,11 @@ export default function ChooseRoleScreen() {
   return (
     <View style={styles.root}>
       <LinearGradient
-        colors={[
-          "#081820",
-          AUTH.background,
-          AUTH.backgroundDeep,
-        ]}
+        colors={
+          theme.dark
+            ? ["#07101F", auth.background, auth.backgroundDeep]
+            : [theme.colors.infoSoft, auth.background, auth.backgroundDeep]
+        }
         start={{ x: 0.12, y: 0 }}
         end={{ x: 0.88, y: 1 }}
         style={StyleSheet.absoluteFill}
@@ -168,7 +174,7 @@ export default function ChooseRoleScreen() {
               <Icon
                 name="arrow-left"
                 size={18}
-                color={AUTH.text}
+                color={auth.text}
               />
             </Pressable>
 
@@ -182,8 +188,8 @@ export default function ChooseRoleScreen() {
                 size={13}
                 color={
                   mode === "signin"
-                    ? AUTH.cyan
-                    : AUTH.orange
+                    ? auth.cyan
+                    : auth.orange
                 }
               />
               <Text style={styles.modeBadgeText}>
@@ -238,7 +244,7 @@ export default function ChooseRoleScreen() {
                 <Icon
                   name="shield-check"
                   size={12}
-                  color={AUTH.success}
+                  color={auth.success}
                 />
                 <Text
                   style={styles.secureMiniText}
@@ -328,7 +334,7 @@ export default function ChooseRoleScreen() {
                 <Icon
                   name="lock"
                   size={13}
-                  color={AUTH.cyan}
+                  color={auth.cyan}
                 />
               </View>
               <Text style={styles.securityNoteText}>
@@ -368,7 +374,7 @@ export default function ChooseRoleScreen() {
             <Icon
               name="arrow-right"
               size={14}
-              color={AUTH.cyan}
+              color={auth.cyan}
             />
           </Pressable>
         </Animated.View>
@@ -377,11 +383,12 @@ export default function ChooseRoleScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AthooTheme, auth: ReturnType<typeof createAuthPalette>) {
+  return StyleSheet.create({
   root: {
     flex: 1,
     overflow: "hidden",
-    backgroundColor: AUTH.background,
+    backgroundColor: theme.colors.background,
   },
   topGlow: {
     position: "absolute",
@@ -406,10 +413,10 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     width: "100%",
-    maxWidth: 520,
+    maxWidth: redesign.layout.maxContentWidth,
     alignSelf: "center",
     justifyContent: "center",
-    paddingHorizontal: 22,
+    paddingHorizontal: redesign.layout.horizontalPadding,
   },
   inner: {
     width: "100%",
@@ -421,15 +428,15 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 13,
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor:
       "rgba(255,255,255,0.055)",
     borderWidth: 1,
-    borderColor: AUTH.border,
+    borderColor: auth.border,
   },
   modeBadge: {
     minHeight: 30,
@@ -441,10 +448,10 @@ const styles = StyleSheet.create({
     backgroundColor:
       "rgba(255,255,255,0.055)",
     borderWidth: 1,
-    borderColor: AUTH.border,
+    borderColor: auth.border,
   },
   modeBadgeText: {
-    color: AUTH.text,
+    color: auth.text,
     fontSize: 9,
     fontWeight: "800",
     letterSpacing: 1,
@@ -465,8 +472,8 @@ const styles = StyleSheet.create({
     backgroundColor:
       "rgba(37, 183, 232, 0.10)",
     borderWidth: 1,
-    borderColor: AUTH.borderStrong,
-    shadowColor: AUTH.cyan,
+    borderColor: auth.borderStrong,
+    shadowColor: auth.cyan,
     shadowOpacity: 0.22,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 8 },
@@ -486,7 +493,7 @@ const styles = StyleSheet.create({
   },
   brandLabel: {
     marginTop: 8,
-    color: AUTH.muted,
+    color: auth.muted,
     fontSize: 10,
     fontWeight: "800",
     letterSpacing: 1.4,
@@ -494,34 +501,26 @@ const styles = StyleSheet.create({
   },
   title: {
     marginTop: 6,
-    color: AUTH.text,
-    fontSize: 24,
-    lineHeight: 29,
-    fontWeight: "900",
+    ...theme.typography.h1,
+    color: auth.text,
     letterSpacing: -0.45,
     textAlign: "center",
   },
   subtitle: {
     marginTop: 7,
-    maxWidth: 390,
-    color: AUTH.muted,
-    fontSize: 11.5,
-    lineHeight: 17,
+    maxWidth: 420,
+    ...theme.typography.body,
+    color: auth.muted,
     textAlign: "center",
   },
   rolePanel: {
-    borderRadius: 24,
-    padding: 14,
-    gap: 11,
-    backgroundColor:
-      "rgba(13, 20, 24, 0.95)",
-    borderWidth: 1,
-    borderColor: AUTH.borderStrong,
-    shadowColor: "#000000",
-    shadowOpacity: 0.32,
-    shadowRadius: 26,
-    shadowOffset: { width: 0, height: 14 },
-    elevation: 11,
+    borderRadius: theme.radius.xl,
+    padding: 16,
+    gap: 12,
+    backgroundColor: theme.colors.surface,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: auth.borderStrong,
+    ...theme.shadows.md,
   },
   panelHeader: {
     flexDirection: "row",
@@ -531,7 +530,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 1,
   },
   panelLabel: {
-    color: AUTH.subtle,
+    color: auth.subtle,
     fontSize: 9,
     fontWeight: "900",
     letterSpacing: 1.2,
@@ -542,7 +541,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   secureMiniText: {
-    color: AUTH.success,
+    color: auth.success,
     fontSize: 9,
     fontWeight: "800",
   },
@@ -550,20 +549,20 @@ const styles = StyleSheet.create({
     gap: 9,
   },
   roleCard: {
-    minHeight: 96,
+    minHeight: 100,
     flexDirection: "row",
     alignItems: "center",
-    gap: 11,
-    paddingHorizontal: 11,
-    paddingVertical: 10,
-    borderRadius: 16,
-    backgroundColor: AUTH.panelRaised,
-    borderWidth: 1,
-    borderColor: AUTH.border,
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    borderRadius: theme.radius.md,
+    backgroundColor: auth.panelRaised,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: auth.border,
   },
   roleCardPressed: {
-    opacity: 0.78,
-    transform: [{ scale: 0.993 }],
+    opacity: 0.88,
+    transform: [{ scale: redesign.visual.pressedScale }],
   },
   roleIcon: {
     width: 46,
@@ -585,14 +584,14 @@ const styles = StyleSheet.create({
   },
   roleTitle: {
     marginTop: 2,
-    color: AUTH.text,
+    color: auth.text,
     fontSize: 14.5,
     lineHeight: 18,
     fontWeight: "900",
   },
   roleDescription: {
     marginTop: 3,
-    color: AUTH.muted,
+    color: auth.muted,
     fontSize: 9.8,
     lineHeight: 14,
   },
@@ -624,16 +623,16 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: AUTH.cyanSoft,
+    backgroundColor: auth.cyanSoft,
   },
   securityNoteText: {
     flex: 1,
-    color: AUTH.muted,
+    color: auth.muted,
     fontSize: 9.5,
     lineHeight: 14,
   },
   switchMode: {
-    minHeight: 44,
+    minHeight: redesign.control.compactHeight,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -641,15 +640,17 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   switchModeMuted: {
-    color: AUTH.muted,
+    color: auth.muted,
     fontSize: 11,
   },
   switchModeStrong: {
-    color: AUTH.text,
+    color: auth.text,
     fontSize: 11,
     fontWeight: "800",
   },
   pressed: {
-    opacity: 0.72,
+    opacity: 0.86,
+    transform: [{ scale: redesign.visual.pressedScale }],
   },
-});
+  });
+}
