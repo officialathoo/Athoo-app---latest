@@ -25,6 +25,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { useCategories } from "@/context/CategoriesContext";
 import { api } from "@/services/api";
 import { uploadPickedImage } from "@/services/storage";
@@ -482,7 +483,16 @@ export default function ProviderRegisterScreen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <View style={[styles.container, { paddingTop: topPad }]}>
-        <LinearGradient colors={["#061B4E", "#0B63E5", "#1558B4"]} style={styles.headerGrad}>
+        <LinearGradient
+          colors={
+            theme.dark
+              ? ["#17100A", "#5B2A09", "#A94708"]
+              : [theme.colors.secondaryPressed, theme.colors.secondary, "#FF9A45"]
+          }
+          style={styles.headerGrad}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        >
           <Pressable style={styles.backBtn} onPress={() => step > 0 ? setStep(step - 1) : router.back()}>
             <Icon name="arrow-left" size={20} color={theme.colors.white} />
           </Pressable>
@@ -883,11 +893,11 @@ export default function ProviderRegisterScreen() {
 const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   rowReverse: { flexDirection: "row-reverse" },
-  headerGrad: { paddingHorizontal: 20, paddingBottom: 18 },
+  headerGrad: { paddingHorizontal: redesign.layout.horizontalPadding, paddingBottom: 24 },
   backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
     backgroundColor: "rgba(255,255,255,0.09)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.14)",
@@ -897,52 +907,51 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     marginTop: 8,
   },
   providerBrandRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
-  providerBrandIcon: { width: 50, height: 50, borderRadius: 15, borderWidth: 1, borderColor: "rgba(255,255,255,0.34)" },
-  providerBrandName: { fontSize: 20, fontWeight: "800", color: theme.colors.white, letterSpacing: -0.3 },
-  providerBrandCaption: { marginTop: 1, fontSize: 10.5, color: "rgba(255,255,255,0.66)" },
-  headerTitle: { fontSize: 23, fontWeight: "800", color: theme.colors.white, letterSpacing: -0.35 },
-  headerSubtitle: { fontSize: 11.5, color: "rgba(255,255,255,0.70)", marginTop: 2, marginBottom: 14 },
+  providerBrandIcon: { width: 52, height: 52, borderRadius: 16, backgroundColor: theme.colors.white, borderWidth: 1, borderColor: "rgba(255,255,255,0.42)" },
+  providerBrandName: { ...theme.typography.h3, color: theme.colors.white, letterSpacing: -0.3 },
+  providerBrandCaption: { marginTop: 2, ...theme.typography.caption, color: "rgba(255,255,255,0.76)" },
+  headerTitle: { ...theme.typography.h1, color: theme.colors.white, letterSpacing: -0.45 },
+  headerSubtitle: { ...theme.typography.body, color: "rgba(255,255,255,0.82)", marginTop: 4, marginBottom: 16 },
   stepsRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 2 },
   stepItem: { alignItems: "center", gap: 4 },
   stepCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: "rgba(255,255,255,0.12)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.14)",
     alignItems: "center",
     justifyContent: "center",
   },
-  stepActive: { backgroundColor: theme.colors.surface },
+  stepActive: { backgroundColor: theme.colors.white, borderColor: "rgba(255,255,255,0.55)" },
   stepDone: { backgroundColor: theme.colors.success },
-  stepLabel: { fontSize: 9.5, color: "rgba(255,255,255,0.50)", fontWeight: "700" },
+  stepLabel: { ...theme.typography.caption, color: "rgba(255,255,255,0.62)", fontFamily: theme.typography.label.fontFamily },
   stepLabelActive: { color: theme.colors.white },
   stepLine: { flex: 1, height: 2, backgroundColor: "rgba(255,255,255,0.14)", marginBottom: 13 },
   stepLineDone: { backgroundColor: theme.colors.success },
   scroll: { flex: 1 },
-  scrollContent: { width: "100%", maxWidth: 560, alignSelf: "center", paddingHorizontal: 18, paddingTop: 18, paddingBottom: 92 },
-  formSection: { gap: 13, backgroundColor: theme.dark ? "rgba(255,255,255,0.025)" : theme.colors.surface, borderRadius: 22, padding: 15, borderWidth: 1, borderColor: theme.dark ? "rgba(148,163,184,0.12)" : theme.colors.border },
+  scrollContent: { width: "100%", maxWidth: redesign.layout.maxContentWidth, alignSelf: "center", paddingHorizontal: redesign.layout.horizontalPadding, paddingTop: 20, paddingBottom: 92 },
+  formSection: { gap: redesign.layout.fieldGap, backgroundColor: theme.colors.surface, borderRadius: theme.radius.xl, padding: 18, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border, ...theme.shadows.sm },
   formSectionTitle: {
-    fontSize: 15,
-    fontWeight: "800",
+    ...theme.typography.h3,
     color: theme.colors.text,
     marginTop: 6,
     marginBottom: 4,
   },
   inputGroup: { gap: 7 },
-  label: { fontSize: 12.5, fontWeight: "700", color: theme.colors.text },
+  label: { ...theme.typography.label, color: theme.colors.text },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: theme.dark ? "rgba(255,255,255,0.045)" : theme.colors.surfaceAlt,
-    borderRadius: 16,
+    backgroundColor: theme.colors.input,
+    borderRadius: theme.radius.md,
     paddingHorizontal: 14,
-    minHeight: 52,
-    borderWidth: 1,
-    borderColor: theme.dark ? "rgba(148,163,184,0.18)" : theme.colors.border,
+    minHeight: redesign.control.standardHeight,
+    borderWidth: redesign.visual.inputBorderWidth,
+    borderColor: theme.colors.border,
   },
-  input: { flex: 1, fontSize: 14, color: theme.colors.text, paddingVertical: 0 },
+  input: { flex: 1, ...theme.typography.bodyLg, color: theme.colors.text, paddingVertical: 0 },
   charCount: { fontSize: 10, color: theme.colors.textMuted, alignSelf: "flex-end" },
   verifiedRow: {
     flexDirection: "row",
@@ -957,15 +966,15 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   verifiedText: { fontSize: 13, fontWeight: "600", color: theme.colors.success },
   sendOtpBtn: {
-    backgroundColor: theme.dark ? "rgba(37,99,235,0.10)" : theme.colors.surfaceAlt,
-    borderRadius: 14,
-    minHeight: 48,
+    backgroundColor: theme.colors.premiumSoft,
+    borderRadius: theme.radius.md,
+    minHeight: redesign.control.standardHeight,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: theme.colors.primary + "80",
+    borderColor: theme.colors.secondary + "66",
   },
-  sendOtpText: { fontSize: 14, fontWeight: "700", color: theme.colors.primary },
+  sendOtpText: { ...theme.typography.body, fontFamily: theme.typography.label.fontFamily, color: theme.colors.secondary },
   servicesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
   serviceChip: {
     flexDirection: "row",
@@ -982,7 +991,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   infoBox: {
     flexDirection: "row",
     gap: 10,
-    backgroundColor: theme.dark ? "rgba(37,99,235,0.08)" : theme.colors.surfaceAlt,
+    backgroundColor: theme.colors.infoSoft,
     borderRadius: 13,
     padding: 11,
     borderWidth: 1,
@@ -993,8 +1002,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 11,
-    backgroundColor: theme.dark ? "rgba(255,255,255,0.04)" : theme.colors.surface,
-    borderRadius: 16,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
     padding: 12,
     borderWidth: 1,
     borderColor: theme.dark ? "rgba(148,163,184,0.16)" : theme.colors.border,
@@ -1047,7 +1056,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   policeText: { fontSize: 12, color: theme.colors.textSecondary, lineHeight: 18 },
   reviewCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 20,
+    borderRadius: theme.radius.xl,
     padding: 20,
     alignItems: "center",
     gap: 14,
@@ -1085,10 +1094,10 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   summaryKey: { fontSize: 12, color: theme.colors.textSecondary },
   summaryVal: { fontSize: 12, fontWeight: "700", color: theme.colors.text },
   footer: { marginTop: 20 },
-  nextBtn: { borderRadius: 17, overflow: "hidden", shadowColor: "#2563EB", shadowOpacity: 0.16, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 4 },
-  nextBtnGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 54 },
-  nextBtnText: { fontSize: 16, fontWeight: "800", color: theme.colors.white },
-  btnDisabled: { opacity: 0.5 },
+  nextBtn: { borderRadius: theme.radius.md, overflow: "hidden", ...theme.shadows.sm },
+  nextBtnGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, minHeight: redesign.control.largeHeight },
+  nextBtnText: { ...theme.typography.bodyLg, fontFamily: theme.typography.h3.fontFamily, color: theme.colors.white },
+  btnDisabled: { opacity: redesign.visual.disabledOpacity },
   declarationBox: {
     marginHorizontal: 2,
     marginTop: 12,
@@ -1120,7 +1129,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   modalCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 20,
+    borderRadius: theme.radius.xl,
     padding: 24,
     width: "100%",
     maxWidth: 380,
