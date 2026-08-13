@@ -3477,16 +3477,56 @@ router.get("/users/:id/activity", requirePermission("users.read"), async (req: A
 // ─── Invoices list ───────────────────────────────────────────────────────────
 router.get("/invoices", requirePermission("finance.read"), async (req: AuthRequest, res) => {
   try {
-    const status = req.query.status as string | undefined;
-    const query = db
-      .select()
-      .from(invoicesTable)
-      .orderBy(desc(invoicesTable.createdAt));
-    const rows = await query.limit(1000);
-    const invoices = status && status !== "all"
-      ? rows.filter((i: any) => i.status === status)
-      : rows;
-    return res.json({ invoices });
+    const status = typeof req.query.status === "string" ? req.query.status.trim() : "all";
+    const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 120) : "";
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const offset = (page - 1) * limit;
+    const validStatuses = ["all", "issued", "paid", "disputed", "cancelled"];
+    if (!validStatuses.includes(status)) return res.status(400).json({ error: "Invalid invoice status filter" });
+
+    const like = `%${search}%`;
+    const whereClause = and(
+      status !== "all" ? eq(invoicesTable.status, status) : undefined,
+      search ? or(
+        ilike(invoicesTable.invoiceNumber, like),
+        ilike(invoicesTable.customerName, like),
+        ilike(invoicesTable.providerName, like),
+        ilike(invoicesTable.service, like),
+        ilike(invoicesTable.address, like),
+        ilike(invoicesTable.bookingPublicId, like),
+      ) : undefined,
+    );
+
+    const [invoices, total, statsRows] = await Promise.all([
+      db.select()
+        .from(invoicesTable)
+        .where(whereClause)
+        .orderBy(desc(invoicesTable.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db.$count(invoicesTable, whereClause),
+      db.select({
+        totalInvoices: sql<number>`count(*)::int`,
+        issued: sql<number>`count(*) filter (where ${invoicesTable.status} = 'issued')::int`,
+        totalRevenue: sql<number>`coalesce(sum(${invoicesTable.totalAmount}),0)::int`,
+        totalCommission: sql<number>`coalesce(sum(${invoicesTable.commissionAmount}),0)::int`,
+      }).from(invoicesTable).where(whereClause),
+    ]);
+
+    const stats = statsRows[0] || { totalInvoices: 0, issued: 0, totalRevenue: 0, totalCommission: 0 };
+    return res.json({
+      invoices,
+      total: Number(total || 0),
+      page,
+      limit,
+      stats: {
+        totalInvoices: Number(stats.totalInvoices || 0),
+        issued: Number(stats.issued || 0),
+        totalRevenue: Number(stats.totalRevenue || 0),
+        totalCommission: Number(stats.totalCommission || 0),
+      },
+    });
   } catch (err) {
     logger.error({ err }, "admin invoices list error");
     return res.status(500).json({ error: "Failed to load invoices" });
