@@ -2,6 +2,7 @@ import { Icon } from "@/components/ui/Icon";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useMemo, useRef } from "react";
 import {
@@ -157,8 +158,8 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     card: {
       backgroundColor: theme.colors.elevated,
       borderColor: theme.colors.border,
-      borderWidth: 1,
-      borderRadius: 28,
+      borderWidth: redesign.visual.cardBorderWidth,
+      borderRadius: theme.radius.xl,
       padding: 24,
       alignItems: "center",
       width: "100%",
@@ -174,15 +175,14 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
       marginBottom: 20,
     },
     title: {
-      fontSize: 22,
-      fontWeight: "800",
+      ...theme.typography.h2,
       color: theme.colors.text,
       textAlign: "center",
       writingDirection: isUrdu ? "rtl" : "ltr",
       marginBottom: 8,
     },
     subtitle: {
-      fontSize: 14,
+      ...theme.typography.body,
       color: theme.colors.textSecondary,
       textAlign: "center",
       writingDirection: isUrdu ? "rtl" : "ltr",
@@ -210,11 +210,11 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     detailBorder: { borderBottomWidth: 1, borderBottomColor: theme.colors.divider },
     detailLabel: { flex: 1, fontSize: 13, color: theme.colors.textSecondary, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
     detailValue: { flexShrink: 1, fontSize: 13, fontWeight: "700", color: theme.colors.text, textAlign: isUrdu ? "left" : "right", writingDirection: isUrdu ? "rtl" : "ltr" },
-    primaryBtn: { width: "100%", minHeight: 48, borderRadius: 16, overflow: "hidden", marginBottom: 8 },
-    primaryBtnGrad: { minHeight: 48, paddingHorizontal: 16, alignItems: "center", justifyContent: "center" },
-    primaryBtnText: { fontSize: 16, fontWeight: "800", color: theme.colors.white, writingDirection: isUrdu ? "rtl" : "ltr" },
+    primaryBtn: { width: "100%", minHeight: redesign.control.largeHeight, borderRadius: theme.radius.md, overflow: "hidden", marginBottom: 8, ...theme.shadows.sm },
+    primaryBtnGrad: { minHeight: redesign.control.largeHeight, paddingHorizontal: 16, alignItems: "center", justifyContent: "center" },
+    primaryBtnText: { ...theme.typography.bodyLg, fontFamily: theme.typography.h3.fontFamily, color: theme.colors.white, writingDirection: isUrdu ? "rtl" : "ltr" },
     secondaryBtn: { minHeight: 44, minWidth: 120, paddingHorizontal: 16, alignItems: "center", justifyContent: "center" },
     secondaryBtnText: { fontSize: 14, fontWeight: "600", color: theme.colors.primary, writingDirection: isUrdu ? "rtl" : "ltr" },
-    pressed: { opacity: 0.82 },
+    pressed: { opacity: 0.86, transform: [{ scale: redesign.visual.pressedScale }] },
   });
 }

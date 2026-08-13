@@ -2,6 +2,7 @@ import { Icon } from "@/components/ui/Icon";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -250,11 +251,11 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
       paddingHorizontal: 20,
     },
     card: {
-      backgroundColor: theme.dark ? "rgba(7,17,31,0.98)" : theme.colors.elevated,
-      borderColor: theme.dark ? "rgba(148,163,184,0.18)" : theme.colors.border,
-      borderWidth: 1,
-      borderRadius: 26,
-      padding: 20,
+      backgroundColor: theme.colors.elevated,
+      borderColor: theme.colors.border,
+      borderWidth: redesign.visual.cardBorderWidth,
+      borderRadius: theme.radius.xl,
+      padding: 22,
       alignItems: "center",
       width: "100%",
       maxWidth: 360,
@@ -271,26 +272,26 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
       borderWidth: 1,
       borderColor: theme.colors.focusRing,
     },
-    title: { fontSize: 20, fontWeight: "800", color: theme.colors.text, textAlign: "center", letterSpacing: -0.3, writingDirection: isUrdu ? "rtl" : "ltr" },
-    subtitle: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center", lineHeight: 19, writingDirection: isUrdu ? "rtl" : "ltr" },
+    title: { ...theme.typography.h2, color: theme.colors.text, textAlign: "center", letterSpacing: -0.3, writingDirection: isUrdu ? "rtl" : "ltr" },
+    subtitle: { ...theme.typography.body, color: theme.colors.textSecondary, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
     sentTo: { fontSize: 12, fontWeight: "700", color: theme.colors.primary, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
     hintBox: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 6, backgroundColor: theme.colors.warningSoft, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: theme.colors.warning, alignSelf: "stretch" },
     hintText: { flex: 1, fontSize: 13, color: theme.colors.text, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
     hintCode: { fontWeight: "800", color: theme.colors.secondary },
     otpRow: { flexDirection: "row", gap: 8, marginVertical: 7, direction: "ltr" },
-    otpInput: { width: 54, height: 58, borderRadius: 15, borderWidth: 1.5, borderColor: theme.colors.border, fontSize: 23, fontWeight: "800", color: theme.colors.text, backgroundColor: theme.dark ? "rgba(255,255,255,0.045)" : theme.colors.input },
+    otpInput: { width: 56, height: 60, borderRadius: theme.radius.md, borderWidth: redesign.visual.focusedBorderWidth, borderColor: theme.colors.border, fontSize: 23, fontFamily: theme.typography.h2.fontFamily, color: theme.colors.text, backgroundColor: theme.colors.input },
     otpInputFilled: { borderColor: theme.colors.primary, backgroundColor: theme.colors.infoSoft },
     expiryText: { marginTop: 10, fontSize: 12, color: theme.colors.textSecondary, textAlign: "center" },
     expiryExpired: { color: theme.colors.danger, fontWeight: "700" },
     error: { fontSize: 12, color: theme.colors.danger, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
-    verifyBtn: { backgroundColor: theme.colors.primary, width: "100%", minHeight: 50, borderRadius: 16, paddingHorizontal: 16, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8, shadowColor: "#2563EB", shadowOpacity: 0.16, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, elevation: 3 },
+    verifyBtn: { backgroundColor: theme.colors.primary, width: "100%", minHeight: redesign.control.largeHeight, borderRadius: theme.radius.md, paddingHorizontal: 16, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8, ...theme.shadows.sm },
     verifyText: { color: theme.colors.white, fontWeight: "800", fontSize: 15, writingDirection: isUrdu ? "rtl" : "ltr" },
     resendBtn: { minHeight: 44, paddingHorizontal: 12, flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "center", gap: 8 },
     resendText: { fontSize: 13, fontWeight: "700", color: theme.colors.primary, writingDirection: isUrdu ? "rtl" : "ltr" },
     resendTextDisabled: { color: theme.colors.textMuted },
     cancelBtn: { minHeight: 44, minWidth: 88, alignItems: "center", justifyContent: "center" },
     cancelText: { fontSize: 13, color: theme.colors.textSecondary, writingDirection: isUrdu ? "rtl" : "ltr" },
-    disabled: { opacity: 0.55 },
-    pressed: { opacity: 0.82 },
+    disabled: { opacity: redesign.visual.disabledOpacity },
+    pressed: { opacity: 0.86, transform: [{ scale: redesign.visual.pressedScale }] },
   });
 }

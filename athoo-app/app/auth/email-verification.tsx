@@ -4,6 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { api } from "@/services/api";
 import { apiErrorToMessage } from "@/lib/apiError";
 import { router, useLocalSearchParams } from "expo-router";
@@ -238,13 +239,13 @@ export default function EmailVerificationScreen() {
 
 const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  content: { flex: 1, paddingHorizontal: 24, justifyContent: "center", gap: 18 },
-  iconWrap: { alignSelf: "center", width: 72, height: 72, borderRadius: 24, backgroundColor: theme.colors.primary + "16", alignItems: "center", justifyContent: "center" },
-  title: { color: theme.colors.text, fontSize: 28, fontWeight: "800", textAlign: "center" },
-  subtitle: { color: theme.colors.textSecondary, fontSize: 15, lineHeight: 22, textAlign: "center" },
-  securityNote: { flexDirection: "row", gap: 10, alignItems: "flex-start", backgroundColor: theme.colors.success + "14", borderColor: theme.colors.success + "35", borderWidth: 1, borderRadius: 14, padding: 14 },
+  content: { flex: 1, width: "100%", maxWidth: redesign.layout.maxContentWidth, alignSelf: "center", paddingHorizontal: redesign.layout.horizontalPadding, justifyContent: "center", gap: redesign.layout.fieldGap },
+  iconWrap: { alignSelf: "center", width: 76, height: 76, borderRadius: 24, backgroundColor: theme.colors.infoSoft, borderWidth: 1, borderColor: theme.colors.primary + "30", alignItems: "center", justifyContent: "center", ...theme.shadows.sm },
+  title: { ...theme.typography.h1, color: theme.colors.text, textAlign: "center", letterSpacing: -0.5 },
+  subtitle: { ...theme.typography.bodyLg, color: theme.colors.textSecondary, textAlign: "center" },
+  securityNote: { flexDirection: "row", gap: 10, alignItems: "flex-start", backgroundColor: theme.colors.successSoft, borderColor: theme.colors.success + "35", borderWidth: 1, borderRadius: theme.radius.md, padding: 14 },
   securityText: { flex: 1, color: theme.colors.text, fontSize: 13, lineHeight: 19 },
-  codeInput: { color: theme.colors.text, backgroundColor: theme.colors.surface, borderColor: theme.colors.primary + "70", borderWidth: 1.5, borderRadius: 16, paddingVertical: 18, paddingHorizontal: 16, textAlign: "center", fontSize: 28, fontWeight: "800", letterSpacing: 10 },
+  codeInput: { color: theme.colors.text, backgroundColor: theme.colors.input, borderColor: theme.colors.primary + "70", borderWidth: redesign.visual.focusedBorderWidth, borderRadius: theme.radius.md, minHeight: 64, paddingVertical: 14, paddingHorizontal: 16, textAlign: "center", fontSize: 28, fontFamily: theme.typography.h1.fontFamily, letterSpacing: 10 },
   timer: { color: theme.colors.textSecondary, textAlign: "center", fontSize: 12 },
   expired: { color: theme.colors.danger, fontWeight: "700" },
   linkButton: { alignSelf: "center", paddingVertical: 10, paddingHorizontal: 12 },
@@ -252,5 +253,5 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   skipButton: { alignSelf: "center", paddingVertical: 8, paddingHorizontal: 12 },
   skipText: { color: theme.colors.textSecondary, fontWeight: "600", fontSize: 14 },
   skipHint: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 17, textAlign: "center" },
-  disabled: { opacity: 0.5 },
+  disabled: { opacity: redesign.visual.disabledOpacity },
 });
