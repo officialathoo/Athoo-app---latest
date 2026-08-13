@@ -1656,6 +1656,63 @@ router.patch("/users/:id/unblock", requirePermission("users.write"), async (req:
   }
 });
 
+router.get("/verification/providers", requirePermission("verification.read"), async (req, res) => {
+  try {
+    const validStatuses = ["pending", "in_process", "approved", "rejected"] as const;
+    const requestedStatus = typeof req.query.status === "string" ? req.query.status : "pending";
+    const status = validStatuses.includes(requestedStatus as (typeof validStatuses)[number])
+      ? requestedStatus
+      : "pending";
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const offset = (page - 1) * limit;
+
+    const baseWhere = and(
+      eq(usersTable.role, "provider"),
+      eq(usersTable.isDeactivated, false),
+    );
+    const pageWhere = and(
+      baseWhere,
+      eq(usersTable.verificationStatus, status),
+    );
+
+    const [rows, total, statsRows] = await Promise.all([
+      db.select()
+        .from(usersTable)
+        .where(pageWhere)
+        .orderBy(desc(usersTable.joinedAt))
+        .limit(limit)
+        .offset(offset),
+      db.$count(usersTable, pageWhere),
+      db.select({
+        pending: sql<number>`count(*) filter (where ${usersTable.verificationStatus} = 'pending')::int`,
+        inProcess: sql<number>`count(*) filter (where ${usersTable.verificationStatus} = 'in_process')::int`,
+        approved: sql<number>`count(*) filter (where ${usersTable.verificationStatus} = 'approved')::int`,
+        rejected: sql<number>`count(*) filter (where ${usersTable.verificationStatus} = 'rejected')::int`,
+      })
+        .from(usersTable)
+        .where(baseWhere),
+    ]);
+
+    const stats = statsRows[0] || { pending: 0, inProcess: 0, approved: 0, rejected: 0 };
+    return res.json({
+      users: rows.map(toSafeUser),
+      total: Number(total || 0),
+      page,
+      limit,
+      stats: {
+        pending: Number(stats.pending || 0),
+        in_process: Number(stats.inProcess || 0),
+        approved: Number(stats.approved || 0),
+        rejected: Number(stats.rejected || 0),
+      },
+    });
+  } catch (error) {
+    logger.error({ err: error }, "admin verification providers error");
+    return res.status(500).json({ error: "Failed to load provider verification queue" });
+  }
+});
+
 router.patch("/users/:id/verify", requirePermission("verification.write"), async (_req, res) => {
   return res.status(410).json({ error: "Legacy verification toggle is disabled. Use the document-aware verification-status workflow." });
 });
