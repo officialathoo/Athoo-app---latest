@@ -6,6 +6,7 @@ import { Platform, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLang } from "@/context/LanguageContext";
 import { useNotifications } from "@/context/NotificationContext";
+import { redesign } from "@/design/redesign";
 
 function UnreadBadge({ count, backgroundColor }: { count: number; backgroundColor: string }) {
   const { theme } = useTheme();
@@ -29,7 +30,9 @@ export default function CustomerTabLayout() {
   const tabPadBottom = safeBottom;
   const activeTabStyle = {
     backgroundColor: theme.colors.infoSoft,
-    borderRadius: theme.radius.sm,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.primary + "22",
   };
 
   return (
@@ -41,19 +44,19 @@ export default function CustomerTabLayout() {
         tabBarHideOnKeyboard: true,
         tabBarStyle: {
           backgroundColor: theme.colors.surface,
-          borderTopWidth: 1,
-          borderTopColor: theme.colors.divider,
+          borderTopWidth: redesign.visual.cardBorderWidth,
+          borderTopColor: theme.colors.border,
           height: tabHeight,
           paddingBottom: tabPadBottom,
           paddingTop: 6,
-          ...theme.shadows.sm,
+          ...theme.shadows.md,
         },
         tabBarItemStyle: {
-          minHeight: 54,
+          minHeight: redesign.control.standardHeight,
           paddingVertical: 2,
         },
         tabBarLabelStyle: {
-          fontSize: 10,
+          ...theme.typography.caption,
           fontFamily: theme.typography.label.fontFamily,
           marginTop: 2,
         },
@@ -84,8 +87,8 @@ export default function CustomerTabLayout() {
 const styles = StyleSheet.create({
   iconWrap: {
     position: "relative",
-    width: 44,
-    height: 32,
+    width: redesign.control.iconButtonSize,
+    height: 34,
     alignItems: "center",
     justifyContent: "center",
   },

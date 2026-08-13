@@ -35,6 +35,7 @@ import { matchingCategories, normalizeDiscoveryText, providerRecommendationScore
 import { useTheme } from "@/context/ThemeContext";
 import { useToast } from "@/context/ToastContext";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { getCategoryAppearance } from "@/utils/categoryAppearance";
 import { apiErrorToMessage } from "@/lib/apiError";
 
@@ -1156,16 +1157,14 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   header: {
     backgroundColor: theme.colors.surface,
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.025,
-    shadowRadius: 8,
-    elevation: 1,
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingBottom: 14,
+    borderBottomWidth: redesign.visual.cardBorderWidth,
+    borderBottomColor: theme.colors.border,
+    ...theme.shadows.sm,
     zIndex: 10,
     paddingTop: 12,
-    gap: 8,
+    gap: 10,
   },
 
   searchRow: { flexDirection: "row", gap: 8 },
@@ -1174,21 +1173,21 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: theme.colors.background,
-    borderRadius: 14,
+    backgroundColor: theme.colors.input,
+    borderRadius: theme.radius.md,
     paddingHorizontal: 12,
-    paddingVertical: 9,
+    minHeight: redesign.control.standardHeight,
     gap: 8,
-    borderWidth: 1,
+    borderWidth: redesign.visual.inputBorderWidth,
     borderColor: theme.colors.border,
   },
 
-  searchInput: { flex: 1, fontSize: 14, color: theme.colors.text },
+  searchInput: { flex: 1, ...theme.typography.body, color: theme.colors.text, paddingVertical: 0 },
 
   mapToggle: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
     backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
@@ -1205,7 +1204,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     minHeight: 32,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: theme.radius.pill,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: theme.colors.background,
@@ -1227,7 +1226,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     minHeight: 32,
     paddingHorizontal: 11,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: theme.radius.pill,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: theme.colors.surfaceAlt,
@@ -1276,7 +1275,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     justifyContent: "center",
     gap: 5,
     paddingHorizontal: 10,
-    borderRadius: 999,
+    borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.infoSoft,
     borderWidth: 1,
     borderColor: theme.colors.primary + "2A",
@@ -1288,7 +1287,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   mapContainer: { flex: 1 },
-  mapLocationSearch: { position: "absolute", top: 10, left: 12, right: 12, zIndex: 20, minHeight: 52, borderRadius: 14, borderWidth: 1, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, shadowColor: theme.colors.text, shadowOpacity: 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
+  mapLocationSearch: { position: "absolute", top: 10, left: redesign.layout.horizontalPadding, right: redesign.layout.horizontalPadding, zIndex: 20, minHeight: redesign.control.standardHeight, borderRadius: theme.radius.md, borderWidth: redesign.visual.inputBorderWidth, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, backgroundColor: theme.colors.surface, borderColor: theme.colors.border, ...theme.shadows.sm },
   mapLocationSearchText: { fontSize: 14, fontWeight: "800" },
   mapLocationSearchHint: { marginTop: 2, fontSize: 10 },
   mapBg: { flex: 1 },
@@ -1307,18 +1306,14 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   locateMeBtn: {
     position: "absolute",
     top: 12,
-    right: 12,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    right: redesign.layout.horizontalPadding,
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.surface,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
+    ...theme.shadows.sm,
   },
 
   pickedAddressBar: {
@@ -1326,7 +1321,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignItems: "center",
     gap: 12,
     backgroundColor: theme.colors.surface,
-    paddingHorizontal: 16,
+    paddingHorizontal: redesign.layout.horizontalPadding,
     paddingVertical: 12,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
@@ -1347,9 +1342,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   useAddressBtn: {
     backgroundColor: theme.colors.secondary,
-    borderRadius: 10,
+    borderRadius: theme.radius.md,
+    minHeight: redesign.control.compactHeight,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   useAddressBtnText: {
@@ -1542,7 +1539,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 7,
-    borderRadius: 999,
+    borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.surface,
     borderWidth: 1,
     borderColor: theme.colors.border,
