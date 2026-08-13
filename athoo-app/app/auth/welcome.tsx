@@ -23,29 +23,32 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
+import { useTheme } from "@/context/ThemeContext";
+import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import {
   getBiometricRole,
   getBiometricType,
 } from "@/services/biometric";
 
-const AUTH = {
-  background: "#071014",
-  backgroundDeep: "#0B1115",
-  panel: "#10181D",
-  panelRaised: "#151E24",
-  border: "rgba(156, 218, 240, 0.16)",
-  borderStrong: "rgba(156, 218, 240, 0.28)",
-  text: "#F8FAFC",
-  muted: "#9AA8B1",
-  subtle: "#66747D",
-  cyan: "#25B7E8",
-  cyanSoft: "rgba(37, 183, 232, 0.16)",
-  cyanGlow: "rgba(37, 183, 232, 0.28)",
-  orange: "#F97316",
-  orangeSoft: "rgba(249, 115, 22, 0.16)",
-  success: "#3DD6A0",
-  danger: "#FB7185",
-};
+const createAuthPalette = (theme: AthooTheme) => ({
+  background: theme.colors.background,
+  backgroundDeep: theme.colors.surfaceAlt,
+  panel: theme.colors.surface,
+  panelRaised: theme.colors.elevated,
+  border: theme.colors.border,
+  borderStrong: theme.colors.border,
+  text: theme.colors.text,
+  muted: theme.colors.textSecondary,
+  subtle: theme.colors.textMuted,
+  cyan: theme.colors.primary,
+  cyanSoft: theme.colors.infoSoft,
+  cyanGlow: theme.dark ? "rgba(96,165,250,0.20)" : "rgba(37,99,235,0.12)",
+  orange: theme.colors.secondary,
+  orangeSoft: theme.colors.premiumSoft,
+  success: theme.colors.success,
+  danger: theme.colors.danger,
+});
 
 export default function WelcomeScreen() {
   const insets = useSafeAreaInsets();
@@ -53,6 +56,9 @@ export default function WelcomeScreen() {
   const bottomPad = Platform.OS === "web" ? 24 : insets.bottom;
   const { requiresBiometric, completeBiometricLogin } = useAuth();
   const { t } = useLang();
+  const { theme } = useTheme();
+  const auth = useMemo(() => createAuthPalette(theme), [theme]);
+  const styles = useMemo(() => createStyles(theme, auth), [auth, theme]);
 
   const [biometricType, setBiometricType] = useState<
     "face" | "fingerprint" | "iris" | "biometric" | "none"
@@ -104,19 +110,19 @@ export default function WelcomeScreen() {
         title: "Secure & Trusted",
         description:
           "Verified providers, protected accounts and safer service records.",
-        color: AUTH.cyan,
-        background: AUTH.cyanSoft,
+        color: auth.cyan,
+        background: auth.cyanSoft,
       },
       {
         icon: "map-pin",
         title: "Built for Pakistan",
         description:
           "Find and manage home services across cities and service areas.",
-        color: AUTH.orange,
-        background: AUTH.orangeSoft,
+        color: auth.orange,
+        background: auth.orangeSoft,
       },
     ],
-    [],
+    [auth],
   );
 
   const handleBiometricLogin = async () => {
@@ -190,11 +196,11 @@ export default function WelcomeScreen() {
   return (
     <View style={styles.root} testID="welcome-screen">
       <LinearGradient
-        colors={[
-          "#081820",
-          AUTH.background,
-          AUTH.backgroundDeep,
-        ]}
+        colors={
+          theme.dark
+            ? ["#07101F", auth.background, auth.backgroundDeep]
+            : [theme.colors.infoSoft, auth.background, auth.backgroundDeep]
+        }
         start={{ x: 0.15, y: 0 }}
         end={{ x: 0.82, y: 1 }}
         style={StyleSheet.absoluteFill}
@@ -292,7 +298,7 @@ export default function WelcomeScreen() {
                   <Icon
                     name="shield-check"
                     size={13}
-                    color={AUTH.success}
+                    color={auth.success}
                   />
                   <Text style={styles.secureReturnBadgeText}>
                     SECURE RETURN
@@ -317,7 +323,7 @@ export default function WelcomeScreen() {
                 {bioLoading ? (
                   <ActivityIndicator
                     size="small"
-                    color={AUTH.cyan}
+                    color={auth.cyan}
                   />
                 ) : (
                   <View style={styles.biometricIcon}>
@@ -332,7 +338,7 @@ export default function WelcomeScreen() {
                               : "shield"
                       }
                       size={24}
-                      color={AUTH.cyan}
+                      color={auth.cyan}
                     />
                   </View>
                 )}
@@ -349,7 +355,7 @@ export default function WelcomeScreen() {
                 <Icon
                   name="chevron-right"
                   size={18}
-                  color={AUTH.muted}
+                  color={auth.muted}
                 />
               </Pressable>
 
@@ -358,7 +364,7 @@ export default function WelcomeScreen() {
                   <Icon
                     name="alert-circle"
                     size={15}
-                    color={AUTH.danger}
+                    color={auth.danger}
                   />
                   <Text style={styles.errorText}>
                     {bioError}
@@ -381,7 +387,7 @@ export default function WelcomeScreen() {
                 <Icon
                   name="phone"
                   size={15}
-                  color={AUTH.text}
+                  color={auth.text}
                 />
                 <Text style={styles.otpFallbackText}>
                   {t.signInWithOtpInstead}
@@ -406,7 +412,7 @@ export default function WelcomeScreen() {
               >
                 <LinearGradient
                   colors={[
-                    AUTH.cyan,
+                    auth.cyan,
                     brandConfig.colors.primary,
                   ]}
                   start={{ x: 0, y: 0.5 }}
@@ -441,7 +447,7 @@ export default function WelcomeScreen() {
                 <Icon
                   name="user-plus"
                   size={17}
-                  color={AUTH.text}
+                  color={auth.text}
                 />
                 <Text style={styles.secondaryButtonText}>
                   Create Account
@@ -475,11 +481,12 @@ export default function WelcomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AthooTheme, auth: ReturnType<typeof createAuthPalette>) {
+  return StyleSheet.create({
   root: {
     flex: 1,
     overflow: "hidden",
-    backgroundColor: AUTH.background,
+    backgroundColor: theme.colors.background,
   },
   topGlow: {
     position: "absolute",
@@ -488,7 +495,7 @@ const styles = StyleSheet.create({
     width: 420,
     height: 310,
     borderRadius: 220,
-    backgroundColor: AUTH.cyanGlow,
+    backgroundColor: auth.cyanGlow,
   },
   orangeGlow: {
     position: "absolute",
@@ -502,10 +509,10 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
     width: "100%",
-    maxWidth: 520,
+    maxWidth: redesign.layout.maxContentWidth,
     alignSelf: "center",
     justifyContent: "center",
-    paddingHorizontal: 22,
+    paddingHorizontal: redesign.layout.horizontalPadding,
   },
   content: {
     width: "100%",
@@ -522,8 +529,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "rgba(37, 183, 232, 0.10)",
     borderWidth: 1,
-    borderColor: AUTH.borderStrong,
-    shadowColor: AUTH.cyan,
+    borderColor: auth.borderStrong,
+    shadowColor: auth.cyan,
     shadowOpacity: 0.26,
     shadowRadius: 24,
     shadowOffset: { width: 0, height: 9 },
@@ -543,14 +550,14 @@ const styles = StyleSheet.create({
     borderRadius: 22,
   },
   welcomeLabel: {
-    color: AUTH.muted,
+    color: auth.muted,
     fontSize: 10,
     fontWeight: "700",
     letterSpacing: 1.7,
   },
   brandName: {
     marginTop: 3,
-    color: AUTH.text,
+    color: auth.text,
     fontSize: 31,
     lineHeight: 36,
     fontWeight: "900",
@@ -558,25 +565,21 @@ const styles = StyleSheet.create({
   },
   brandTagline: {
     marginTop: 4,
-    color: AUTH.muted,
+    color: auth.muted,
     fontSize: 12,
     lineHeight: 17,
     textAlign: "center",
   },
   devicePanel: {
     position: "relative",
-    borderRadius: 30,
-    paddingHorizontal: 15,
+    borderRadius: theme.radius.xl,
+    paddingHorizontal: 16,
     paddingTop: 28,
-    paddingBottom: 15,
-    backgroundColor: "rgba(13, 20, 24, 0.94)",
-    borderWidth: 1,
-    borderColor: AUTH.borderStrong,
-    shadowColor: "#000000",
-    shadowOpacity: 0.34,
-    shadowRadius: 28,
-    shadowOffset: { width: 0, height: 15 },
-    elevation: 12,
+    paddingBottom: 16,
+    backgroundColor: theme.colors.surface,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: auth.borderStrong,
+    ...theme.shadows.md,
   },
   deviceNotch: {
     position: "absolute",
@@ -592,13 +595,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   panelTitle: {
-    color: AUTH.text,
+    color: auth.text,
     fontSize: 17,
     fontWeight: "800",
   },
   panelCopy: {
     marginTop: 4,
-    color: AUTH.muted,
+    color: auth.muted,
     fontSize: 11,
     lineHeight: 16,
   },
@@ -606,16 +609,16 @@ const styles = StyleSheet.create({
     gap: 9,
   },
   featureCard: {
-    minHeight: 67,
+    minHeight: 68,
     flexDirection: "row",
     alignItems: "center",
-    gap: 11,
-    paddingHorizontal: 11,
-    paddingVertical: 10,
-    borderRadius: 15,
-    backgroundColor: AUTH.panelRaised,
-    borderWidth: 1,
-    borderColor: AUTH.border,
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    borderRadius: theme.radius.md,
+    backgroundColor: auth.panelRaised,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: auth.border,
   },
   featureIcon: {
     width: 39,
@@ -630,13 +633,13 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   featureTitle: {
-    color: AUTH.text,
+    color: auth.text,
     fontSize: 12.5,
     fontWeight: "800",
   },
   featureDescription: {
     marginTop: 2,
-    color: AUTH.muted,
+    color: auth.muted,
     fontSize: 9.8,
     lineHeight: 14,
   },
@@ -647,14 +650,14 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   primaryButton: {
-    minHeight: 50,
-    borderRadius: 14,
+    minHeight: redesign.control.largeHeight,
+    borderRadius: theme.radius.md,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     paddingHorizontal: 16,
-    shadowColor: AUTH.cyan,
+    shadowColor: auth.cyan,
     shadowOpacity: 0.24,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 7 },
@@ -666,29 +669,30 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   secondaryButton: {
-    minHeight: 50,
-    borderRadius: 14,
+    minHeight: redesign.control.largeHeight,
+    borderRadius: theme.radius.md,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     paddingHorizontal: 16,
-    backgroundColor: AUTH.panel,
+    backgroundColor: auth.panel,
     borderWidth: 1,
-    borderColor: AUTH.border,
+    borderColor: auth.border,
   },
   secondaryButtonText: {
-    color: AUTH.text,
+    color: auth.text,
     fontSize: 13.5,
     fontWeight: "800",
   },
   secureReturnCard: {
-    gap: 11,
-    borderRadius: 20,
-    padding: 14,
-    backgroundColor: AUTH.panel,
-    borderWidth: 1,
-    borderColor: AUTH.border,
+    gap: 12,
+    borderRadius: theme.radius.xl,
+    padding: 16,
+    backgroundColor: auth.panel,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: auth.border,
+    ...theme.shadows.sm,
   },
   secureReturnHeading: {
     gap: 4,
@@ -700,13 +704,13 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   secureReturnBadgeText: {
-    color: AUTH.success,
+    color: auth.success,
     fontSize: 9,
     fontWeight: "900",
     letterSpacing: 1.1,
   },
   secureReturnTitle: {
-    color: AUTH.text,
+    color: auth.text,
     fontSize: 17,
     fontWeight: "900",
   },
@@ -717,9 +721,9 @@ const styles = StyleSheet.create({
     gap: 11,
     padding: 10,
     borderRadius: 15,
-    backgroundColor: AUTH.panelRaised,
+    backgroundColor: auth.panelRaised,
     borderWidth: 1,
-    borderColor: AUTH.borderStrong,
+    borderColor: auth.borderStrong,
   },
   biometricIcon: {
     width: 42,
@@ -727,20 +731,20 @@ const styles = StyleSheet.create({
     borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: AUTH.cyanSoft,
+    backgroundColor: auth.cyanSoft,
   },
   biometricCopy: {
     flex: 1,
     minWidth: 0,
   },
   biometricTitle: {
-    color: AUTH.text,
+    color: auth.text,
     fontSize: 12.5,
     fontWeight: "800",
   },
   biometricHint: {
     marginTop: 2,
-    color: AUTH.muted,
+    color: auth.muted,
     fontSize: 9.5,
     lineHeight: 13.5,
   },
@@ -757,7 +761,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     flex: 1,
-    color: AUTH.danger,
+    color: auth.danger,
     fontSize: 10,
     lineHeight: 14,
   },
@@ -769,7 +773,7 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   otpFallbackText: {
-    color: AUTH.text,
+    color: auth.text,
     fontSize: 11,
     fontWeight: "700",
   },
@@ -783,7 +787,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   languageText: {
-    color: AUTH.subtle,
+    color: auth.subtle,
     fontSize: 10.5,
     fontWeight: "700",
   },
@@ -793,7 +797,8 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.12)",
   },
   pressed: {
-    opacity: 0.78,
-    transform: [{ scale: 0.992 }],
+    opacity: 0.86,
+    transform: [{ scale: redesign.visual.pressedScale }],
   },
-});
+  });
+}
