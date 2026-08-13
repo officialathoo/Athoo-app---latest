@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { apiErrorToMessage } from "@/lib/apiError";
 
 type Step = "identifier" | "otp" | "reset";
@@ -211,7 +212,15 @@ export default function ForgotPasswordScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <LinearGradient
-          colors={isProvider ? [theme.colors.secondary, theme.colors.secondaryPressed] : [theme.colors.primary, theme.colors.primaryPressed]}
+          colors={
+            theme.dark
+              ? (isProvider
+                  ? ["#17100A", "#5B2A09", "#A94708"]
+                  : ["#07101F", "#0B2A59", "#0C4EA6"])
+              : isProvider
+                ? [theme.colors.secondaryPressed, theme.colors.secondary, "#FF9A45"]
+                : [theme.colors.primaryPressed, theme.colors.primary, "#4EA1FF"]
+          }
           style={[styles.hero, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -440,13 +449,13 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   rowReverse: { flexDirection: "row-reverse" },
 
   hero: {
-    paddingHorizontal: 20,
-    paddingBottom: 30,
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingBottom: 38,
   },
   backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
     backgroundColor: "rgba(255,255,255,0.10)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.16)",
@@ -469,23 +478,21 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     justifyContent: "center",
   },
   logoText: {
-    fontSize: 22,
-    fontWeight: "800",
+    ...theme.typography.h2,
     color: theme.colors.white,
     letterSpacing: -0.5,
   },
   heroTitle: {
-    fontSize: 28,
-    fontWeight: "800",
+    ...theme.typography.display,
     color: theme.colors.white,
-    marginBottom: 5,
-    letterSpacing: -0.45,
+    marginBottom: 6,
+    letterSpacing: -0.6,
   },
   heroSub: {
-    fontSize: 13.5,
-    lineHeight: 19,
-    color: "rgba(255,255,255,0.72)",
-    marginBottom: 13,
+    ...theme.typography.body,
+    color: "rgba(255,255,255,0.82)",
+    marginBottom: 15,
+    maxWidth: 520,
   },
   roleBadge: {
     flexDirection: "row",
@@ -497,7 +504,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignSelf: "flex-start",
     paddingHorizontal: 11,
     paddingVertical: 5,
-    borderRadius: 999,
+    borderRadius: theme.radius.pill,
   },
   roleBadgeText: {
     fontSize: 12,
@@ -507,48 +514,44 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   card: {
     flex: 1,
-    backgroundColor: theme.dark ? "rgba(7,17,31,0.96)" : theme.colors.surface,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    marginTop: -18,
-    paddingHorizontal: 20,
-    paddingTop: 20,
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    marginTop: -20,
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: 24,
     paddingBottom: 44,
-    borderWidth: 1,
-    borderColor: theme.dark ? "rgba(148,163,184,0.16)" : theme.colors.border,
-    shadowColor: "#000",
-    shadowOpacity: 0.20,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: -4 },
-    elevation: 10,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    ...theme.shadows.md,
   },
 
-  form: { gap: 14 },
+  form: { gap: redesign.layout.fieldGap },
   inputGroup: { gap: 7 },
-  label: { fontSize: 13, fontWeight: "700", color: theme.colors.text },
+  label: { ...theme.typography.label, color: theme.colors.text },
 
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: theme.dark ? "rgba(255,255,255,0.045)" : theme.colors.surfaceAlt,
-    borderRadius: 16,
+    backgroundColor: theme.colors.input,
+    borderRadius: theme.radius.md,
     paddingHorizontal: 14,
-    minHeight: 54,
-    borderWidth: 1,
-    borderColor: theme.dark ? "rgba(148,163,184,0.18)" : theme.colors.border,
+    minHeight: redesign.control.standardHeight,
+    borderWidth: redesign.visual.inputBorderWidth,
+    borderColor: theme.colors.border,
     gap: 10,
   },
   input: {
     flex: 1,
-    fontSize: 15.5,
+    ...theme.typography.bodyLg,
     color: theme.colors.text,
     paddingVertical: 0,
   },
 
   otpWrapper: {
     justifyContent: "center",
-    borderColor: theme.colors.primary + "60",
-    backgroundColor: theme.colors.primary + "08",
+    borderColor: (theme.colors.primary + "66"),
+    backgroundColor: theme.colors.infoSoft,
   },
   otpInput: {
     textAlign: "center",
@@ -561,8 +564,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: theme.colors.success + "10",
-    borderRadius: 13,
+    backgroundColor: theme.colors.successSoft,
+    borderRadius: theme.radius.md,
     padding: 11,
     borderWidth: 1,
     borderColor: theme.colors.success + "28",
@@ -577,8 +580,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: theme.colors.secondary + "10",
-    borderRadius: 13,
+    backgroundColor: theme.colors.premiumSoft,
+    borderRadius: theme.radius.md,
     padding: 11,
     borderWidth: 1,
     borderColor: theme.colors.secondary + "28",
@@ -608,27 +611,23 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   primaryBtn: {
-    borderRadius: 17,
+    borderRadius: theme.radius.md,
     overflow: "hidden",
-    shadowColor: "#2563EB",
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 4,
+    ...theme.shadows.sm,
   },
   primaryBtnGrad: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
-    minHeight: 54,
+    minHeight: redesign.control.largeHeight,
   },
   primaryBtnText: {
-    fontSize: 16,
-    fontWeight: "700",
+    ...theme.typography.bodyLg,
+    fontFamily: theme.typography.h3.fontFamily,
     color: theme.colors.white,
   },
   btnDisabled: {
-    opacity: 0.6,
+    opacity: redesign.visual.disabledOpacity,
   },
 });
