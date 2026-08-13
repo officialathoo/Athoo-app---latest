@@ -21,6 +21,7 @@ import { useAuth, UserRole } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { LegalAcceptanceCheckbox, LEGAL_VERSION } from "@/components/ui/LegalAcceptanceCheckbox";
 import { apiErrorToMessage } from "@/lib/apiError";
 
@@ -151,7 +152,13 @@ export default function RegisterScreen() {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: topPad + 10 }]} keyboardShouldPersistTaps="handled">
         <LinearGradient
-          colors={["#061B4E", "#0B63E5", "#1558B4"]}
+          colors={
+            theme.dark
+              ? ["#07101F", "#0B2A59", "#0C4EA6"]
+              : selectedRole === "provider"
+                ? [theme.colors.secondaryPressed, theme.colors.secondary, "#FF9A45"]
+                : [theme.colors.primaryPressed, theme.colors.primary, "#4EA1FF"]
+          }
           style={styles.hero}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -205,111 +212,189 @@ export default function RegisterScreen() {
 }
 
 const createStyles = (theme: AthooTheme) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#061B4E" },
+  container: { flex: 1, backgroundColor: theme.colors.background },
   rowReverse: { flexDirection: "row-reverse" },
-  content: { width: "100%", maxWidth: 560, alignSelf: "center", paddingBottom: 52 },
-  hero: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 26,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
+  content: {
+    width: "100%",
+    maxWidth: redesign.layout.maxContentWidth,
+    alignSelf: "center",
+    paddingBottom: 52,
   },
-  heroTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  hero: {
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: 12,
+    paddingBottom: 42,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+  },
+  heroTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing.md,
+  },
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 13,
-    backgroundColor: "rgba(255,255,255,0.10)",
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
+    backgroundColor: "rgba(255,255,255,0.13)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
+    borderColor: "rgba(255,255,255,0.22)",
     alignItems: "center",
     justifyContent: "center",
   },
-  brandRow: { flexDirection: "row", alignItems: "center", gap: 9 },
-  brandIcon: { width: 48, height: 48, borderRadius: 14, borderWidth: 1, borderColor: "rgba(255,255,255,0.34)" },
-  brandName: { fontSize: 20, fontWeight: "800", color: "#FFFFFF", letterSpacing: -0.3 },
-  header: { marginTop: 24, gap: 6 },
-  title: { fontSize: 30, fontWeight: "800", color: "#FFFFFF", letterSpacing: -0.5 },
-  subtitle: { fontSize: 14, color: "rgba(255,255,255,0.76)", lineHeight: 20 },
+  brandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+  },
+  brandIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: theme.colors.white,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.40)",
+  },
+  brandName: {
+    ...theme.typography.h3,
+    color: theme.colors.white,
+    letterSpacing: -0.3,
+  },
+  header: { marginTop: 26, gap: 6 },
+  title: {
+    ...theme.typography.display,
+    color: theme.colors.white,
+    letterSpacing: -0.7,
+  },
+  subtitle: {
+    ...theme.typography.body,
+    color: "rgba(255,255,255,0.82)",
+    maxWidth: 520,
+  },
   stepBadge: {
     alignSelf: "flex-start",
-    marginTop: 14,
-    paddingHorizontal: 11,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.10)",
+    marginTop: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: theme.radius.pill,
+    backgroundColor: "rgba(255,255,255,0.13)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
+    borderColor: "rgba(255,255,255,0.24)",
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
   },
-  stepBadgeText: { color: "#FFFFFF", fontSize: 11.5, fontWeight: "700" },
+  stepBadgeText: {
+    ...theme.typography.caption,
+    color: theme.colors.white,
+    fontFamily: theme.typography.label.fontFamily,
+  },
   form: {
-    gap: 14,
+    gap: redesign.layout.fieldGap,
     backgroundColor: theme.colors.surface,
-    borderRadius: 24,
-    padding: 17,
-    borderWidth: 1,
+    borderRadius: theme.radius.xl,
+    padding: 20,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.border,
-    marginHorizontal: 18,
-    marginTop: -12,
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 7 },
-    elevation: 6,
+    marginHorizontal: redesign.layout.horizontalPadding,
+    marginTop: -18,
+    ...theme.shadows.md,
   },
   inputGroup: { gap: 7 },
-  label: { fontSize: 13, fontWeight: "700", color: theme.colors.text },
+  label: {
+    ...theme.typography.label,
+    color: theme.colors.text,
+  },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: theme.dark ? "rgba(255,255,255,0.045)" : theme.colors.surfaceAlt,
-    borderRadius: 16,
+    backgroundColor: theme.colors.input,
+    borderRadius: theme.radius.md,
     paddingHorizontal: 14,
-    minHeight: 54,
-    borderWidth: 1,
-    borderColor: theme.dark ? "rgba(148,163,184,0.18)" : theme.colors.border,
+    minHeight: redesign.control.standardHeight,
+    borderWidth: redesign.visual.inputBorderWidth,
+    borderColor: theme.colors.border,
     gap: 10,
   },
-  input: { flex: 1, fontSize: 15.5, color: theme.colors.text, paddingVertical: 0 },
-  otpInput: { fontSize: 26, fontWeight: "800", letterSpacing: 14, textAlign: "center" },
+  input: {
+    flex: 1,
+    ...theme.typography.bodyLg,
+    color: theme.colors.text,
+    paddingVertical: 0,
+  },
+  otpInput: {
+    fontSize: 27,
+    lineHeight: 34,
+    fontFamily: theme.typography.h1.fontFamily,
+    letterSpacing: 14,
+    textAlign: "center",
+  },
   otpHintBox: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: theme.colors.secondary + "12",
-    borderRadius: 13,
-    padding: 11,
+    backgroundColor: theme.colors.premiumSoft,
+    borderRadius: theme.radius.md,
+    padding: 12,
     borderWidth: 1,
-    borderColor: theme.colors.secondary + "28",
+    borderColor: theme.colors.secondary + "40",
   },
-  otpHintText: { fontSize: 13, color: theme.colors.text },
-  otpTimerText: { textAlign: "center", fontSize: 12, color: theme.colors.textSecondary, marginTop: -2 },
-  otpTimerExpired: { color: theme.colors.danger, fontWeight: "700" },
-  resendBtn: { alignSelf: "center", paddingVertical: 7, paddingHorizontal: 10 },
-  resendText: { fontSize: 13.5, color: theme.colors.primary, fontWeight: "700" },
+  otpHintText: {
+    ...theme.typography.body,
+    color: theme.colors.text,
+  },
+  otpTimerText: {
+    ...theme.typography.caption,
+    textAlign: "center",
+    color: theme.colors.textSecondary,
+    marginTop: -2,
+  },
+  otpTimerExpired: {
+    color: theme.colors.danger,
+    fontFamily: theme.typography.label.fontFamily,
+  },
+  resendBtn: {
+    alignSelf: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  resendText: {
+    ...theme.typography.body,
+    color: theme.colors.primary,
+    fontFamily: theme.typography.label.fontFamily,
+  },
   phoneDisplay: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: theme.colors.success + "12",
-    borderRadius: 13,
+    backgroundColor: theme.colors.successSoft,
+    borderRadius: theme.radius.md,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 11,
     borderWidth: 1,
-    borderColor: theme.colors.success + "28",
+    borderColor: theme.colors.success + "40",
   },
-  phoneDisplayText: { fontSize: 13, color: theme.colors.text, fontWeight: "600" },
+  phoneDisplayText: {
+    ...theme.typography.body,
+    color: theme.colors.text,
+    fontFamily: theme.typography.label.fontFamily,
+  },
   loginRow: {
     flexDirection: "row",
     justifyContent: "center",
+    alignItems: "center",
     marginTop: 22,
-    marginHorizontal: 18,
-    paddingVertical: 10,
+    marginHorizontal: redesign.layout.horizontalPadding,
+    paddingVertical: 12,
   },
-  loginText: { fontSize: 14, color: "rgba(255,255,255,0.76)" },
-  loginLink: { fontSize: 14, color: "#71C6FF", fontWeight: "800" },
+  loginText: {
+    ...theme.typography.body,
+    color: theme.colors.textSecondary,
+  },
+  loginLink: {
+    ...theme.typography.body,
+    color: theme.colors.primary,
+    fontFamily: theme.typography.h3.fontFamily,
+  },
 });
