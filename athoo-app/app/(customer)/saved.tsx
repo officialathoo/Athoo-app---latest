@@ -5,6 +5,8 @@ import { useAuth } from "@/context/AuthContext";
 import { Provider } from "@/data/services";
 import { api } from "@/services/api";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
@@ -57,7 +59,7 @@ export default function SavedProvidersScreen() {
     <View style={[styles.container, { paddingTop: topPad, backgroundColor: theme.colors.background }]} testID="saved-providers-screen">
       <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
         <Pressable
-          style={({ pressed }) => [styles.backBtn, { backgroundColor: theme.colors.surfaceAlt }, pressed && styles.pressed]}
+          style={({ pressed }) => [styles.backBtn, { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.border }, pressed && styles.pressed]}
           onPress={() => router.back()}
           accessibilityRole="button"
           accessibilityLabel="Go back"
@@ -91,7 +93,7 @@ export default function SavedProvidersScreen() {
             <Icon name="alert-circle" size={32} color={theme.colors.danger} />
             <AppText variant="h3" align="center">Saved providers unavailable</AppText>
             <AppText variant="body" tone="secondary" align="center">{error}</AppText>
-            <Pressable style={[styles.primaryButton, { backgroundColor: theme.colors.primary }]} onPress={loadProviders} testID="saved-providers-retry">
+            <Pressable style={[styles.primaryButton, { backgroundColor: theme.colors.primary }, theme.shadows.sm]} onPress={loadProviders} testID="saved-providers-retry">
               <AppText variant="label" tone="inverse">Try again</AppText>
             </Pressable>
           </AppCard>
@@ -107,7 +109,7 @@ export default function SavedProvidersScreen() {
               Save providers you trust, then return here for faster repeat bookings on any device.
             </AppText>
             <Pressable
-              style={[styles.primaryButton, { backgroundColor: theme.colors.primary }]}
+              style={[styles.primaryButton, { backgroundColor: theme.colors.primary }, theme.shadows.sm]}
               onPress={() => router.push("/(customer)/service-providers?serviceId=all" as never)}
               testID="saved-providers-browse"
             >
@@ -138,7 +140,7 @@ export default function SavedProvidersScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={`Remove ${provider.name} from saved providers`}
                     testID={`saved-provider-remove-${provider.id}`}
-                    style={({ pressed }) => [styles.removeButton, { backgroundColor: theme.colors.dangerSoft }, pressed && styles.pressed]}
+                    style={({ pressed }) => [styles.removeButton, { backgroundColor: theme.colors.dangerSoft, borderColor: theme.colors.danger + "30" }, pressed && styles.pressed]}
                   >
                     <Icon name="heart" size={16} color={theme.colors.danger} />
                   </Pressable>
@@ -154,20 +156,52 @@ export default function SavedProvidersScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingBottom: 14, paddingTop: 10, borderBottomWidth: 1 },
-  backBtn: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center", marginRight: 12 },
-  pressed: { opacity: 0.72 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingBottom: 14,
+    paddingTop: 10,
+    borderBottomWidth: redesign.visual.cardBorderWidth,
+  },
+  backBtn: {
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+    borderWidth: redesign.visual.cardBorderWidth,
+  },
+  pressed: { opacity: 0.82, transform: [{ scale: redesign.visual.pressedScale }] },
   headerTextWrap: { flex: 1, gap: 2 },
-  loadingList: { padding: 16, gap: 12 },
+  loadingList: { padding: redesign.layout.horizontalPadding, gap: 12 },
   skeletonCard: { flexDirection: "row", gap: 12, alignItems: "center" },
   skeletonBody: { flex: 1, gap: 9 },
-  centerState: { flex: 1, justifyContent: "center", padding: 20 },
+  centerState: { flex: 1, justifyContent: "center", padding: redesign.layout.horizontalPadding },
   stateCard: { alignItems: "center", gap: 12, paddingVertical: 28 },
-  emptyIconWrap: { width: 68, height: 68, borderRadius: 34, alignItems: "center", justifyContent: "center" },
-  primaryButton: { minHeight: 46, borderRadius: 14, paddingHorizontal: 18, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 4 },
-  listContent: { padding: 16, paddingBottom: 40 },
+  emptyIconWrap: { width: 68, height: 68, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
+  primaryButton: {
+    minHeight: redesign.control.standardHeight,
+    borderRadius: radius.md,
+    paddingHorizontal: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 4,
+  },
+  listContent: { padding: redesign.layout.horizontalPadding, paddingBottom: 40 },
   tipCard: { flexDirection: "row", gap: 12, alignItems: "center", marginBottom: 16 },
   tipText: { flex: 1, gap: 2 },
   cardWrap: { position: "relative" },
-  removeButton: { width: 34, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center", marginTop: 8 },
+  removeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8,
+    borderWidth: redesign.visual.cardBorderWidth,
+  },
 });
