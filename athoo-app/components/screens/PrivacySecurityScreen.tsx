@@ -8,6 +8,8 @@ import { Icon } from "@/components/ui/Icon";
 import { useAuth } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 import { api } from "@/services/api";
 import { apiErrorToMessage } from "@/lib/apiError";
 import { AccountActionVerificationModal } from "./AccountActionVerificationModal";
@@ -232,7 +234,7 @@ function PolicyLink({ icon, label, onPress }: { icon: string; label: string; onP
       style={({ pressed }) => [
         styles.linkRow,
         { borderBottomColor: theme.colors.divider },
-        pressed && { opacity: 0.68 },
+        pressed && styles.pressed,
       ]}
     >
       <View style={[styles.linkIcon, { backgroundColor: theme.colors.surfaceAlt }]}>
@@ -247,16 +249,60 @@ function PolicyLink({ icon, label, onPress }: { icon: string; label: string; onP
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   flex: { flex: 1 },
-  content: { paddingHorizontal: 16, paddingTop: 14, gap: 10},
-  hero: { alignItems: "center", gap: 7, paddingVertical: 4 },
-  heroIcon: { width: 58, height: 58, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  pressed: {
+    opacity: 0.82,
+    transform: [{ scale: redesign.visual.pressedScale }],
+  },
+  content: {
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: redesign.layout.fieldGap,
+    gap: redesign.layout.cardGap,
+  },
+  hero: {
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 6,
+  },
+  heroIcon: {
+    width: redesign.control.largeHeight,
+    height: redesign.control.largeHeight,
+    borderRadius: radius.lg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   heroCopy: { maxWidth: 560, lineHeight: 21 },
-  itemRow: { flexDirection: "row", alignItems: "flex-start", gap: 11},
-  itemIcon: { width: 42, height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  itemRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: redesign.layout.cardGap,
+  },
+  itemIcon: {
+    width: redesign.control.compactHeight,
+    height: redesign.control.compactHeight,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   itemDescription: { lineHeight: 19, marginTop: 4 },
-  links: { marginTop: 6},
-  linkRow: { minHeight: 52, flexDirection: "row", alignItems: "center", gap: 11, borderBottomWidth: StyleSheet.hairlineWidth },
-  linkIcon: { width: 34, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  dangerHeader: { flexDirection: "row", alignItems: "center", gap: 8},
-  dangerCopy: { lineHeight: 19, marginTop: 6},
+  links: { marginTop: 8 },
+  linkRow: {
+    minHeight: redesign.control.largeHeight,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: redesign.layout.cardGap,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  linkIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dangerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  dangerCopy: { lineHeight: 19, marginTop: 6 },
 });
