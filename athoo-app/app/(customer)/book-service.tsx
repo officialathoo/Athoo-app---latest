@@ -1427,22 +1427,23 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   successWrap: { alignItems: "center", justifyContent: "center", padding: 32 },
   uploadProgressWrap: { width: "100%", gap: 8, marginTop: 12 },
-  uploadProgressTrack: { height: 8, borderRadius: 4, backgroundColor: theme.colors.border, overflow: "hidden" },
-  uploadProgressFill: { height: "100%", borderRadius: 4, backgroundColor: theme.colors.primary },
-  uploadProgressText: { fontSize: 12, color: theme.colors.textSecondary, textAlign: "center", fontWeight: "600" },
+  uploadProgressTrack: { height: 8, borderRadius: theme.radius.pill, backgroundColor: theme.colors.border, overflow: "hidden" },
+  uploadProgressFill: { height: "100%", borderRadius: theme.radius.pill, backgroundColor: theme.colors.primary },
+  uploadProgressText: { ...theme.typography.caption, color: theme.colors.textSecondary, textAlign: "center", fontFamily: theme.typography.label.fontFamily },
   successCircle: {
-    width: 100, height: 100, borderRadius: 50,
+    width: 100, height: 100, borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.success, alignItems: "center", justifyContent: "center", marginBottom: 20,
+    ...theme.shadows.md,
   },
-  successTitle: { fontSize: 24, fontWeight: "800", color: theme.colors.text, textAlign: "center" },
-  successSub: { fontSize: 14, color: theme.colors.textSecondary, textAlign: "center", lineHeight: 22, marginTop: 8 },
+  successTitle: { ...theme.typography.h1, color: theme.colors.text, textAlign: "center" },
+  successSub: { ...theme.typography.body, color: theme.colors.textSecondary, textAlign: "center", marginTop: 8 },
   viewResponsesBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-    backgroundColor: theme.colors.primary, borderRadius: 16, paddingVertical: 16, paddingHorizontal: 24,
-    marginTop: 24, width: "100%",
+    backgroundColor: theme.colors.primary, borderRadius: theme.radius.md, minHeight: redesign.control.standardHeight, paddingHorizontal: 24,
+    marginTop: 24, width: "100%", ...theme.shadows.sm,
   },
-  homeBtn: { alignItems: "center", paddingVertical: 14, marginTop: 8, width: "100%" },
-  homeBtnText: { fontSize: 14, fontWeight: "700", color: theme.colors.textSecondary },
+  homeBtn: { alignItems: "center", justifyContent: "center", minHeight: redesign.control.standardHeight, marginTop: 8, width: "100%" },
+  homeBtnText: { ...theme.typography.label, color: theme.colors.textSecondary },
 
   header: {
     backgroundColor: theme.colors.surface, paddingHorizontal: redesign.layout.horizontalPadding, paddingTop: 12, paddingBottom: 12,
@@ -1570,33 +1571,36 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   cityOnlyWarnText: { flex: 1, fontSize: 11, color: theme.colors.warning, lineHeight: 16, fontWeight: "600" },
 
   textAreaWrap: {
-    backgroundColor: theme.colors.surface, borderRadius: 14, borderWidth: 1, borderColor: theme.colors.border, padding: 12,
+    backgroundColor: theme.colors.surface, borderRadius: theme.radius.lg, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border, padding: 12,
+    ...theme.shadows.sm,
   },
-  textArea: { fontSize: 14, color: theme.colors.text, minHeight: 104, textAlignVertical: "top", lineHeight: 21},
+  textArea: { ...theme.typography.body, color: theme.colors.text, minHeight: 104, textAlignVertical: "top" },
 
-  fieldLabel: { fontSize: 15, fontWeight: "700", color: theme.colors.text },
-  fieldHint: { fontSize: 12, color: theme.colors.textMuted, marginTop: -8 },
+  fieldLabel: { ...theme.typography.label, color: theme.colors.text },
+  fieldHint: { ...theme.typography.caption, color: theme.colors.textMuted, marginTop: -6 },
 
   videoChosen: {
-    flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: theme.colors.success + "12",
-    borderRadius: 12, padding: 14, borderWidth: 1, borderColor: theme.colors.success + "30",
+    flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: theme.colors.successSoft,
+    borderRadius: theme.radius.md, padding: 14, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.success + "30",
   },
-  videoChosenText: { flex: 1, fontSize: 13, fontWeight: "700", color: theme.colors.success },
+  videoChosenText: { flex: 1, ...theme.typography.label, color: theme.colors.success },
   videoBtns: { flexDirection: "row", gap: 12 },
   videoBtn: {
     flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12, paddingVertical: 12,
+    backgroundColor: theme.colors.surface, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border, borderRadius: theme.radius.md,
+    minHeight: redesign.control.standardHeight, ...theme.shadows.sm,
   },
-  videoBtnText: { fontSize: 13, fontWeight: "600", color: theme.colors.primary },
+  videoBtnText: { ...theme.typography.label, color: theme.colors.primary },
 
   dateCard: {
-    width: 64, alignItems: "center", padding: 10, borderRadius: 14,
-    backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border,
+    width: 68, minHeight: 78, alignItems: "center", justifyContent: "center", padding: 10, borderRadius: theme.radius.lg,
+    backgroundColor: theme.colors.surface, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
   dateCardActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
-  dayLbl: { fontSize: 10, fontWeight: "600", color: theme.colors.textSecondary, textTransform: "uppercase" },
-  dateNum: { fontSize: 22, fontWeight: "800", color: theme.colors.text, marginTop: 2 },
-  monthLbl: { fontSize: 10, color: theme.colors.textMuted },
+  dayLbl: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.textSecondary, textTransform: "uppercase" },
+  dateNum: { ...theme.typography.h2, color: theme.colors.text, marginTop: 2 },
+  monthLbl: { ...theme.typography.caption, color: theme.colors.textMuted },
   dateActiveText: { color: theme.colors.onBrand },
 
   chargesCard: {
