@@ -5,6 +5,7 @@ import { useChat } from "@/context/ChatContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { apiErrorToMessage } from "@/lib/apiError";
 import { PrivateImage } from "@/services/storage";
 import { LinearGradient } from "expo-linear-gradient";
@@ -588,20 +589,20 @@ function createStyles(theme: AthooTheme) {
       flexDirection: "row",
       alignItems: "center",
       gap: 12,
-      paddingHorizontal: 18,
+      paddingHorizontal: redesign.layout.horizontalPadding,
       paddingTop: 14,
       paddingBottom: 15,
       backgroundColor: theme.colors.surface,
-      borderBottomWidth: 1,
+      borderBottomWidth: redesign.visual.cardBorderWidth,
       borderBottomColor: theme.colors.border,
+      ...theme.shadows.sm,
     },
     headerCopy: {
       flex: 1,
       minWidth: 0,
     },
     title: {
-      fontSize: 24,
-      fontWeight: "900",
+      ...theme.typography.h1,
       color: theme.colors.text,
       letterSpacing: -0.4,
     },
@@ -616,17 +617,17 @@ function createStyles(theme: AthooTheme) {
       alignSelf: "flex-end",
     },
     headerMetaText: {
-      fontSize: 11,
-      lineHeight: 15,
-      fontWeight: "700",
+      ...theme.typography.caption,
+      fontFamily: theme.typography.label.fontFamily,
     },
     composeButton: {
-      width: 44,
-      height: 44,
-      borderRadius: 14,
+      width: redesign.control.iconButtonSize,
+      height: redesign.control.iconButtonSize,
+      borderRadius: theme.radius.md,
       alignItems: "center",
       justifyContent: "center",
-      borderWidth: 1,
+      borderWidth: redesign.visual.cardBorderWidth,
+      ...theme.shadows.sm,
     },
     secureBadge: {
       minHeight: 34,
@@ -645,31 +646,28 @@ function createStyles(theme: AthooTheme) {
     },
     scrollContent: {
       flexGrow: 1,
-      padding: 14,
+      paddingHorizontal: redesign.layout.horizontalPadding,
+      paddingTop: 14,
       gap: 10,
     },
     cardMotion: {
       width: "100%",
     },
     conversationCard: {
-      minHeight: 88,
+      minHeight: 92,
       flexDirection: "row",
       alignItems: "center",
       gap: 12,
-      padding: 13,
-      borderRadius: 18,
+      padding: 14,
+      borderRadius: theme.radius.lg,
       backgroundColor: theme.colors.surface,
-      borderWidth: 1,
+      borderWidth: redesign.visual.cardBorderWidth,
       borderColor: theme.colors.border,
-      shadowColor: theme.colors.shadow,
-      shadowOffset: { width: 0, height: 3 },
-      shadowOpacity: theme.dark ? 0.18 : 0.07,
-      shadowRadius: 10,
-      elevation: 2,
+      ...theme.shadows.sm,
     },
     cardPressed: {
-      opacity: 0.82,
-      transform: [{ scale: 0.992 }],
+      opacity: 0.86,
+      transform: [{ scale: redesign.visual.pressedScale }],
     },
     avatarWrap: {
       width: 52,
@@ -721,8 +719,7 @@ function createStyles(theme: AthooTheme) {
     },
     chatName: {
       flex: 1,
-      fontSize: 15,
-      fontWeight: "800",
+      ...theme.typography.h3,
       color: theme.colors.text,
     },
     chatNameUnread: {
@@ -739,8 +736,7 @@ function createStyles(theme: AthooTheme) {
     },
     lastMessage: {
       flex: 1,
-      fontSize: 12.5,
-      lineHeight: 17,
+      ...theme.typography.body,
       color: theme.colors.textSecondary,
     },
     lastMessageUnread: {
@@ -767,12 +763,12 @@ function createStyles(theme: AthooTheme) {
     },
     servicePill: {
       maxWidth: "70%",
-      minHeight: 23,
+      minHeight: 24,
       flexDirection: "row",
       alignItems: "center",
       gap: 4,
-      paddingHorizontal: 8,
-      borderRadius: 11.5,
+      paddingHorizontal: 9,
+      borderRadius: theme.radius.pill,
     },
     serviceText: {
       flexShrink: 1,
@@ -790,14 +786,14 @@ function createStyles(theme: AthooTheme) {
       color: theme.colors.textMuted,
     },
     skeletonCard: {
-      minHeight: 88,
+      minHeight: 92,
       flexDirection: "row",
       alignItems: "center",
       gap: 12,
-      padding: 13,
-      borderRadius: 18,
+      padding: 14,
+      borderRadius: theme.radius.lg,
       backgroundColor: theme.colors.surface,
-      borderWidth: 1,
+      borderWidth: redesign.visual.cardBorderWidth,
       borderColor: theme.colors.border,
     },
     skeletonAvatar: {
@@ -850,10 +846,11 @@ function createStyles(theme: AthooTheme) {
       justifyContent: "center",
       paddingHorizontal: 30,
       paddingVertical: 44,
-      borderRadius: 24,
-      borderWidth: 1,
+      borderRadius: theme.radius.xl,
+      borderWidth: redesign.visual.cardBorderWidth,
       borderColor: theme.colors.border,
       backgroundColor: theme.colors.surface,
+      ...theme.shadows.sm,
     },
     emptyIcon: {
       width: 74,
@@ -864,28 +861,27 @@ function createStyles(theme: AthooTheme) {
       marginBottom: 18,
     },
     emptyTitle: {
-      fontSize: 19,
-      fontWeight: "900",
+      ...theme.typography.h2,
       color: theme.colors.text,
       textAlign: "center",
     },
     emptyText: {
       marginTop: 8,
       maxWidth: 330,
-      fontSize: 13,
-      lineHeight: 20,
+      ...theme.typography.body,
       color: theme.colors.textSecondary,
       textAlign: "center",
     },
     emptyAction: {
-      minHeight: 46,
+      minHeight: redesign.control.standardHeight,
       marginTop: 20,
       paddingHorizontal: 18,
-      borderRadius: 14,
+      borderRadius: theme.radius.md,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
       gap: 7,
+      ...theme.shadows.sm,
     },
     emptyActionText: {
       fontSize: 13,
