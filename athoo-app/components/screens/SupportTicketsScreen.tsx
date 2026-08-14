@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 import { api } from "@/services/api";
 import { apiErrorToMessage } from "@/lib/apiError";
 
@@ -215,7 +217,7 @@ export function SupportTicketsScreen({ role }: { role: Role }) {
             accessibilityRole="button"
             accessibilityLabel={tr("Create a new support ticket")}
             onPress={() => router.push(contactRoute)}
-            style={({ pressed }) => [styles.newButton, { backgroundColor: accent }, pressed && { opacity: 0.78 }]}
+            style={({ pressed }) => [styles.newButton, { backgroundColor: accent }, pressed && styles.pressed]}
           >
             <Icon name="plus" size={19} color={theme.colors.white} />
           </Pressable>
@@ -293,23 +295,109 @@ export function SupportTicketsScreen({ role }: { role: Role }) {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   flex: { flex: 1 },
-  newButton: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  list: { paddingHorizontal: 16, paddingTop: 14, gap: 10},
-  ticketCard: { gap: 7},
-  ticketTop: { flexDirection: "row", alignItems: "center", gap: 8},
+  pressed: {
+    opacity: 0.82,
+    transform: [{ scale: redesign.visual.pressedScale }],
+  },
+  newButton: {
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  list: {
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: redesign.layout.fieldGap,
+    gap: redesign.layout.cardGap,
+  },
+  ticketCard: {
+    gap: 8,
+    borderRadius: radius.md,
+  },
+  ticketTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   ticketMessage: { lineHeight: 20 },
-  ticketFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  statusBadge: { minHeight: 26, paddingHorizontal: 9, borderRadius: 13, alignItems: "center", justifyContent: "center" },
-  detailContent: { paddingHorizontal: 16, paddingTop: 14, gap: 10},
-  messageHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8},
-  avatar: { width: 36, height: 36, borderRadius: 11, alignItems: "center", justifyContent: "center" },
+  ticketFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: redesign.control.compactHeight - 12,
+  },
+  statusBadge: {
+    minHeight: 28,
+    paddingHorizontal: 10,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  detailContent: {
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: redesign.layout.fieldGap,
+    gap: redesign.layout.cardGap,
+  },
+  messageHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 8,
+  },
+  avatar: {
+    width: redesign.control.compactHeight,
+    height: redesign.control.compactHeight,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   messageBody: { lineHeight: 21 },
-  centerBlock: { alignItems: "center", gap: 10, paddingVertical: 20},
-  emptyInline: { alignItems: "center", gap: 8, paddingVertical: 10 },
-  errorRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
-  fullCenter: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 28 },
-  largeIcon: { width: 72, height: 72, borderRadius: 24, alignItems: "center", justifyContent: "center", marginBottom: 4 },
-  centerCopy: { maxWidth: 520, lineHeight: 22 },
-  actionWidth: { maxWidth: 420, marginTop: 6 },
-  compactError: { borderRadius: 12, padding: 12, flexDirection: "row", alignItems: "flex-start", gap: 9 },
+  centerBlock: {
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: redesign.layout.sectionGap,
+  },
+  emptyInline: {
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 12,
+  },
+  errorRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  fullCenter: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: redesign.layout.cardGap,
+    paddingHorizontal: 28,
+  },
+  largeIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: radius.xl,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
+  },
+  centerCopy: {
+    maxWidth: 520,
+    lineHeight: 22,
+  },
+  actionWidth: {
+    maxWidth: 420,
+    minHeight: redesign.control.standardHeight,
+    marginTop: 6,
+  },
+  compactError: {
+    borderRadius: radius.md,
+    padding: 12,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 9,
+    borderWidth: redesign.visual.cardBorderWidth,
+  },
 });
