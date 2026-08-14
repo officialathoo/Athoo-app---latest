@@ -14,6 +14,8 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 import { api } from "@/services/api";
 import { apiErrorToMessage } from "@/lib/apiError";
 
@@ -162,6 +164,7 @@ export function AccountActionVerificationModal({
               backgroundColor: theme.colors.surface,
               borderColor: theme.colors.border,
               paddingBottom: Math.max(insets.bottom, 18),
+              ...theme.shadows.md,
             },
           ]}
         >
@@ -287,14 +290,42 @@ export function AccountActionVerificationModal({
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(15,23,42,0.5)" },
-  sheet: { maxHeight: "92%", borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1 },
-  content: { padding: 20, gap: 13 },
-  header: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
-  icon: { width: 46, height: 46, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  sheet: {
+    maxHeight: "92%",
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    borderWidth: redesign.visual.cardBorderWidth,
+  },
+  content: {
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: redesign.layout.sectionGap,
+    gap: redesign.layout.fieldGap,
+  },
+  header: { flexDirection: "row", alignItems: "flex-start", gap: redesign.layout.cardGap },
+  icon: {
+    width: redesign.control.standardHeight,
+    height: redesign.control.standardHeight,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   flex: { flex: 1 },
   description: { lineHeight: 18, marginTop: 3 },
-  method: { minHeight: 64, borderRadius: 14, borderWidth: 1.5, padding: 12, flexDirection: "row", alignItems: "center", gap: 11 },
-  codeArea: { gap: 10 },
-  codeInput: { fontSize: 22, letterSpacing: 9, textAlign: "center" },
+  method: {
+    minHeight: 64,
+    borderRadius: radius.lg,
+    borderWidth: redesign.visual.inputBorderWidth,
+    padding: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+  },
+  codeArea: { gap: redesign.layout.cardGap },
+  codeInput: {
+    fontSize: 22,
+    letterSpacing: 9,
+    textAlign: "center",
+    minHeight: redesign.control.largeHeight,
+  },
   timerText: { textAlign: "center" },
 });
