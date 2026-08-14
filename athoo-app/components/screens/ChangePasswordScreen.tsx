@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 import { api } from "@/services/api";
 import { apiErrorToMessage } from "@/lib/apiError";
 import { useAuth } from "@/context/AuthContext";
@@ -72,7 +74,7 @@ function PasswordField({ label, value, onChangeText, placeholder, visible, onTog
           accessibilityLabel={visible ? tr("Hide password") : tr("Show password")}
           hitSlop={8}
           onPress={onToggle}
-          style={({ pressed }) => [styles.eyeButton, pressed && { opacity: 0.6 }]}
+          style={({ pressed }) => [styles.eyeButton, pressed && styles.pressed]}
         >
           <Icon name={visible ? "eye-off" : "eye"} size={19} color={theme.colors.textMuted} />
         </Pressable>
@@ -236,14 +238,63 @@ export function ChangePasswordScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   flex: { flex: 1 },
-  content: { paddingHorizontal: 16, paddingTop: 16, gap: 14},
-  infoRow: { flexDirection: "row", alignItems: "flex-start", gap: 10},
-  infoIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  infoCopy: { lineHeight: 19, marginTop: 3 },
-  form: { gap: 14},
-  fieldGroup: { gap: 6},
-  inputWrap: { minHeight: 50, borderRadius: 13, borderWidth: 1.5, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12},
-  input: { flex: 1, minHeight: 46, fontSize: 14},
-  eyeButton: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
-  tipRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8},
+  pressed: {
+    opacity: 0.72,
+    transform: [{ scale: redesign.visual.pressedScale }],
+  },
+  content: {
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: redesign.layout.fieldGap,
+    gap: redesign.layout.cardGap,
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: redesign.layout.cardGap,
+  },
+  infoIcon: {
+    width: redesign.control.compactHeight,
+    height: redesign.control.compactHeight,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  infoCopy: {
+    lineHeight: 19,
+    marginTop: 3,
+  },
+  form: {
+    gap: redesign.layout.fieldGap,
+  },
+  fieldGroup: {
+    gap: 7,
+  },
+  inputWrap: {
+    minHeight: redesign.control.standardHeight,
+    borderRadius: radius.md,
+    borderWidth: redesign.visual.inputBorderWidth,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: redesign.layout.cardGap,
+  },
+  input: {
+    flex: 1,
+    minHeight: redesign.control.compactHeight,
+    fontSize: 14,
+  },
+  eyeButton: {
+    width: redesign.control.compactHeight,
+    height: redesign.control.compactHeight,
+    borderRadius: radius.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tipRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 8,
+    minHeight: 24,
+  },
 });
