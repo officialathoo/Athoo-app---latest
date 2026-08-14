@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 import { api } from "@/services/api";
 import { apiErrorToMessage } from "@/lib/apiError";
 
@@ -96,7 +98,11 @@ export function HelpScreen({ role }: { role: Role }) {
             accessibilityRole="button"
             accessibilityLabel={tr("Contact support")}
             onPress={() => router.push(`/${group}/contact-support` as any)}
-            style={({ pressed }) => [styles.headerIcon, { backgroundColor: theme.colors.infoSoft }, pressed && { opacity: 0.7 }]}
+            style={({ pressed }) => [
+              styles.headerIcon,
+              { backgroundColor: theme.colors.infoSoft, borderColor: theme.colors.border },
+              pressed && styles.pressed,
+            ]}
           >
             <Icon name="headphones" size={20} color={accent} />
           </Pressable>
@@ -183,22 +189,63 @@ export function HelpScreen({ role }: { role: Role }) {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   flex: { flex: 1 },
-  headerIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  content: { paddingHorizontal: 16, paddingTop: 14, gap: 10},
-  heroRow: { flexDirection: "row", alignItems: "flex-start", gap: 11},
-  heroIcon: { width: 46, height: 46, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  headerIcon: {
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: redesign.visual.cardBorderWidth,
+  },
+  pressed: { opacity: 0.82, transform: [{ scale: redesign.visual.pressedScale }] },
+  content: {
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: 14,
+    gap: redesign.layout.cardGap,
+  },
+  heroRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  heroIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   heroCopy: { lineHeight: 20, marginTop: 4 },
-  heroActions: { flexDirection: "row", gap: 8, marginTop: 12},
-  flexButton: { flex: 1 },
-  sectionHeading: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 4},
-  faqCard: { gap: 0 },
-  faqQuestionRow: { flexDirection: "row", alignItems: "center", gap: 9},
-  faqIcon: { width: 34, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  answerWrap: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 12, paddingTop: 12, gap: 10 },
+  heroActions: { flexDirection: "row", gap: 10, marginTop: 14 },
+  flexButton: { flex: 1, minHeight: redesign.control.standardHeight },
+  sectionHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginTop: 6,
+  },
+  faqCard: { gap: 0, borderRadius: radius.lg },
+  faqQuestionRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  faqIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  answerWrap: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    marginTop: 12,
+    paddingTop: 12,
+    gap: 10,
+  },
   answer: { lineHeight: 21 },
-  loadingBox: { alignItems: "center", gap: 10, paddingVertical: 28},
+  loadingBox: { alignItems: "center", gap: 10, paddingVertical: 28 },
   errorRow: { flexDirection: "row", alignItems: "flex-start", gap: 11 },
   errorCopy: { lineHeight: 19, marginTop: 4 },
-  emptyFaqs: { alignItems: "center", gap: 9, paddingVertical: 10 },
-  warning: { borderRadius: 12, padding: 12, flexDirection: "row", alignItems: "flex-start", gap: 9 },
+  emptyFaqs: { alignItems: "center", gap: 9, paddingVertical: 12 },
+  warning: {
+    borderRadius: radius.md,
+    padding: 12,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 9,
+  },
 });
