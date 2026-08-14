@@ -14,6 +14,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText, ProviderJobsSkeleton, ProviderMetricCard } from "@/components/design";
 import { EmptyView } from "@/components/ui/UiState";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 import type { AthooTheme } from "@/design/theme";
 import { useLang } from "@/context/LanguageContext";
 import { BookingCard } from "@/components/ui/BookingCard";
@@ -359,17 +361,30 @@ export default function ProviderJobsScreen() {
 
 const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  loadMoreButton: { minHeight: 48, borderWidth: 1, borderRadius: 14, marginTop: 12, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  loadMoreButton: {
+    minHeight: redesign.control.standardHeight,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderRadius: radius.md,
+    marginTop: redesign.layout.cardGap,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    ...theme.shadows.sm,
+  },
   loadMoreText: { fontSize: 14, fontWeight: "800" },
 
   header: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 16,
+    gap: redesign.layout.cardGap,
+    paddingHorizontal: redesign.layout.horizontalPadding,
     paddingTop: 12,
     paddingBottom: 10,
     backgroundColor: theme.colors.surface,
+    borderBottomWidth: redesign.visual.cardBorderWidth,
+    borderBottomColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
 
   title: {
@@ -380,10 +395,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   alertBadge: {
-    backgroundColor: theme.colors.danger + "20",
+    backgroundColor: theme.colors.dangerSoft,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 20,
+    borderRadius: radius.pill,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.danger + "25",
   },
 
   alertText: {
@@ -394,11 +411,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   summaryRow: {
     flexDirection: "row",
-    gap: 6,
-    paddingHorizontal: 14,
+    gap: 8,
+    paddingHorizontal: redesign.layout.horizontalPadding,
     paddingVertical: 8,
     backgroundColor: theme.colors.surface,
-    borderBottomWidth: 1,
+    borderBottomWidth: redesign.visual.cardBorderWidth,
     borderBottomColor: theme.colors.border,
   },
 
@@ -429,25 +446,25 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   filterContent: {
-    paddingLeft: 14,
-    paddingRight: 22,
-    paddingVertical: 5,
-    gap: 6,
+    paddingLeft: redesign.layout.horizontalPadding,
+    paddingRight: redesign.layout.horizontalPadding + 8,
+    paddingVertical: 6,
+    gap: 8,
     alignItems: "center",
-    minHeight: 44,
+    minHeight: redesign.control.standardHeight,
   },
 
   filterChip: {
-    minHeight: 34,
+    minHeight: redesign.control.compactHeight,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 5,
-    paddingHorizontal: 11,
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: radius.pill,
     backgroundColor: theme.colors.surfaceAlt,
-    borderWidth: 1,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.border,
   },
 
@@ -468,9 +485,10 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   filterBadge: {
     backgroundColor: theme.colors.danger,
-    width: 18,
+    minWidth: 18,
     height: 18,
-    borderRadius: 9,
+    paddingHorizontal: 4,
+    borderRadius: radius.pill,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -486,9 +504,13 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   scrollContent: {
-    padding: 16,
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: redesign.layout.cardGap,
     paddingBottom: 100,
-    gap: 10,
+    gap: redesign.layout.cardGap,
+    width: "100%",
+    maxWidth: redesign.layout.maxContentWidth,
+    alignSelf: "center",
   },
 
   empty: {
@@ -511,20 +533,17 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   negCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 14,
-    padding: 14,
+    borderRadius: radius.lg,
+    padding: redesign.layout.fieldGap,
     gap: 10,
-    borderWidth: 1,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.secondary + "30",
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 1,
+    ...theme.shadows.sm,
   },
 
   negCardPressed: {
-    opacity: 0.9,
+    opacity: 0.82,
+    transform: [{ scale: redesign.visual.pressedScale }],
   },
 
   negHeader: {
@@ -535,10 +554,10 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   negIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: theme.colors.secondary + "20",
+    width: redesign.control.compactHeight,
+    height: redesign.control.compactHeight,
+    borderRadius: radius.md,
+    backgroundColor: theme.colors.premiumSoft,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -560,7 +579,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexShrink: 0,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 20,
+    borderRadius: radius.pill,
   },
 
   negStatusText: {
@@ -576,10 +595,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   negAmount: {
     flex: 1,
     backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 10,
-    padding: 8,
+    borderRadius: radius.md,
+    padding: 9,
     alignItems: "center",
     gap: 2,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
   },
 
   negAmountLabel: {
@@ -600,13 +621,14 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   negAcceptBtn: {
     flex: 1,
+    minHeight: redesign.control.compactHeight,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 5,
     backgroundColor: theme.colors.success,
-    borderRadius: 10,
-    paddingVertical: 7,
+    borderRadius: radius.md,
+    ...theme.shadows.sm,
   },
 
   negAcceptText: {
@@ -617,14 +639,14 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   negCounterBtn: {
     flex: 1,
+    minHeight: redesign.control.compactHeight,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 5,
-    backgroundColor: theme.colors.secondary + "15",
-    borderRadius: 10,
-    paddingVertical: 7,
-    borderWidth: 1,
+    backgroundColor: theme.colors.premiumSoft,
+    borderRadius: radius.md,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.secondary + "40",
   },
 
@@ -636,14 +658,14 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   negRejectBtn: {
     flex: 1,
+    minHeight: redesign.control.compactHeight,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 5,
-    backgroundColor: theme.colors.danger + "10",
-    borderRadius: 10,
-    paddingVertical: 7,
-    borderWidth: 1,
+    backgroundColor: theme.colors.dangerSoft,
+    borderRadius: radius.md,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.danger + "30",
   },
 
