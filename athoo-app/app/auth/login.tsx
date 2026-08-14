@@ -22,7 +22,7 @@ import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
 import { redesign } from "@/design/redesign";
-import { isBiometricAvailable, isBiometricEnabled, getBiometricLabel, getBiometricType, type BiometricType } from "@/services/biometric";
+import { isBiometricAvailable, isBiometricEnabled, getBiometricLabel, getBiometricRole, getBiometricType, type BiometricType } from "@/services/biometric";
 import { apiErrorToMessage } from "@/lib/apiError";
 
 type LoginTab = "otp" | "password";
@@ -40,7 +40,7 @@ export default function LoginScreen() {
 
   const isProvider = role === "provider";
 
-  const [tab, setTab] = useState<LoginTab>("otp");
+  const [tab, setTab] = useState<LoginTab>("password");
   const [rememberMe, setRememberMe] = useState(true);
 
   const [otpChannel, setOtpChannel] = useState<"phone" | "email">("phone");
@@ -73,9 +73,13 @@ export default function LoginScreen() {
 
   useEffect(() => {
     const checkBiometric = async () => {
-      const hardwareAvailable = await isBiometricAvailable();
-      const enabled = await isBiometricEnabled();
-      setBiometricAvailable(hardwareAvailable && enabled);
+      const [hardwareAvailable, enabled, savedRole] = await Promise.all([
+        isBiometricAvailable(),
+        isBiometricEnabled(),
+        getBiometricRole(),
+      ]);
+      const roleMatches = savedRole === (isProvider ? "provider" : "customer");
+      setBiometricAvailable(hardwareAvailable && enabled && roleMatches);
       if (hardwareAvailable) {
         const [label, type] = await Promise.all([getBiometricLabel(), getBiometricType()]);
         setBiometricBtnLabel(tr("Sign in with {{method}}", { method: label }));
@@ -245,14 +249,7 @@ export default function LoginScreen() {
         >
           <Pressable
             style={styles.backBtn}
-            onPress={() => {
-              if (tab === "otp" && otpStep === "otp") {
-                setOtpStep("phone");
-                setOtp("");
-              } else {
-                router.back();
-              }
-            }}
+            onPress={() => router.back()}
           >
             <Icon name="arrow-left" size={20} color={theme.colors.white} />
           </Pressable>
@@ -283,229 +280,16 @@ export default function LoginScreen() {
         </LinearGradient>
 
         <View style={styles.card}>
-          <View style={[styles.tabs, localizedRow]}>
-            <Pressable
-              style={[styles.tab, tab === "otp" && styles.tabActive]}
-              onPress={() => {
-                setTab("otp");
-                setOtpStep("phone");
-                setOtp("");
-              }}
-            >
-              <Icon
-                name="phone"
-                size={14}
-                color={tab === "otp" ? theme.colors.primary : theme.colors.textSecondary}
-              />
-              <Text style={[styles.tabLabel, tab === "otp" && styles.tabLabelActive]}>
-                {tr("Verification Code")}
-              </Text>
-            </Pressable>
-
-            <Pressable
-              testID="login-password-tab"
-              style={[styles.tab, tab === "password" && styles.tabActive]}
-              onPress={() => setTab("password")}
-            >
-              <Icon
-                name="lock"
-                size={14}
-                color={tab === "password" ? theme.colors.primary : theme.colors.textSecondary}
-              />
-              <Text style={[styles.tabLabel, tab === "password" && styles.tabLabelActive]}>
-                {tr("Password")}
-              </Text>
-            </Pressable>
-          </View>
-
-          {biometricAvailable && (
-            <Pressable
-              style={[styles.biometricBtn, localizedRow]}
-              onPress={handleBiometricLogin}
-              disabled={loading}
-            >
-              <Icon name={biometricType === "face" ? "scan-face" : biometricType === "iris" ? "eye" : biometricType === "fingerprint" ? "fingerprint" : "shield"} size={20} color={theme.colors.primary} />
-              <Text style={[styles.biometricText, localizedText]}>{biometricBtnLabel}</Text>
-            </Pressable>
-          )}
-
-          {tab === "otp" && (
-            <View style={styles.form}>
-              <View style={[styles.otpChannelTabs, localizedRow]}>
-                <Pressable
-                  style={[styles.otpChannelTab, otpChannel === "phone" && styles.otpChannelTabActive]}
-                  onPress={() => { setOtpChannel("phone"); setOtpStep("phone"); setOtp(""); }}
-                >
-                  <Icon name="phone" size={14} color={otpChannel === "phone" ? theme.colors.primary : theme.colors.textSecondary} />
-                  <Text style={[styles.otpChannelText, otpChannel === "phone" && styles.otpChannelTextActive]}>{tr("Mobile Number")}</Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.otpChannelTab, otpChannel === "email" && styles.otpChannelTabActive]}
-                  onPress={() => { setOtpChannel("email"); setOtpStep("phone"); setOtp(""); }}
-                >
-                  <Icon name="mail" size={14} color={otpChannel === "email" ? theme.colors.primary : theme.colors.textSecondary} />
-                  <Text style={[styles.otpChannelText, otpChannel === "email" && styles.otpChannelTextActive]}>{tr("Email Address")}</Text>
-                </Pressable>
-              </View>
-              {otpStep === "phone" ? (
-                <>
-                  <View style={styles.inputGroup}>
-                    <Text style={[styles.label, localizedText]}>{tr(otpChannel === "phone" ? "Phone Number" : "Verified Email Address")}</Text>
-                    <View style={[styles.inputWrapper, localizedRow]}>
-                      {otpChannel === "phone" ? (
-                        <View style={styles.countryCode}>
-                          <Text style={styles.countryCodeText}>🇵🇰 +92</Text>
-                        </View>
-                      ) : (
-                        <Icon name="mail" size={18} color={theme.colors.textMuted} />
-                      )}
-                      <TextInput
-                        style={[styles.input, localizedText, { paddingHorizontal: 8 }]}
-                        value={otpChannel === "phone" ? phone : email}
-                        onChangeText={otpChannel === "phone" ? setPhone : setEmail}
-                        placeholder={otpChannel === "phone" ? "3XX-XXXXXXX" : "email@example.com"}
-                        placeholderTextColor={theme.colors.textMuted}
-                        keyboardType={otpChannel === "phone" ? "phone-pad" : "email-address"}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        autoFocus
-                      />
-                    </View>
-                    {otpChannel === "email" ? (
-                      <Text style={[styles.emailOtpHelp, localizedText]}>{tr("Email OTP works only after the email has been verified on your Athoo account.")}</Text>
-                    ) : null}
-                  </View>
-
-                  <View style={[styles.rememberRow, localizedRow]}>
-                    <Switch
-                      value={rememberMe}
-                      onValueChange={setRememberMe}
-                      trackColor={{ false: theme.colors.border, true: theme.colors.primary + "50" }}
-                      thumbColor={rememberMe ? theme.colors.primary : theme.colors.textMuted}
-                      style={{ transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] }}
-                    />
-                    <Pressable onPress={() => setRememberMe(!rememberMe)} style={{ flex: 1 }}>
-                      <Text style={[styles.rememberLabel, localizedText]}>{tr("Keep me signed in")}</Text>
-                    </Pressable>
-                    <Text style={styles.rememberHint}>
-                      {rememberMe ? `✓ ${tr("Stays logged in")}` : tr("Signs out on close")}
-                    </Text>
-                  </View>
-
-                  <Pressable
-                    style={[styles.primaryBtn, loading && styles.btnDisabled]}
-                    onPress={handleSendOtp}
-                    disabled={loading}
-                  >
-                    <LinearGradient
-                      colors={
-                        isProvider
-                          ? [theme.colors.secondary, theme.colors.secondaryPressed]
-                          : [theme.colors.primary, theme.colors.primaryPressed]
-                      }
-                      style={styles.primaryBtnGrad}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                    >
-                      <Icon name="send" size={16} color={theme.colors.white} />
-                      <Text style={styles.primaryBtnText}>
-                        {loading ? tr("Sending...") : tr(otpChannel === "email" ? "Send Email Code" : "Get OTP Code")}
-                      </Text>
-                    </LinearGradient>
-                  </Pressable>
-                </>
-              ) : (
-                <>
-                  <View style={[styles.otpSentBox, localizedRow]}>
-                    <Icon name="check-circle" size={18} color={theme.colors.success} />
-                    <Text style={styles.otpSentText}>
-                      {tr(otpDeliveryMessage || "Verification code sent.")}
-                    </Text>
-                  </View>
-
-                  {otpHint ? (
-                    <View style={[styles.otpHintBox, localizedRow]}>
-                      <Icon name="info" size={14} color={theme.colors.secondary} />
-                      <Text style={styles.otpHintText}>
-                        Your OTP:{" "}
-                        <Text style={{ fontWeight: "800", fontSize: 16 }}>{otpHint}</Text>
-                      </Text>
-                    </View>
-                  ) : null}
-
-                  <View style={styles.inputGroup}>
-                    <Text style={[styles.label, localizedText]}>{tr(otpChannel === "email" ? "Enter 6-digit email code" : "Enter 4-digit OTP")}</Text>
-                    <View style={[styles.inputWrapper, styles.otpWrapper]}>
-                      <TextInput
-                        style={[styles.input, styles.otpInput]}
-                        value={otp}
-                        onChangeText={(v) => setOtp(v.replace(/[^0-9]/g, "").slice(0, otpChannel === "email" ? 6 : 4))}
-                        placeholder={otpChannel === "email" ? "• • • • • •" : "• • • •"}
-                        placeholderTextColor={theme.colors.textMuted}
-                        keyboardType="number-pad"
-                        maxLength={otpChannel === "email" ? 6 : 4}
-                        autoFocus
-                      />
-                    </View>
-                  </View>
-
-                  <Pressable
-                    style={[styles.primaryBtn, loading && styles.btnDisabled]}
-                    onPress={handleVerifyOtp}
-                    disabled={loading}
-                  >
-                    <LinearGradient
-                      colors={
-                        isProvider
-                          ? [theme.colors.secondary, theme.colors.secondaryPressed]
-                          : [theme.colors.primary, theme.colors.primaryPressed]
-                      }
-                      style={styles.primaryBtnGrad}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                    >
-                      <Icon name="log-in" size={16} color={theme.colors.white} />
-                      <Text style={styles.primaryBtnText}>
-                        {loading ? tr("Verifying...") : tr("Verify & Sign In")}
-                      </Text>
-                    </LinearGradient>
-                  </Pressable>
-
-                  <Text style={[styles.otpTimerText, otpExpiresIn === 0 && styles.otpTimerExpired]}>
-                    {otpExpiresIn > 0
-                      ? tr("Code expires in {{time}}", { time: `${Math.floor(otpExpiresIn / 60)}:${String(otpExpiresIn % 60).padStart(2, "0")}` })
-                      : tr("Code expired. Request a new OTP.")}
-                  </Text>
-
-                  <Pressable
-                    style={[styles.resendOtpBtn, (loading || otpResendIn > 0) && styles.btnDisabled]}
-                    disabled={loading || otpResendIn > 0}
-                    onPress={handleSendOtp}
-                  >
-                    <Text style={styles.resendOtpText}>
-                      {otpResendIn > 0 ? tr("Resend in {{seconds}}s", { seconds: otpResendIn }) : tr("Resend OTP")}
-                    </Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={styles.changePhoneBtn}
-                    onPress={() => {
-                      setOtpStep("phone");
-                      setOtp("");
-                      setOtpExpiresIn(0);
-                      setOtpResendIn(0);
-                    }}
-                  >
-                    <Icon name="arrow-left" size={14} color={theme.colors.primary} />
-                    <Text style={styles.changePhoneText}>{tr(otpChannel === "email" ? "Change email address" : "Change phone number")}</Text>
-                  </Pressable>
-                </>
-              )}
+          <View style={[styles.passwordMethodHeader, localizedRow]}>
+            <View style={styles.passwordMethodIcon}>
+              <Icon name="lock" size={18} color={isProvider ? theme.colors.secondary : theme.colors.primary} />
             </View>
-          )}
-
-          {tab === "password" && (
-            <View style={styles.form}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.passwordMethodTitle, localizedText]}>{tr("Password Sign In")}</Text>
+              <Text style={[styles.passwordMethodSub, localizedText]}>{tr("Enter your Athoo account password to continue.")}</Text>
+            </View>
+          </View>
+          <View style={styles.form}>
               <View style={styles.inputGroup}>
                 <Text style={[styles.label, localizedText]}>{tr("Email or Phone")}</Text>
                 <View style={[styles.inputWrapper, localizedRow]}>
@@ -587,7 +371,7 @@ export default function LoginScreen() {
                 <View style={[styles.infoNote, localizedRow]}>
                   <Icon name="info" size={13} color={theme.colors.textMuted} />
                   <Text style={styles.infoNoteText}>
-                    {tr("No password yet? Sign in with OTP first, then set one in your Profile settings.")}
+                    {tr("Forgot your password? Reset it securely before signing in.")}
                   </Text>
                 </View>
 
@@ -616,6 +400,25 @@ export default function LoginScreen() {
                 </Pressable>
               </View>
             </View>
+
+          {biometricAvailable && (
+            <>
+              <View style={styles.loginOrRow}>
+                <View style={styles.divider} />
+                <Text style={[styles.loginOrText, localizedText]}>{tr("or")}</Text>
+                <View style={styles.divider} />
+              </View>
+              <Pressable
+                style={[styles.biometricBtn, localizedRow]}
+                onPress={handleBiometricLogin}
+                disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel={biometricBtnLabel}
+              >
+                <Icon name={biometricType === "face" ? "scan-face" : biometricType === "iris" ? "eye" : biometricType === "fingerprint" ? "fingerprint" : "shield"} size={20} color={theme.colors.primary} />
+                <Text style={[styles.biometricText, localizedText]}>{biometricBtnLabel}</Text>
+              </Pressable>
+            </>
           )}
 
           <View style={styles.dividerRow}>
@@ -730,6 +533,30 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderColor: theme.colors.border,
     ...theme.shadows.md,
   },
+
+  passwordMethodHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: theme.colors.infoSoft,
+    borderRadius: theme.radius.lg,
+    padding: 14,
+    marginBottom: 18,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.primary + "26",
+  },
+  passwordMethodIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  passwordMethodTitle: { ...theme.typography.label, color: theme.colors.text },
+  passwordMethodSub: { ...theme.typography.caption, color: theme.colors.textSecondary, marginTop: 2 },
+  loginOrRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 18, marginBottom: 12 },
+  loginOrText: { ...theme.typography.caption, color: theme.colors.textMuted },
 
   tabs: {
     flexDirection: "row",

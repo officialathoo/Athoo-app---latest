@@ -67,7 +67,7 @@ export function BiometricLoginSetting() {
     // Do not erase a valid remembered login because a vendor biometric API
     // temporarily returns unavailable while the app resumes. Only remove local
     // state when it belongs to another account or the server preference is off.
-    if (localEnabled && (!belongsToCurrentAccount || user?.biometricEnabled !== true)) {
+    if (localEnabled && !belongsToCurrentAccount) {
       await disableBiometric().catch(() => undefined);
     }
 
@@ -224,7 +224,13 @@ export function BiometricLoginSetting() {
 
       setPassword("");
       setPasswordModal(false);
-      await refreshState();
+      // configureBiometricLogin has already verified the server preference,
+      // remembered session, native biometric prompt and SecureStore values.
+      // Do not immediately call refreshState here: this callback still closes
+      // over the pre-update user object and previously turned the switch back
+      // off before React could publish biometricEnabled=true.
+      setAvailable(true);
+      setEnabled(true);
       Alert.alert(
         `${label} enabled`,
         "Your remembered Athoo session is now protected by your phone's configured authentication method.",
