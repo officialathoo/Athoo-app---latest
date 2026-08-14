@@ -1,6 +1,8 @@
 import { Icon } from "@/components/ui/Icon";
 import { runtimeConfig } from "@/config/runtime";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 import type { AthooTheme } from "@/design/theme";
 import { api } from "@/services/api";
 import { LinearGradient } from "expo-linear-gradient";
@@ -276,9 +278,9 @@ function createStyles(theme: AthooTheme, accent: string) {
   return StyleSheet.create({
     flex: { flex: 1 },
     container: { flex: 1, backgroundColor: theme.colors.background },
-    header: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12},
-    headerButton: { width: 38, height: 38, borderRadius: 11, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.22)" },
-    headerSpacer: { width: 38, height: 38 },
+    header: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: redesign.layout.horizontalPadding, paddingTop: 12, paddingBottom: 12 },
+    headerButton: { width: redesign.control.iconButtonSize, height: redesign.control.iconButtonSize, borderRadius: radius.md, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center", borderWidth: redesign.visual.cardBorderWidth, borderColor: "rgba(255,255,255,0.22)" },
+    headerSpacer: { width: redesign.control.iconButtonSize, height: redesign.control.iconButtonSize },
     botInfo: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
     botAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.22)", alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "rgba(255,255,255,0.36)" },
     botCopy: { flex: 1 },
@@ -287,34 +289,34 @@ function createStyles(theme: AthooTheme, accent: string) {
     onlineDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: theme.colors.success },
     onlineText: { fontSize: 11, color: "rgba(255,255,255,0.86)" },
     chat: { flex: 1 },
-    chatContent: { padding: 14, gap: 8, paddingBottom: 24 },
+    chatContent: { paddingHorizontal: redesign.layout.horizontalPadding, paddingTop: redesign.layout.cardGap, gap: 8, paddingBottom: redesign.layout.sectionGap },
     quickSection: { gap: 8, marginBottom: 6 },
     quickLabel: { fontSize: 12, fontWeight: "700", color: theme.colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
     quickGrid: { gap: 6},
-    quickChip: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: theme.colors.elevated, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: theme.colors.border, ...theme.shadows.sm },
+    quickChip: { minHeight: redesign.control.compactHeight, flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: theme.colors.elevated, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 10, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border, ...theme.shadows.sm },
     quickText: { fontSize: 13, fontWeight: "600", color: theme.colors.text, flex: 1 },
     messageRow: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
     messageRowUser: { justifyContent: "flex-end" },
     messageRowBot: { justifyContent: "flex-start" },
     botAvatarSmall: { width: 28, height: 28, borderRadius: 14, backgroundColor: accent, alignItems: "center", justifyContent: "center", flexShrink: 0, marginBottom: 2 },
-    bubble: { maxWidth: "80%", borderRadius: 16, padding: 10, paddingHorizontal: 12, gap: 4 },
+    bubble: { maxWidth: "82%", borderRadius: radius.lg, paddingVertical: 10, paddingHorizontal: 12, gap: 4 },
     botBubble: { backgroundColor: theme.colors.elevated, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: theme.colors.border, ...theme.shadows.sm },
     userBubble: { backgroundColor: accent, borderBottomRightRadius: 4 },
     bubbleText: { fontSize: 14, lineHeight: 21, color: theme.colors.text },
     userBubbleText: { color: theme.colors.white },
     bubbleTime: { fontSize: 10, color: theme.colors.textMuted, alignSelf: "flex-end" },
     userBubbleTime: { color: "rgba(255,255,255,0.72)" },
-    typingBubble: { flexDirection: "row", alignItems: "center", backgroundColor: theme.colors.elevated, borderRadius: 16, borderBottomLeftRadius: 4, paddingHorizontal: 14, paddingVertical: 12, gap: 5, borderWidth: 1, borderColor: theme.colors.border, ...theme.shadows.sm },
+    typingBubble: { flexDirection: "row", alignItems: "center", backgroundColor: theme.colors.elevated, borderRadius: radius.lg, borderBottomLeftRadius: 4, paddingHorizontal: 14, paddingVertical: 12, gap: 5, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border, ...theme.shadows.sm },
     typingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: accent, opacity: 0.78 },
-    inputArea: { backgroundColor: theme.colors.elevated, paddingHorizontal: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.colors.border, gap: 8},
+    inputArea: { backgroundColor: theme.colors.elevated, paddingHorizontal: redesign.layout.horizontalPadding, paddingTop: 10, borderTopWidth: redesign.visual.cardBorderWidth, borderTopColor: theme.colors.border, gap: 8 },
     socialRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-    socialButton: { flexGrow: 1, minWidth: 96, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 12, paddingVertical: 9, paddingHorizontal: 10, backgroundColor: theme.colors.surfaceAlt, borderWidth: 1 },
+    socialButton: { flexGrow: 1, minWidth: 96, minHeight: redesign.control.compactHeight, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: radius.md, paddingHorizontal: 10, backgroundColor: theme.colors.surfaceAlt, borderWidth: redesign.visual.cardBorderWidth },
     socialText: { fontSize: 12, fontWeight: "700" },
-    inputRow: { flexDirection: "row", gap: 8, borderRadius: 22, borderWidth: 1.5, borderColor: theme.colors.border, backgroundColor: theme.colors.input, paddingHorizontal: 4, paddingVertical: 4, alignItems: "center" },
+    inputRow: { minHeight: redesign.control.largeHeight, flexDirection: "row", gap: 8, borderRadius: radius.pill, borderWidth: redesign.visual.inputBorderWidth, borderColor: theme.colors.border, backgroundColor: theme.colors.input, paddingHorizontal: 4, paddingVertical: 4, alignItems: "center" },
     inputRowFocused: { borderColor: accent },
     input: { flex: 1, paddingHorizontal: 14, paddingVertical: 8, fontSize: 14, color: theme.colors.text },
-    sendButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: accent, alignItems: "center", justifyContent: "center" },
-    sendButtonDisabled: { backgroundColor: theme.colors.textMuted },
-    pressed: { opacity: 0.76 },
+    sendButton: { width: redesign.control.iconButtonSize, height: redesign.control.iconButtonSize, borderRadius: radius.pill, backgroundColor: accent, alignItems: "center", justifyContent: "center" },
+    sendButtonDisabled: { backgroundColor: theme.colors.textMuted, opacity: redesign.visual.disabledOpacity },
+    pressed: { opacity: 0.82, transform: [{ scale: redesign.visual.pressedScale }] },
   });
 }
