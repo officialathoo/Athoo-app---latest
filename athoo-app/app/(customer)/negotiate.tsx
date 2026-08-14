@@ -18,6 +18,7 @@ import { PrivateImage } from "@/services/storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { AnimatedCard } from "@/components/ui/AnimatedCard";
 import { SuccessModal } from "@/components/ui/SuccessModal";
 import { useAuth } from "@/context/AuthContext";
@@ -1003,7 +1004,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   headerGrad: {
     paddingTop: 12,
     paddingBottom: 24,
-    paddingHorizontal: 16,
+    paddingHorizontal: redesign.layout.horizontalPadding,
     gap: 4,
     alignItems: "center",
   },
@@ -1011,13 +1012,15 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   backBtn: {
     position: "absolute",
     top: 12,
-    left: 16,
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    left: redesign.layout.horizontalPadding,
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
+    backgroundColor: "rgba(255,255,255,0.18)",
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: "rgba(255,255,255,0.22)",
   },
 
   headerTitle: {
@@ -1068,7 +1071,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   scroll: { flex: 1 },
 
   content: {
-    padding: 16,
+    padding: redesign.layout.horizontalPadding,
     gap: 10,
     paddingBottom: 60,
   },
@@ -1102,9 +1105,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   section: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 14,
+    borderRadius: theme.radius.lg,
     padding: 14,
     gap: 10,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
 
   sectionTitle: {
@@ -1124,12 +1130,13 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: redesign.layout.horizontalPadding,
     paddingVertical: 10,
     backgroundColor: theme.colors.surface,
-    borderBottomWidth: 1,
+    borderBottomWidth: redesign.visual.cardBorderWidth,
     borderBottomColor: theme.colors.border,
     gap: 0,
+    ...theme.shadows.sm,
   },
   stepItem: {
     flexDirection: "row",
@@ -1316,9 +1323,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     backgroundColor: theme.colors.primary,
-    borderRadius: 14,
-    paddingVertical: 12,
+    borderRadius: theme.radius.md,
+    minHeight: redesign.control.standardHeight,
+    paddingHorizontal: 16,
     marginTop: 4,
+    ...theme.shadows.sm,
   },
   nextBtnText: {
     fontSize: 15,
@@ -1441,7 +1450,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   submitBtnDisabled: {
-    opacity: 0.6,
+    opacity: redesign.visual.disabledOpacity,
   },
 
   submitGrad: {
@@ -1479,11 +1488,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   selectedCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 18,
+    borderRadius: theme.radius.lg,
     padding: 16,
     gap: 14,
-    borderWidth: 1,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.primary + "25",
+    ...theme.shadows.sm,
   },
 
   selectedHeader: {
@@ -1550,11 +1560,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   listCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 16,
+    borderRadius: theme.radius.lg,
     padding: 14,
     gap: 10,
-    borderWidth: 1,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
 
   listCardSelected: {
