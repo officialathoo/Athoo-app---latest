@@ -28,6 +28,7 @@ import { useLang } from "@/context/LanguageContext";
 import { uploadPickedImage, PrivateImage } from "@/services/storage";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { apiErrorToMessage } from "@/lib/apiError";
 import { runtimeConfig } from "@/config/runtime";
 
@@ -530,7 +531,10 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   content: { paddingBottom: 120 },
 
-  headerGrad: { paddingHorizontal: 20, paddingBottom: 24 },
+  headerGrad: {
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingBottom: 26,
+  },
 
   headerTop: {
     flexDirection: "row",
@@ -540,15 +544,17 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     marginBottom: 20,
   },
 
-  headerTitle: { fontSize: 20, fontWeight: "800", color: theme.colors.onBrand },
+  headerTitle: { ...theme.typography.h2, color: theme.colors.onBrand, letterSpacing: -0.3 },
 
   logoutTopBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.15)",
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
+    backgroundColor: "rgba(255,255,255,0.16)",
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: "rgba(255,255,255,0.22)",
   },
 
   profileRow: { flexDirection: "row", alignItems: "center", gap: 14 },
@@ -584,7 +590,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   profileInfo: { flex: 1, gap: 4 },
 
-  profileName: { fontSize: 19, fontWeight: "800", color: theme.colors.onBrand },
+  profileName: { ...theme.typography.h2, color: theme.colors.onBrand, letterSpacing: -0.25 },
 
   nameEdit: {
     fontSize: 19,
@@ -612,53 +618,50 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   verifiedText: { fontSize: 10, fontWeight: "700", color: theme.colors.onBrand },
 
   editBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
+    backgroundColor: "rgba(255,255,255,0.18)",
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: "rgba(255,255,255,0.22)",
   },
 
   statsCard: {
     flexDirection: "row",
     backgroundColor: theme.colors.surface,
-    marginHorizontal: 20,
+    marginHorizontal: redesign.layout.horizontalPadding,
     marginTop: -14,
-    borderRadius: 18,
+    borderRadius: theme.radius.xl,
     padding: 16,
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 8,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    ...theme.shadows.md,
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: redesign.layout.sectionGap,
   },
 
   statItem: { flex: 1, alignItems: "center", gap: 3, paddingVertical: 4 },
-  statVal: { fontSize: 18, fontWeight: "800" },
-  statLbl: { fontSize: 10, color: theme.colors.textSecondary, fontWeight: "600" },
+  statVal: { ...theme.typography.h3 },
+  statLbl: { ...theme.typography.caption, color: theme.colors.textSecondary, fontFamily: theme.typography.label.fontFamily },
   statDivider: { width: 1, height: 36, backgroundColor: theme.colors.border },
 
-  menuSection: { marginHorizontal: 20, marginBottom: 16, gap: 8 },
+  menuSection: { marginHorizontal: redesign.layout.horizontalPadding, marginBottom: 16, gap: 8 },
 
   sectionTitle: {
-    fontSize: 13,
-    fontWeight: "700",
+    ...theme.typography.label,
     color: theme.colors.textSecondary,
     paddingLeft: 4,
   },
 
   menuCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 18,
+    borderRadius: theme.radius.xl,
     overflow: "hidden",
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 2,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
 
   menuItem: {
@@ -666,34 +669,36 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignItems: "center",
     gap: 12,
     paddingHorizontal: 16,
-    paddingVertical: 13,
+    minHeight: 62,
+    paddingVertical: 11,
   },
 
-  menuItemBorder: { borderBottomWidth: 1, borderBottomColor: theme.colors.border },
-  pressed: { backgroundColor: theme.colors.surfaceAlt },
+  menuItemBorder: { borderBottomWidth: redesign.visual.cardBorderWidth, borderBottomColor: theme.colors.border },
+  pressed: { backgroundColor: theme.colors.surfaceAlt, opacity: 0.9 },
 
   menuIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 11,
+    width: 40,
+    height: 40,
+    borderRadius: theme.radius.md,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  menuTextCol: { flex: 1, gap: 1 },
-  menuLabel: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
-  menuSub: { fontSize: 11, color: theme.colors.textSecondary },
+  menuTextCol: { flex: 1, gap: 2 },
+  menuLabel: { ...theme.typography.label, color: theme.colors.text },
+  menuSub: { ...theme.typography.caption, color: theme.colors.textSecondary },
 
   switchRole: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    marginHorizontal: 20,
-    paddingVertical: 14,
+    marginHorizontal: redesign.layout.horizontalPadding,
+    minHeight: redesign.control.standardHeight,
+    paddingHorizontal: 16,
     backgroundColor: theme.colors.surface,
-    borderRadius: 16,
-    borderWidth: 1.5,
+    borderRadius: theme.radius.lg,
+    borderWidth: redesign.visual.inputBorderWidth,
     borderColor: theme.colors.secondary + "40",
     marginBottom: 12,
   },
@@ -715,20 +720,23 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    marginHorizontal: 20,
-    paddingVertical: 14,
-    backgroundColor: theme.colors.danger + "10",
-    borderRadius: 16,
+    marginHorizontal: redesign.layout.horizontalPadding,
+    minHeight: redesign.control.standardHeight,
+    paddingHorizontal: 16,
+    backgroundColor: theme.colors.dangerSoft,
+    borderRadius: theme.radius.lg,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.danger + "30",
     marginBottom: 16,
   },
 
   logoutText: { fontSize: 14, fontWeight: "700", color: theme.colors.danger },
 
   dangerZone: {
-    marginHorizontal: 20,
+    marginHorizontal: redesign.layout.horizontalPadding,
     marginBottom: 16,
-    borderRadius: 18,
-    borderWidth: 1.5,
+    borderRadius: theme.radius.xl,
+    borderWidth: redesign.visual.inputBorderWidth,
     borderColor: theme.colors.danger + "30",
     backgroundColor: theme.colors.surface,
     padding: 16,
@@ -747,12 +755,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    paddingVertical: 11,
+    minHeight: redesign.control.compactHeight,
     paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1,
+    borderRadius: theme.radius.md,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.danger + "30",
-    backgroundColor: "transparent",
+    backgroundColor: theme.colors.dangerSoft,
   },
 
   dangerBtnText: { fontSize: 13, fontWeight: "600", color: theme.colors.danger, flex: 1 },
@@ -773,17 +781,19 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: theme.colors.overlay,
     justifyContent: "flex-end",
   },
 
   modalBox: {
-    backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    backgroundColor: theme.colors.elevated,
+    borderTopLeftRadius: theme.radius.xl,
+    borderTopRightRadius: theme.radius.xl,
     padding: 24,
     paddingBottom: 40,
     gap: 12,
+    borderTopWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
   },
 
   modalTitle: {
@@ -858,11 +868,13 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   avatarModalBox: {
-    backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    backgroundColor: theme.colors.elevated,
+    borderTopLeftRadius: theme.radius.xl,
+    borderTopRightRadius: theme.radius.xl,
     padding: 28,
     gap: 8,
+    borderTopWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
   },
 
   avatarPreviewRow: {
@@ -900,9 +912,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
+    minHeight: redesign.control.largeHeight,
     padding: 14,
-    borderRadius: 14,
+    borderRadius: theme.radius.md,
     backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
   },
 
   avatarOptIcon: {
