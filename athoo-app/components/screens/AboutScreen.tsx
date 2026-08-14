@@ -6,6 +6,8 @@ import { Icon } from "@/components/ui/Icon";
 import { useLang } from "@/context/LanguageContext";
 import { useSettings } from "@/context/SettingsContext";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 import { runtimeConfig } from "@/config/runtime";
 import { brandConfig } from "@/config/brand";
 import { appIdentity } from "@/config/appIdentity";
@@ -156,7 +158,7 @@ function ContactRow({ icon, iconColor, label, value, onPress }: { icon: string; 
       style={({ pressed }) => [
         styles.contactRow,
         { borderBottomColor: theme.colors.divider },
-        pressed && { opacity: 0.68 },
+        pressed && styles.pressed,
       ]}
     >
       <View style={[styles.contactIcon, { backgroundColor: theme.colors.surfaceAlt }]}>
@@ -174,19 +176,91 @@ function ContactRow({ icon, iconColor, label, value, onPress }: { icon: string; 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   flex: { flex: 1 },
-  content: { paddingHorizontal: 16, paddingTop: 14, gap: 10},
-  hero: { borderWidth: 1, borderRadius: 18, alignItems: "center", paddingHorizontal: 20, paddingVertical: 22, gap: 8 },
-  logoWrap: { width: 96, height: 96, borderRadius: 24, alignItems: "center", justifyContent: "center", marginBottom: 4, overflow: "hidden" },
-  logo: { width: 80, height: 80},
-  tagline: { maxWidth: 540, lineHeight: 21 },
-  versionPill: { minHeight: 28, borderRadius: 14, paddingHorizontal: 12, alignItems: "center", justifyContent: "center", marginTop: 4 },
-  missionCopy: { lineHeight: 22, marginTop: 8 },
-  sectionHeader: { marginTop: 5, paddingHorizontal: 2 },
-  featureRow: { flexDirection: "row", alignItems: "flex-start", gap: 11},
-  featureIcon: { width: 42, height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  featureCopy: { lineHeight: 19, marginTop: 4 },
-  contactList: { marginTop: 8 },
-  contactRow: { minHeight: 56, flexDirection: "row", alignItems: "center", gap: 11, borderBottomWidth: StyleSheet.hairlineWidth },
-  contactIcon: { width: 36, height: 36, borderRadius: 11, alignItems: "center", justifyContent: "center" },
-  legal: { lineHeight: 18, marginVertical: 6 },
+  pressed: {
+    opacity: 0.82,
+    transform: [{ scale: redesign.visual.pressedScale }],
+  },
+  content: {
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: redesign.layout.fieldGap,
+    gap: redesign.layout.cardGap,
+  },
+  hero: {
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderRadius: radius.lg,
+    alignItems: "center",
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingVertical: redesign.layout.sectionGap,
+    gap: 8,
+  },
+  logoWrap: {
+    width: 96,
+    height: 96,
+    borderRadius: radius.xl,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
+    overflow: "hidden",
+  },
+  logo: {
+    width: 80,
+    height: 80,
+  },
+  tagline: {
+    maxWidth: 540,
+    lineHeight: 21,
+  },
+  versionPill: {
+    minHeight: 28,
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+  },
+  missionCopy: {
+    lineHeight: 22,
+    marginTop: 8,
+  },
+  sectionHeader: {
+    marginTop: 6,
+    paddingHorizontal: 2,
+  },
+  featureRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: redesign.layout.cardGap,
+  },
+  featureIcon: {
+    width: redesign.control.compactHeight,
+    height: redesign.control.compactHeight,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  featureCopy: {
+    lineHeight: 19,
+    marginTop: 4,
+  },
+  contactList: {
+    marginTop: 8,
+  },
+  contactRow: {
+    minHeight: redesign.control.largeHeight,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: redesign.layout.cardGap,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  contactIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  legal: {
+    lineHeight: 18,
+    marginVertical: 8,
+  },
 });
