@@ -15,6 +15,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { getCategoryAppearance } from "@/utils/categoryAppearance";
 import { ProviderCard } from "@/components/ui/ProviderCard";
 import { Provider } from "@/data/services";
@@ -480,34 +481,42 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   header: {
     backgroundColor: theme.colors.surface,
-    paddingHorizontal: 16,
+    paddingHorizontal: redesign.layout.horizontalPadding,
     paddingTop: 16,
     paddingBottom: 14,
-    borderBottomWidth: 1,
+    borderBottomWidth: redesign.visual.cardBorderWidth,
     borderBottomColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
 
   backBtn: {
     position: "absolute",
-    left: 16,
+    left: redesign.layout.horizontalPadding,
     top: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: theme.colors.background,
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
     zIndex: 2,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
   },
 
   mapBtn: {
     position: "absolute",
-    right: 16,
+    right: redesign.layout.horizontalPadding,
     top: 16,
-    backgroundColor: theme.colors.surface,
-    padding: 10,
-    borderRadius: 12,
-    elevation: 5,
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderRadius: theme.radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
     zIndex: 2,
   },
 
@@ -521,26 +530,18 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   categoryIcon: {
     width: 46,
     height: 46,
-    borderRadius: 14,
+    borderRadius: theme.radius.md,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  title: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: theme.colors.text,
-  },
+  title: { ...theme.typography.h2, color: theme.colors.text, letterSpacing: -0.25 },
 
-  subtitle: {
-    fontSize: 13,
-    color: theme.colors.textSecondary,
-    marginTop: 2,
-  },
+  subtitle: { ...theme.typography.caption, color: theme.colors.textSecondary, marginTop: 2 },
 
   searchWrap: {
     backgroundColor: theme.colors.surface,
-    paddingHorizontal: 16,
+    paddingHorizontal: redesign.layout.horizontalPadding,
     paddingBottom: 12,
     gap: 12,
   },
@@ -549,19 +550,15 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 14,
+    backgroundColor: theme.colors.input,
+    borderRadius: theme.radius.md,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderWidth: 1,
+    minHeight: redesign.control.standardHeight,
+    borderWidth: redesign.visual.inputBorderWidth,
     borderColor: theme.colors.border,
   },
 
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: theme.colors.text,
-  },
+  searchInput: { flex: 1, ...theme.typography.body, color: theme.colors.text },
 
   cityRow: {
     flexDirection: "row",
@@ -570,10 +567,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   cityChip: {
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: theme.colors.background,
-    borderWidth: 1,
+    minHeight: 34,
+    justifyContent: "center",
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.border,
   },
 
@@ -582,11 +580,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderColor: theme.colors.primary,
   },
 
-  cityChipText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: theme.colors.textSecondary,
-  },
+  cityChipText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.textSecondary },
 
   cityChipTextActive: {
     color: theme.colors.onBrand,
@@ -596,7 +590,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
+    paddingHorizontal: redesign.layout.horizontalPadding,
     paddingVertical: 10,
     gap: 10,
   },
@@ -608,10 +602,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   sortChip: {
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 18,
+    minHeight: 34,
+    justifyContent: "center",
+    borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.surfaceAlt,
-    borderWidth: 1,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.border,
   },
 
@@ -620,11 +615,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderColor: theme.colors.secondary,
   },
 
-  sortChipText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: theme.colors.textSecondary,
-  },
+  sortChipText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.textSecondary },
 
   sortChipTextActive: {
     color: theme.colors.onBrand,
@@ -635,10 +626,10 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignItems: "center",
     gap: 5,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 18,
+    minHeight: 34,
+    borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.surfaceAlt,
-    borderWidth: 1,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.border,
   },
 
@@ -647,11 +638,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderColor: theme.colors.success + "40",
   },
 
-  availableToggleText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: theme.colors.textSecondary,
-  },
+  availableToggleText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.textSecondary },
 
   availableToggleTextActive: {
     color: theme.colors.success,
@@ -664,10 +651,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 10,
   },
 
-  loadingText: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-  },
+  loadingText: { ...theme.typography.body, color: theme.colors.textSecondary },
 
   emptyState: {
     flex: 1,
@@ -677,32 +661,22 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 10,
   },
 
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: theme.colors.text,
-  },
+  emptyTitle: { ...theme.typography.h3, color: theme.colors.text },
 
-  emptySubtitle: {
-    fontSize: 13,
-    color: theme.colors.textSecondary,
-    textAlign: "center",
-    lineHeight: 20,
-  },
+  emptySubtitle: { ...theme.typography.body, color: theme.colors.textSecondary, textAlign: "center" },
 
   retryButton: {
     marginTop: 4,
     paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 12,
+    minHeight: redesign.control.standardHeight,
+    borderRadius: theme.radius.md,
     backgroundColor: theme.colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    ...theme.shadows.sm,
   },
 
-  retryButtonText: {
-    color: theme.colors.onBrand,
-    fontSize: 13,
-    fontWeight: "800",
-  },
+  retryButtonText: { color: theme.colors.onBrand, ...theme.typography.label },
 
   inlineError: {
     alignItems: "center",
@@ -711,33 +685,27 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   loadMoreButton: {
-    minHeight: 44,
+    minHeight: redesign.control.standardHeight,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 14,
+    borderRadius: theme.radius.md,
     backgroundColor: theme.colors.primary,
     paddingHorizontal: 18,
-    paddingVertical: 11,
+    ...theme.shadows.sm,
   },
 
-  loadMoreButtonDisabled: {
-    opacity: 0.7,
-  },
+  loadMoreButtonDisabled: { opacity: redesign.visual.disabledOpacity },
 
-  loadMoreText: {
-    color: theme.colors.onBrand,
-    fontSize: 13,
-    fontWeight: "800",
-  },
+  loadMoreText: { color: theme.colors.onBrand, ...theme.typography.label },
 
   list: {
     flex: 1,
   },
 
   listContent: {
-    padding: 16,
+    padding: redesign.layout.horizontalPadding,
     paddingBottom: 100,
-    gap: 14,
+    gap: redesign.layout.cardGap,
   },
 
   cardWrap: {
@@ -749,14 +717,15 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     right: 14,
     top: 14,
     zIndex: 5,
+    width: 34,
+    height: 34,
     backgroundColor: theme.colors.surface,
-    borderRadius: 18,
-    padding: 7,
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
+    borderRadius: theme.radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
 
   distanceBadge: {
