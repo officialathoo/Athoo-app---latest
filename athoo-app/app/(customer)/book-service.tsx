@@ -21,6 +21,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { getCategoryAppearance } from "@/utils/categoryAppearance";
 import { type ServiceCategory } from "@/data/services";
 import { useCategories } from "@/context/CategoriesContext";
@@ -1421,8 +1422,8 @@ const createLiveConsentStyles = (theme: AthooTheme) => StyleSheet.create({
 
 const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  repeatNotice: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginHorizontal: 16, marginTop: 8, padding: 12, borderRadius: 12, backgroundColor: theme.colors.primary + "12", borderWidth: 1, borderColor: theme.colors.primary + "30" },
-  repeatNoticeText: { flex: 1, color: theme.colors.textSecondary, fontSize: 13, lineHeight: 18, fontWeight: "600" },
+  repeatNotice: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginHorizontal: redesign.layout.horizontalPadding, marginTop: 10, padding: 12, borderRadius: theme.radius.md, backgroundColor: theme.colors.infoSoft, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.primary + "30" },
+  repeatNoticeText: { flex: 1, color: theme.colors.textSecondary, ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily },
 
   successWrap: { alignItems: "center", justifyContent: "center", padding: 32 },
   uploadProgressWrap: { width: "100%", gap: 8, marginTop: 12 },
@@ -1444,77 +1445,79 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   homeBtnText: { fontSize: 14, fontWeight: "700", color: theme.colors.textSecondary },
 
   header: {
-    backgroundColor: theme.colors.surface, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10,
+    backgroundColor: theme.colors.surface, paddingHorizontal: redesign.layout.horizontalPadding, paddingTop: 12, paddingBottom: 12,
     flexDirection: "row", alignItems: "center", gap: 12,
-    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
+    borderBottomWidth: redesign.visual.cardBorderWidth, borderBottomColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
   backBtn: {
-    width: 36, height: 36, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt,
-    alignItems: "center", justifyContent: "center",
+    width: redesign.control.iconButtonSize, height: redesign.control.iconButtonSize, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceAlt,
+    alignItems: "center", justifyContent: "center", borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border,
   },
-  headerTitle: { fontSize: 17, fontWeight: "800", color: theme.colors.text },
-  headerSub: { fontSize: 12, color: theme.colors.textMuted, marginTop: 1 },
+  headerTitle: { ...theme.typography.h3, color: theme.colors.text },
+  headerSub: { ...theme.typography.caption, color: theme.colors.textMuted, marginTop: 1 },
   dots: { flexDirection: "row", gap: 5 },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.border },
   dotActive: { backgroundColor: theme.colors.primary, width: 20 },
   dotDone: { backgroundColor: theme.colors.primary + "60" },
 
-  section: { padding: 16, gap: 12},
-  heading: { fontSize: 20, fontWeight: "800", color: theme.colors.text },
-  sub: { fontSize: 13, color: theme.colors.textSecondary, marginTop: -8 },
+  section: { paddingHorizontal: redesign.layout.horizontalPadding, paddingTop: 16, paddingBottom: 16, gap: 12 },
+  heading: { ...theme.typography.h2, color: theme.colors.text, letterSpacing: -0.25 },
+  sub: { ...theme.typography.body, color: theme.colors.textSecondary, marginTop: -6 },
 
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 10},
   catCard: {
-    width: "47%", backgroundColor: theme.colors.surface, borderRadius: 14, padding: 12,
-    borderWidth: 1, borderColor: theme.colors.border, gap: 8, alignItems: "flex-start",
+    width: "47%", backgroundColor: theme.colors.surface, borderRadius: theme.radius.lg, padding: 13,
+    borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border, gap: 8, alignItems: "flex-start",
+    ...theme.shadows.sm,
   },
   catCardActive: {
-    shadowColor: theme.colors.text, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06,
-    shadowRadius: 12, elevation: 2,
+    borderColor: theme.colors.primary + "70",
+    backgroundColor: theme.colors.infoSoft,
   },
-  catIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  catName: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
-  catDesc: { fontSize: 11, color: theme.colors.textMuted, lineHeight: 15 },
+  catIcon: { width: 42, height: 42, borderRadius: theme.radius.md, alignItems: "center", justifyContent: "center" },
+  catName: { ...theme.typography.label, color: theme.colors.text },
+  catDesc: { ...theme.typography.caption, color: theme.colors.textMuted },
 
   searchBar: {
     flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: theme.colors.surface, borderRadius: 14, borderWidth: 1,
-    borderColor: theme.colors.primary + "50", paddingHorizontal: 12, paddingVertical: 10,
+    backgroundColor: theme.colors.input, borderRadius: theme.radius.md, borderWidth: redesign.visual.inputBorderWidth,
+    borderColor: theme.colors.primary + "50", paddingHorizontal: 12, minHeight: redesign.control.standardHeight,
   },
-  searchInput: { flex: 1, fontSize: 14, color: theme.colors.text },
+  searchInput: { flex: 1, ...theme.typography.body, color: theme.colors.text, paddingVertical: 0 },
 
   suggestBox: {
-    backgroundColor: theme.colors.surface, borderRadius: 14, borderWidth: 1, borderColor: theme.colors.border,
-    overflow: "hidden", marginTop: -4,
+    backgroundColor: theme.colors.elevated, borderRadius: theme.radius.lg, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border,
+    overflow: "hidden", marginTop: -4, ...theme.shadows.sm,
   },
-  suggestRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
+  suggestRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, minHeight: redesign.control.standardHeight, paddingVertical: 10 },
   suggestRowTyped: { backgroundColor: theme.colors.surface },
-  suggestBorder: { borderBottomWidth: 1, borderBottomColor: theme.colors.border },
-  suggestText: { flex: 1, fontSize: 13, color: theme.colors.text, lineHeight: 18 },
+  suggestBorder: { borderBottomWidth: redesign.visual.cardBorderWidth, borderBottomColor: theme.colors.border },
+  suggestText: { flex: 1, ...theme.typography.body, color: theme.colors.text },
   suggestTextTyped: { color: theme.colors.textSecondary, fontStyle: "italic" },
   suggestTypedHint: { fontSize: 10, color: theme.colors.textSecondary, marginBottom: 1, textTransform: "uppercase", letterSpacing: 0.4 },
 
   detectBtn: {
     flexDirection: "row", alignItems: "center", gap: 8, alignSelf: "flex-start",
-    backgroundColor: theme.colors.primary + "12", borderWidth: 1, borderColor: theme.colors.primary + "30",
-    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9,
+    backgroundColor: theme.colors.infoSoft, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.primary + "30",
+    borderRadius: theme.radius.md, paddingHorizontal: 12, minHeight: redesign.control.compactHeight,
   },
-  detectText: { fontSize: 13, fontWeight: "700", color: theme.colors.primary },
+  detectText: { ...theme.typography.label, color: theme.colors.primary },
 
   savedSection: { marginBottom: 12 },
   savedLabel: { fontSize: 12, fontWeight: "700", color: theme.colors.textMuted, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 },
   savedChip: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    backgroundColor: theme.colors.primary + "12", borderWidth: 1, borderColor: theme.colors.primary + "30",
-    borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7, maxWidth: 200,
+    backgroundColor: theme.colors.infoSoft, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.primary + "30",
+    borderRadius: theme.radius.pill, paddingHorizontal: 11, minHeight: 34, maxWidth: 200,
   },
   savedChipActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
   savedChipText: { fontSize: 12, fontWeight: "600", color: theme.colors.primary },
   savedChipTextActive: { color: theme.colors.onBrand },
 
   mapCard: {
-    borderRadius: 14, borderWidth: 1, borderColor: theme.colors.primary + "35",
-    backgroundColor: theme.colors.surface, overflow: "hidden",
+    borderRadius: theme.radius.lg, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.primary + "35",
+    backgroundColor: theme.colors.surface, overflow: "hidden", ...theme.shadows.sm,
   },
   mapCardHeader: {
     flexDirection: "row", alignItems: "center", gap: 7,
@@ -1534,8 +1537,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   addrPreviewNoMap: {
     flexDirection: "row", alignItems: "flex-start", gap: 10,
-    backgroundColor: theme.colors.warning + "10", borderRadius: 12, padding: 12,
-    borderWidth: 1, borderColor: theme.colors.warning + "30",
+    backgroundColor: theme.colors.warningSoft, borderRadius: theme.radius.md, padding: 12,
+    borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.warning + "30",
   },
   addrLabel: { fontSize: 11, color: theme.colors.textMuted, fontWeight: "600" },
   addrText: { fontSize: 13, color: theme.colors.text, lineHeight: 18, marginTop: 2 },
@@ -1548,16 +1551,16 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   gpsPillText: { fontSize: 10, fontWeight: "700", color: theme.colors.primary },
 
   manualCard: {
-    borderRadius: 14, borderWidth: 1, borderColor: theme.colors.secondary + "40",
-    backgroundColor: theme.colors.surface, padding: 12, gap: 8,
+    borderRadius: theme.radius.lg, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.secondary + "40",
+    backgroundColor: theme.colors.surface, padding: 12, gap: 8, ...theme.shadows.sm,
   },
   manualCardHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
   manualCardTitle: { fontSize: 13, fontWeight: "700", color: theme.colors.secondary },
   manualCardHint: { fontSize: 11, color: theme.colors.textMuted, lineHeight: 16, marginTop: -4 },
   manualInput: {
-    backgroundColor: theme.colors.surfaceAlt, borderRadius: 10, borderWidth: 1,
-    borderColor: theme.colors.border, paddingHorizontal: 12, paddingVertical: 11,
-    fontSize: 13, color: theme.colors.text,
+    backgroundColor: theme.colors.input, borderRadius: theme.radius.md, borderWidth: redesign.visual.inputBorderWidth,
+    borderColor: theme.colors.border, paddingHorizontal: 12, minHeight: redesign.control.standardHeight,
+    ...theme.typography.body, color: theme.colors.text,
   },
   cityOnlyWarn: {
     flexDirection: "row", alignItems: "flex-start", gap: 6,
@@ -1691,17 +1694,18 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   bottomBar: {
     position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: theme.colors.surface,
-    paddingHorizontal: 16, paddingTop: 10,
-    borderTopWidth: 1, borderTopColor: theme.colors.border,
+    paddingHorizontal: redesign.layout.horizontalPadding, paddingTop: 10,
+    borderTopWidth: redesign.visual.cardBorderWidth, borderTopColor: theme.colors.border,
+    ...theme.shadows.md,
   },
   primaryBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-    backgroundColor: theme.colors.primary, borderRadius: 14, paddingVertical: 14,
+    backgroundColor: theme.colors.primary, borderRadius: theme.radius.md, minHeight: redesign.control.standardHeight, paddingHorizontal: 16,
   },
   broadcastBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-    backgroundColor: theme.colors.secondary, borderRadius: 14, paddingVertical: 14,
+    backgroundColor: theme.colors.secondary, borderRadius: theme.radius.md, minHeight: redesign.control.standardHeight, paddingHorizontal: 16,
   },
-  btnDisabled: { opacity: 0.5 },
+  btnDisabled: { opacity: redesign.visual.disabledOpacity },
   btnText: { fontSize: 16, fontWeight: "800", color: theme.colors.onBrand },
 });
