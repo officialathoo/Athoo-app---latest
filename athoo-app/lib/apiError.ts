@@ -64,13 +64,19 @@ export function apiErrorToMessage(
   }
   if (
     errorCode === "PASSWORD_INCORRECT" ||
-    lower.includes("current password is incorrect")
+    lower.includes("current password is incorrect") ||
+    lower.includes("incorrect password")
   ) {
-    return "Current password is incorrect.";
+    return lower.includes("current password") ? "Current password is incorrect." : "Incorrect password. Please try again.";
   }
   if (errorCode === "PASSWORD_REQUIRED" || lower === "current password is required") {
     return "Current password is required.";
   }
+  if (errorCode === "CREDENTIALS_REQUIRED") return "Enter your email/phone and password to sign in.";
+  if (errorCode === "OTP_LOGIN_REQUIRED" || lower.includes("account uses otp login")) {
+    return "This account uses OTP sign in. Choose OTP and sign in with your phone number.";
+  }
+  if (errorCode === "ROLE_REQUIRED") return "Choose Customer or Provider before continuing.";
 
   if ((lower.includes("no active athoo account") && lower.includes("email")) || lower.includes("email_account_not_found")) {
     return "No active Athoo account was found with this email address.";
@@ -156,7 +162,8 @@ export function apiErrorToMessage(
     }
     if (
       errorCode === "PASSWORD_INCORRECT" ||
-      lower.includes("password is incorrect")
+      lower.includes("password is incorrect") ||
+      lower.includes("incorrect password")
     ) {
       return lower.includes("current password")
         ? "Current password is incorrect."

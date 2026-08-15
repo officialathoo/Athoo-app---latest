@@ -120,6 +120,10 @@ export default function ForgotPasswordScreen() {
       setOtp("");
       setOtpExpiresIn(Math.max(0, Number(res.expiresInSeconds || 600)));
       setOtpResendIn(Math.max(0, Number(res.resendAfterSeconds || 45)));
+      Alert.alert(
+        tr("Check for your code"),
+        tr(res?.message || "If an account matches these details and account type, a reset code will be sent. If no code arrives, check the email/phone and selected role."),
+      );
       setStep("otp");
     } catch (e: any) {
       Alert.alert(tr("Failed"), tr(apiErrorToMessage(e, "Failed to send reset OTP.")));

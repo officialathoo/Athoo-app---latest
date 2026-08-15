@@ -1310,7 +1310,7 @@ router.post("/login", async (req, res) => {
     };
 
     if (!identifier || !password) {
-      res.status(400).json({ error: "Email/phone and password are required" });
+      res.status(400).json({ error: "Email/phone and password are required.", code: "CREDENTIALS_REQUIRED" });
       return;
     }
 
@@ -1322,21 +1322,35 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ error: "Select Customer or Provider before signing in.", code: "ROLE_REQUIRED" });
     }
 
-    const user = await db.query.usersTable.findFirst({
-      where: and(
-        eq(usersTable.role, expectedRole),
-        or(
-          eq(usersTable.phone, normalizedPhone),
-          eq(usersTable.phone, normalizedIdentifier),
-          normalizedEmailCondition(normalizedEmail),
-        ),
+    const identityMatches = await db.query.usersTable.findMany({
+      where: or(
+        eq(usersTable.phone, normalizedPhone),
+        eq(usersTable.phone, normalizedIdentifier),
+        normalizedEmailCondition(normalizedEmail),
       ),
     });
+    const user = identityMatches.find((candidate) => candidate.role === expectedRole) || null;
+    if (!user) {
+      const otherAccount = identityMatches.find((candidate) => candidate.role === "customer" || candidate.role === "provider");
+      if (otherAccount) {
+        const actualRole = otherAccount.role === "provider" ? "provider" : "customer";
+        return res.status(409).json({
+          error: `This account is registered as a ${actualRole}. Choose ${actualRole === "provider" ? "Provider" : "Customer"} sign in.`,
+          code: "ACCOUNT_ROLE_MISMATCH",
+          actualRole,
+        });
+      }
+      return res.status(404).json({
+        error: normalizedIdentifier.includes("@")
+          ? "No active Athoo account was found with this email address."
+          : "No active Athoo account was found with this phone number.",
+        code: "ACCOUNT_NOT_FOUND",
+      });
+    }
     const unavailable = accountUnavailableResponse(user, expectedRole);
     if (unavailable) {
       return res.status(unavailable.status).json({ error: unavailable.error, code: unavailable.code });
     }
-    if (!user) return res.status(404).json({ error: "No active Athoo account was found with this identifier.", code: "ACCOUNT_NOT_FOUND" });
 
     // Check admin blacklist (phone or email)
     const blacklisted = await db.query.adminBlacklistTable.findFirst({
@@ -1349,14 +1363,14 @@ router.post("/login", async (req, res) => {
       ),
     });
     if (blacklisted) {
-      res.status(403).json({ error: "This account has been suspended. Please contact support." });
+      res.status(403).json({ error: "This account is suspended. Please contact Athoo Support.", code: "ACCOUNT_SUSPENDED" });
       return;
     }
 
     if (!user.password) {
       res.status(401).json({
-        error:
-          "This account uses OTP login. Please sign in with your phone number and OTP instead.",
+        error: "This account uses OTP login. Please sign in with your phone number and OTP instead.",
+        code: "OTP_LOGIN_REQUIRED",
       });
       return;
     }
@@ -1365,7 +1379,7 @@ router.post("/login", async (req, res) => {
 
     if (!valid) {
       db.insert(loginHistoryTable).values({ id: generateId(), userId: user.id, phone: user.phone, email: user.email, role: user.role, method: "password", success: false, failReason: "Incorrect password", ipAddress: req.ip, userAgent: req.headers["user-agent"] || null, deviceId: String(req.headers["x-athoo-device-id"] || "").trim().toLowerCase() || null }).catch(() => {});
-      res.status(401).json({ error: "Incorrect password. Please try again." });
+      res.status(401).json({ error: "Incorrect password. Please try again.", code: "PASSWORD_INCORRECT" });
       return;
     }
 
@@ -1390,7 +1404,7 @@ router.post("/login", async (req, res) => {
     });
   } catch (e) {
     logger.error({ err: e }, "login error");
-    return res.status(500).json({ error: "Login failed" });
+    return res.status(500).json({ error: "We could not sign you in. Please try again.", code: "LOGIN_FAILED" });
   }
 });
 
