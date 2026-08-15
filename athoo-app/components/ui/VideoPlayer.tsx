@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { Video, ResizeMode, type AVPlaybackStatus } from "expo-av";
 import { Icon } from "./Icon";
@@ -16,25 +16,29 @@ export function VideoPlayer({ uri, style }: VideoPlayerProps) {
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const videoRef = useRef<Video>(null);
-  const [loading, setLoading] = useState(true);
+  const replayResetInFlightRef = useRef(false);
+  const [preparing, setPreparing] = useState(true);
+  const [buffering, setBuffering] = useState(false);
   const [error, setError] = useState(false);
-  const [_status, setStatus] = useState<AVPlaybackStatus | null>(null);
   const [resolvedUri, setResolvedUri] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
+    replayResetInFlightRef.current = false;
     setError(false);
-    setLoading(true);
+    setPreparing(true);
+    setBuffering(false);
 
     if (!uri) {
       setResolvedUri(null);
+      setPreparing(false);
       return () => {
         mounted = false;
       };
     }
 
-    if (uri.startsWith("http") || uri.startsWith("data:")) {
-      setResolvedUri(optimizeCloudinaryVideoUrl(uri));
+    if (uri.startsWith("http") || uri.startsWith("data:") || uri.startsWith("file:")) {
+      setResolvedUri(uri.startsWith("http") ? optimizeCloudinaryVideoUrl(uri) : uri);
       return () => {
         mounted = false;
       };
@@ -43,12 +47,15 @@ export function VideoPlayer({ uri, style }: VideoPlayerProps) {
     const base = getPrivateFileUrl(uri);
     api.createPurposeToken("object-read")
       .then(({ token }) => {
-        if (mounted) setResolvedUri(`${base}?token=${encodeURIComponent(token)}`);
+        if (mounted) {
+          setResolvedUri(`${base}?token=${encodeURIComponent(token)}`);
+        }
       })
       .catch(() => {
         if (mounted) {
           setResolvedUri(null);
-          setLoading(false);
+          setPreparing(false);
+          setBuffering(false);
           setError(true);
         }
       });
@@ -57,6 +64,30 @@ export function VideoPlayer({ uri, style }: VideoPlayerProps) {
       mounted = false;
     };
   }, [uri]);
+
+  const source = useMemo(() => (resolvedUri ? { uri: resolvedUri } : null), [resolvedUri]);
+
+  const handlePlaybackStatusUpdate = useCallback((status: AVPlaybackStatus) => {
+    if (!status.isLoaded) {
+      // The unloaded/error AVPlaybackStatus shape is intentionally handled
+      // without touching status.error so this remains compatible with the
+      // expo-av discriminated union used by the current Athoo runtime.
+      return;
+    }
+
+    setPreparing(false);
+    setBuffering((current) => (current === status.isBuffering ? current : status.isBuffering));
+
+    if (status.didJustFinish && !replayResetInFlightRef.current) {
+      replayResetInFlightRef.current = true;
+      void videoRef.current
+        ?.setPositionAsync(0)
+        .catch(() => undefined)
+        .finally(() => {
+          replayResetInFlightRef.current = false;
+        });
+    }
+  }, []);
 
   if (error) {
     return (
@@ -68,13 +99,15 @@ export function VideoPlayer({ uri, style }: VideoPlayerProps) {
     );
   }
 
-  if (!resolvedUri) {
+  if (!source) {
     return (
       <View style={[styles.container, style]}>
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text style={styles.loadingText}>Preparing video…</Text>
-        </View>
+        {preparing ? (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
+            <Text style={styles.loadingText}>Preparing video...</Text>
+          </View>
+        ) : null}
       </View>
     );
   }
@@ -83,22 +116,31 @@ export function VideoPlayer({ uri, style }: VideoPlayerProps) {
     <View style={[styles.container, style]}>
       <Video
         ref={videoRef}
-        source={{ uri: resolvedUri }}
+        source={source}
         style={styles.video}
         useNativeControls
         resizeMode={ResizeMode.CONTAIN}
-        onPlaybackStatusUpdate={setStatus}
-        onLoad={() => setLoading(false)}
+        onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
+        onLoad={() => {
+          setPreparing(false);
+          setBuffering(false);
+        }}
+        onLoadStart={() => {
+          setPreparing(true);
+          setError(false);
+        }}
         onError={() => {
-          setLoading(false);
+          setPreparing(false);
+          setBuffering(false);
           setError(true);
         }}
         shouldPlay={false}
+        progressUpdateIntervalMillis={500}
       />
-      {loading ? (
-        <View style={styles.loadingOverlay}>
+      {preparing || buffering ? (
+        <View pointerEvents="none" style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text style={styles.loadingText}>Loading video…</Text>
+          <Text style={styles.loadingText}>{preparing ? "Loading video..." : "Buffering..."}</Text>
         </View>
       ) : null}
     </View>
@@ -125,7 +167,13 @@ function createStyles(theme: AthooTheme) {
       gap: 10,
     },
     loadingText: { color: theme.colors.white, fontSize: 13, fontWeight: "500" },
-    errorBox: { backgroundColor: theme.colors.surfaceAlt, alignItems: "center", justifyContent: "center", gap: 6, padding: 16 },
+    errorBox: {
+      backgroundColor: theme.colors.surfaceAlt,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+      padding: 16,
+    },
     errorText: { color: theme.colors.text, fontSize: 14, fontWeight: "600" },
     errorSub: { color: theme.colors.textSecondary, fontSize: 12, textAlign: "center" },
   });
