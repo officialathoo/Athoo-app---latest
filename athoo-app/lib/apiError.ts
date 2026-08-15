@@ -26,6 +26,13 @@ export function apiErrorToMessage(
   const raw = extracted.replace(/\u0000/g, "").trim();
   if (!raw) return fallback;
   const lower = raw.toLowerCase();
+  const errorCode =
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    typeof (err as { code?: unknown }).code === "string"
+      ? String((err as { code: string }).code).trim().toUpperCase()
+      : "";
 
   if (
     lower.includes("network request failed") ||
@@ -46,6 +53,23 @@ export function apiErrorToMessage(
 
   if (lower.includes("verification code delivery is temporarily unavailable") || lower.includes("otp_delivery_unavailable")) {
     return "Verification code delivery is temporarily unavailable. Please try again shortly.";
+  }
+
+  if (
+    errorCode === "INVALID_CREDENTIALS" ||
+    lower.includes("invalid credentials") ||
+    lower.includes("incorrect credentials")
+  ) {
+    return "Incorrect email/phone or password. Please check your details and try again.";
+  }
+  if (
+    errorCode === "PASSWORD_INCORRECT" ||
+    lower.includes("current password is incorrect")
+  ) {
+    return "Current password is incorrect.";
+  }
+  if (errorCode === "PASSWORD_REQUIRED" || lower === "current password is required") {
+    return "Current password is required.";
   }
 
   if ((lower.includes("no active athoo account") && lower.includes("email")) || lower.includes("email_account_not_found")) {
@@ -87,9 +111,19 @@ export function apiErrorToMessage(
   if (lower.includes("account has been deleted") || lower.includes("account_deleted")) {
     return "This account has been deleted and cannot be used to sign in.";
   }
-  if (lower.includes("registered as a provider") || lower.includes("registered as a customer") || lower.includes("account_role_mismatch")) {
-    const match = raw.match(/This phone number is registered as a (provider|customer)\.[^\[]*/i);
-    return match?.[0]?.trim() || "This phone number is registered under a different account type. Choose the correct sign-in option.";
+  if (
+    errorCode === "ACCOUNT_ROLE_MISMATCH" ||
+    lower.includes("registered as a provider") ||
+    lower.includes("registered as a customer") ||
+    lower.includes("account_role_mismatch")
+  ) {
+    const roleMatch = raw.match(/registered as a (provider|customer)/i);
+    if (roleMatch?.[1]) {
+      const actualRole = roleMatch[1].toLowerCase();
+      const label = actualRole === "provider" ? "Provider" : "Customer";
+      return `This account is registered as a ${actualRole}. Choose ${label} sign in.`;
+    }
+    return "This account is registered under a different account type. Choose the correct sign-in option.";
   }
   if (lower.includes("already registered") || lower.includes("account_already_exists")) {
     return "This phone number is already registered. Please sign in instead.";
@@ -112,7 +146,24 @@ export function apiErrorToMessage(
   const statusMatch = raw.match(/\[(\d{3})\b/) || raw.match(/\bstatus(?:code)?[\s:=]+(\d{3})\b/i);
   const status = explicitStatus || (statusMatch ? Number(statusMatch[1]) : 0);
 
-  if (status === 401) return "Your session has expired. Please sign in again.";
+  if (status === 401) {
+    if (
+      errorCode === "INVALID_CREDENTIALS" ||
+      lower.includes("invalid credentials") ||
+      lower.includes("incorrect credentials")
+    ) {
+      return "Incorrect email/phone or password. Please check your details and try again.";
+    }
+    if (
+      errorCode === "PASSWORD_INCORRECT" ||
+      lower.includes("password is incorrect")
+    ) {
+      return lower.includes("current password")
+        ? "Current password is incorrect."
+        : "Incorrect password. Please try again.";
+    }
+    return "Your session has expired. Please sign in again.";
+  }
   if (status === 403) return "You don't have permission to complete this action.";
   if (status === 404) return "We couldn't find what you were looking for.";
   if (status === 409) return "This request is already completed or no longer available. Please refresh and try again.";
