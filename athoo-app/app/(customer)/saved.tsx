@@ -4,6 +4,7 @@ import { ProviderCard } from "@/components/ui/ProviderCard";
 import { useAuth } from "@/context/AuthContext";
 import { Provider } from "@/data/services";
 import { api } from "@/services/api";
+import { apiErrorToMessage } from "@/lib/apiError";
 import { useTheme } from "@/context/ThemeContext";
 import { redesign } from "@/design/redesign";
 import { radius } from "@/design/tokens";
@@ -29,7 +30,7 @@ export default function SavedProvidersScreen() {
       const res = await api.getSavedProviders();
       setProviders((res.providers as Provider[]) || []);
     } catch (loadError) {
-      setError(String((loadError as Error)?.message || "Could not load saved providers."));
+      setError(apiErrorToMessage(loadError, "Could not load saved providers. Please try again."));
     } finally {
       setLoading(false);
     }

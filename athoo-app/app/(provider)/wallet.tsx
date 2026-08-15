@@ -7,6 +7,7 @@ import { redesign } from "@/design/redesign";
 import { radius } from "@/design/tokens";
 import { AthooTheme } from "@/design/theme";
 import { api } from "@/services/api";
+import { apiErrorToMessage } from "@/lib/apiError";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
@@ -77,7 +78,7 @@ export default function WalletScreen() {
       walletLastLoadedAtRef.current = Date.now();
     } catch (loadError: any) {
       if (mode !== "background") {
-        setError(loadError?.message || tr("Could not load wallet. Please try again."));
+        setError(apiErrorToMessage(loadError, tr("Could not load wallet. Please try again.")));
       }
     } finally {
       loadRequestInFlightRef.current = false;
@@ -118,7 +119,7 @@ export default function WalletScreen() {
     return (
       <View style={styles.loading} accessibilityRole="progressbar" accessibilityLabel={tr("Loading wallet") }>
         <ActivityIndicator color={theme.colors.primary} size="large" />
-        <Text style={styles.loadingText}>{tr("Loading wallet…")}</Text>
+        <Text style={styles.loadingText}>{tr("Loading walletâ€¦")}</Text>
       </View>
     );
   }
@@ -229,7 +230,7 @@ export default function WalletScreen() {
               />
             </View>
             <Text style={styles.duesLimit}>
-              {tr("Limit: {{amount}} · {{percent}}% used", {
+              {tr("Limit: {{amount}} Â· {{percent}}% used", {
                 amount: formatCurrency(commissionLimit),
                 percent: Math.round(duesProgress * 100),
               })}
@@ -306,7 +307,7 @@ export default function WalletScreen() {
                     <Icon name="check-circle" size={16} color={theme.colors.success} />
                   </View>
                   <View style={styles.txCopy}>
-                    <Text style={styles.txTitle} numberOfLines={1}>{booking.service} · {booking.customerName}</Text>
+                    <Text style={styles.txTitle} numberOfLines={1}>{booking.service} Â· {booking.customerName}</Text>
                     <Text style={styles.txDate}>{formatDate(booking.createdAt)}</Text>
                   </View>
                   <View style={styles.txAmounts}>
