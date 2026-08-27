@@ -691,6 +691,38 @@ router.patch("/:callId/end", requireAuth, async (req: AuthRequest, res: Response
   }
 });
 
+router.post("/:callId/mute", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const callId = String(req.params.callId);
+    const userId = req.user!.userId;
+    const muted = Boolean(req.body?.muted);
+
+    const call = await db.query.callsTable.findFirst({ where: eq(callsTable.id, callId) });
+    if (!call) {
+      res.status(404).json({ error: "Call not found" });
+      return;
+    }
+    if (!callInvolvesUser(call, userId)) {
+      res.status(403).json({ error: "You can only update your own calls" });
+      return;
+    }
+    if (!LIVE_CALL_STATUSES.includes(call.status as (typeof LIVE_CALL_STATUSES)[number])) {
+      res.status(409).json({ error: "Call is not active" });
+      return;
+    }
+
+    // Notify only the counterpart. Local mute must never affect the other
+    // participant's microphone, only their UI indicator.
+    const counterpartId = call.callerId === userId ? call.receiverId : call.callerId;
+    emitToUser(counterpartId, "call:mute", { callId, muted });
+    res.setHeader("Cache-Control", "private, no-store");
+    res.status(200).json({ success: true, muted });
+  } catch (error) {
+    logger.error({ err: error }, "call mute error");
+    res.status(500).json({ error: "Failed to update mute state" });
+  }
+});
+
 router.post("/:callId/ice-candidate", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const callId = String(req.params.callId);

@@ -117,7 +117,6 @@ function RootLayoutNav() {
         }}
       >
         <Stack.Screen name="index" />
-        <Stack.Screen name="(tabs)" />
         <Stack.Screen name="auth" />
         <Stack.Screen name="(customer)" />
         <Stack.Screen name="(provider)" />
@@ -125,6 +124,8 @@ function RootLayoutNav() {
         <Stack.Screen name="language" />
         <Stack.Screen name="legal" />
         <Stack.Screen name="call" />
+        <Stack.Screen name="notification-preferences" />
+        <Stack.Screen name="email-preferences" />
         <Stack.Screen name="+not-found" />
       </Stack>
       <OfflineBanner />

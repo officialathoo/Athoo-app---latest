@@ -162,6 +162,7 @@ interface CallContextType {
   activeCall: ActiveCall | null;
   callDuration: number;
   isMuted: boolean;
+  remoteMuted: boolean;
   isSpeaker: boolean;
   mediaState: CallMediaState;
   transportLabel: string;
@@ -326,6 +327,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setMutedState] = useState(false);
+  const [remoteMuted, setRemoteMutedState] = useState(false);
   const [isSpeaker, setIsSpeaker] = useState(false);
   const [mediaState, setMediaState] = useState<CallMediaState>("idle");
   const [transportLabel, setTransportLabel] = useState("Checking secure audio");
@@ -345,6 +347,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       });
     } catch (error) {
       appLogger.warn("calls", "[CallContext] unable to update microphone track", error);
+    }
+    // Signal the counterpart so their UI can show our mute state. This must
+    // never mutate the remote peer's own microphone — only our local track
+    // above is touched. The remote indicator is handled separately.
+    const callId = activeCallIdRef.current;
+    if (callId) {
+      api.setCallMute(callId, v).catch((error) => {
+        appLogger.warn("calls", "[CallContext] unable to signal mute state", error);
+      });
     }
   }, []);
 
@@ -392,6 +403,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const resetCallUiState = useCallback(() => {
     mutedRef.current = false;
     setMutedState(false);
+    setRemoteMutedState(false);
     setIsSpeaker(false);
   }, []);
 
@@ -1412,6 +1424,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      if (message.type === "call:mute") {
+        const payload = message.payload as any;
+        if (!current || current.callId !== payload?.callId) return;
+        // Only reflects the counterpart's mute on our UI. It must never call
+        // setMuted (which would mute our own microphone).
+        setRemoteMutedState(Boolean(payload?.muted));
+        return;
+      }
+
       const callData = message.payload?.call as any;
       if (!callData?.id || !current || current.callId !== callData.id) return;
 
@@ -1840,7 +1861,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   }, [beginCallAction, finishCallAction, resetCallUiState]);
 
   return (
-    <CallContext.Provider value={{ activeCall, callDuration, isMuted, isSpeaker, mediaState, transportLabel, transportDetails, callAction, setMuted, setSpeaker, startOutgoingCall, simulateIncomingCall, acceptCall, rejectCall, endCall }}>
+    <CallContext.Provider value={{ activeCall, callDuration, isMuted, remoteMuted, isSpeaker, mediaState, transportLabel, transportDetails, callAction, setMuted, setSpeaker, startOutgoingCall, simulateIncomingCall, acceptCall, rejectCall, endCall }}>
       {children}
       {activeCall?.state === "incoming" && (
         <IncomingCallOverlay call={activeCall} action={callAction} onAccept={acceptCall} onReject={rejectCall} />

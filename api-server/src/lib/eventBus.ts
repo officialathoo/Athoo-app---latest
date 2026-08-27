@@ -81,6 +81,7 @@ export type EventName =
   | "call:ice-candidate"
   | "call:rejected"
   | "call:ended"
+  | "call:mute"
   | "booking:location-updated";
 
 type EventPayload = Record<string, unknown>;

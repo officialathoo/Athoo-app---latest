@@ -1238,6 +1238,14 @@ export const api = {
     });
   },
 
+  setCallMute(callId: string, muted: boolean) {
+    return request<{ success: boolean }>(`/api/calls/${callId}/mute`, {
+      method: "POST",
+      auth: true,
+      body: { muted },
+    });
+  },
+
   fetchAudioChunks(callId: string, from = 0) {
     return request<
       { chunks: { index: number; data: string; ext: string }[] }[] |

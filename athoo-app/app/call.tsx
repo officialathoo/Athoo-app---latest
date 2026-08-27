@@ -22,6 +22,7 @@ export default function CallScreen() {
     callDuration,
     endCall,
     isMuted,
+    remoteMuted,
     setMuted,
     isSpeaker,
     setSpeaker,
@@ -156,6 +157,11 @@ export default function CallScreen() {
           </Text>
         ) : null}
         <Text style={styles.privacyBadge}>Phone number hidden - Athoo secure call</Text>
+        {remoteMuted ? (
+          <Text style={[styles.privacyBadge, { backgroundColor: theme.colors.danger, marginTop: 8 }]}>
+            The other person muted their microphone
+          </Text>
+        ) : null}
       </View>
 
 

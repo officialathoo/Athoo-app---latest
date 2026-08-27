@@ -448,7 +448,7 @@ services:
       - key: MAX_CALL_AUDIO_CHUNK_B64
         value: "900000"
       - key: ENABLE_LIVE_TRACKING
-        value: "false"
+        value: "true"
       - key: STUN_URLS
         sync: false
       - key: TURN_URLS
