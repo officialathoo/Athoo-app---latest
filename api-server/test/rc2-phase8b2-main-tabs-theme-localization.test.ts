@@ -14,7 +14,7 @@ const mainTabs = [
   "athoo-app/app/(customer)/(tabs)/profile.tsx",
   "athoo-app/app/(provider)/(tabs)/dashboard.tsx",
   "athoo-app/app/(provider)/(tabs)/jobs.tsx",
-  "athoo-app/app/(provider)/(tabs)/earnings.tsx",
+  "athoo-app/app/(provider)/earnings.tsx",
   "athoo-app/app/(provider)/(tabs)/chat.tsx",
   "athoo-app/app/(provider)/(tabs)/profile.tsx",
 ];
