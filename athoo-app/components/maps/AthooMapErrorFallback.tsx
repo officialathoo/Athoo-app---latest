@@ -4,18 +4,18 @@ import { Icon } from "@/components/ui/Icon";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
 
-type AthooMapFallbackProps = {
+type AthooMapErrorFallbackProps = {
   title?: string;
   message?: string;
   onRetry?: () => void;
 };
 
-/** Backward-compatible empty/error map state for legacy route imports. */
-export function AthooMapFallback({
+/** Backward-compatible empty/error map state shown when the live map cannot render. */
+export function AthooMapErrorFallback({
   title = "Map unavailable",
   message = "You can continue by entering the address manually. Athoo will retry the map when connectivity returns.",
   onRetry,
-}: AthooMapFallbackProps) {
+}: AthooMapErrorFallbackProps) {
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
@@ -36,7 +36,7 @@ export function AthooMapFallback({
   );
 }
 
-export default AthooMapFallback;
+export default AthooMapErrorFallback;
 
 function createStyles(theme: AthooTheme) {
   return StyleSheet.create({
