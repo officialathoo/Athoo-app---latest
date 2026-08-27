@@ -63,8 +63,8 @@ test("feature screens use configurable backend and external-map abstractions", (
 });
 
 test("invoice branding and support destinations are centralized and portable", () => {
-  const customerInvoice = read("athoo-app/app/(customer)/invoices.tsx");
-  const providerInvoice = read("athoo-app/app/(provider)/invoices.tsx");
+  const customerInvoice = read("athoo-app/components/screens/InvoicesScreen.tsx");
+  const providerInvoice = read("athoo-app/components/screens/InvoicesScreen.tsx");
   const bookingPdf = read("athoo-app/utils/bookingInvoicePdf.ts");
   const invoiceConfig = read("athoo-app/config/invoice.ts");
   const settings = read("athoo-app/context/SettingsContext.tsx");

@@ -7,10 +7,10 @@ const root = path.resolve(import.meta.dirname, "../..");
 const read = (file: string) => fs.readFileSync(path.join(root, file), "utf8");
 
 const financeRoutes = [
-  "athoo-app/app/(customer)/invoices.tsx",
+  "athoo-app/components/screens/InvoicesScreen.tsx",
   "athoo-app/app/(customer)/refund-requests.tsx",
   "athoo-app/app/(customer)/subscription.tsx",
-  "athoo-app/app/(provider)/invoices.tsx",
+  "athoo-app/components/screens/InvoicesScreen.tsx",
   "athoo-app/app/(provider)/pay-commission.tsx",
   "athoo-app/app/(provider)/withdrawal-requests.tsx",
   "athoo-app/app/(provider)/subscription.tsx",
@@ -85,8 +85,7 @@ test("invoice documents escape dynamic content and use Pakistan dates and curren
   assert.match(pdf, /Rs\. \$\{Number\.isFinite/);
   assert.match(pdf, /Unable to create invoice/);
   for (const file of [
-    "athoo-app/app/(customer)/invoices.tsx",
-    "athoo-app/app/(provider)/invoices.tsx",
+    "athoo-app/components/screens/InvoicesScreen.tsx",
   ]) {
     const source = read(file);
     assert.match(source, /shareBookingInvoice/);
