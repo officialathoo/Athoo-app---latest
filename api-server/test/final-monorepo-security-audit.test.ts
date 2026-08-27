@@ -24,8 +24,8 @@ test("storage verifies actual objects and callers declare private evidence scope
     "athoo-app/components/screens/ContactSupportScreen.tsx",
     "athoo-app/app/auth/provider-register.tsx",
     "athoo-app/app/(provider)/verification-documents.tsx",
-    "athoo-app/app/(customer)/subscription.tsx",
-    "athoo-app/app/(provider)/subscription.tsx",
+    "athoo-app/components/screens/SubscriptionScreen.tsx",
+    "athoo-app/components/screens/SubscriptionScreen.tsx",
     "athoo-app/app/(provider)/pay-commission.tsx",
   ]) {
     assert.match(readRepo(file), /"private"/);

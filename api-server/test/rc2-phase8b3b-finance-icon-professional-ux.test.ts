@@ -9,11 +9,11 @@ const read = (file: string) => fs.readFileSync(path.join(root, file), "utf8");
 const financeRoutes = [
   "athoo-app/components/screens/InvoicesScreen.tsx",
   "athoo-app/app/(customer)/refund-requests.tsx",
-  "athoo-app/app/(customer)/subscription.tsx",
+  "athoo-app/components/screens/SubscriptionScreen.tsx",
   "athoo-app/components/screens/InvoicesScreen.tsx",
   "athoo-app/app/(provider)/pay-commission.tsx",
   "athoo-app/app/(provider)/withdrawal-requests.tsx",
-  "athoo-app/app/(provider)/subscription.tsx",
+  "athoo-app/components/screens/SubscriptionScreen.tsx",
 ];
 
 function pngDimensions(file: string) {
@@ -38,9 +38,9 @@ test("phase 8B3B finance routes use runtime theme language responsive widths and
 test("finance evidence offers both camera and gallery without mandatory crop", () => {
   const mediaFiles = [
     "athoo-app/app/(customer)/refund-requests.tsx",
-    "athoo-app/app/(customer)/subscription.tsx",
+    "athoo-app/components/screens/SubscriptionScreen.tsx",
     "athoo-app/app/(provider)/pay-commission.tsx",
-    "athoo-app/app/(provider)/subscription.tsx",
+    "athoo-app/components/screens/SubscriptionScreen.tsx",
   ];
   for (const file of mediaFiles) {
     const source = read(file);
@@ -56,8 +56,8 @@ test("finance evidence offers both camera and gallery without mandatory crop", (
 
 test("subscription payment details are API-backed rather than hardcoded", () => {
   for (const file of [
-    "athoo-app/app/(customer)/subscription.tsx",
-    "athoo-app/app/(provider)/subscription.tsx",
+    "athoo-app/components/screens/SubscriptionScreen.tsx",
+    "athoo-app/components/screens/SubscriptionScreen.tsx",
   ]) {
     const source = read(file);
     assert.match(source, /api\.getPaymentAccounts\(\)/);

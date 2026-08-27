@@ -16,9 +16,9 @@ test("mobile storage upload contract accepts explicit private/shared scope", () 
 
 test("sensitive mobile evidence uploads remain explicitly private", () => {
   for (const file of [
-    "athoo-app/app/(customer)/subscription.tsx",
+    "athoo-app/components/screens/SubscriptionScreen.tsx",
     "athoo-app/app/(provider)/pay-commission.tsx",
-    "athoo-app/app/(provider)/subscription.tsx",
+    "athoo-app/components/screens/SubscriptionScreen.tsx",
     "athoo-app/app/(provider)/verification-documents.tsx",
     "athoo-app/app/auth/provider-register.tsx",
     "athoo-app/components/screens/ContactSupportScreen.tsx",
