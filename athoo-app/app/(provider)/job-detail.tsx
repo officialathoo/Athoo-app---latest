@@ -2191,6 +2191,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     color: theme.colors.text,
     textAlign: "right",
     flexShrink: 1,
+    minWidth: 0,
   },
 
   completedTitle: {

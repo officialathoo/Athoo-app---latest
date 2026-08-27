@@ -480,7 +480,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
   },
   tableRowLabel: { ...theme.typography.label, color: theme.colors.text },
   tableRowSub: { ...theme.typography.caption, color: theme.colors.textSecondary, marginTop: 1 },
-  tableRowAmount: { ...theme.typography.label, color: theme.colors.text, textAlign: "right", minWidth: 80 },
+  tableRowAmount: { ...theme.typography.label, color: theme.colors.text, textAlign: "right", flexShrink: 1, minWidth: 0 },
   tableDivider: { height: 1, backgroundColor: theme.colors.primary + "30" },
   totalRow: {
     flexDirection: isUrdu ? "row-reverse" : "row",
@@ -489,8 +489,8 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
-  totalLabel: { fontSize: 13, fontWeight: "800", color: "rgba(255,255,255,0.85)" },
-  totalAmount: { fontSize: 18, fontWeight: "900", color: theme.colors.onBrand },
+  totalLabel: { fontSize: 13, fontWeight: "800", color: "rgba(255,255,255,0.85)", flexShrink: 1, minWidth: 0 },
+  totalAmount: { fontSize: 18, fontWeight: "900", color: theme.colors.onBrand, flexShrink: 1, minWidth: 0 },
   invoiceNote: {
     flexDirection: isUrdu ? "row-reverse" : "row",
     gap: 8,

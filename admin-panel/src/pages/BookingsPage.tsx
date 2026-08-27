@@ -321,7 +321,7 @@ export function BookingsPage() {
                   <tr key={b.id} data-focus-id={b.id === focusId || b.publicId === focusId ? b.id : undefined} className={b.id === focusId || b.publicId === focusId ? "bg-blue-50 ring-2 ring-inset ring-blue-400" : "hover:bg-slate-50 transition-colors"} title={b.publicId || b.id}>
                     <td className="px-5 py-3">
                       <p className="font-medium text-slate-800 capitalize">{b.service.replace(/_/g, " ")}</p>
-                      <p className="text-xs text-slate-400 truncate max-w-[180px]">{b.address}</p>
+                      <p className="text-xs text-slate-400 break-words">{b.address}</p>
                       {b.publicId && <p className="text-[10px] font-mono text-slate-400 mt-0.5">{b.publicId}</p>}
                     </td>
                     <td className="px-4 py-3">
@@ -344,7 +344,7 @@ export function BookingsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-slate-700">{b.price ? currency(b.price) : "—"}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{b.scheduledDate}</td>
+                      <td className="px-4 py-3 text-xs text-slate-500 whitespace-normal break-words">{b.scheduledDate}</td>
                     <td className="px-4 py-3 text-right">
                       <button className="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-50" onClick={() => openBooking(b)}>
                         View

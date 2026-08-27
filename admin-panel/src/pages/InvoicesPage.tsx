@@ -282,13 +282,13 @@ ${inv.discountAmount > 0 ? `<tr><td>Discount</td><td class="amount">−Rs. ${inv
                     </td>
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-800 capitalize">{inv.service.replace(/_/g, " ")}</p>
-                      <p className="text-xs text-slate-400 truncate max-w-[160px]">{inv.scheduledDate}</p>
+                      <p className="text-xs text-slate-400 break-words">{inv.scheduledDate}</p>
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-700">{inv.customerName}</td>
                     <td className="px-4 py-3 text-sm text-slate-700">{inv.providerName}</td>
                     <td className="px-4 py-3 text-right font-semibold text-slate-800">{currency(inv.totalAmount)}</td>
                     <td className="px-4 py-3 text-right text-xs text-slate-500">{currency(inv.commissionAmount)}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{formatDate(inv.createdAt)}</td>
+                      <td className="px-4 py-3 text-xs text-slate-500 whitespace-normal break-words">{formatDate(inv.createdAt)}</td>
                     <td className="px-4 py-3"><StatusBadge status={inv.status} /></td>
                     <td className="px-4 py-3 text-right">
                       <button className="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-50" onClick={() => setSelected(inv)}>
