@@ -18,6 +18,7 @@ import { parseScheduledDateTime } from "../domain/booking-schedule";
 import { normalizeStoredObjectPath } from "../lib/storageSecurity";
 import { isCleanOwnedUploadObjectPath } from "../lib/verifiedUploads";
 import { assertLocationInActiveServiceArea, locationColumns, LocationIntegrityError, parseCanonicalLocation } from "../lib/locationIntegrity";
+import { recordUserEvent } from "../lib/userAudit";
 
 
 type BookingCursor = { updatedAt: string; id: string };
@@ -843,6 +844,23 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       email: { category: "booking" },
     }).catch(() => undefined);
 
+    void recordUserEvent({
+      actorId: userId,
+      actorName: customer.name,
+      actorRole: role,
+      action: "booking.created",
+      target: "booking",
+      targetId: createdBooking.id,
+      details: {
+        providerId,
+        service: createdBooking.service,
+        price: createdBooking.price ?? null,
+        scheduledDate: createdBooking.scheduledDate ?? null,
+        scheduledTime: createdBooking.scheduledTime ?? null,
+      },
+      ip: req.ip ?? null,
+    });
+
     res.json({ booking: sanitizeBookingForViewer(createdBooking as any, role, userId), duplicate: false });
   } catch (e) {
     if (e instanceof PromoBookingError) {
@@ -1006,6 +1024,17 @@ router.patch("/:id/status", requireAuth, async (req: AuthRequest, res: Response)
       const eventName: EventName =
         status === "cancelled" ? "booking:cancelled" : "booking:status";
       broadcastBookingUpdate(updated, eventName, { status });
+
+      void recordUserEvent({
+        actorId: userId,
+        actorName: role === "customer" ? updated.customerName : updated.providerName,
+        actorRole: role,
+        action: "booking.status_changed",
+        target: "booking",
+        targetId: updated.id,
+        details: { from: existing.status, to: status },
+        ip: req.ip ?? null,
+      });
 
       if (status === "accepted") {
         notifyUser({
@@ -1356,6 +1385,17 @@ router.post("/:id/verify-start-pin", requireAuth, async (req: AuthRequest, res: 
       broadcastBookingUpdate(updated, "booking:started");
       // Tell the provider's app the availability flipped so the toggle re-renders.
       emitToUser(updated.providerId, "provider:availability", { isAvailable: false, reason: "in_progress" });
+
+      void recordUserEvent({
+        actorId: userId,
+        actorName: updated.providerName,
+        actorRole: req.user!.role,
+        action: "booking.job_started",
+        target: "booking",
+        targetId: updated.id,
+        details: { customerId: updated.customerId },
+        ip: req.ip ?? null,
+      });
       notifyUser({
         userId: updated.customerId,
         title: "Job started",
@@ -1458,6 +1498,17 @@ router.post("/:id/verify-complete-pin", requireAuth, async (req: AuthRequest, re
     if (updated) {
       await restoreProviderAvailabilityIfCompliant(updated.providerId, "completed");
       broadcastBookingUpdate(updated, "booking:completed");
+
+      void recordUserEvent({
+        actorId: userId,
+        actorName: updated.providerName,
+        actorRole: req.user!.role,
+        action: "booking.job_completed",
+        target: "booking",
+        targetId: updated.id,
+        details: { customerId: updated.customerId, price: updated.price ?? null },
+        ip: req.ip ?? null,
+      });
       notifyUser({
         userId: updated.customerId,
         title: "Job completed",
@@ -1520,6 +1571,17 @@ router.post("/:id/mark-paid", requireAuth, async (req: AuthRequest, res: Respons
         email: { category: "booking" },
       }).catch(() => undefined);
       broadcastBookingUpdate(updated, "booking:updated");
+
+      void recordUserEvent({
+        actorId: userId,
+        actorName: updated.customerName,
+        actorRole: req.user!.role,
+        action: "booking.marked_paid",
+        target: "booking",
+        targetId: updated.id,
+        details: { providerId: updated.providerId, amount: updated.price ?? null },
+        ip: req.ip ?? null,
+      });
     }
     res.json({ booking: sanitizeBookingForViewer(updated as any, req.user!.role, req.user!.userId), duplicate: false });
   } catch (e) {
@@ -1571,6 +1633,17 @@ router.post("/:id/mark-received", requireAuth, async (req: AuthRequest, res: Res
         email: { category: "booking" },
       }).catch(() => undefined);
       broadcastBookingUpdate(updated, "booking:updated");
+
+      void recordUserEvent({
+        actorId: userId,
+        actorName: updated.providerName,
+        actorRole: req.user!.role,
+        action: "booking.payment_received",
+        target: "booking",
+        targetId: updated.id,
+        details: { customerId: updated.customerId, amount: updated.price ?? null },
+        ip: req.ip ?? null,
+      });
     }
     res.json({ booking: sanitizeBookingForViewer(updated as any, req.user!.role, req.user!.userId), duplicate: false });
   } catch (e) {

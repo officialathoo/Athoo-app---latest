@@ -2,11 +2,13 @@ import crypto from "crypto";
 import { logger } from "../lib/logger";
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { callsTable, usersTable } from "@workspace/db/schema";
+import { callsTable, chatsTable, usersTable } from "@workspace/db/schema";
 import { eq, and, or, inArray, desc, gte, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { requireAuth, AuthRequest } from "../middlewares/auth";
 import { emitToUser } from "../lib/eventBus";
 import { notifyUser } from "../lib/notifications";
+import { recordUserEvent } from "../lib/userAudit";
 import { Response } from "express";
 import { getRuntimeCallConfiguration } from "../lib/callConfiguration";
 
@@ -130,6 +132,52 @@ async function withCallerProfile<T extends { callerId: string }>(
   };
 }
 
+/**
+ * WhatsApp-style missed-call handling: when a ringing call expires without an
+ * answer, the receiver gets a "Missed call" alert that deep-links to the chat
+ * with the caller (when a conversation already exists), and the event is
+ * recorded in the audit trail for admin oversight. Never throws.
+ */
+async function handleMissedCall(call: {
+  id: string;
+  callerId: string;
+  receiverId: string;
+  callerName?: string | null;
+  service?: string | null;
+}): Promise<void> {
+  try {
+    let chatLink: string | undefined;
+    const chat = await db.query.chatsTable.findFirst({
+      columns: { id: true },
+      where: or(
+        and(eq(chatsTable.participant1Id, call.callerId), eq(chatsTable.participant2Id, call.receiverId)),
+        and(eq(chatsTable.participant1Id, call.receiverId), eq(chatsTable.participant2Id, call.callerId)),
+      ),
+    });
+    if (chat?.id) chatLink = `/chats/${chat.id}`;
+
+    void notifyUser({
+      userId: call.receiverId,
+      title: "Missed call",
+      body: `${call.callerName || "An Athoo user"} tried calling you${call.service ? ` about ${call.service}` : ""}.`,
+      type: "call",
+      ...(chatLink ? { link: chatLink } : {}),
+      data: { callId: call.id, callerId: call.callerId, missed: true },
+    });
+
+    void recordUserEvent({
+      actorId: call.callerId,
+      actorName: call.callerName ?? undefined,
+      action: "call.missed",
+      target: "user",
+      targetId: call.receiverId,
+      details: { callId: call.id, service: call.service ?? null },
+    });
+  } catch (error) {
+    logger.warn({ err: error, callId: call.id }, "missed call notification failed");
+  }
+}
+
 // ── In-memory audio chunk store (cleared when call ends) ────────────────────
 interface AudioChunk { index: number; senderId: string; data: string; ext: string; ts: number; }
 const audioStore = new Map<string, AudioChunk[]>();   // callId → chunks
@@ -239,6 +287,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       )).orderBy(desc(callsTable.createdAt)).limit(20);
 
       const usableCalls = [] as typeof liveCalls;
+      const missedCalls: typeof liveCalls = [];
       for (const existing of liveCalls) {
         const createdAt = existing.createdAt ? new Date(existing.createdAt).getTime() : 0;
         if (existing.status === "ringing" && (!createdAt || now.getTime() - createdAt > RINGING_CALL_TTL_MS)) {
@@ -247,6 +296,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
             eq(callsTable.status, "ringing"),
           ));
           clearCallAudio(existing.id);
+          missedCalls.push(existing);
           continue;
         }
         usableCalls.push(existing);
@@ -269,9 +319,9 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
             eq(callsTable.status, "ringing"),
             eq(callsTable.callerId, callerId),
           )).returning();
-          if (refreshedCall) return { call: refreshedCall, created: false, signalingRefreshed: true };
+          if (refreshedCall) return { call: refreshedCall, created: false, signalingRefreshed: true, missedCalls };
         }
-        return { call: samePendingCall, created: false, signalingRefreshed: false };
+        return { call: samePendingCall, created: false, signalingRefreshed: false, missedCalls };
       }
 
       const callerBusy = usableCalls.find((existing) => callInvolvesUser(existing, callerId));
@@ -288,6 +338,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
           eq(callsTable.status, "ringing"),
         ));
         clearCallAudio(existing.id);
+        missedCalls.push(existing);
       }
 
       const receiverBusy = usableCalls.find((existing) => callInvolvesUser(existing, receiverId));
@@ -311,11 +362,14 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
         calleeCandidates: "[]",
       }).returning();
       if (!createdCall) throw new Error("Call record was not created");
-      return { call: createdCall, created: true, signalingRefreshed: false };
+      return { call: createdCall, created: true, signalingRefreshed: false, missedCalls };
     });
 
     const call = await withCallerProfile(result.call);
     incomingCallCache.delete(receiverId);
+    for (const missed of result.missedCalls ?? []) {
+      void handleMissedCall(missed);
+    }
     if (result.created || result.signalingRefreshed) {
       emitToUser(receiverId, "call:incoming", { call, signalingRefreshed: result.signalingRefreshed });
     }
@@ -349,6 +403,82 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
   }
 });
 
+
+// ─── Call history ─────────────────────────────────────────────────────────────
+router.get("/history", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const limit = boundedInteger(req.query.limit, 50, 1, 100);
+    const offset = boundedInteger(req.query.offset, 0, 0, 5_000);
+    const callerUsers = alias(usersTable, "caller_user");
+    const receiverUsers = alias(usersTable, "receiver_user");
+    const rows = await db
+      .select({
+        id: callsTable.id,
+        callerId: callsTable.callerId,
+        receiverId: callsTable.receiverId,
+        service: callsTable.service,
+        status: callsTable.status,
+        startedAt: callsTable.startedAt,
+        endedAt: callsTable.endedAt,
+        createdAt: callsTable.createdAt,
+        callerName: callerUsers.name,
+        callerPublicId: callerUsers.publicId,
+        receiverName: receiverUsers.name,
+        receiverPublicId: receiverUsers.publicId,
+      })
+      .from(callsTable)
+      .innerJoin(callerUsers, eq(callerUsers.id, callsTable.callerId))
+      .innerJoin(receiverUsers, eq(receiverUsers.id, callsTable.receiverId))
+      .where(or(eq(callsTable.callerId, userId), eq(callsTable.receiverId, userId)))
+      .orderBy(desc(callsTable.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    // Resolve the pair chat (if any) for each counterpart so taps deep-link into the conversation.
+    const counterpartIds = [...new Set(rows.map((r) => (r.callerId === userId ? r.receiverId : r.callerId)))].slice(0, limit);
+    const chatIdByCounterpart = new Map<string, string>();
+    if (counterpartIds.length) {
+      const chats = await db
+        .select({ id: chatsTable.id, p1: chatsTable.participant1Id, p2: chatsTable.participant2Id })
+        .from(chatsTable)
+        .where(or(
+          and(eq(chatsTable.participant1Id, userId), inArray(chatsTable.participant2Id, counterpartIds)),
+          and(eq(chatsTable.participant2Id, userId), inArray(chatsTable.participant1Id, counterpartIds)),
+        ))
+        .limit(500);
+      for (const chat of chats) {
+        const other = chat.p1 === userId ? chat.p2 : chat.p1;
+        if (!chatIdByCounterpart.has(other)) chatIdByCounterpart.set(other, chat.id);
+      }
+    }
+
+    res.setHeader("Cache-Control", "private, no-store");
+    res.json({
+      calls: rows.map((row) => {
+        const outgoing = row.callerId === userId;
+        const otherId = outgoing ? row.receiverId : row.callerId;
+        const otherName = outgoing ? row.receiverName : row.callerName || null;
+        return {
+          id: row.id,
+          direction: outgoing ? "outgoing" : "incoming",
+          otherUserId: otherId,
+          otherUserName: otherName,
+          otherUserPublicId: outgoing ? row.receiverPublicId : row.callerPublicId,
+          service: row.service || null,
+          status: row.status,
+          startedAt: row.startedAt,
+          endedAt: row.endedAt,
+          createdAt: row.createdAt,
+          chatId: chatIdByCounterpart.get(otherId) || null,
+        };
+      }),
+    });
+  } catch (error) {
+    logger.error({ err: error }, "call history error");
+    res.status(500).json({ error: "Failed to load call history" });
+  }
+});
 
 router.get("/config", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
@@ -390,11 +520,12 @@ router.get("/incoming", requireAuth, async (req: AuthRequest, res: Response) => 
 
     const age = Date.now() - new Date(call.createdAt!).getTime();
     if (age > RINGING_CALL_TTL_MS) {
-      await db.update(callsTable).set({ status: "ended", endedAt: new Date() }).where(and(
+      const [expired] = await db.update(callsTable).set({ status: "ended", endedAt: new Date() }).where(and(
         eq(callsTable.id, call.id),
         eq(callsTable.status, "ringing"),
-      ));
+      )).returning({ id: callsTable.id });
       clearCallAudio(call.id);
+      if (expired) void handleMissedCall(call);
       const payload = { call: null };
       incomingCallCache.set(userId, { ts: Date.now(), payload });
       res.json(payload);
@@ -455,10 +586,11 @@ router.patch("/:callId/accept", requireAuth, async (req: AuthRequest, res: Respo
       }
       const createdAt = current.createdAt ? new Date(current.createdAt).getTime() : 0;
       if (current.status === "ringing" && (!createdAt || Date.now() - createdAt > RINGING_CALL_TTL_MS)) {
-        await db.update(callsTable).set({ status: "ended", endedAt: new Date() }).where(and(
+        const [expired] = await db.update(callsTable).set({ status: "ended", endedAt: new Date() }).where(and(
           eq(callsTable.id, callId),
           eq(callsTable.status, "ringing"),
-        ));
+        )).returning({ id: callsTable.id });
+        if (expired) void handleMissedCall(current);
         incomingCallCache.delete(current.callerId);
         incomingCallCache.delete(current.receiverId);
         res.status(410).json({ error: "This call has expired" });

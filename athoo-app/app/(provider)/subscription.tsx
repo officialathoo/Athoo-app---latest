@@ -539,7 +539,7 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   scroll: {
     width: "100%",
-    maxWidth: redesign.layout.maxContentWidth,
+    maxWidth: 760,
     alignSelf: "center",
     paddingHorizontal: redesign.layout.horizontalPadding,
     paddingTop: redesign.layout.cardGap,

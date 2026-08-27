@@ -41,7 +41,7 @@ export function ServiceHistoryInsights({
         <View style={styles.headingCopy}>
           <AppText variant="bodyStrong">Service history</AppText>
           <AppText variant="caption" tone="muted">
-            Useful timing based on completed services
+            Helpful timing based on your completed services
           </AppText>
         </View>
       </View>

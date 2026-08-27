@@ -67,7 +67,7 @@ function esc(v: unknown): string {
 
 function money(value: unknown): string {
   const amount = Number(value || 0);
-  return `PKR ${Number.isFinite(amount) ? amount.toLocaleString("en-PK") : "0"}`;
+  return `Rs. ${Number.isFinite(amount) ? amount.toLocaleString("en-PK") : "0"}`;
 }
 
 function smallNumberToWords(value: number): string {
@@ -251,7 +251,7 @@ function buildHtml(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-@page{size:210mm 297mm;margin:3mm}
+@page{size:A4;margin:3mm}
 *{box-sizing:border-box}
 body{margin:0;background:#fff;color:${colors.text};font-family:Arial,Helvetica,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .page{width:100%;margin:0 auto;background:${colors.page};border:1px solid ${colors.navy};border-radius:12px;overflow:hidden;padding:10px}
@@ -446,12 +446,18 @@ async function createInvoicePdf(
   const html = buildHtml(resolved, role);
 
 
-  const { uri } = await Print.printToFileAsync({
-    html,
-    base64: false,
-    width: 595.28,
-    height: 841.89,
-  });
+  let uri: string;
+  try {
+    const result = await Print.printToFileAsync({
+      html,
+      base64: false,
+      width: 595.28,
+      height: 841.89,
+    });
+    uri = result.uri;
+  } catch {
+    throw new Error("Unable to create invoice");
+  }
 
   return { uri, invoiceNumber };
 }

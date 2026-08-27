@@ -52,7 +52,7 @@ test("Phase 28 guarantees one canonical chat per participant pair", () => {
   assert.match(route, /onConflictDoNothing\(\{ target: chatsTable\.pairKey \}\)/);
   assert.match(context, /withoutDuplicatePair/);
   assert.match(detail, /import \{[\s\S]*Alert,[\s\S]*\} from "react-native"/);
-  assert.match(detail, /Alert\.alert\("Chat unavailable"/);
+  assert.match(detail, /Alert\.alert\(\s*\r?\n?\s*"Chat unavailable"/);
   assert.match(detail, /chatId: chat\.id/);
   assert.match(integrity, /duplicate_chat_pairs/);
   assert.match(integrity, /noncanonical_chat_pair_keys/);

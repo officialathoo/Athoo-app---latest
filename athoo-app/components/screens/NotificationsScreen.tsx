@@ -8,14 +8,15 @@ import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
 import { redesign } from "@/design/redesign";
+import { responsiveContent } from "@/components/design";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
   Alert,
+  FlatList,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -153,10 +154,17 @@ export function NotificationsScreen({ role }: { role: Role }) {
         </Pressable>
       </View>
 
-      <ScrollView
+      <FlatList
+        data={filteredNotifications}
+        keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 34 }]}
-      >
+        contentContainerStyle={[styles.content, responsiveContent, { paddingBottom: insets.bottom + 34 }]}
+        removeClippedSubviews
+        initialNumToRender={12}
+        maxToRenderPerBatch={12}
+        windowSize={10}
+        ListHeaderComponent={
+          <View>
         <AnimatedCard direction="fade" style={styles.summaryMotion}>
           <LinearGradient colors={[accent, accentPressed]} style={styles.summaryCard}>
             <View style={styles.summaryTop}>
@@ -248,8 +256,10 @@ export function NotificationsScreen({ role }: { role: Role }) {
             );
           })}
         </View>
-
-        {filteredNotifications.length === 0 ? (
+          </View>
+        }
+        ListEmptyComponent={
+          filteredNotifications.length === 0 ? (
           <AnimatedCard direction="fade" style={styles.emptyMotion}>
             <View style={styles.emptyCard}>
               <View style={[styles.emptyIcon, { backgroundColor: theme.colors.surfaceAlt }]}>
@@ -275,9 +285,9 @@ export function NotificationsScreen({ role }: { role: Role }) {
               ) : null}
             </View>
           </AnimatedCard>
-        ) : (
-          <View style={styles.list}>
-            {filteredNotifications.map((notification, index) => {
+          ) : null
+        }
+        renderItem={({ item: notification, index }) => {
               const visual = notificationVisual(notification.type, theme);
               return (
                 <AnimatedCard
@@ -317,6 +327,7 @@ export function NotificationsScreen({ role }: { role: Role }) {
                       >
                         {notification.title}
                       </Text>
+
                       <Text style={[styles.itemMessage, localizedText]} numberOfLines={3}>
                         {notification.message}
                       </Text>
@@ -351,10 +362,8 @@ export function NotificationsScreen({ role }: { role: Role }) {
                   </Pressable>
                 </AnimatedCard>
               );
-            })}
-          </View>
-        )}
-      </ScrollView>
+        }}
+      />
     </View>
   );
 }

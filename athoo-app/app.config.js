@@ -262,7 +262,7 @@ const notificationIconPath = readEnv(
 
 const splashBackgroundLight = readEnv(
   "SPLASH_BACKGROUND_LIGHT",
-  "#061231",
+  "#FFFFFF",
 );
 
 const splashBackgroundDark = readEnv(

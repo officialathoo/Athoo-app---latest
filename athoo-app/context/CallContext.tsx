@@ -1569,15 +1569,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         service,
         offer: offerSdp,
       });
-      const call = res.call as any;
-      serverCallId = String(call.id);
+      const call = res.call as { id: string };
+      serverCallId = call.id;
 
       const confirmedCall: ActiveCall = { ...pendingCall, callId: serverCallId };
       activeCallRef.current = confirmedCall;
       setActiveCall((previous) => previous?.callId === pendingCallId ? confirmedCall : previous);
 
       if (pcRef.current && canUseWebRtc()) {
-        void flushPendingLocalCandidates(serverCallId, "caller");
+        void flushPendingLocalCandidates(call.id, "caller");
       }
 
       if (outgoingStatusPollRef.current) clearInterval(outgoingStatusPollRef.current);
@@ -1645,6 +1645,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         }
       }, 1_000);
     } catch (error) {
+      appLogger.error("calls", "[CallContext] secure WebRTC setup failed before dialing", error);
       if (serverCallId) void api.endCall(serverCallId).catch(() => undefined);
       closePeerConnection();
       stopVoiceStreaming();

@@ -20,6 +20,7 @@ export type ServiceMultiSelectOption = {
   slug?: string | null;
   name: string;
   icon?: string | null;
+  accentColor?: string | null;
 };
 
 type Props = {
@@ -187,11 +188,11 @@ export function ServiceMultiSelect({
                         pressed && styles.pressed,
                       ]}
                     >
-                      <View style={[styles.optionIcon, checked && styles.optionIconSelected]}>
+                      <View style={[styles.optionIcon, checked && styles.optionIconSelected, !checked && option.accentColor ? { backgroundColor: option.accentColor + (theme.dark ? "33" : "1A") } : null]}>
                         <Icon
                           name={(option.icon || "tool") as any}
                           size={18}
-                          color={checked ? theme.colors.primary : theme.colors.textSecondary}
+                          color={checked ? theme.colors.primary : option.accentColor || theme.colors.textSecondary}
                         />
                       </View>
                       <Text style={[styles.optionName, checked && styles.optionNameSelected]}>

@@ -116,23 +116,34 @@ export function BiometricLoginSetting() {
     setOpeningSettings(true);
     setSetupStatus(null);
 
+    const guidance =
+      Platform.OS === "android"
+        ? "Athoo could not open Security settings automatically. Open Phone Settings > Security or Privacy > Biometrics, enroll a method, then return here."
+        : "Athoo could not open Settings automatically. Open iPhone Settings > Face ID & Passcode or Touch ID & Passcode, enroll a method, then return here.";
+
     try {
       if (Platform.OS === "android") {
+        // Deep-link straight into OS enrollment surfaces. The generic app-info
+        // screen cannot enroll biometrics and can trigger a permission review.
         try {
+          await Linking.sendIntent("android.settings.BIOMETRIC_ENROLL");
+        } catch {
           // The general Security screen is supported more consistently across
           // Android vendors than OEM-specific biometric enrollment activities.
           await Linking.sendIntent("android.settings.SECURITY_SETTINGS");
-        } catch {
-          await Linking.openSettings();
         }
       } else {
-        await Linking.openSettings();
+        await Linking.openURL("app-settings:");
       }
     } catch {
-      setSetupStatus(
-        Platform.OS === "android"
-          ? "Athoo could not open Security settings automatically. Open Phone Settings > Security or Privacy > Biometrics, enroll a method, then return here."
-          : "Athoo could not open Settings automatically. Open iPhone Settings > Face ID & Passcode or Touch ID & Passcode, enroll a method, then return here.",
+      setSetupStatus(guidance);
+      Alert.alert(
+        "Biometric method not enrolled",
+        guidance,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: () => void openDeviceSettings() },
+        ],
       );
     } finally {
       setOpeningSettings(false);

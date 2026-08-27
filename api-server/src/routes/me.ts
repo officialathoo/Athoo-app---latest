@@ -6,6 +6,7 @@ import { isCleanOwnedUploadObjectPath } from "../lib/verifiedUploads";
 import { cleanupReplacedOwnedMedia } from "../lib/mediaLifecycle";
 import {
   appSettingsTable,
+  notificationPreferencesTable,
   notificationsTable,
   providerDocumentsTable,
   savedProvidersTable,
@@ -160,6 +161,75 @@ router.patch("/preferences", async (req: AuthRequest, res) => {
   } catch (e) {
     logger.error({ err: e }, "preferences update error");
     return res.status(500).json({ error: "Failed to update preferences" });
+  }
+});
+
+// ───────── Notification (push category) preferences ─────────
+//
+// Server-enforced switches for Athoo's own push delivery. Absence of a row
+// means every category is enabled. Calls and security-critical alerts always
+// attempt native delivery regardless of these switches.
+
+const NOTIFICATION_CATEGORY_COLUMNS = {
+  jobs: "jobsEnabled",
+  messages: "messagesEnabled",
+  calls: "callsEnabled",
+  general: "generalEnabled",
+} as const;
+
+function boolFlag(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return undefined;
+}
+
+async function ensureNotificationPreferencesRow(userId: string) {
+  const inserted = await db
+    .insert(notificationPreferencesTable)
+    .values({ userId })
+    .onConflictDoNothing({ target: notificationPreferencesTable.userId })
+    .returning();
+  if (inserted.length > 0) return inserted[0];
+  return db.query.notificationPreferencesTable.findFirst({
+    where: eq(notificationPreferencesTable.userId, userId),
+  });
+}
+
+router.get("/notification-preferences", async (req: AuthRequest, res) => {
+  try {
+    const preferences = await ensureNotificationPreferencesRow(req.user!.userId);
+    return res.json({ preferences });
+  } catch (e) {
+    logger.error({ err: e }, "notification preferences load error");
+    return res.status(500).json({ error: "Failed to load notification preferences" });
+  }
+});
+
+router.patch("/notification-preferences", async (req: AuthRequest, res) => {
+  try {
+    await ensureNotificationPreferencesRow(req.user!.userId);
+    const patch: Record<string, unknown> = { updatedAt: new Date() };
+    let changed = false;
+    for (const [key, column] of Object.entries(NOTIFICATION_CATEGORY_COLUMNS)) {
+      const value = boolFlag((req.body as Record<string, unknown>)?.[key]);
+      if (value !== undefined) {
+        patch[column] = value;
+        changed = true;
+      }
+    }
+    if (!changed) {
+      return res.status(400).json({ error: `No valid notification preferences supplied (expected: ${Object.keys(NOTIFICATION_CATEGORY_COLUMNS).join(", ")})` });
+    }
+    const [updated] = await db
+      .update(notificationPreferencesTable)
+      .set(patch)
+      .where(eq(notificationPreferencesTable.userId, req.user!.userId))
+      .returning();
+    return res.json({ preferences: updated });
+  } catch (e) {
+    logger.error({ err: e }, "notification preferences update error");
+    return res.status(500).json({ error: "Failed to update notification preferences" });
   }
 });
 

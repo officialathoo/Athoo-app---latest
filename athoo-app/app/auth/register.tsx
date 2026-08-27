@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/Button";
 import { useAuth, UserRole } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
+import { createAuthPalette } from "@/design/authPalette";
 import type { AthooTheme } from "@/design/theme";
 import { redesign } from "@/design/redesign";
 import { LegalAcceptanceCheckbox, LEGAL_VERSION } from "@/components/ui/LegalAcceptanceCheckbox";
@@ -34,6 +35,7 @@ export default function RegisterScreen() {
 
   const { sendOtp, verifyOtpAndLogin, register, promptBiometricSetup } = useAuth();
   const { theme } = useTheme();
+  const auth = useMemo(() => createAuthPalette(theme), [theme]);
   const { translate: tr, textAlign, writingDirection, direction } = useLang();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const localizedText = useMemo(() => ({ textAlign, writingDirection }), [textAlign, writingDirection]);
@@ -154,10 +156,10 @@ export default function RegisterScreen() {
         <LinearGradient
           colors={
             theme.dark
-              ? ["#07101F", "#0B2A59", "#0C4EA6"]
+              ? [auth.heroInk, auth.heroNavy, auth.heroBlue]
               : selectedRole === "provider"
-                ? [theme.colors.secondaryPressed, theme.colors.secondary, "#FF9A45"]
-                : [theme.colors.primaryPressed, theme.colors.primary, "#4EA1FF"]
+                ? [theme.colors.secondaryPressed, theme.colors.secondary, auth.heroAmber]
+                : [theme.colors.primaryPressed, theme.colors.primary, auth.heroSky]
           }
           style={styles.hero}
           start={{ x: 0, y: 0 }}

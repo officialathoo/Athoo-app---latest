@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { Alert, Image, Linking, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Constants from "expo-constants";
 import { AppCard, AppText, ScreenHeader, responsiveContent } from "@/components/design";
 import { Icon } from "@/components/ui/Icon";
 import { useLang } from "@/context/LanguageContext";
@@ -25,7 +26,7 @@ export function AboutScreen({ role }: { role: Role }) {
   const { translate: tr } = useLang();
   const { settings } = useSettings();
   const insets = useSafeAreaInsets();
-  const version = appIdentity.version;
+  const version = Constants.expoConfig?.version || appIdentity.version;
   const accent = role === "provider" ? theme.colors.secondary : theme.colors.primary;
 
   const features = useMemo<Feature[]>(() => role === "provider" ? [

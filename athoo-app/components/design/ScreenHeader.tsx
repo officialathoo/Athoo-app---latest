@@ -91,8 +91,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   back: {
-    width: 42,
-    height: 42,
+    width: 44, height: 44,
     borderRadius: 13,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: "center",

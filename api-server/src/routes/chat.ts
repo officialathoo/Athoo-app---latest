@@ -6,7 +6,7 @@ import { db } from "@workspace/db";
 import { bookingsTable, chatsTable, messagesTable, usersTable } from "@workspace/db/schema";
 import { logger } from "../lib/logger";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
-import { emitToUser } from "../lib/eventBus";
+import { emitToUser, isUserViewingChat } from "../lib/eventBus";
 import { notifyUser } from "../lib/notifications";
 import { chatPairKey } from "../lib/publicIds";
 import { normalizeStoredObjectPath, safeUploadName } from "../lib/storageSecurity";
@@ -255,6 +255,7 @@ router.post("/:chatId/messages", requireAuth, async (req: AuthRequest, res: Resp
       body: normalizedText ? normalizedText.slice(0, 120) : "Sent an attachment",
       type: "chat", link: `/chat/${chat.id}`,
       data: { chatId: chat.id, senderId: userId, senderName: message.senderName },
+      suppressNativeAlert: isUserViewingChat(recipientId, chat.id),
     }).catch(() => undefined);
 
     return res.status(201).json({ message, duplicate: false });

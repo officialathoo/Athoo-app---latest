@@ -2,6 +2,7 @@ import { queueStats } from "./queue";
 import { getMapConfigurationStatus, type MapProviderRuntimeOverrides } from "./mapConfiguration";
 import { getCallConfigurationStatus } from "./callConfiguration";
 import { getUploadScannerStatus } from "./uploadScanner";
+import { getPushConfigurationStatus } from "./push";
 
 export type ReadinessIssue = { area: string; severity: "critical" | "high" | "medium"; message: string; fix: string };
 
@@ -44,6 +45,15 @@ export function productionReadinessSnapshot(mapOverrides: MapProviderRuntimeOver
   }
   if (process.env.NODE_ENV === "production" && mapStatus.directionsProvider === "disabled") {
     issues.push({ area: "maps", severity: "high", message: "Road directions are disabled", fix: "Set MAP_DIRECTIONS_PROVIDER to mapbox or osrm." });
+  }
+  const pushStatus = getPushConfigurationStatus();
+  if (process.env.NODE_ENV === "production" && !pushStatus.configured) {
+    issues.push({
+      area: "notifications",
+      severity: "medium",
+      message: "Push notification provider is not configured",
+      fix: 'Set PUSH_PROVIDER=expo (default) with EXPO_ACCESS_TOKEN, or PUSH_PROVIDER=http_json with PUSH_HTTP_ENDPOINT and auth headers. Set PUSH_PROVIDER=disabled to acknowledge in-app delivery only.',
+    });
   }
   return {
     status: issues.some(i => i.severity === "critical") ? "not_ready" : issues.length ? "ready_with_warnings" : "ready",

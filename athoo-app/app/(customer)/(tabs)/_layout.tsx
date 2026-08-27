@@ -45,7 +45,7 @@ export default function CustomerTabLayout() {
         tabBarStyle: {
           backgroundColor: theme.colors.surface,
           borderTopWidth: redesign.visual.cardBorderWidth,
-          borderTopColor: theme.colors.border,
+          borderTopColor: theme.colors.divider,
           height: tabHeight,
           paddingBottom: tabPadBottom,
           paddingTop: 6,

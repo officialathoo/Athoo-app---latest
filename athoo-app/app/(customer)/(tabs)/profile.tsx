@@ -84,6 +84,7 @@ export default function ProfileScreen() {
     { icon: "message-circle", label: "WhatsApp", url: runtimeConfig.support.whatsappUrl, color: theme.colors.success },
     { icon: "instagram", label: "Instagram", url: runtimeConfig.support.instagramUrl, color: theme.colors.accent },
     { icon: "facebook", label: "Facebook", url: runtimeConfig.support.facebookUrl, color: theme.colors.info },
+    { icon: "download", label: "Get the app", url: runtimeConfig.app.downloadUrl, color: theme.colors.primary },
   ]
     .filter((entry) => Boolean(entry.url))
     .map((entry) => ({ ...entry, url: entry.url as string })), [theme]);

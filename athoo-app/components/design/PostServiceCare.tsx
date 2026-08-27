@@ -23,11 +23,11 @@ export function PostServiceCare({
   const { theme } = useTheme();
 
   const actions = [
-    { key: "invoice", label: "Invoice", icon: "file-text", onPress: onInvoice },
+    { key: "invoice", label: "View invoice", icon: "file-text", onPress: onInvoice },
     ...(onBookAgain
       ? [{ key: "repeat", label: "Book again", icon: "repeat", onPress: onBookAgain }]
       : []),
-    { key: "support", label: "Support", icon: "life-buoy", onPress: onSupport },
+    { key: "support", label: "Get support", icon: "life-buoy", onPress: onSupport },
   ];
 
   return (

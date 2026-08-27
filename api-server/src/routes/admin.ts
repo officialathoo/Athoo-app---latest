@@ -1892,6 +1892,57 @@ router.patch("/users/:id/notes", requirePermission("users.write"), async (req: A
   }
 });
 
+// ─── Warn / Notice ─────────────────────────────────────────────────────────────
+const WARN_KINDS = new Set(["warning", "notice"]);
+router.post("/users/:id/warn", requirePermission("users.write"), async (req: AuthRequest, res) => {
+  try {
+    const kind = String((req.body as any).kind || "warning").trim();
+    const message = String((req.body as any).message || "").trim();
+    if (!WARN_KINDS.has(kind)) {
+      return res.status(400).json({ error: "kind must be 'warning' or 'notice'" });
+    }
+    if (!message || message.length > 1000) {
+      return res.status(400).json({ error: "message required (max 1000 chars)" });
+    }
+    const user = await db.query.usersTable.findFirst({ where: eq(usersTable.id, String(req.params.id)) });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const title = kind === "warning" ? "Official Warning from Athoo" : "Notice from Athoo Admin";
+    await notifyUser({
+      userId: user.id,
+      title,
+      body: message.slice(0, 500),
+      type: "account",
+      link: "/account",
+      data: {
+        kind,
+        issuedByAdminId: req.user!.userId,
+        issuedByAdminName: (req.user as any).name || null,
+      },
+    });
+    try {
+      await createAdminNotification({
+        title: `${kind === "warning" ? "Warning" : "Notice"} issued to ${user.name}${user.publicId ? ` [${user.publicId}]` : ` [ID ${user.id}]`}`,
+        message: `${(req.user as any).name || "An admin"} issued a ${kind} to ${user.name} (${user.role})${user.publicId ? ` [${user.publicId}]` : ` [ID ${user.id}]`}: ${message.slice(0, 300)}`,
+        type: "users",
+        link: `/users/${user.id}/activity`,
+      });
+    } catch (adminNotificationError) {
+      logger.error({ err: adminNotificationError }, "warn admin notification error");
+    }
+    await logAdminAction(req, kind === "warning" ? "user_warned" : "user_notice_issued", "user", user.id, {
+      userName: user.name,
+      userPublicId: user.publicId,
+      role: user.role,
+      message: message.slice(0, 200),
+    });
+    return res.json({ ok: true, kind, deliveredTo: { userId: user.id, name: user.name, publicId: user.publicId } });
+  } catch (e) {
+    logger.error({ err: e }, "admin warn error");
+    return res.status(500).json({ error: "Failed to deliver warning/notice" });
+  }
+});
+
 router.patch("/users/:id/commission-limit", requirePermission("finance.write"), async (req: AuthRequest, res) => {
   try {
     const limit = Number((req.body as any).commissionLimit);
@@ -3412,6 +3463,11 @@ router.get("/users/:id/activity", requirePermission("users.read"), async (req: A
       logins,
       broadcastsCreated,
       documents,
+      reportsFiled,
+      reportsAgainst,
+      auditTrail,
+      rateRequests,
+      chats,
     ] = await Promise.all([
       db.select().from(bookingsTable).where(eq(bookingsTable.customerId, userId)).orderBy(desc(bookingsTable.createdAt)).limit(200),
       db.select().from(bookingsTable).where(eq(bookingsTable.providerId, userId)).orderBy(desc(bookingsTable.createdAt)).limit(200),
@@ -3428,6 +3484,21 @@ router.get("/users/:id/activity", requirePermission("users.read"), async (req: A
       db.select().from(loginHistoryTable).where(eq(loginHistoryTable.userId, userId)).orderBy(desc(loginHistoryTable.createdAt)).limit(50).catch(() => []),
       !isProvider ? db.select().from(broadcastRequestsTable).where(eq(broadcastRequestsTable.customerId, userId)).orderBy(desc(broadcastRequestsTable.createdAt)).limit(100) : Promise.resolve([]),
       isProvider ? db.select().from(providerDocumentsTable).where(eq(providerDocumentsTable.providerId, userId)) : Promise.resolve([]),
+      db.select().from(reportIssuesTable).where(eq(reportIssuesTable.reporterId, userId)).orderBy(desc(reportIssuesTable.createdAt)).limit(50).catch(() => []),
+      db.select().from(reportIssuesTable).where(eq(reportIssuesTable.reportedId, userId)).orderBy(desc(reportIssuesTable.createdAt)).limit(50).catch(() => []),
+      db.select().from(auditLogTable).where(or(eq(auditLogTable.adminId, userId), eq(auditLogTable.targetId, userId))).orderBy(desc(auditLogTable.createdAt)).limit(100).catch(() => []),
+      isProvider ? db.select().from(hourlyRateRequestsTable).where(eq(hourlyRateRequestsTable.providerId, userId)).orderBy(desc(hourlyRateRequestsTable.createdAt)).limit(50).catch(() => []) : Promise.resolve([]),
+      db.select({
+        id: chatsTable.id,
+        participant1Id: chatsTable.participant1Id,
+        participant1Name: chatsTable.participant1Name,
+        participant2Id: chatsTable.participant2Id,
+        participant2Name: chatsTable.participant2Name,
+        bookingId: chatsTable.bookingId,
+        service: chatsTable.service,
+        isLocked: chatsTable.isLocked,
+        createdAt: chatsTable.createdAt,
+      }).from(chatsTable).where(or(eq(chatsTable.participant1Id, userId), eq(chatsTable.participant2Id, userId))).orderBy(desc(chatsTable.createdAt)).limit(50).catch(() => []),
     ]);
 
     const bookings = isProvider ? bookingsAsProvider : bookingsAsCustomer;
@@ -3438,7 +3509,9 @@ router.get("/users/:id/activity", requirePermission("users.read"), async (req: A
     const completed = bookings.filter((b: any) => b.status === "completed").length;
     const cancelled = bookings.filter((b: any) => b.status === "cancelled").length;
     const active = bookings.filter((b: any) => ["pending", "accepted", "in_progress", "on_the_way", "arrived", "started"].includes(b.status)).length;
-    const totalSpent = bookings.filter((b: any) => b.status === "completed").reduce((s: number, b: any) => s + Number(b.price ?? 0), 0);
+    const completedBookings = bookings.filter((b: any) => b.status === "completed");
+    const grossVolume = completedBookings.reduce((s: number, b: any) => s + Number(b.price ?? 0), 0);
+    const commissionPaidTotal = (commissions as any[]).filter((c) => c.status === "paid").reduce((s: number, c: any) => s + Number(c.amount ?? 0), 0);
 
     return res.json({
       user: toSafeUser(user),
@@ -3447,12 +3520,21 @@ router.get("/users/:id/activity", requirePermission("users.read"), async (req: A
         active,
         completed,
         cancelled,
-        totalAmount: totalSpent,
+        totalAmount: grossVolume,
         offersSubmitted: negotiations.length,
         offersAccepted: negotiations.filter((n: any) => n.status === "accepted").length,
         offersRejected: negotiations.filter((n: any) => n.status === "rejected").length,
         notifications: notifications.length,
         complaints: tickets.length,
+        reportsFiled: (reportsFiled as any[]).length,
+        reportsAgainst: (reportsAgainst as any[]).length,
+        openReportsAgainst: (reportsAgainst as any[]).filter((r) => r.status === "open" || r.status === "under_review").length,
+        documentsCount: (documents as any[]).length,
+        expiredDocuments: (documents as any[]).filter((d) => d.expiresAt && !d.expiryNotApplicable && new Date(d.expiresAt).getTime() < Date.now()).length,
+        pendingDocuments: (documents as any[]).filter((d) => d.status === "pending").length,
+        grossEarnings: isProvider ? grossVolume : 0,
+        spending: !isProvider ? grossVolume : 0,
+        commissionPaidTotal,
       },
       bookings,
       negotiations,
@@ -3467,6 +3549,11 @@ router.get("/users/:id/activity", requirePermission("users.read"), async (req: A
       loginHistory: logins,
       broadcasts: broadcastsCreated,
       documents,
+      reportsFiled,
+      reportsAgainst,
+      auditTrail,
+      rateRequests,
+      chats,
     });
   } catch (error) {
     logger.error({ err: error }, "admin user activity error");
@@ -3686,6 +3773,38 @@ router.patch("/invoices/:id/status", requirePermission("finance.write"), async (
     await logAdminAction(req, "invoice_status_updated", "invoice", invoice.id, {
       bookingId: invoice.bookingId, from: current, to: status, reason,
     });
+
+    const invoiceAudience = [booking.customerId, booking.providerId].filter(
+      (value): value is string => Boolean(value),
+    );
+    const invoiceMessages: Record<string, { title: string; body: string }> = {
+      paid: {
+        title: `Invoice ${invoice.invoiceNumber} marked paid`,
+        body: reason || "The invoice for your booking was confirmed as paid by Athoo support.",
+      },
+      disputed: {
+        title: `Invoice ${invoice.invoiceNumber} disputed`,
+        body: reason || "A dispute was opened on this invoice. Athoo support will review it.",
+      },
+      cancelled: {
+        title: `Invoice ${invoice.invoiceNumber} cancelled`,
+        body: reason || "This invoice was cancelled; no payment is due.",
+      },
+      issued: {
+        title: `Invoice ${invoice.invoiceNumber} reopened`,
+        body: reason || "A previously disputed invoice was reopened and is awaiting payment.",
+      },
+    };
+    const invoiceMessage = invoiceMessages[status];
+    if (invoiceMessage) {
+      void notifyUsers(invoiceAudience, {
+        ...invoiceMessage,
+        type: "system",
+        link: `/bookings/${booking.id}`,
+        data: { invoiceId: invoice.id, bookingId: booking.id, status, source: "admin" },
+      }).catch(() => undefined);
+    }
+
     return res.json({ invoice: changed[0], duplicate: false });
   } catch (err) {
     logger.error({ err }, "admin invoice status update error");

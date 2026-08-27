@@ -104,24 +104,40 @@ export async function getProviderActiveWorkBlock(providerId: string, opts: { exc
   return { blocked: false };
 }
 
+/** Upper bound for one IN(...) clause so arbitrary id lists never produce unbounded queries. */
+const BUSY_CHECK_CHUNK_SIZE = 500;
+
 export async function getBusyProviderIds(providerIds: string[]): Promise<Set<string>> {
   const uniqueProviderIds = [...new Set(providerIds.filter(Boolean))];
   if (uniqueProviderIds.length === 0) return new Set();
 
-  const [activeBookings, activeNegotiations] = await Promise.all([
-    db
-      .select({ providerId: bookingsTable.providerId })
-      .from(bookingsTable)
-      .where(and(inArray(bookingsTable.providerId, uniqueProviderIds), activeBookingStatusWhere())),
-    db
-      .select({ providerId: negotiationsTable.providerId })
-      .from(negotiationsTable)
-      .where(and(inArray(negotiationsTable.providerId, uniqueProviderIds), activeNegotiationStatusWhere())),
+  const chunks: string[][] = [];
+  for (let index = 0; index < uniqueProviderIds.length; index += BUSY_CHECK_CHUNK_SIZE) {
+    chunks.push(uniqueProviderIds.slice(index, index + BUSY_CHECK_CHUNK_SIZE));
+  }
+
+  const [activeBookingChunks, activeNegotiationChunks] = await Promise.all([
+    Promise.all(
+      chunks.map((chunk) =>
+        db
+          .select({ providerId: bookingsTable.providerId })
+          .from(bookingsTable)
+          .where(and(inArray(bookingsTable.providerId, chunk), activeBookingStatusWhere())),
+      ),
+    ),
+    Promise.all(
+      chunks.map((chunk) =>
+        db
+          .select({ providerId: negotiationsTable.providerId })
+          .from(negotiationsTable)
+          .where(and(inArray(negotiationsTable.providerId, chunk), activeNegotiationStatusWhere())),
+      ),
+    ),
   ]);
 
   return new Set([
-    ...activeBookings.map((row) => row.providerId),
-    ...activeNegotiations.map((row) => row.providerId),
+    ...activeBookingChunks.flat().map((row) => row.providerId),
+    ...activeNegotiationChunks.flat().map((row) => row.providerId),
   ]);
 }
 

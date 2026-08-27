@@ -23,23 +23,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-const createAuthPalette = (theme: AthooTheme) => ({
-  background: theme.colors.background,
-  backgroundDeep: theme.colors.surfaceAlt,
-  panel: theme.colors.surface,
-  panelRaised: theme.colors.elevated,
-  border: theme.colors.border,
-  borderStrong: theme.colors.border,
-  text: theme.colors.text,
-  muted: theme.colors.textSecondary,
-  subtle: theme.colors.textMuted,
-  cyan: theme.colors.primary,
-  cyanSoft: theme.colors.infoSoft,
-  orange: theme.colors.secondary,
-  orangeSoft: theme.colors.premiumSoft,
-  success: theme.colors.success,
-});
+import { createAuthPalette, type AuthPalette } from "@/design/authPalette";
 
 export default function ChooseRoleScreen() {
   const insets = useSafeAreaInsets();
@@ -128,7 +112,7 @@ export default function ChooseRoleScreen() {
       <LinearGradient
         colors={
           theme.dark
-            ? ["#07101F", auth.background, auth.backgroundDeep]
+            ? [auth.heroInk, auth.background, auth.backgroundDeep]
             : [theme.colors.infoSoft, auth.background, auth.backgroundDeep]
         }
         start={{ x: 0.12, y: 0 }}
@@ -258,7 +242,11 @@ export default function ChooseRoleScreen() {
               {roles.map((item) => (
                 <Pressable
                   key={item.role}
-                  testID={`auth-${mode}-${item.role}`}
+                  testID={
+                    item.role === "customer"
+                      ? `auth-${mode}-customer`
+                      : `auth-${mode}-provider`
+                  }
                   accessibilityRole="button"
                   accessibilityLabel={`${item.title}. ${item.description}`}
                   onPress={() =>
@@ -297,7 +285,7 @@ export default function ChooseRoleScreen() {
                     >
                       {item.eyebrow}
                     </Text>
-                    <Text style={styles.roleTitle}>
+                    <Text numberOfLines={1} style={styles.roleTitle}>
                       {item.title}
                     </Text>
                     <Text
@@ -383,7 +371,7 @@ export default function ChooseRoleScreen() {
   );
 }
 
-function createStyles(theme: AthooTheme, auth: ReturnType<typeof createAuthPalette>) {
+function createStyles(theme: AthooTheme, auth: AuthPalette) {
   return StyleSheet.create({
   root: {
     flex: 1,
@@ -484,7 +472,7 @@ function createStyles(theme: AthooTheme, auth: ReturnType<typeof createAuthPalet
     height: 60,
     borderRadius: 19,
     overflow: "hidden",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.colors.white,
   },
   logo: {
     width: "100%",
@@ -549,7 +537,7 @@ function createStyles(theme: AthooTheme, auth: ReturnType<typeof createAuthPalet
     gap: 9,
   },
   roleCard: {
-    minHeight: 100,
+    minHeight: 94,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,

@@ -81,7 +81,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       await createAdminNotification({
         title: `New support ticket: ${ticket.subject}`,
-        message: `${ticket.userName} (${ticket.userRole}) submitted a support request.`,
+        message: `${ticket.userName}${user.publicId ? ` [${user.publicId}]` : ` [ID ${ticket.userId}]`} (${ticket.userRole}) submitted a support request.`,
         type: "support",
         link: `/admin/support/${ticket.id}`,
       });

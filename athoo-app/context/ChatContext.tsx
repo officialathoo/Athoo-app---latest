@@ -167,6 +167,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     return () => { if (msgPollRef.current) clearInterval(msgPollRef.current); };
   }, [activeChatId, loadMessages]);
 
+  // Tell the server which conversation is on screen so it can suppress native
+  // push banners/sounds for messages the user is actively reading.
+  useEffect(() => {
+    realtime.setViewingChat(activeChatId);
+    return () => realtime.setViewingChat(null);
+  }, [activeChatId]);
+
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
       appStateRef.current = nextState;

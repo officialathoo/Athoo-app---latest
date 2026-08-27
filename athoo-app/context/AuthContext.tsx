@@ -317,6 +317,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshUser = useCallback(async (): Promise<boolean> => {
+    // Returning false also prevents this foreground cycle from treating a dead
+    // session as live: callers must bail out before any token-gated work runs.
     try {
       const res = await api.getMe();
       const rawUser = (res?.user as any) || null;
@@ -406,7 +408,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       void (async () => {
         const token = await getToken();
         if (!token) return;
-        void notificationService.syncPushToken(api.baseUrl, token);
+        void notificationService.syncPushToken(api.baseUrl, token, { force: true });
       })();
     }, runtimeConfig.notifications.pushTokenSyncIntervalMs);
     return () => clearInterval(timer);
@@ -449,7 +451,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const sessionValid = await refreshUser();
           if (!sessionValid) return;
           const token = await getToken();
-          if (token) void notificationService.syncPushToken(api.baseUrl, token);
+          if (token) void notificationService.syncPushToken(api.baseUrl, token, { force: true });
           if (user.role === "provider" && user.isAvailable !== false) {
             void syncProviderLocation(false);
           }

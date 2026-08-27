@@ -1283,6 +1283,28 @@ export const emailPreferencesTable = pgTable("email_preferences", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export const notificationPreferencesTable = pgTable("notification_preferences", {
+  userId: text("user_id").primaryKey().references(() => usersTable.id, { onDelete: "cascade" }),
+  jobsEnabled: boolean("jobs_enabled").notNull().default(true),
+  messagesEnabled: boolean("messages_enabled").notNull().default(true),
+  callsEnabled: boolean("calls_enabled").notNull().default(true),
+  generalEnabled: boolean("general_enabled").notNull().default(true),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const pushTokensTable = pgTable("push_tokens", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  token: text("token").notNull(),
+  deviceId: text("device_id"),
+  platform: text("platform"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => [
+  uniqueIndex("push_tokens_token_key").on(t.token),
+  index("push_tokens_user_idx").on(t.userId),
+]);
+
 export const emailCampaignsTable = pgTable("email_campaigns", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -1413,6 +1435,8 @@ export type Invoice = typeof invoicesTable.$inferSelect;
 export type ReportIssue = typeof reportIssuesTable.$inferSelect;
 export type HourlyRateRequest = typeof hourlyRateRequestsTable.$inferSelect;
 export type NotificationTemplate = typeof notificationTemplatesTable.$inferSelect;
+export type NotificationPreference = typeof notificationPreferencesTable.$inferSelect;
+export type PushToken = typeof pushTokensTable.$inferSelect;
 export type EmailVerificationChallenge = typeof emailVerificationChallengesTable.$inferSelect;
 export type EmailPreference = typeof emailPreferencesTable.$inferSelect;
 export type EmailCampaign = typeof emailCampaignsTable.$inferSelect;

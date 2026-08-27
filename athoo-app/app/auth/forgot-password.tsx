@@ -17,6 +17,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
+import { createAuthPalette } from "@/design/authPalette";
 import type { AthooTheme } from "@/design/theme";
 import { redesign } from "@/design/redesign";
 import { apiErrorToMessage } from "@/lib/apiError";
@@ -53,6 +54,7 @@ async function postJson(path: string, body: Record<string, any>) {
 export default function ForgotPasswordScreen() {
   const { role } = useLocalSearchParams<{ role?: Role }>();
   const { theme } = useTheme();
+  const auth = useMemo(() => createAuthPalette(theme), [theme]);
   const { translate: tr, textAlign, writingDirection, direction } = useLang();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const localizedText = useMemo(() => ({ textAlign, writingDirection }), [textAlign, writingDirection]);
@@ -219,11 +221,11 @@ export default function ForgotPasswordScreen() {
           colors={
             theme.dark
               ? (isProvider
-                  ? ["#17100A", "#5B2A09", "#A94708"]
-                  : ["#07101F", "#0B2A59", "#0C4EA6"])
+                  ? [auth.emberInk, auth.emberDeep, auth.ember]
+                  : [auth.heroInk, auth.heroNavy, auth.heroBlue])
               : isProvider
-                ? [theme.colors.secondaryPressed, theme.colors.secondary, "#FF9A45"]
-                : [theme.colors.primaryPressed, theme.colors.primary, "#4EA1FF"]
+                ? [theme.colors.secondaryPressed, theme.colors.secondary, auth.heroAmber]
+                : [theme.colors.primaryPressed, theme.colors.primary, auth.heroSky]
           }
           style={[styles.hero, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}
           start={{ x: 0, y: 0 }}

@@ -4,6 +4,7 @@ import React, { useEffect, useRef } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
 import { useLang } from "@/context/LanguageContext";
 import { useNegotiation } from "@/context/NegotiationContext";
 import { useNotifications } from "@/context/NotificationContext";
@@ -114,7 +115,7 @@ export default function ProviderTabLayout() {
             ...theme.shadows.sm,
           },
           tabBarItemStyle: {
-            minHeight: 54,
+            minHeight: redesign.control.standardHeight,
             paddingVertical: 2,
           },
           tabBarLabelStyle: {

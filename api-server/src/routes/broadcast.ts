@@ -259,6 +259,84 @@ function matchProviderToBroadcast(
   };
 }
 
+/** Eligibility flags that are cheap to evaluate directly in SQL. */
+const BROADCAST_CANDIDATE_FLAG_FILTERS = [
+  eq(usersTable.role, "provider"),
+  eq(usersTable.isBlocked, false),
+  eq(usersTable.isDeactivated, false),
+  eq(usersTable.isAvailable, true),
+  eq(usersTable.isVerified, true),
+  eq(usersTable.verificationStatus, "approved"),
+];
+
+/**
+ * Coarse lat/lng bounding box for a radius. Providers outside the box can never
+ * satisfy the precise haversine check because the effective radius is always
+ * <= the requested radius, so excluding them in SQL is provably safe.
+ */
+function broadcastGeoBox(
+  latitude: unknown,
+  longitude: unknown,
+  radiusKm: number,
+): { minLat: number; maxLat: number; minLng: number; maxLng: number } | null {
+  const lat = toCoord(latitude);
+  const lng = toCoord(longitude);
+  if (lat === null || lng === null) return null;
+  const safeRadius = Math.max(1, Math.min(200, radiusKm));
+  const latDelta = safeRadius / 111.32;
+  const cosLat = Math.max(0.2, Math.cos((lat * Math.PI) / 180));
+  const lngDelta = safeRadius / (111.32 * cosLat);
+  return {
+    minLat: lat - latDelta,
+    maxLat: lat + latDelta,
+    minLng: lng - lngDelta,
+    maxLng: lng + lngDelta,
+  };
+}
+
+/**
+ * Scale-safe candidate fetch for broadcast delivery. Instead of loading every
+ * provider row into memory, eligibility flags and a geographic bounding box
+ * are applied in SQL and only plausible candidates reach Node, where the exact
+ * haversine distance, service and busy checks still run.
+ */
+async function fetchBroadcastCandidates(
+  request: Pick<BroadcastRecord, "latitude" | "longitude">,
+  radiusKm: number,
+): Promise<{ totalProviders: number; candidates: ProviderRecord[]; prefilteredCount: number }> {
+  const box = broadcastGeoBox(request.latitude, request.longitude, radiusKm);
+
+  const [totalRows, flagRows] = await Promise.all([
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(usersTable)
+      .where(eq(usersTable.role, "provider")),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(usersTable)
+      .where(and(...BROADCAST_CANDIDATE_FLAG_FILTERS)),
+  ]);
+
+  const geoFilters = [sql`${usersTable.latitude} is not null`, sql`${usersTable.longitude} is not null`];
+  if (box) {
+    geoFilters.push(
+      sql`(${usersTable.latitude})::double precision between ${box.minLat} and ${box.maxLat}`,
+      sql`(${usersTable.longitude})::double precision between ${box.minLng} and ${box.maxLng}`,
+    );
+  }
+
+  const candidates = await db
+    .select()
+    .from(usersTable)
+    .where(and(...BROADCAST_CANDIDATE_FLAG_FILTERS, ...geoFilters));
+
+  return {
+    totalProviders: totalRows[0]?.count ?? 0,
+    candidates,
+    prefilteredCount: Math.max(0, (flagRows[0]?.count ?? 0) - candidates.length),
+  };
+}
+
 async function lockActiveWorkSubjects(
   tx: BroadcastTransaction,
   customerId: string,
@@ -506,14 +584,15 @@ async function deliverExpandedBroadcast(requestId: string): Promise<void> {
   });
   if (!request || request.status !== "open" || isExpiredBroadcast(request)) return;
 
-  const [settings, providers] = await Promise.all([
-    getPlatformSettings(),
-    db.select().from(usersTable).where(eq(usersTable.role, "provider")),
-  ]);
+  const settings = await getPlatformSettings();
   if (settings.broadcastExpansionRadiusKm <= settings.broadcastInitialRadiusKm) return;
 
-  const busyProviderIds = await getBusyProviderIds(providers.map((provider) => provider.id));
-  const expandedOnly = providers.filter((provider) => {
+  // Only providers plausibly inside the expansion radius are loaded; the exact
+  // initial-vs-expanded match logic below is unchanged.
+  const { candidates } = await fetchBroadcastCandidates(request, settings.broadcastExpansionRadiusKm);
+
+  const busyProviderIds = await getBusyProviderIds(candidates.map((provider) => provider.id));
+  const expandedOnly = candidates.filter((provider) => {
     const initial = matchProviderToBroadcast(provider, request, settings.broadcastInitialRadiusKm, busyProviderIds);
     const expanded = matchProviderToBroadcast(provider, request, settings.broadcastExpansionRadiusKm, busyProviderIds);
     return !initial.eligible && initial.reason === "outside_service_area" && expanded.eligible;
@@ -702,15 +781,20 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
     // Provider matching and notification delivery are best-effort. Once the
     // broadcast row is committed, downstream push/socket failures must never
-    // turn a successful creation into an HTTP 500 or encourage duplicate retries.
+    // turn a successful creation into a HTTP 500 or encourage duplicate retries.
     try {
-      // Fetch all provider candidates so the delivery summary explains every
-      // exclusion rather than silently returning "sent" with zero recipients.
-      const candidateProviders = await db
-        .select()
-        .from(usersTable)
-        .where(eq(usersTable.role, "provider"));
-      deliverySummary.candidateCount = candidateProviders.length;
+      // SQL pre-filters eligibility flags and a bounding box around the request
+      // so candidate volume stays proportional to nearby providers, not to the
+      // whole provider table. The summary still explains every exclusion.
+      const { totalProviders, candidates, prefilteredCount } = await fetchBroadcastCandidates(
+        request,
+        settings.broadcastInitialRadiusKm,
+      );
+      deliverySummary.candidateCount = totalProviders;
+      if (prefilteredCount > 0) {
+        deliverySummary.skippedByReason.prefiltered_unavailable_or_out_of_radius = prefilteredCount;
+      }
+      const candidateProviders: ProviderRecord[] = candidates;
 
       const busyProviderIds = await getBusyProviderIds(candidateProviders.map((provider) => provider.id));
       const matchedProviders: typeof candidateProviders = [];

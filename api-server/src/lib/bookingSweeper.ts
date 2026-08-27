@@ -466,6 +466,7 @@ async function sweepExpiredPremiumPlans(): Promise<number> {
         title: "Premium Plan Expired",
         body: "Your Athoo Premium plan has expired. Renew now to keep enjoying premium benefits.",
         type: "system",
+        link: "/premium",
         data: { action: "renew_premium" },
       }).catch(() => undefined);
     } catch (e) {
@@ -510,6 +511,7 @@ async function sweepPremiumExpiryReminders(): Promise<number> {
         title: "Premium Plan Expiring Soon",
         body: `Your Athoo Premium plan expires in ${daysLeft} day${daysLeft !== 1 ? "s" : ""}. Renew now to keep your benefits.`,
         type: "system",
+        link: "/premium",
         data: { action: "renew_premium", expiresAt: expiresAt.toISOString() },
       }).catch(() => undefined);
       await db.update(usersTable).set({ premiumReminderSentAt: now, updatedAt: now }).where(eq(usersTable.id, user.id));

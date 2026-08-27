@@ -142,7 +142,7 @@ export default function CallScreen() {
             mediaReady && { color: theme.colors.success },
             mediaFailed && { color: theme.colors.danger },
           ]}>
-            {preparing ? "Preparing microphone and secure relay" : connecting ? "Waiting for answer" : mediaState === "connecting" ? "Connecting secure audio" : transportLabel}
+            {preparing ? "Preparing secure audio" : connecting ? "Waiting for answer" : mediaState === "connecting" ? "Connecting secure audio" : transportLabel}
           </Text>
         </View>
 

@@ -125,7 +125,8 @@ router.post("/", async (req: Request, res: Response) => {
 });
 
 // ── GET /api/admin/leads ──────────────────────────────────────────────────────
-adminRouter.get("/leads", requirePermission("users.read"), async (req: AuthRequest, res: Response) => {
+// NOTE: this router is mounted at /admin/leads, so paths here are relative to it.
+adminRouter.get("/", requirePermission("users.read"), async (req: AuthRequest, res: Response) => {
   try {
     const { type, status, search, from, to, limit: lim, offset: off } = req.query as Record<string, string | undefined>;
     const pageLimit = Math.min(Number(lim) || 50, 200);
@@ -167,7 +168,7 @@ adminRouter.get("/leads", requirePermission("users.read"), async (req: AuthReque
 });
 
 // ── GET /api/admin/leads/export (CSV) ────────────────────────────────────────
-adminRouter.get("/leads/export", requirePermission("users.read"), async (_req: AuthRequest, res: Response) => {
+adminRouter.get("/export", requirePermission("users.read"), async (_req: AuthRequest, res: Response) => {
   try {
     const leads = await db.select().from(leadsTable).orderBy(desc(leadsTable.createdAt)).limit(5000);
     const header = ["ID", "Type", "Name", "Phone", "Email", "Service", "City", "Status", "Source", "Duplicate", "Message", "Created"].map(csvCell).join(",");
@@ -186,7 +187,7 @@ adminRouter.get("/leads/export", requirePermission("users.read"), async (_req: A
 });
 
 // ── GET /api/admin/leads/:id ──────────────────────────────────────────────────
-adminRouter.get("/leads/:id", requirePermission("users.read"), async (req: AuthRequest, res: Response) => {
+adminRouter.get("/:id", requirePermission("users.read"), async (req: AuthRequest, res: Response) => {
   try {
     const lead = await db.query.leadsTable.findFirst({ where: eq(leadsTable.id, req.params.id) });
     if (!lead) { res.status(404).json({ error: "Lead not found" }); return; }
@@ -198,7 +199,7 @@ adminRouter.get("/leads/:id", requirePermission("users.read"), async (req: AuthR
 });
 
 // ── PATCH /api/admin/leads/:id/status ────────────────────────────────────────
-adminRouter.patch("/leads/:id/status", requirePermission("users.write"), async (req: AuthRequest, res: Response) => {
+adminRouter.patch("/:id/status", requirePermission("users.write"), async (req: AuthRequest, res: Response) => {
   try {
     const { status, notes } = req.body as { status?: string; notes?: string };
     const valid = ["new", "contacted", "converted", "not_interested", "duplicate", "archived"];
@@ -219,7 +220,7 @@ adminRouter.patch("/leads/:id/status", requirePermission("users.write"), async (
 });
 
 // ── PATCH /api/admin/leads/:id/notes ─────────────────────────────────────────
-adminRouter.patch("/leads/:id/notes", requirePermission("users.write"), async (req: AuthRequest, res: Response) => {
+adminRouter.patch("/:id/notes", requirePermission("users.write"), async (req: AuthRequest, res: Response) => {
   try {
     const { notes } = req.body as { notes?: string };
     await db.update(leadsTable).set({ notes: notes?.trim() || null, updatedAt: new Date() }).where(eq(leadsTable.id, req.params.id));
@@ -232,7 +233,7 @@ adminRouter.patch("/leads/:id/notes", requirePermission("users.write"), async (r
 });
 
 // ── DELETE /api/admin/leads/:id ───────────────────────────────────────────────
-adminRouter.delete("/leads/:id", requirePermission("users.write"), async (req: AuthRequest, res: Response) => {
+adminRouter.delete("/:id", requirePermission("users.write"), async (req: AuthRequest, res: Response) => {
   try {
     await db.delete(leadsTable).where(eq(leadsTable.id, req.params.id));
     res.json({ ok: true });

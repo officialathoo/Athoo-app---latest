@@ -300,8 +300,7 @@ export function NotificationTemplatesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-800">Notification Templates</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Manage push, SMS, and email notification content</p>
-        </div>
+          <p className="text-sm text-slate-500 mt-0.5">Manage push, SMS, and email notification content</p>        </div>
         <div className="flex gap-2">
           {allTemplates.length === 0 && (
             <button onClick={() => seedMutation.mutate()} disabled={seedMutation.isPending}
@@ -315,6 +314,11 @@ export function NotificationTemplatesPage() {
             {showAdd ? "Cancel" : "Add Template"}
           </button>
         </div>
+      </div>
+
+      <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-xs text-blue-800 leading-relaxed">
+        <p><strong>Live overrides:</strong> an <strong>active push template</strong> whose key matches a notification type replaces that notification's title/body for every delivery — e.g. key <code className="font-mono bg-white px-1 rounded">booking</code>, <code className="font-mono bg-white px-1 rounded">message</code>, <code className="font-mono bg-white px-1 rounded">account</code>. A template can also be targeted explicitly with the <code className="font-mono bg-white px-1 rounded">templateKey</code> data field.</p>
+        <p className="mt-1">Placeholders like <code className="font-mono bg-white px-1 rounded">{"{{userName}}"}</code> and <code className="font-mono bg-white px-1 rounded">{"{{appName}}"}</code> are substituted from the notification's data; unmatched placeholders are removed. Changes apply within ~30 seconds.</p>
       </div>
 
       {canWrite && showAdd && (

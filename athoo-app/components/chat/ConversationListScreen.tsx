@@ -165,13 +165,15 @@ export function ConversationListScreen({
           </View>
         </View>
 
-        {isCustomer ? (
+        <View style={styles.headerActions}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={tr(
-              "Find a provider to message",
-            )}
-            onPress={openDiscovery}
+            accessibilityLabel={tr("Call history")}
+            onPress={() =>
+              router.push(
+                (isCustomer ? "/(customer)/calls" : "/(provider)/calls") as any,
+              )
+            }
             style={({ pressed }) => [
               styles.composeButton,
               {
@@ -181,26 +183,45 @@ export function ConversationListScreen({
               },
             ]}
           >
-            <Icon name="edit" size={18} color={accent} />
+            <Icon name="call" size={18} color={accent} />
           </Pressable>
-        ) : (
-          <View
-            style={[
-              styles.secureBadge,
-              { backgroundColor: accentSoft },
-            ]}
-          >
-            <Icon name="lock" size={13} color={accent} />
-            <Text
-              style={[
-                styles.secureBadgeText,
-                { color: accent },
+          {isCustomer ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={tr(
+                "Find a provider to message",
+              )}
+              onPress={openDiscovery}
+              style={({ pressed }) => [
+                styles.composeButton,
+                {
+                  backgroundColor: accentSoft,
+                  borderColor: theme.colors.focusRing,
+                  opacity: pressed ? 0.72 : 1,
+                },
               ]}
             >
-              {tr("Secure")}
-            </Text>
-          </View>
-        )}
+              <Icon name="edit" size={18} color={accent} />
+            </Pressable>
+          ) : (
+            <View
+              style={[
+                styles.secureBadge,
+                { backgroundColor: accentSoft },
+              ]}
+            >
+              <Icon name="lock" size={13} color={accent} />
+              <Text
+                style={[
+                  styles.secureBadgeText,
+                  { color: accent },
+                ]}
+              >
+                {tr("Secure")}
+              </Text>
+            </View>
+          )}
+        </View>
       </View>
 
       <ScrollView
@@ -619,6 +640,11 @@ function createStyles(theme: AthooTheme) {
     headerMetaText: {
       ...theme.typography.caption,
       fontFamily: theme.typography.label.fontFamily,
+    },
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
     },
     composeButton: {
       width: redesign.control.iconButtonSize,

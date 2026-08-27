@@ -155,11 +155,6 @@ const configurationStyles = StyleSheet.create({
 
 function ConfiguredApplication() {
   const { theme } = useTheme();
-  const { ready: languageReady } = useLang();
-
-  if (!languageReady) {
-    return <AthooLoader />;
-  }
 
   return !api.isConfigured ? (
     <ApiConfigurationScreen />
@@ -203,18 +198,20 @@ function ConfiguredApplication() {
   );
 }
 
-function ThemedApplication() {
-  const { ready } = useTheme();
+/**
+ * Single cold-start gate. Fonts, theme preferences and language preferences
+ * are read concurrently because every provider mounts immediately; the UI only
+ * waits for the slowest reader instead of paying each round-trip serially.
+ */
+function AppReadyGate({ fontsReady }: { fontsReady: boolean }) {
+  const { ready: themeReady } = useTheme();
+  const { ready: languageReady } = useLang();
 
-  if (!ready) {
+  if (!fontsReady || !themeReady || !languageReady) {
     return <AthooLoader />;
   }
 
-  return (
-    <LanguageProvider>
-      <ConfiguredApplication />
-    </LanguageProvider>
-  );
+  return <ConfiguredApplication />;
 }
 
 export default function RootLayout() {
@@ -231,14 +228,12 @@ export default function RootLayout() {
     }
   }, [fontsLoaded, fontError]);
 
-  if (!fontsLoaded && !fontError) {
-    return <AthooLoader />;
-  }
-
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <ThemedApplication />
+        <LanguageProvider>
+          <AppReadyGate fontsReady={Boolean(fontsLoaded || fontError)} />
+        </LanguageProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

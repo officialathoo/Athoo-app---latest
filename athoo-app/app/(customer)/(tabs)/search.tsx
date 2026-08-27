@@ -9,6 +9,7 @@ import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  FlatList,
   Image,
   Platform,
   Pressable,
@@ -998,155 +999,164 @@ export default function SearchScreen() {
           </View>
         </View>
       ) : (
-        <ScrollView
+        <FlatList
           style={styles.scroll}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 80 }]}
           showsVerticalScrollIndicator={false}
-        >
-          {query.trim().length > 0 && categoryMatches.length > 0 && (
-            <View style={styles.matchHint} accessibilityRole="summary">
-              <Icon name="sparkles" size={15} color={theme.colors.primary} />
-              <Text style={styles.matchHintText}>Matching {categoryMatches.slice(0, 3).map((category) => category.name).join(", ")}</Text>
-            </View>
-          )}
-
-          {!query && (
-            <AnimatedCard delay={60}>
-              <View style={styles.servicesSection}>
-                <Text style={styles.sectionLabel}>Browse by Service</Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.servicesGrid}
-                >
-                  {categories.map((s) => {
-                    const appearance = getCategoryAppearance(s, theme);
-                    const selected = selectedService === s.slug;
-                    return (
-                      <Pressable
-                        key={s.id}
-                        onPress={() => setSelectedService(selected ? null : s.slug)}
-                        style={[
-                          styles.serviceGridItem,
-                          selected && {
-                            backgroundColor: appearance.selectedBackground,
-                            borderColor: appearance.accent,
-                          },
-                        ]}
-                      >
-                        <Icon
-                          name={s.icon as any}
-                          size={18}
-                          color={selected ? appearance.accent : theme.colors.textSecondary}
-                        />
-                        <Text
-                          style={[
-                            styles.serviceGridText,
-                            selected && { color: appearance.accent },
-                          ]}
-                        >
-                          {s.name}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
-              </View>
-            </AnimatedCard>
-          )}
-
-          {providerLoadError && providersLoadedRef.current ? (
-            <View style={{ marginBottom: 10, borderWidth: 1, borderColor: theme.colors.danger, backgroundColor: theme.colors.dangerSoft, borderRadius: 12, padding: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Icon name="alert-circle" size={16} color={theme.colors.danger} />
-              <Text style={{ color: theme.colors.danger, fontSize: 12, fontWeight: "700", flex: 1 }}>
-                Provider refresh failed. Showing the last loaded results.
-              </Text>
-              <Pressable onPress={() => void loadProviders("refresh")} accessibilityRole="button">
-                <Text style={{ color: theme.colors.primary, fontSize: 12, fontWeight: "800" }}>Retry</Text>
-              </Pressable>
-            </View>
-          ) : null}
-
-          <View style={styles.resultsHeader}>
-                        <Text style={[styles.sectionLabel, styles.resultsTitle]}>
-              {selectedService
-                ? `${getCategoryBySlug(selectedService || "")?.name} Workers`
-                : query
-                ? `Results for "${query}"`
-                : "All Workers"}
-            </Text>
-            <Text style={styles.resultCount}>
-              {sorted.length} found •{" "}
-              {sortBy === "recommended"
-                ? "Recommended"
-                : sortBy === "nearby"
-                ? "Nearest first"
-                : sortBy === "rating"
-                ? "Top rated"
-                : "Most jobs"}
-            </Text>
-          </View>
-
-          {loadingProviders ? (
-            <View style={styles.loadingListWrap}>
-              <ActivityIndicator size="large" color={theme.colors.primary} />
-              <Text style={styles.loadingListText}>Loading workers...</Text>
-            </View>
-          ) : providerLoadError && !providersLoadedRef.current ? (
-            <AnimatedCard>
-              <View style={styles.emptyState}>
-                <Icon name="alert-circle" size={36} color={theme.colors.danger} />
-                <Text style={[styles.emptyTitle, { color: theme.colors.danger }]}>Unable to load workers</Text>
-                <Text style={styles.emptySubtitle}>{providerLoadError}</Text>
-                <Pressable
-                  onPress={() => void loadProviders("refresh")}
-                  accessibilityRole="button"
-                  testID="search-provider-load-retry-list"
-                  style={{ marginTop: 10, paddingVertical: 10, paddingHorizontal: 18 }}
-                >
-                  <Text style={{ color: theme.colors.primary, fontWeight: "800" }}>Retry</Text>
-                </Pressable>
-              </View>
-            </AnimatedCard>
-          ) : sorted.length === 0 ? (
-            <AnimatedCard>
-              <View style={styles.emptyState}>
-                <Icon name="search" size={36} color={theme.colors.textMuted} />
-                <Text style={styles.emptyTitle}>{tr("No workers found")}</Text>
-                <Text style={styles.emptySubtitle}>{tr("Try a different search or service")}</Text>
-              </View>
-            </AnimatedCard>
-          ) : (
-            sorted.map((p) => (
-                <View key={p.id} style={styles.listCardWrap}>
-                  {p.routeStatus === "pending" ? (
-                    <View style={styles.distanceBadge}>
-                      <ActivityIndicator size="small" color={theme.colors.primary} />
-                      <Text style={styles.distanceBadgeText}>Calculating route…</Text>
-                    </View>
-                  ) : typeof p.distanceKm === "number" ? (
-                    <View style={styles.distanceBadge}>
-                      <Icon name="navigation" size={11} color={theme.colors.primary} />
-                      <Text style={styles.distanceBadgeText}>
-                        {p.distanceKm.toFixed(1)} km by road
-                        {p.routeDurationMin != null ? ` • ${Math.round(p.routeDurationMin)} min` : ""}
-                      </Text>
-                    </View>
-                  ) : null}
-
-                  <ProviderCard
-                    provider={p}
-                    onPress={() =>
-                      router.push({
-                        pathname: "/(customer)/provider-detail",
-                        params: { providerId: p.id, serviceId: selectedService || undefined },
-                      })
-                    }
-                  />
+          data={loadingProviders || (providerLoadError && !providersLoadedRef.current) || sorted.length === 0 ? [] : sorted}
+          keyExtractor={(p) => p.id}
+          removeClippedSubviews
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          windowSize={7}
+          ListHeaderComponent={
+            <>
+              {query.trim().length > 0 && categoryMatches.length > 0 && (
+                <View style={styles.matchHint} accessibilityRole="summary">
+                  <Icon name="sparkles" size={15} color={theme.colors.primary} />
+                  <Text style={styles.matchHintText}>Matching {categoryMatches.slice(0, 3).map((category) => category.name).join(", ")}</Text>
                 </View>
-            ))
+              )}
+
+              {!query && (
+                <AnimatedCard delay={60}>
+                  <View style={styles.servicesSection}>
+                    <Text style={styles.sectionLabel}>Browse by Service</Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.servicesGrid}
+                    >
+                      {categories.map((s) => {
+                        const appearance = getCategoryAppearance(s, theme);
+                        const selected = selectedService === s.slug;
+                        return (
+                          <Pressable
+                            key={s.id}
+                            onPress={() => setSelectedService(selected ? null : s.slug)}
+                            style={[
+                              styles.serviceGridItem,
+                              selected && {
+                                backgroundColor: appearance.selectedBackground,
+                                borderColor: appearance.accent,
+                              },
+                            ]}
+                          >
+                            <Icon
+                              name={s.icon as any}
+                              size={18}
+                              color={selected ? appearance.accent : theme.colors.textSecondary}
+                            />
+                            <Text
+                              style={[
+                                styles.serviceGridText,
+                                selected && { color: appearance.accent },
+                              ]}
+                            >
+                              {s.name}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                </AnimatedCard>
+              )}
+
+              {providerLoadError && providersLoadedRef.current ? (
+                <View style={{ marginBottom: 10, borderWidth: 1, borderColor: theme.colors.danger, backgroundColor: theme.colors.dangerSoft, borderRadius: 12, padding: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Icon name="alert-circle" size={16} color={theme.colors.danger} />
+                  <Text style={{ color: theme.colors.danger, fontSize: 12, fontWeight: "700", flex: 1 }}>
+                    Provider refresh failed. Showing the last loaded results.
+                  </Text>
+                  <Pressable onPress={() => void loadProviders("refresh")} accessibilityRole="button">
+                    <Text style={{ color: theme.colors.primary, fontSize: 12, fontWeight: "800" }}>Retry</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+
+              <View style={styles.resultsHeader}>
+                            <Text style={[styles.sectionLabel, styles.resultsTitle]}>
+                  {selectedService
+                    ? `${getCategoryBySlug(selectedService || "")?.name} Workers`
+                    : query
+                    ? `Results for "${query}"`
+                    : "All Workers"}
+                </Text>
+                <Text style={styles.resultCount}>
+                  {sorted.length} found •{" "}
+                  {sortBy === "recommended"
+                    ? "Recommended"
+                    : sortBy === "nearby"
+                    ? "Nearest first"
+                    : sortBy === "rating"
+                    ? "Top rated"
+                    : "Most jobs"}
+                </Text>
+              </View>
+            </>
+          }
+          ListEmptyComponent={
+            loadingProviders ? (
+              <View style={styles.loadingListWrap}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+                <Text style={styles.loadingListText}>Loading workers...</Text>
+              </View>
+            ) : providerLoadError && !providersLoadedRef.current ? (
+              <AnimatedCard>
+                <View style={styles.emptyState}>
+                  <Icon name="alert-circle" size={36} color={theme.colors.danger} />
+                  <Text style={[styles.emptyTitle, { color: theme.colors.danger }]}>Unable to load workers</Text>
+                  <Text style={styles.emptySubtitle}>{providerLoadError}</Text>
+                  <Pressable
+                    onPress={() => void loadProviders("refresh")}
+                    accessibilityRole="button"
+                    testID="search-provider-load-retry-list"
+                    style={{ marginTop: 10, paddingVertical: 10, paddingHorizontal: 18 }}
+                  >
+                    <Text style={{ color: theme.colors.primary, fontWeight: "800" }}>Retry</Text>
+                  </Pressable>
+                </View>
+              </AnimatedCard>
+            ) : (
+              <AnimatedCard>
+                <View style={styles.emptyState}>
+                  <Icon name="search" size={36} color={theme.colors.textMuted} />
+                  <Text style={styles.emptyTitle}>{tr("No workers found")}</Text>
+                  <Text style={styles.emptySubtitle}>{tr("Try a different search or service")}</Text>
+                </View>
+              </AnimatedCard>
+            )
+          }
+          renderItem={({ item: p }) => (
+              <View key={p.id} style={styles.listCardWrap}>
+                {p.routeStatus === "pending" ? (
+                  <View style={styles.distanceBadge}>
+                    <ActivityIndicator size="small" color={theme.colors.primary} />
+                    <Text style={styles.distanceBadgeText}>Calculating route…</Text>
+                  </View>
+                ) : typeof p.distanceKm === "number" ? (
+                  <View style={styles.distanceBadge}>
+                    <Icon name="navigation" size={11} color={theme.colors.primary} />
+                    <Text style={styles.distanceBadgeText}>
+                      {p.distanceKm.toFixed(1)} km by road
+                      {p.routeDurationMin != null ? ` • ${Math.round(p.routeDurationMin)} min` : ""}
+                    </Text>
+                  </View>
+                ) : null}
+
+                <ProviderCard
+                  provider={p}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/(customer)/provider-detail",
+                      params: { providerId: p.id, serviceId: selectedService || undefined },
+                    })
+                  }
+                />
+              </View>
           )}
-        </ScrollView>
+        />
       )}
     </View>
   );

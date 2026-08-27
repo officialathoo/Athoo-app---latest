@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth, UserRole } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
+import { createAuthPalette } from "@/design/authPalette";
 import type { AthooTheme } from "@/design/theme";
 import { redesign } from "@/design/redesign";
 import { isBiometricAvailable, isBiometricEnabled, getBiometricLabel, getBiometricRole, getBiometricType, type BiometricType } from "@/services/biometric";
@@ -31,6 +32,7 @@ export default function LoginScreen() {
   const { role } = useLocalSearchParams<{ role: UserRole }>();
   const { sendOtp, verifyOtpAndLogin, sendEmailOtp, verifyEmailOtpAndLogin, loginWithPassword, promptBiometricSetup, completeBiometricLogin } = useAuth();
   const { theme } = useTheme();
+  const auth = useMemo(() => createAuthPalette(theme), [theme]);
   const { translate: tr, textAlign, writingDirection, direction } = useLang();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const localizedText = useMemo(() => ({ textAlign, writingDirection }), [textAlign, writingDirection]);
@@ -238,10 +240,10 @@ export default function LoginScreen() {
         <LinearGradient
           colors={
             theme.dark
-              ? ["#07101F", "#0B2A59", "#0C4EA6"]
+              ? [auth.heroInk, auth.heroNavy, auth.heroBlue]
               : isProvider
-                ? [theme.colors.secondaryPressed, theme.colors.secondary, "#FF9A45"]
-                : [theme.colors.primaryPressed, theme.colors.primary, "#4EA1FF"]
+                ? [theme.colors.secondaryPressed, theme.colors.secondary, auth.heroAmber]
+                : [theme.colors.primaryPressed, theme.colors.primary, auth.heroSky]
           }
           style={[styles.hero, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}
           start={{ x: 0, y: 0 }}
@@ -280,6 +282,35 @@ export default function LoginScreen() {
         </LinearGradient>
 
         <View style={styles.card}>
+          <View style={[styles.tabs, localizedRow]}>
+            <Pressable
+              style={[styles.tab, tab === "password" && styles.tabActive]}
+              testID="login-password-tab"
+              onPress={() => setTab("password")}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: tab === "password" }}
+            >
+              <Icon name="lock" size={15} color={tab === "password" ? theme.colors.primary : theme.colors.textMuted} />
+              <Text style={[styles.tabLabel, localizedText, tab === "password" && styles.tabLabelActive]}>
+                {tr("Password")}
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.tab, tab === "otp" && styles.tabActive]}
+              testID="login-otp-tab"
+              onPress={() => setTab("otp")}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: tab === "otp" }}
+            >
+              <Icon name="smartphone" size={15} color={tab === "otp" ? theme.colors.primary : theme.colors.textMuted} />
+              <Text style={[styles.tabLabel, localizedText, tab === "otp" && styles.tabLabelActive]}>
+                {tr("OTP Code")}
+              </Text>
+            </Pressable>
+          </View>
+
+          {tab === "password" ? (
+            <>
           <View style={[styles.passwordMethodHeader, localizedRow]}>
             <View style={styles.passwordMethodIcon}>
               <Icon name="lock" size={18} color={isProvider ? theme.colors.secondary : theme.colors.primary} />
@@ -400,6 +431,180 @@ export default function LoginScreen() {
                 </Pressable>
               </View>
             </View>
+            </>
+          ) : (
+            <View style={styles.form}>
+              <View style={[styles.otpChannelTabs, localizedRow]}>
+                <Pressable
+                  style={[styles.otpChannelTab, otpChannel === "phone" && styles.otpChannelTabActive]}
+                  testID="login-otp-channel-phone"
+                  onPress={() => { setOtpChannel("phone"); setOtpStep("phone"); }}
+                >
+                  <Icon name="smartphone" size={14} color={otpChannel === "phone" ? theme.colors.primary : theme.colors.textMuted} />
+                  <Text style={[styles.otpChannelText, localizedText, otpChannel === "phone" && styles.otpChannelTextActive]}>
+                    {tr("Phone")}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.otpChannelTab, otpChannel === "email" && styles.otpChannelTabActive]}
+                  testID="login-otp-channel-email"
+                  onPress={() => { setOtpChannel("email"); setOtpStep("phone"); }}
+                >
+                  <Icon name="mail" size={14} color={otpChannel === "email" ? theme.colors.primary : theme.colors.textMuted} />
+                  <Text style={[styles.otpChannelText, localizedText, otpChannel === "email" && styles.otpChannelTextActive]}>
+                    {tr("Email")}
+                  </Text>
+                </Pressable>
+              </View>
+
+              {otpStep === "phone" ? (
+                <>
+                  {otpChannel === "phone" ? (
+                    <View style={styles.inputGroup}>
+                      <Text style={[styles.label, localizedText]}>{tr("Phone Number")}</Text>
+                      <View style={[styles.inputWrapper, localizedRow]}>
+                        <Text style={styles.countryCode}>+92</Text>
+                        <TextInput
+                          style={[styles.input, localizedText]}
+                          testID="login-otp-phone"
+                          value={phone}
+                          onChangeText={setPhone}
+                          placeholder="03XX-XXXXXXX"
+                          placeholderTextColor={theme.colors.textMuted}
+                          keyboardType="phone-pad"
+                          autoComplete="tel"
+                        />
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.inputGroup}>
+                      <Text style={[styles.label, localizedText]}>{tr("Verified Email")}</Text>
+                      <View style={[styles.inputWrapper, localizedRow]}>
+                        <Icon name="mail" size={18} color={theme.colors.textMuted} />
+                        <TextInput
+                          style={[styles.input, localizedText]}
+                          testID="login-otp-email"
+                          value={email}
+                          onChangeText={setEmail}
+                          placeholder="email@example.com"
+                          placeholderTextColor={theme.colors.textMuted}
+                          keyboardType="email-address"
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                        />
+                      </View>
+                      <Text style={[styles.emailOtpHelp, localizedText]}>
+                        {tr("We only send codes to email addresses you have already verified in Athoo.")}
+                      </Text>
+                    </View>
+                  )}
+
+                  <Pressable
+                    style={[styles.primaryBtn, loading && styles.btnDisabled]}
+                    testID="login-otp-send"
+                    onPress={handleSendOtp}
+                    disabled={loading}
+                  >
+                    <LinearGradient
+                      colors={
+                        isProvider ? [theme.colors.secondary, theme.colors.secondaryPressed] : [theme.colors.primary, theme.colors.primaryPressed]
+                      }
+                      style={styles.primaryBtnGrad}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                    >
+                      <Icon name="message-square" size={16} color={theme.colors.white} />
+                      <Text style={styles.primaryBtnText}>{loading ? tr("Sending...") : tr("Send Code")}</Text>
+                    </LinearGradient>
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  {otpDeliveryMessage ? (
+                    <View style={styles.otpSentBox}>
+                      <Text style={[styles.otpSentText, localizedText]}>{otpDeliveryMessage}</Text>
+                    </View>
+                  ) : null}
+
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.label, localizedText]}>
+                      {otpChannel === "email" ? tr("6-digit code") : tr("4-digit code")}
+                    </Text>
+                    <View style={[styles.otpWrapper, localizedRow]}>
+                      <TextInput
+                        style={[styles.otpInput, localizedText]}
+                        testID="login-otp-code"
+                        value={otp}
+                        onChangeText={(value) => setOtp(value.replace(/\D/g, "").slice(0, otpChannel === "email" ? 6 : 4))}
+                        placeholder="••••"
+                        placeholderTextColor={theme.colors.textMuted}
+                        keyboardType="number-pad"
+                        textContentType="oneTimeCode"
+                        maxLength={otpChannel === "email" ? 6 : 4}
+                      />
+                    </View>
+                    {__DEV__ && otpHint ? (
+                      <View style={styles.otpHintBox}>
+                        <Text style={[styles.otpHintText, localizedText]}>{tr("Dev hint: {{code}}", { code: otpHint })}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  <Pressable
+                    style={[styles.primaryBtn, loading && styles.btnDisabled]}
+                    testID="login-otp-verify"
+                    onPress={handleVerifyOtp}
+                    disabled={loading}
+                  >
+                    <LinearGradient
+                      colors={
+                        isProvider ? [theme.colors.secondary, theme.colors.secondaryPressed] : [theme.colors.primary, theme.colors.primaryPressed]
+                      }
+                      style={styles.primaryBtnGrad}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                    >
+                      <Icon name="log-in" size={16} color={theme.colors.white} />
+                      <Text style={styles.primaryBtnText}>{loading ? tr("Verifying...") : tr("Verify & Sign In")}</Text>
+                    </LinearGradient>
+                  </Pressable>
+
+                  <View style={[styles.rememberRow, localizedRow]}>
+                    <Text style={[styles.otpTimerText, localizedText, otpExpiresIn === 0 && styles.otpTimerExpired]}>
+                      {otpExpiresIn > 0
+                        ? tr("Code expires in {{minutes}}:{{seconds}}", {
+                            minutes: String(Math.floor(otpExpiresIn / 60)).padStart(2, "0"),
+                            seconds: String(otpExpiresIn % 60).padStart(2, "0"),
+                          })
+                        : tr("Code expired")}
+                    </Text>
+                  </View>
+
+                  <Pressable
+                    style={styles.resendOtpBtn}
+                    testID="login-otp-resend"
+                    onPress={handleSendOtp}
+                    disabled={loading || otpResendIn > 0}
+                  >
+                    <Text style={[styles.resendOtpText, localizedText, otpResendIn > 0 && { color: theme.colors.textMuted }]}>
+                      {otpResendIn > 0
+                        ? tr("Resend OTP in {{seconds}}s", { seconds: String(otpResendIn) })
+                        : tr("Resend OTP")}
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={styles.changePhoneBtn}
+                    onPress={() => setOtpStep("phone")}
+                  >
+                    <Text style={[styles.changePhoneText, localizedText]}>
+                      {otpChannel === "phone" ? tr("Use a different number") : tr("Use a different email")}
+                    </Text>
+                  </Pressable>
+                </>
+              )}
+            </View>
+          )}
 
           {biometricAvailable && (
             <>

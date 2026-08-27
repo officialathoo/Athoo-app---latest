@@ -11,6 +11,7 @@ import { db } from "@workspace/db";
 import { normalizeStoredObjectPath } from "../lib/storageSecurity";
 import { isCleanOwnedUploadObjectPath } from "../lib/verifiedUploads";
 import { cleanupReplacedOwnedMedia } from "../lib/mediaLifecycle";
+import { recordUserEvent } from "../lib/userAudit";
 import { createAdminNotification } from "../lib/adminNotifications";
 import {
   usersTable,
@@ -296,6 +297,16 @@ router.patch("/profile", async (req: AuthRequest, res) => {
     if (Object.keys(patch).length === 1) return res.status(400).json({ error: "No valid fields to update" });
     const [updated] = await db.update(usersTable).set(patch).where(eq(usersTable.id, user.id)).returning();
     if (body.profileImage !== undefined) cleanupReplacedOwnedMedia(user.profileImage, updated.profileImage, user.id);
+    void recordUserEvent({
+      actorId: user.id,
+      actorName: user.name,
+      actorRole: user.role,
+      action: "account.profile_updated",
+      target: "user",
+      targetId: user.id,
+      details: { fields: Object.keys(patch).filter((field) => field !== "updatedAt") },
+      ip: req.ip ?? null,
+    });
     const { password, ...safe } = updated as any;
     return res.json({ user: safe });
   } catch (e) {
@@ -321,6 +332,16 @@ router.post("/password", async (req: AuthRequest, res) => {
     await db.update(usersTable).set({ password: hashed, biometricEnabled: false, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
     await revokeAllUserSessions(user.id, "password_changed");
     void queuePasswordChangedEmail(user, "changed").catch(() => undefined);
+    void recordUserEvent({
+      actorId: user.id,
+      actorName: user.name,
+      actorRole: user.role,
+      action: "account.password_changed",
+      target: "user",
+      targetId: user.id,
+      details: { method: "current_credential", sessionsRevoked: true },
+      ip: req.ip ?? null,
+    });
     return res.json({ success: true });
   } catch (e) {
     logger.error({ err: e }, "account.password error");
@@ -741,6 +762,8 @@ adminRouter.post("/service-requests/:id/approve", requirePermission("providers.w
       title: "Service approved",
       body: `Your request to add "${category.name}" has been approved.`,
       type: "system",
+      link: "/provider/profile",
+      data: { requestId: reqRow?.id, serviceId: category.id },
     }).catch(() => undefined);
     return res.json({ success: true });
   } catch (e) {
@@ -783,6 +806,8 @@ adminRouter.post("/service-requests/:id/reject", requirePermission("providers.wr
       title: "Service request rejected",
       body: reason,
       type: "system",
+      link: "/provider/profile",
+      data: { requestId: reqRow.id },
     }).catch(() => undefined);
     return res.json({ success: true });
   } catch (e) {

@@ -25,30 +25,12 @@ import { useAuth } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { createAuthPalette, type AuthPalette } from "@/design/authPalette";
 import { redesign } from "@/design/redesign";
 import {
   getBiometricRole,
   getBiometricType,
 } from "@/services/biometric";
-
-const createAuthPalette = (theme: AthooTheme) => ({
-  background: theme.colors.background,
-  backgroundDeep: theme.colors.surfaceAlt,
-  panel: theme.colors.surface,
-  panelRaised: theme.colors.elevated,
-  border: theme.colors.border,
-  borderStrong: theme.colors.border,
-  text: theme.colors.text,
-  muted: theme.colors.textSecondary,
-  subtle: theme.colors.textMuted,
-  cyan: theme.colors.primary,
-  cyanSoft: theme.colors.infoSoft,
-  cyanGlow: theme.dark ? "rgba(96,165,250,0.20)" : "rgba(37,99,235,0.12)",
-  orange: theme.colors.secondary,
-  orangeSoft: theme.colors.premiumSoft,
-  success: theme.colors.success,
-  danger: theme.colors.danger,
-});
 
 export default function WelcomeScreen() {
   const insets = useSafeAreaInsets();
@@ -198,7 +180,7 @@ export default function WelcomeScreen() {
       <LinearGradient
         colors={
           theme.dark
-            ? ["#07101F", auth.background, auth.backgroundDeep]
+            ? [auth.heroInk, auth.background, auth.backgroundDeep]
             : [theme.colors.infoSoft, auth.background, auth.backgroundDeep]
         }
         start={{ x: 0.15, y: 0 }}
@@ -228,7 +210,7 @@ export default function WelcomeScreen() {
               <View style={styles.logoShell}>
                 <Image
                   source={brandConfig.assets.mark}
-                  style={styles.logo}
+                  style={styles.logoImage}
                   resizeMode="cover"
                   accessibilityLabel="Athoo logo"
                 />
@@ -417,12 +399,12 @@ export default function WelcomeScreen() {
                   ]}
                   start={{ x: 0, y: 0.5 }}
                   end={{ x: 1, y: 0.5 }}
-                  style={styles.primaryButton}
+                  style={styles.primaryAction}
                 >
                   <Icon
                     name="log-in"
                     size={18}
-                    color="#FFFFFF"
+                    color={theme.colors.white}
                   />
                   <Text style={styles.primaryButtonText}>
                     Log in
@@ -481,7 +463,7 @@ export default function WelcomeScreen() {
   );
 }
 
-function createStyles(theme: AthooTheme, auth: ReturnType<typeof createAuthPalette>) {
+function createStyles(theme: AthooTheme, auth: AuthPalette) {
   return StyleSheet.create({
   root: {
     flex: 1,
@@ -542,13 +524,9 @@ function createStyles(theme: AthooTheme, auth: ReturnType<typeof createAuthPalet
     height: 70,
     borderRadius: 22,
     overflow: "hidden",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.colors.white,
   },
-  logo: {
-    width: "100%",
-    height: "100%",
-    borderRadius: 22,
-  },
+  logoImage: { width: "100%", height: "100%", borderRadius: 29 },
   welcomeLabel: {
     color: auth.muted,
     fontSize: 10,
@@ -649,8 +627,8 @@ function createStyles(theme: AthooTheme, auth: ReturnType<typeof createAuthPalet
   actionPressable: {
     borderRadius: 14,
   },
-  primaryButton: {
-    minHeight: redesign.control.largeHeight,
+  primaryAction: {
+    minHeight: 62,
     borderRadius: theme.radius.md,
     flexDirection: "row",
     alignItems: "center",
@@ -664,7 +642,7 @@ function createStyles(theme: AthooTheme, auth: ReturnType<typeof createAuthPalet
     elevation: 5,
   },
   primaryButtonText: {
-    color: "#FFFFFF",
+    color: theme.colors.white,
     fontSize: 14,
     fontWeight: "900",
   },

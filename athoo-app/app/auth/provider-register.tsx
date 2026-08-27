@@ -24,6 +24,8 @@ import { SuccessModal } from "@/components/ui/SuccessModal";
 import { useAuth } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
+import { createAuthPalette } from "@/design/authPalette";
+import { getCategoryAppearance } from "@/utils/categoryAppearance";
 import type { AthooTheme } from "@/design/theme";
 import { redesign } from "@/design/redesign";
 import { useCategories } from "@/context/CategoriesContext";
@@ -122,6 +124,7 @@ export default function ProviderRegisterScreen() {
   const { register, sendOtp, verifyOtpAndLogin } = useAuth();
   const { categories } = useCategories();
   const { theme } = useTheme();
+  const auth = useMemo(() => createAuthPalette(theme), [theme]);
   const { translate: tr, textAlign, writingDirection, direction } = useLang();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const localizedText = useMemo(() => ({ textAlign, writingDirection }), [textAlign, writingDirection]);
@@ -486,8 +489,8 @@ export default function ProviderRegisterScreen() {
         <LinearGradient
           colors={
             theme.dark
-              ? ["#17100A", "#5B2A09", "#A94708"]
-              : [theme.colors.secondaryPressed, theme.colors.secondary, "#FF9A45"]
+              ? [auth.emberInk, auth.emberDeep, auth.ember]
+              : [theme.colors.secondaryPressed, theme.colors.secondary, auth.heroAmber]
           }
           style={styles.headerGrad}
           start={{ x: 0, y: 0 }}
@@ -607,12 +610,16 @@ export default function ProviderRegisterScreen() {
               </Text>
 
               <ServiceMultiSelect
-                options={categories.map((service) => ({
-                  id: String(service.id),
-                  slug: service.slug || undefined,
-                  name: service.name,
-                  icon: service.icon || "tool",
-                }))}
+                options={categories.map((service) => {
+                  const appearance = getCategoryAppearance(service, theme);
+                  return {
+                    id: String(service.id),
+                    slug: service.slug || undefined,
+                    name: service.name,
+                    icon: service.icon || "tool",
+                    accentColor: appearance.accent,
+                  };
+                })}
                 selected={form.services}
                 onToggle={toggleService}
                 label={tr("Services Offered")}

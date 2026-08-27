@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   Platform,
   Pressable,
   ScrollView,
@@ -34,6 +35,9 @@ type ExtendedProvider = Provider & {
 // admin-managed, Pakistan-wide service_areas reference table.
 const DEFAULT_CITY_FILTERS = ["All"];
 const PROVIDER_PAGE_SIZE = 25;
+// Hard cap on accumulated pages so long browsing sessions can never grow the
+// in-memory list without bound (25 x 20 = 500 providers max).
+const PROVIDER_MAX_ITEMS = 500;
 const PROVIDER_SEARCH_DEBOUNCE_MS = 350;
 
 
@@ -189,7 +193,8 @@ export default function ServiceProvidersScreen() {
 
         const byId = new Map(current.map((provider) => [provider.id, provider]));
         mapped.forEach((provider) => byId.set(provider.id, provider));
-        return Array.from(byId.values());
+        const merged = Array.from(byId.values());
+        return merged.length > PROVIDER_MAX_ITEMS ? merged.slice(0, PROVIDER_MAX_ITEMS) : merged;
       });
       setHasMore(Boolean(res.hasMore));
       setNextCursor(res.nextCursor || null);
@@ -412,13 +417,13 @@ export default function ServiceProvidersScreen() {
           </Text>
         </View>
       ) : (
-        <ScrollView
+        <FlatList
           style={styles.list}
           contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {providers.map((p) => (
-            <View key={p.id} style={styles.cardWrap}>
+          data={providers}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item: p }) => (
+            <View style={styles.cardWrap}>
               <Pressable onPress={() => handleToggleSaved(p.id)} style={styles.saveBtn}>
                 <Icon
                   name={isSaved(p.id) ? "heart" : "heart-outline"}
@@ -449,28 +454,38 @@ export default function ServiceProvidersScreen() {
                 }
               />
             </View>
-          ))}
-
-          {loadError && providers.length > 0 && (
-            <View style={styles.inlineError}>
-              <Text style={styles.emptySubtitle}>{loadError}</Text>
-            </View>
           )}
-
-          {hasMore && nextCursor && (
-            <Pressable
-              style={[styles.loadMoreButton, loadingMore && styles.loadMoreButtonDisabled]}
-              onPress={loadMoreProviders}
-              disabled={loadingMore}
-            >
-              {loadingMore ? (
-                <ActivityIndicator size="small" color={theme.colors.onBrand} />
-              ) : (
-                <Text style={styles.loadMoreText}>Load more workers</Text>
+          ListFooterComponent={
+            <>
+              {loadError && providers.length > 0 && (
+                <View style={styles.inlineError}>
+                  <Text style={styles.emptySubtitle}>{loadError}</Text>
+                </View>
               )}
-            </Pressable>
-          )}
-        </ScrollView>
+
+              {hasMore && nextCursor && (
+                <Pressable
+                  style={[styles.loadMoreButton, loadingMore && styles.loadMoreButtonDisabled]}
+                  onPress={loadMoreProviders}
+                  disabled={loadingMore}
+                >
+                  {loadingMore ? (
+                    <ActivityIndicator size="small" color={theme.colors.onBrand} />
+                  ) : (
+                    <Text style={styles.loadMoreText}>Load more workers</Text>
+                  )}
+                </Pressable>
+              )}
+            </>
+          }
+          onEndReached={loadMoreProviders}
+          onEndReachedThreshold={0.35}
+          removeClippedSubviews
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          windowSize={7}
+          showsVerticalScrollIndicator={false}
+        />
       )}
     </View>
   );

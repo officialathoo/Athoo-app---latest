@@ -78,7 +78,7 @@ export default function WalletScreen() {
       walletLastLoadedAtRef.current = Date.now();
     } catch (loadError: any) {
       if (mode !== "background") {
-        setError(apiErrorToMessage(loadError, tr("Could not load wallet. Please try again.")));
+        setError(loadError?.message || apiErrorToMessage(loadError, tr("Could not load wallet. Please try again.")));
       }
     } finally {
       loadRequestInFlightRef.current = false;

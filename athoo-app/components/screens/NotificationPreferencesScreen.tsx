@@ -25,10 +25,22 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { api } from "@/services/api";
+
+type PushPreferenceKey = "jobs" | "messages" | "general";
+
+type ServerNotificationPreferences = {
+  userId: string;
+  jobsEnabled: boolean;
+  messagesEnabled: boolean;
+  callsEnabled: boolean;
+  generalEnabled: boolean;
+};
 
 type PreferenceRow = {
   key: string;
@@ -38,6 +50,8 @@ type PreferenceRow = {
   category?: NotificationCategory;
   safety: "critical" | "transactional" | "optional";
   action?: "email";
+  /** Server-enforced push switch. Critical categories stay always-on. */
+  prefKey?: PushPreferenceKey;
 };
 
 function readableSound(sound: string) {
@@ -58,6 +72,9 @@ export function NotificationPreferencesScreen() {
   const [diagnostics, setDiagnostics] = useState<NotificationDiagnostics | null>(null);
   const [checking, setChecking] = useState(false);
   const [openingSettings, setOpeningSettings] = useState(false);
+  const [prefs, setPrefs] = useState<ServerNotificationPreferences | null>(null);
+  const [prefsLoading, setPrefsLoading] = useState(true);
+  const [savingPrefKey, setSavingPrefKey] = useState<PushPreferenceKey | null>(null);
 
   const isProvider = user?.role === "provider";
   const accent = isProvider ? theme.colors.secondary : theme.colors.primary;
@@ -74,10 +91,49 @@ export function NotificationPreferencesScreen() {
     }
   }, []);
 
+  const loadPreferences = useCallback(async () => {
+    if (!user) {
+      setPrefs(null);
+      setPrefsLoading(false);
+      return;
+    }
+    setPrefsLoading(true);
+    try {
+      const res = await api.getNotificationPreferences();
+      setPrefs(res.preferences ?? null);
+    } catch {
+      setPrefs(null);
+    } finally {
+      setPrefsLoading(false);
+    }
+  }, [user]);
+
+  const togglePreference = useCallback(
+    async (prefKey: PushPreferenceKey, value: boolean) => {
+      setSavingPrefKey(prefKey);
+      const previous = prefs;
+      setPrefs((current) => (current ? { ...current, [`${prefKey}Enabled`]: value } : current));
+      try {
+        const res = await api.updateNotificationPreferences({ [prefKey]: value });
+        setPrefs(res.preferences ?? null);
+      } catch {
+        setPrefs(previous);
+        Alert.alert(
+          tr("Could not update preference"),
+          tr("Check your connection and try again."),
+        );
+      } finally {
+        setSavingPrefKey(null);
+      }
+    },
+    [prefs, tr],
+  );
+
   useFocusEffect(
     useCallback(() => {
       void loadDiagnostics();
-    }, [loadDiagnostics]),
+      void loadPreferences();
+    }, [loadDiagnostics, loadPreferences]),
   );
 
   const openSystemNotificationSettings = async () => {
@@ -116,7 +172,8 @@ export function NotificationPreferencesScreen() {
       title: tr("Jobs & Booking"),
       description: tr("New jobs, booking confirmations, status changes and negotiation alerts."),
       category: "job",
-      safety: "critical",
+      safety: "transactional",
+      prefKey: "jobs",
     },
     {
       key: "chat",
@@ -125,12 +182,13 @@ export function NotificationPreferencesScreen() {
       description: tr("New customer or provider messages and conversation updates."),
       category: "message",
       safety: "transactional",
+      prefKey: "messages",
     },
     {
       key: "calls",
       icon: "phone-call",
       title: tr("Calls"),
-      description: tr("Incoming Athoo voice-call alerts."),
+      description: tr("Incoming Athoo voice-call alerts. Always delivered so you never miss a call."),
       category: "call",
       safety: "critical",
     },
@@ -141,12 +199,13 @@ export function NotificationPreferencesScreen() {
       description: tr("Invoice, refund, withdrawal and payment-related updates."),
       category: "general",
       safety: "transactional",
+      prefKey: "general",
     },
     {
       key: "security",
       icon: "shield",
       title: tr("Account & Security"),
-      description: tr("Important account, verification and security notices."),
+      description: tr("Important account, verification and security notices. Always delivered for your safety."),
       category: "general",
       safety: "critical",
     },
@@ -263,9 +322,16 @@ export function NotificationPreferencesScreen() {
       <View style={styles.sectionHeader}>
         <Text style={[styles.sectionTitle, localizedText]}>{tr("Alert categories")}</Text>
         <Text style={[styles.sectionSubtitle, localizedText]}>
-          {tr("What each category contains and where its phone controls live.")}
+          {tr("Switches control Athoo push delivery. Sound, vibration and banner style stay in your phone settings.")}
         </Text>
       </View>
+
+      {prefsLoading ? (
+        <View style={styles.prefsLoadingRow}>
+          <ActivityIndicator size="small" color={accent} />
+          <Text style={[styles.policyText, localizedText]}>{tr("Loading your preferences...")}</Text>
+        </View>
+      ) : null}
 
       <View style={styles.categoryList}>
         {rows.map((row, index) => {
@@ -280,6 +346,9 @@ export function NotificationPreferencesScreen() {
             : row.safety === "transactional"
             ? tr("Transactional")
             : tr("Optional");
+          const enabled = row.prefKey && prefs
+            ? Boolean(prefs[`${row.prefKey}Enabled` as keyof ServerNotificationPreferences])
+            : undefined;
 
           return (
             <AnimatedCard
@@ -337,6 +406,14 @@ export function NotificationPreferencesScreen() {
 
                 {row.action ? (
                   <Icon name="chevron-right" size={17} color={theme.colors.textMuted} />
+                ) : row.prefKey && enabled !== undefined ? (
+                  <Switch
+                    value={enabled}
+                    onValueChange={(value) => { if (row.prefKey) void togglePreference(row.prefKey, value); }}
+                    disabled={prefsLoading || savingPrefKey === row.prefKey}
+                    trackColor={{ false: theme.colors.border, true: accent + "55" }}
+                    thumbColor={enabled ? accent : theme.colors.textMuted}
+                  />
                 ) : null}
               </Pressable>
             </AnimatedCard>
@@ -351,7 +428,7 @@ export function NotificationPreferencesScreen() {
         <View style={styles.safetyCopy}>
           <Text style={[styles.safetyTitle, localizedText]}>{tr("Critical alerts stay protected")}</Text>
           <Text style={[styles.safetyText, localizedText]}>
-            {tr("OTP, password, suspicious sign-in, booking safety, call and other critical account notices are not given unsafe in-app off switches. Phone-level delivery can still be managed by you in system settings.")}
+            {tr("OTP codes, password changes, suspicious sign-ins, call and account-safety notices are never disabled by these switches. Muted categories are skipped for push delivery but always remain in your in-app inbox.")}
           </Text>
         </View>
       </View>
@@ -464,6 +541,12 @@ function createStyles(theme: AthooTheme) {
       color: theme.colors.textSecondary,
     },
     sectionHeader: { marginTop: 2, gap: 3 },
+    prefsLoadingRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      paddingVertical: 4,
+    },
     sectionTitle: {
       fontSize: 15,
       fontWeight: "900",

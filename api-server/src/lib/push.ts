@@ -1,6 +1,6 @@
 import { db } from "@workspace/db";
-import { usersTable } from "@workspace/db/schema";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { pushTokensTable, usersTable } from "@workspace/db/schema";
+import { eq, inArray } from "drizzle-orm";
 import { logger } from "./logger";
 import { enqueueJob, registerJobHandler } from "./queue";
 import { getRuntimeCommunicationOverrides, runtimeProviderValue } from "./communicationRuntime";
@@ -168,7 +168,7 @@ export async function getRuntimePushConfigurationStatus() {
   return getPushConfigurationStatus(runtimeProviderValue(runtime.enabled, runtime.pushProvider));
 }
 
-function categoryForType(type: unknown): PushPolicy["category"] {
+export function categoryForType(type: unknown): PushPolicy["category"] {
   const normalized = String(type || "").trim().toLowerCase();
   if (normalized === "call" || normalized === "incoming_call") return "call";
   if (normalized === "message" || normalized === "chat") return "message";
@@ -506,6 +506,34 @@ async function fetchExpoReceipts(tickets: PushTicketToken[]): Promise<{ invalidT
   }
 }
 
+/**
+ * Remove tokens that the push provider reported as unregistered, from both the
+ * multi-device registry and the legacy per-user mirror column.
+ */
+export async function removeInvalidPushTokens(invalidTokens: string[]): Promise<void> {
+  const tokens = [...new Set(invalidTokens.map((token) => String(token || "").trim()).filter(Boolean))];
+  if (tokens.length === 0) return;
+
+  try {
+    await db.delete(pushTokensTable).where(inArray(pushTokensTable.token, tokens));
+  } catch (error) {
+    logger.warn({ err: error, count: tokens.length }, "invalid push token registry cleanup failed");
+  }
+
+  // The legacy mirror column is retired per token so pre-registry devices stop
+  // receiving pushes as soon as the provider reports them unregistered.
+  for (const token of tokens.slice(0, 1000)) {
+    try {
+      await db
+        .update(usersTable)
+        .set({ expoPushToken: null, updatedAt: new Date() })
+        .where(eq(usersTable.expoPushToken, token));
+    } catch (error) {
+      logger.warn({ err: error }, "invalid legacy push token cleanup failed");
+    }
+  }
+}
+
 registerJobHandler<PushReceiptJob>(PUSH_RECEIPT_JOB_NAME, async (payload) => {
   const tickets = Array.isArray(payload?.tickets)
     ? payload.tickets
@@ -516,12 +544,7 @@ registerJobHandler<PushReceiptJob>(PUSH_RECEIPT_JOB_NAME, async (payload) => {
   if (!tickets.length) return;
 
   const result = await fetchExpoReceipts(tickets);
-  if (result.invalidTokens.length) {
-    // Clear only the exact tokens that Expo identified as unregistered.
-    for (const token of result.invalidTokens) {
-      await db.update(usersTable).set({ expoPushToken: null, updatedAt: new Date() }).where(eq(usersTable.expoPushToken, token));
-    }
-  }
+  await removeInvalidPushTokens(result.invalidTokens);
   if (result.missing > 0) throw new Error(`expo_receipts_not_ready:${result.missing}`);
   logger.info({ checked: tickets.length, errors: result.errors, invalidTokens: result.invalidTokens.length }, "expo push receipts processed");
 });
@@ -599,29 +622,43 @@ export async function sendExpoPushNotifications(tokens: string[], payload: PushP
   return sendExpoPushMessages(uniqueTokens(tokens).map((token) => ({ token, payload })));
 }
 
+async function audienceTokensWhere(where: ReturnType<typeof eq> | undefined): Promise<string[]> {
+  const rows = await db
+    .select({ token: usersTable.expoPushToken })
+    .from(usersTable)
+    .where(where);
+  const tokens = new Set<string>();
+  for (const row of rows) {
+    const token = typeof row.token === "string" ? row.token.trim() : "";
+    if (token) tokens.add(token);
+  }
+  try {
+    const registryRows = await db
+      .select({ token: pushTokensTable.token })
+      .from(pushTokensTable)
+      .innerJoin(usersTable, eq(pushTokensTable.userId, usersTable.id))
+      .where(where);
+    for (const row of registryRows) {
+      const token = String(row.token || "").trim();
+      if (token) tokens.add(token);
+    }
+  } catch (error) {
+    logger.warn({ err: error }, "push token registry audience lookup failed");
+  }
+  return [...tokens];
+}
+
 export async function getAudiencePushTokens(audience: string) {
   if (audience === "all") {
-    const rows = await db
-      .select({ token: usersTable.expoPushToken })
-      .from(usersTable)
-      .where(isNotNull(usersTable.expoPushToken));
-    return rows.map((row) => row.token).filter(Boolean) as string[];
+    return audienceTokensWhere(undefined);
   }
 
   if (audience === "providers") {
-    const rows = await db
-      .select({ token: usersTable.expoPushToken })
-      .from(usersTable)
-      .where(and(eq(usersTable.role, "provider"), isNotNull(usersTable.expoPushToken)));
-    return rows.map((row) => row.token).filter(Boolean) as string[];
+    return audienceTokensWhere(eq(usersTable.role, "provider"));
   }
 
   if (audience === "customers") {
-    const rows = await db
-      .select({ token: usersTable.expoPushToken })
-      .from(usersTable)
-      .where(and(eq(usersTable.role, "customer"), isNotNull(usersTable.expoPushToken)));
-    return rows.map((row) => row.token).filter(Boolean) as string[];
+    return audienceTokensWhere(eq(usersTable.role, "customer"));
   }
 
   return [];

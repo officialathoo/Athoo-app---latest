@@ -252,7 +252,7 @@ class NotificationService {
             Authorization: `Bearer ${authToken}`,
             "X-Athoo-Device-Id": deviceId,
           },
-          body: JSON.stringify({ expoPushToken }),
+          body: JSON.stringify({ expoPushToken, platform: Platform.OS }),
         });
         if (!response.ok) throw new Error(`Push token sync failed (${response.status})`);
         this.syncedToken = expoPushToken;

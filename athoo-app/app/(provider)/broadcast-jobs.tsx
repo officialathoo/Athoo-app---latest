@@ -10,7 +10,7 @@ import {
   Platform,
   Pressable,
   RefreshControl,
-  ScrollView,
+  FlatList,
   StyleSheet,
   Text,
   TextInput,
@@ -323,9 +323,11 @@ export default function BroadcastJobsScreen() {
         )}
       </View>
 
-      <ScrollView
+      <FlatList
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: insets.bottom + 80 }}
+        data={requests}
+        keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -334,36 +336,41 @@ export default function BroadcastJobsScreen() {
             tintColor={theme.colors.secondary}
           />
         }
-      >
-        {loadError && requestsLoadedRef.current ? (
-          <View style={[styles.emptyCard, { borderColor: theme.colors.danger }]}>
-            <Icon name="alert-circle" size={28} color={theme.colors.danger} />
-            <Text style={[styles.emptyTitle, { color: theme.colors.danger }]}>Refresh Failed</Text>
-            <Text style={styles.emptyText}>{loadError}</Text>
-            <Pressable onPress={() => void load("refresh")} accessibilityRole="button">
-              <Text style={{ color: theme.colors.secondary, fontWeight: "700" }}>Retry</Text>
-            </Pressable>
-          </View>
-        ) : null}
-
-        {requests.length === 0 && !loadError && (
-          <View style={styles.emptyCard}>
-            <Icon name="radio" size={36} color={theme.colors.textMuted} />
-            <Text style={styles.emptyTitle}>No Open Requests</Text>
-            <Text style={styles.emptyText}>
-              When customers broadcast a request in your service area, it will appear here. Pull to refresh.
-            </Text>
-          </View>
-        )}
-
-        {requests.map((req, i) => {
+        removeClippedSubviews
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        windowSize={7}
+        ListHeaderComponent={
+          loadError && requestsLoadedRef.current ? (
+            <View style={[styles.emptyCard, { borderColor: theme.colors.danger }]}>
+              <Icon name="alert-circle" size={28} color={theme.colors.danger} />
+              <Text style={[styles.emptyTitle, { color: theme.colors.danger }]}>Refresh Failed</Text>
+              <Text style={styles.emptyText}>{loadError}</Text>
+              <Pressable onPress={() => void load("refresh")} accessibilityRole="button">
+                <Text style={{ color: theme.colors.secondary, fontWeight: "700" }}>Retry</Text>
+              </Pressable>
+            </View>
+          ) : null
+        }
+        ListEmptyComponent={
+          requests.length === 0 && !loadError ? (
+            <View style={styles.emptyCard}>
+              <Icon name="radio" size={36} color={theme.colors.textMuted} />
+              <Text style={styles.emptyTitle}>No Open Requests</Text>
+              <Text style={styles.emptyText}>
+                When customers broadcast a request in your service area, it will appear here. Pull to refresh.
+              </Text>
+            </View>
+          ) : null
+        }
+        renderItem={({ item: req }) => {
           const myResp = myResponseForRequest(req);
           const isResponding = respondingId === req.id;
           const isSubmitting = submittingId === req.id;
           const canRevise = Number(myResp?.revision || 0) < Number(req.responseRevisionLimit || 3);
 
           return (
-            <View key={`${req.id}-${i}`} style={styles.reqCard}>
+            <View key={req.id} style={styles.reqCard}>
               {(() => {
                 const distKm: number | null = req.distanceKm != null
                   ? req.distanceKm
@@ -584,8 +591,8 @@ export default function BroadcastJobsScreen() {
               )}
             </View>
           );
-        })}
-      </ScrollView>
+        }}
+      />
     </View>
   );
 }

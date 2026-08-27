@@ -47,9 +47,9 @@ test("Phase 30.1Q confirms forgot-password loading is already mutation-scoped", 
 test("Phase 30.1Q confirms root layout boot loading is intentional and bounded", () => {
   const screen = read("athoo-app/app/_layout.tsx");
 
-  assert.match(screen, /if \(!languageReady\) \{\s*return <AthooLoader \/>/);
-  assert.match(screen, /if \(!ready\) \{\s*return <AthooLoader \/>/);
-  assert.match(screen, /if \(!fontsLoaded && !fontError\) \{\s*return <AthooLoader \/>/);
+  // Fonts, theme and language readiness are read concurrently by their
+  // providers; a single bounded gate renders AthooLoader until all are ready.
+  assert.match(screen, /if \(!fontsReady \|\| !themeReady \|\| !languageReady\) \{\s*return <AthooLoader \/>/);
   assert.match(screen, /SplashScreen\.hideAsync\(\)/);
   assert.match(screen, /ApiConfigurationScreen/);
   assert.match(screen, /SessionRouteGuard/);

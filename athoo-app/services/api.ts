@@ -1156,6 +1156,13 @@ export const api = {
     });
   },
 
+  getCallHistory(limit = 50, offset = 0) {
+    return request<{ calls: any[] }>(`/api/calls/history?limit=${limit}&offset=${offset}`, {
+      method: "GET",
+      auth: true,
+    });
+  },
+
   getCallConfig() {
     return request<{
       provider: string;
@@ -1342,6 +1349,37 @@ export const api = {
     return request<{ success: boolean }>("/api/me/notifications", {
       method: "DELETE",
       auth: true,
+    });
+  },
+
+  getNotificationPreferences() {
+    return request<{
+      preferences: {
+        userId: string;
+        jobsEnabled: boolean;
+        messagesEnabled: boolean;
+        callsEnabled: boolean;
+        generalEnabled: boolean;
+      };
+    }>("/api/me/notification-preferences", {
+      method: "GET",
+      auth: true,
+    });
+  },
+
+  updateNotificationPreferences(patch: Partial<{ jobs: boolean; messages: boolean; calls: boolean; general: boolean }>) {
+    return request<{
+      preferences: {
+        userId: string;
+        jobsEnabled: boolean;
+        messagesEnabled: boolean;
+        callsEnabled: boolean;
+        generalEnabled: boolean;
+      };
+    }>("/api/me/notification-preferences", {
+      method: "PATCH",
+      auth: true,
+      body: patch,
     });
   },
 
@@ -1964,6 +2002,19 @@ let realtimeShouldReconnect = false;
 let realtimeReconnectAttempts = 0;
 const REALTIME_MAX_BACKOFF_MS = 30_000; // cap at 30s
 const realtimeListeners = new Set<Listener>();
+// Chat room the user currently has on screen. Re-announced on every successful
+// (re)connect so the server can suppress native push for the visible chat.
+let realtimeViewingChatId: string | null = null;
+
+function announceViewingChat(ws: WebSocket): void {
+  try {
+    ws.send(JSON.stringify(
+      realtimeViewingChatId
+        ? { type: "chat:view", payload: { chatId: realtimeViewingChatId } }
+        : { type: "chat:view-end" },
+    ));
+  } catch {}
+}
 
 function realtimeBackoffMs(): number {
   // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (capped)
@@ -1980,6 +2031,7 @@ async function openRealtimeSocket(): Promise<void> {
     ws.onopen = () => {
       // Reset backoff on successful connection
       realtimeReconnectAttempts = 0;
+      announceViewingChat(ws);
     };
     ws.onmessage = (evt: MessageEvent) => {
       try {
@@ -2064,6 +2116,14 @@ export const realtime = {
   },
   isOpen(): boolean {
     return !!realtimeSocket && realtimeSocket.readyState === 1;
+  },
+  setViewingChat(chatId: string | null): void {
+    const normalized = typeof chatId === "string" && chatId.trim() ? chatId.trim().slice(0, 120) : null;
+    if (normalized === realtimeViewingChatId) return;
+    realtimeViewingChatId = normalized;
+    if (realtimeSocket && realtimeSocket.readyState === 1) {
+      announceViewingChat(realtimeSocket);
+    }
   },
 };
 
