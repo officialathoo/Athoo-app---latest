@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const skip = new Set(["node_modules", ".git", "dist", ".expo", "coverage", ".next", "build"]);
+const skip = new Set(["node_modules", ".git", "dist", "dist-web", "dist-export", ".expo", "coverage", ".next", "build"]);
 const findings = [];
 const patterns = [
   ["private key", /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/],
