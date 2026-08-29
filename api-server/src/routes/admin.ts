@@ -3120,6 +3120,45 @@ router.get("/broadcast-push/history", requirePermission("notifications.read"), a
   }
 });
 
+// ─── Inactive Account Review Queue ───────────────────────────────────────────
+
+router.get("/inactive-accounts", async (req: AuthRequest, res) => {
+  try {
+    const startedAt = Date.now();
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    const where = and(
+      eq(usersTable.inactivityState, "review"),
+      eq(usersTable.accountStatus, "active"),
+      eq(usersTable.isDeactivated, false),
+      eq(usersTable.isBlocked, false),
+    );
+    const [rows, [countRow]] = await Promise.all([
+      db
+        .select()
+        .from(usersTable)
+        .where(where)
+        .orderBy(usersTable.lastActiveAt)
+        .limit(limit)
+        .offset(offset),
+      db.select({ total: sql<number>`count(*)::int` }).from(usersTable).where(where),
+    ]);
+    const total = Number(countRow?.total || 0);
+    res.setHeader("Server-Timing", `inactive-accounts;dur=${Date.now() - startedAt}`);
+    return res.json({
+      items: rows.map(toSafeUser),
+      total,
+      limit,
+      offset,
+      summary: { reviewQueue: total },
+      durationMs: Date.now() - startedAt,
+    });
+  } catch (e) {
+    logger.error({ err: e }, "inactive accounts error");
+    return res.status(500).json({ error: "Failed to load inactive accounts" });
+  }
+});
+
 // ─── Sidebar Counts ──────────────────────────────────────────────────────────
 
 router.get("/sidebar-counts", async (req: AuthRequest, res) => {
