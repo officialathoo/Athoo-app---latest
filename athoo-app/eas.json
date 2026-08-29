@@ -51,6 +51,21 @@
       "android": {
         "buildType": "app-bundle"
       }
+    },
+    "production-apk": {
+      "extends": "base",
+      "distribution": "internal",
+      "channel": "production",
+      "autoIncrement": true,
+      "env": {
+        "APP_ENV": "production",
+        "APP_VERSION": "2.2.0",
+        "EXPO_PUBLIC_RELEASE_VERSION": "2.2.0",
+        "EXPO_PUBLIC_API_BASE_URL": "https://athoo-api.onrender.com"
+      },
+      "android": {
+        "buildType": "apk"
+      }
     }
   },
   "submit": {
