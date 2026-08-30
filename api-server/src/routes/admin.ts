@@ -3122,7 +3122,7 @@ router.get("/broadcast-push/history", requirePermission("notifications.read"), a
 
 // ─── Inactive Account Review Queue ───────────────────────────────────────────
 
-router.get("/inactive-accounts", async (req: AuthRequest, res) => {
+router.get("/inactive-accounts", requirePermission("users.read"), async (req: AuthRequest, res) => {
   try {
     const startedAt = Date.now();
     const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
@@ -3161,7 +3161,7 @@ router.get("/inactive-accounts", async (req: AuthRequest, res) => {
 
 // ─── Sidebar Counts ──────────────────────────────────────────────────────────
 
-router.get("/sidebar-counts", async (req: AuthRequest, res) => {
+router.get("/sidebar-counts", requirePermission("dashboard.read"), async (req: AuthRequest, res) => {
   try {
     const startedAt = Date.now();
     const adminId = req.user!.userId;

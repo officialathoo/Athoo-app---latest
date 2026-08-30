@@ -86,7 +86,7 @@ function AccessDenied() {
 const IDLE_PREFETCH: { key: unknown[]; perm: string; load: () => Promise<unknown> }[] = [
   { key: ["admin-dashboard"], perm: "dashboard.read", load: () => api<{ dashboard: unknown }>("/api/admin/dashboard") },
   { key: ["sidebar-counts"], perm: "dashboard.read", load: () => api<{ counts: unknown }>("/api/admin/sidebar-counts") },
-  { key: ["admin-users"], perm: "users.read", load: () => api<{ customers: unknown }>("/api/admin/customers?page=1&limit=25") },
+  { key: ["admin-customers"], perm: "users.read", load: () => api<{ customers: unknown }>("/api/admin/customers?page=1&limit=25") },
   { key: ["support-tickets", "all", "all", "", "", "", "", 1], perm: "support.read", load: () => api<{ tickets: unknown }>("/api/admin/support", { params: { status: "all", priority: "all", page: 1, limit: 25 } }) },
   { key: ["reported-issues"], perm: "support.read", load: () => api<{ reports: unknown }>("/api/admin/report-issues") },
 ];

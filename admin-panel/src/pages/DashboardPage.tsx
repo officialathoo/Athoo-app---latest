@@ -35,7 +35,7 @@ export function DashboardPage() {
   const canViewAudit = hasPermission("audit.read");
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["admin-dashboard"],
+    queryKey: ["admin", "dashboard"],
     queryFn: () => api<{ dashboard: DashboardData }>("/api/admin/dashboard"),
     refetchInterval: 180000,
     staleTime: 15000,

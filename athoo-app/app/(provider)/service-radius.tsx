@@ -10,6 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import { api } from "@/services/api";
 
 const RADIUS_OPTIONS = [5, 10, 15, 20, 30, 50];
+const CUSTOM_RADIUS = -1; // sentinel for "custom input"
 
 export default function ServiceRadiusScreen() {
   const { theme } = useTheme();
@@ -19,6 +20,7 @@ export default function ServiceRadiusScreen() {
   const { user, refreshUser } = useAuth();
   const [selected, setSelected] = useState<number>((user as any)?.maxTravelDistanceKm || 15);
   const [saving, setSaving] = useState(false);
+  const [customValue, setCustomValue] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -34,8 +36,12 @@ export default function ServiceRadiusScreen() {
 
   const handleSave = async () => {
     setSaving(true);
+    let radiusValue = selected;
+    if (selected === CUSTOM_RADIUS && customValue && Number.isFinite(Number(customValue)) && Number(customValue) > 0) {
+      radiusValue = Number(customValue);
+    }
     try {
-      const response = await api.updateServiceRadius(selected);
+      const response = await api.updateServiceRadius(radiusValue);
       setSelected(response.maxTravelDistanceKm);
       await refreshUser();
       Alert.alert("Saved", `Your service radius is set to ${response.maxTravelDistanceKm} km.`);
@@ -58,15 +64,30 @@ export default function ServiceRadiusScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.infoCard}>
-          <Icon name="map-pin" size={28} color={theme.colors.primary} />
-          <Text style={styles.infoTitle}>Set Your Travel Radius</Text>
-          <Text style={styles.infoDesc}>
-            Customers outside your selected radius won't see your profile in their search results. Choose a radius that balances reach and travel convenience.
-          </Text>
-        </View>
+<View style={styles.infoCard}>
+  <Icon name="map-pin" size={28} color={theme.colors.primary} />
+  <Text style={styles.infoTitle}>Set Your Travel Radius</Text>
+  <Text style={styles.infoDesc}>
+    Customers outside your selected radius won't see your profile in their search results. Choose a radius that balances reach and travel convenience.
+  </Text>
+</View>
 
-        <Text style={styles.sectionLabel}>Select Maximum Distance</Text>
+{selected === CUSTOM_RADIUS ? (
+  <View style={styles.customInput}>
+    <Text style={styles.customLabel}>Custom radius (km):</Text>
+    <TextInput
+      style={styles.customInputBox}
+      keyboardType="number-pad"
+      placeholder="e.g. 25"
+      value={customValue}
+      onChangeText={setCustomValue}
+      maxLength={5}
+      disabled={saving}
+    />
+  </View>
+) : null}
+
+<Text style={styles.sectionLabel}>Select Maximum Distance</Text>
         <View style={styles.optionsGrid}>
           {RADIUS_OPTIONS.map(km => (
             <Pressable
@@ -151,6 +172,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   optionUnitSelected: { color: theme.colors.primary },
   optionTag: { fontSize: 9, fontWeight: "700", color: theme.colors.textMuted, marginTop: 2 },
   optionTagSelected: { color: theme.colors.primary + "CC" },
+  customInput: {
+    marginHorizontal: 16, marginVertical: 8, padding: 12, borderWidth: 1, borderColor: theme.colors.border,
+    borderRadius: 8, backgroundColor: theme.colors.surface, gap: 6,
+  },
+  customLabel: { fontSize: 14, fontWeight: "600", color: theme.colors.text },
+  customInputBox: { borderWidth: 1, borderColor: theme.colors.border, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 6, fontSize: 18, width: "100%" },
   selectedSummary: {
     flexDirection: "row", gap: 8, backgroundColor: theme.colors.primary + "10",
     borderRadius: 12, padding: 12, alignItems: "flex-start",

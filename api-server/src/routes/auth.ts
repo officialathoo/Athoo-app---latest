@@ -1304,7 +1304,7 @@ router.get("/users/:id", requireAuth, async (req: AuthRequest, res: Response) =>
       return;
     }
 
-    res.json({ user: toSafeUser(user) });
+    res.json({ user: safeUserAllowlist(user) });
   } catch (e) {
     logger.error({ err: e }, "get user error");
     res.status(500).json({ error: "Failed to get user" });

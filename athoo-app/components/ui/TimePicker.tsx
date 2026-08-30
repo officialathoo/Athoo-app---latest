@@ -52,6 +52,12 @@ function DrumCol({ data, selectedIndex, onChange, flex = 1, fontSize = 22 }: Dru
     return () => clearTimeout(timer);
   }, [scrollTo, selectedIndex]);
 
+  const handleScroll = useCallback((event: { nativeEvent: { contentOffset: { y: number } } }) => {
+    const { y } = event.nativeEvent.contentOffset;
+    const index = Math.max(0, Math.min(Math.round(y / ITEM_H), data.length - 1));
+    if (index !== selectedIndex) onChange(index);
+  }, [onChange, data.length]);
+
   return (
     <View style={[styles.col, { flex }]}>
       <View pointerEvents="none" style={styles.selectionFrame} />
@@ -60,7 +66,7 @@ function DrumCol({ data, selectedIndex, onChange, flex = 1, fontSize = 22 }: Dru
         style={styles.scrollLayer}
         contentContainerStyle={{ paddingVertical: COL_PAD }}
         snapToInterval={ITEM_H}
-        decelerationRate={Platform.OS === "ios" ? "fast" : 0.85}
+        decelerationRate={Platform.OS === "ios" ? "fast" : 0.9}
         showsVerticalScrollIndicator={false}
         onMomentumScrollEnd={(event) => {
           const index = Math.max(
@@ -69,6 +75,7 @@ function DrumCol({ data, selectedIndex, onChange, flex = 1, fontSize = 22 }: Dru
           );
           onChange(index);
         }}
+        onScroll={(event) => handleScroll(event)}
         onScrollEndDrag={(event) => {
           if (Platform.OS === "web") {
             const index = Math.max(

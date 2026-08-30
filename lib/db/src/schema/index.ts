@@ -295,6 +295,8 @@ export const phoneChangeRequestsTable = pgTable("phone_change_requests", {
   otpCode: text("otp_code").notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   verified: boolean("verified").default(false),
+  attempts: integer("attempts").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
