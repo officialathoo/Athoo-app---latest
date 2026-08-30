@@ -318,6 +318,7 @@ export function NotificationsScreen({ role }: { role: Role }) {
         }
         renderItem={({ item: notification, index }) => {
               const visual = notificationVisual(notification.type, theme);
+              const unread = !notification.read;
               return (
                 <AnimatedCard
                   key={notification.id}
@@ -331,7 +332,7 @@ export function NotificationsScreen({ role }: { role: Role }) {
                     onPress={() => handleNotificationPress(notification)}
                     style={({ pressed }) => [
                       styles.notificationCard,
-                      !notification.read && {
+                      unread && {
                         borderColor: accent,
                         backgroundColor: theme.colors.elevated,
                       },
@@ -339,38 +340,43 @@ export function NotificationsScreen({ role }: { role: Role }) {
                     ]}
                   >
                     <View style={[styles.iconWrap, { backgroundColor: visual.color + "18" }]}>
-                      <Icon name={visual.icon} size={20} color={visual.color} />
+                      <Icon name={visual.icon} size={17} color={visual.color} />
                     </View>
 
                     <View style={styles.copy}>
                       <View style={styles.metaRow}>
-                        <View style={[styles.typePill, { backgroundColor: visual.color + "14" }]}>
-                          <Text style={[styles.typeText, { color: visual.color }]}>{tr(visual.label)}</Text>
-                        </View>
+                        <Text
+                          style={[
+                            styles.itemTitle,
+                            localizedText,
+                            unread && styles.itemTitleUnread,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {notification.title}
+                        </Text>
                         <Text style={styles.timeText}>{timeAgo(notification.timestamp)}</Text>
                       </View>
 
                       <Text
-                        style={[styles.itemTitle, localizedText, !notification.read && styles.itemTitleUnread]}
+                        style={[styles.itemMessage, localizedText]}
                         numberOfLines={2}
                       >
-                        {notification.title}
-                      </Text>
-
-                      <Text style={[styles.itemMessage, localizedText]} numberOfLines={3}>
                         {notification.message}
                       </Text>
 
                       <View style={styles.itemFooter}>
                         <View style={styles.openHint}>
-                          <Text style={[styles.openHintText, { color: accent }]}>
+                          <Text style={[styles.openHintText, { color: accent }, localizedText]} numberOfLines={1}>
                             {notification.actionLabel || tr("View details")}
                           </Text>
-                          <Icon name="arrow-right" size={12} color={accent} />
+                          <Icon name="arrow-right" size={11} color={accent} />
                         </View>
-                        {!notification.read ? (
+                        {unread ? (
                           <View style={[styles.unreadStatus, { backgroundColor: accent }]}>
-                            <Text style={[styles.unreadStatusText, { color: accentText }]}>{tr("New")}</Text>
+                            <Text style={[styles.unreadStatusText, { color: accentText }]}>
+                              {tr("New")}
+                            </Text>
                           </View>
                         ) : null}
                       </View>
@@ -386,7 +392,7 @@ export function NotificationsScreen({ role }: { role: Role }) {
                       }}
                       style={({ pressed }) => [styles.dismissButton, pressed && styles.pressed]}
                     >
-                      <Icon name="x" size={15} color={theme.colors.textMuted} />
+                      <Icon name="x" size={13} color={theme.colors.textMuted} />
                     </Pressable>
                   </Pressable>
                 </AnimatedCard>
@@ -400,21 +406,22 @@ export function NotificationsScreen({ role }: { role: Role }) {
 function createStyles(theme: AthooTheme) {
   return StyleSheet.create({
     screen: { flex: 1 },
+    /* Header — compact, aligned to content margins */
     header: {
-      minHeight: 72,
+      minHeight: 62,
       flexDirection: "row",
       alignItems: "center",
-      gap: 11,
-      paddingHorizontal: redesign.layout.horizontalPadding,
-      paddingVertical: 11,
+      gap: 10,
+      paddingHorizontal: redesign.layout.compactHorizontalPadding,
+      paddingVertical: 9,
       backgroundColor: theme.colors.surface,
       borderBottomWidth: redesign.visual.cardBorderWidth,
       borderBottomColor: theme.colors.border,
       ...theme.shadows.sm,
     },
     headerButton: {
-      width: redesign.control.iconButtonSize,
-      height: redesign.control.iconButtonSize,
+      width: 40,
+      height: 40,
       borderRadius: theme.radius.md,
       alignItems: "center",
       justifyContent: "center",
@@ -424,39 +431,54 @@ function createStyles(theme: AthooTheme) {
     },
     headerCopy: { flex: 1, minWidth: 0 },
     headerTitle: { ...theme.typography.h2, color: theme.colors.text, letterSpacing: -0.25 },
-    headerSubtitle: { marginTop: 2, ...theme.typography.caption, color: theme.colors.textMuted },
-    content: { padding: redesign.layout.horizontalPadding, gap: 12 },
+    headerSubtitle: { marginTop: 1, ...theme.typography.caption, color: theme.colors.textMuted },
+
+    /* Content rhythm — uniform 16px margins, 10px gaps */
+    content: { padding: redesign.layout.compactHorizontalPadding, gap: 10 },
+
+    /* Summary box — compact */
     summaryMotion: { width: "100%" },
     summaryCard: {
       borderRadius: theme.radius.xl,
-      padding: 16,
-      gap: 14,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      gap: 10,
       ...theme.shadows.md,
     },
-    summaryTop: { flexDirection: "row", alignItems: "center", gap: 12 },
+    summaryTop: { flexDirection: "row", alignItems: "center", gap: 10 },
     summaryIcon: {
-      width: 46,
-      height: 46,
+      width: 38,
+      height: 38,
       borderRadius: theme.radius.md,
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: "rgba(255,255,255,0.16)",
     },
     summaryCopy: { flex: 1 },
-    summaryCount: { ...theme.typography.h1 },
-    summaryLabel: { marginTop: 1, ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, opacity: 0.88 },
+    summaryCount: { ...theme.typography.h3 },
+    summaryLabel: {
+      marginTop: 0,
+      ...theme.typography.caption,
+      fontFamily: theme.typography.label.fontFamily,
+      opacity: 0.88,
+    },
     summaryTotal: { alignItems: "flex-end" },
     summaryTotalValue: { ...theme.typography.h3 },
-    summaryTotalLabel: { marginTop: 2, ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, opacity: 0.8 },
+    summaryTotalLabel: {
+      marginTop: 1,
+      ...theme.typography.caption,
+      fontFamily: theme.typography.label.fontFamily,
+      opacity: 0.82,
+    },
     summaryActions: { flexDirection: "row", gap: 8 },
     summaryAction: {
       flex: 1,
-      minHeight: redesign.control.compactHeight,
+      minHeight: 36,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
-      gap: 6,
-      paddingHorizontal: 8,
+      gap: 5,
+      paddingHorizontal: 10,
       borderRadius: theme.radius.md,
       borderWidth: redesign.visual.cardBorderWidth,
       borderColor: "rgba(255,255,255,0.22)",
@@ -464,71 +486,122 @@ function createStyles(theme: AthooTheme) {
     },
     summaryActionDisabled: { opacity: redesign.visual.disabledOpacity },
     summaryActionPressed: { opacity: 0.78, transform: [{ scale: redesign.visual.pressedScale }] },
-    summaryActionText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily },
+    summaryActionText: {
+      ...theme.typography.caption,
+      fontFamily: theme.typography.label.fontFamily,
+      fontWeight: "700",
+    },
+
+    /* Filters — compact pills */
     filterRow: { flexDirection: "row", gap: 8 },
     filterButton: {
-      minHeight: redesign.control.compactHeight,
+      minHeight: 32,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
       gap: 6,
-      paddingHorizontal: 15,
+      paddingHorizontal: 14,
       borderRadius: theme.radius.pill,
       borderWidth: redesign.visual.cardBorderWidth,
     },
     filterText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily },
     filterCount: {
-      minWidth: 20,
-      height: 20,
-      borderRadius: 10,
+      minWidth: 18,
+      height: 18,
+      borderRadius: 9,
       paddingHorizontal: 5,
       alignItems: "center",
       justifyContent: "center",
     },
-    filterCountText: { fontSize: 9.5, fontWeight: "900" },
-    list: { gap: 9 },
+    filterCountText: { fontSize: 9, fontWeight: "900" },
+
+    /* Section heading */
     sectionHeader: {
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
-      paddingTop: 6,
-      paddingBottom: 8,
-      marginTop: 2,
+      paddingTop: 8,
+      paddingBottom: 2,
     },
-    sectionLabel: { ...theme.typography.caption, color: theme.colors.textSecondary, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5 },
+    sectionLabel: {
+      ...theme.typography.caption,
+      color: theme.colors.textSecondary,
+      fontWeight: "800",
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
     sectionCount: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, fontWeight: "900" },
+
+    /* Notification card — compact, flat, uniform grid */
     itemMotion: { width: "100%" },
     notificationCard: {
       flexDirection: "row",
       alignItems: "flex-start",
-      gap: 11,
-      padding: 13,
+      gap: 10,
+      padding: 12,
       borderRadius: theme.radius.lg,
       backgroundColor: theme.colors.surface,
       borderWidth: redesign.visual.cardBorderWidth,
       borderColor: theme.colors.border,
-      ...theme.shadows.sm,
     },
     cardPressed: { opacity: 0.86, transform: [{ scale: redesign.visual.pressedScale }] },
-    iconWrap: { width: 42, height: 42, borderRadius: theme.radius.md, alignItems: "center", justifyContent: "center", flexShrink: 0 },
+    iconWrap: {
+      width: 34,
+      height: 34,
+      borderRadius: theme.radius.md,
+      alignItems: "center",
+      justifyContent: "center",
+      flexShrink: 0,
+      marginTop: 1,
+    },
     copy: { flex: 1, minWidth: 0 },
-    metaRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 5 },
-    typePill: { minHeight: 22, paddingHorizontal: 7, borderRadius: theme.radius.pill, justifyContent: "center" },
-    typeText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily },
-    timeText: { ...theme.typography.caption, color: theme.colors.textMuted },
-    itemTitle: { ...theme.typography.label, color: theme.colors.text },
+    metaRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: 8,
+    },
+    itemTitle: {
+      flex: 1,
+      minWidth: 0,
+      ...theme.typography.label,
+      color: theme.colors.text,
+    },
     itemTitleUnread: { fontWeight: "900" },
-    itemMessage: { marginTop: 4, ...theme.typography.body, color: theme.colors.textSecondary },
-    itemFooter: { marginTop: 8, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
-    openHint: { flexDirection: "row", alignItems: "center", gap: 4, minWidth: 0 },
-    openHintText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily },
-    unreadStatus: { minHeight: 22, paddingHorizontal: 7, borderRadius: theme.radius.pill, alignItems: "center", justifyContent: "center" },
-    unreadStatusText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily },
+    timeText: { marginTop: 2, ...theme.typography.caption, color: theme.colors.textMuted, flexShrink: 0 },
+    itemMessage: {
+      marginTop: 3,
+      ...theme.typography.body,
+      color: theme.colors.textSecondary,
+      lineHeight: 17,
+    },
+    itemFooter: {
+      marginTop: 6,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 8,
+      minHeight: 20,
+    },
+    openHint: { flexDirection: "row", alignItems: "center", gap: 4, minWidth: 0, flexShrink: 1 },
+    openHintText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, flexShrink: 1 },
+    unreadStatus: {
+      minHeight: 20,
+      paddingHorizontal: 8,
+      borderRadius: theme.radius.pill,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    unreadStatusText: {
+      ...theme.typography.caption,
+      fontFamily: theme.typography.label.fontFamily,
+      fontSize: 10.5,
+      fontWeight: "800",
+    },
     dismissButton: {
-      width: 30,
-      height: 30,
+      width: 26,
+      height: 26,
       marginTop: -2,
-      marginRight: -2,
       borderRadius: theme.radius.md,
       alignItems: "center",
       justifyContent: "center",
@@ -536,23 +609,45 @@ function createStyles(theme: AthooTheme) {
       flexShrink: 0,
     },
     pressed: { opacity: 0.78, transform: [{ scale: redesign.visual.pressedScale }] },
+
+    /* Empty state */
     emptyMotion: { width: "100%" },
     emptyCard: {
-      minHeight: 300,
+      minHeight: 240,
       alignItems: "center",
       justifyContent: "center",
-      paddingHorizontal: 28,
-      paddingVertical: 38,
+      paddingHorizontal: 24,
+      paddingVertical: 28,
       borderRadius: theme.radius.xl,
       borderWidth: redesign.visual.cardBorderWidth,
       borderColor: theme.colors.border,
       backgroundColor: theme.colors.surface,
+    },
+    emptyIcon: {
+      width: 56,
+      height: 56,
+      borderRadius: theme.radius.lg,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 12,
+    },
+    emptyTitle: { ...theme.typography.h2, color: theme.colors.text, textAlign: "center" },
+    emptyCopy: {
+      marginTop: 6,
+      ...theme.typography.body,
+      color: theme.colors.textSecondary,
+      textAlign: "center",
+      maxWidth: 340,
+    },
+    emptyAction: {
+      minHeight: 44,
+      marginTop: 14,
+      paddingHorizontal: 14,
+      borderRadius: theme.radius.md,
+      alignItems: "center",
+      justifyContent: "center",
       ...theme.shadows.sm,
     },
-    emptyIcon: { width: 70, height: 70, borderRadius: theme.radius.xl, alignItems: "center", justifyContent: "center", marginBottom: 16 },
-    emptyTitle: { ...theme.typography.h2, color: theme.colors.text, textAlign: "center" },
-    emptyCopy: { marginTop: 8, ...theme.typography.body, color: theme.colors.textSecondary, textAlign: "center", maxWidth: 360 },
-    emptyAction: { minHeight: redesign.control.standardHeight, marginTop: 18, paddingHorizontal: 15, borderRadius: theme.radius.md, alignItems: "center", justifyContent: "center", ...theme.shadows.sm },
-    emptyActionText: { ...theme.typography.label },
+    emptyActionText: { ...theme.typography.label, fontSize: 13 },
   });
 }
