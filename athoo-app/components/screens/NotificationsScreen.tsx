@@ -440,15 +440,15 @@ function createStyles(theme: AthooTheme) {
     summaryMotion: { width: "100%" },
     summaryCard: {
       borderRadius: theme.radius.xl,
-      paddingVertical: 12,
+      paddingVertical: 9,
       paddingHorizontal: 14,
-      gap: 10,
+      gap: 8,
       ...theme.shadows.md,
     },
     summaryTop: { flexDirection: "row", alignItems: "center", gap: 10 },
     summaryIcon: {
-      width: 38,
-      height: 38,
+      width: 34,
+      height: 34,
       borderRadius: theme.radius.md,
       alignItems: "center",
       justifyContent: "center",
@@ -473,7 +473,7 @@ function createStyles(theme: AthooTheme) {
     summaryActions: { flexDirection: "row", gap: 8 },
     summaryAction: {
       flex: 1,
-      minHeight: 36,
+      minHeight: 32,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
@@ -493,7 +493,7 @@ function createStyles(theme: AthooTheme) {
     },
 
     /* Filters — compact pills */
-    filterRow: { flexDirection: "row", gap: 8 },
+    filterRow: { flexDirection: "row", gap: 8, marginTop: 10 },
     filterButton: {
       minHeight: 32,
       flexDirection: "row",
@@ -538,7 +538,7 @@ function createStyles(theme: AthooTheme) {
       flexDirection: "row",
       alignItems: "flex-start",
       gap: 10,
-      padding: 12,
+      padding: 10,
       borderRadius: theme.radius.lg,
       backgroundColor: theme.colors.surface,
       borderWidth: redesign.visual.cardBorderWidth,
@@ -546,8 +546,8 @@ function createStyles(theme: AthooTheme) {
     },
     cardPressed: { opacity: 0.86, transform: [{ scale: redesign.visual.pressedScale }] },
     iconWrap: {
-      width: 34,
-      height: 34,
+      width: 32,
+      height: 32,
       borderRadius: theme.radius.md,
       alignItems: "center",
       justifyContent: "center",
@@ -570,13 +570,13 @@ function createStyles(theme: AthooTheme) {
     itemTitleUnread: { fontWeight: "900" },
     timeText: { marginTop: 2, ...theme.typography.caption, color: theme.colors.textMuted, flexShrink: 0 },
     itemMessage: {
-      marginTop: 3,
+      marginTop: 2,
       ...theme.typography.body,
       color: theme.colors.textSecondary,
-      lineHeight: 17,
+      lineHeight: 16,
     },
     itemFooter: {
-      marginTop: 6,
+      marginTop: 4,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
