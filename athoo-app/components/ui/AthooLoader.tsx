@@ -11,7 +11,7 @@ interface AthooLoaderProps {
 
 export function AthooLoader({ tagline }: AthooLoaderProps) {
   const { theme } = useTheme();
-  const resolvedTagline = tagline || brandConfig.descriptor;
+  const resolvedTagline = tagline || `${brandConfig.descriptor} Across Pakistan`;
   const styles = useMemo(() => createStyles(theme), [theme]);
   const logoScale = useRef(new Animated.Value(0.5)).current;
   const logoOpacity = useRef(new Animated.Value(0)).current;
@@ -80,9 +80,7 @@ export function AthooLoader({ tagline }: AthooLoaderProps) {
     };
   }, [dot1Y, dot2Y, dot3Y, glowOpacity, logoOpacity, logoScale, ringOpacity, ringScale, textOpacity]);
 
-  const gradient = theme.dark
-    ? [theme.colors.background, theme.colors.primaryPressed, theme.colors.surfaceAlt] as const
-    : [theme.colors.primary, theme.colors.primaryPressed, theme.colors.info] as const;
+  const gradient = ["#061231", "#0B3FA8", "#08172F"] as const;
 
   return (
     <LinearGradient colors={gradient} style={styles.container} start={{ x: 0.3, y: 0 }} end={{ x: 0.7, y: 1 }}>
@@ -93,9 +91,11 @@ export function AthooLoader({ tagline }: AthooLoaderProps) {
       <Animated.View style={[styles.logoWrap, { opacity: logoOpacity, transform: [{ scale: logoScale }] }]}>
         <Animated.View style={[styles.ring, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]} />
         <Animated.View style={[styles.glowCircle, { opacity: glowOpacity }]} />
-        <View style={styles.logoCard}>
-          <Image source={brandConfig.assets.mark} style={styles.logo} resizeMode="cover" />
-        </View>
+        <Image
+          source={brandConfig.assets.mark}
+          style={styles.logo}
+          resizeMode="cover"
+        />
       </Animated.View>
 
       <Animated.View style={[styles.textBlock, { opacity: textOpacity }]}>
@@ -113,7 +113,7 @@ export function AthooLoader({ tagline }: AthooLoaderProps) {
       </View>
 
       <View style={styles.footer}>
-        <Text style={styles.footerText}>Pakistan</Text>
+        <Text style={styles.footerText}>Secure Services - Pakistan</Text>
       </View>
     </LinearGradient>
   );
@@ -123,36 +123,20 @@ function createStyles(theme: AthooTheme) {
   const glass = theme.dark ? "rgba(255,255,255,0.13)" : "rgba(255,255,255,0.18)";
   return StyleSheet.create({
     container: { flex: 1, alignItems: "center", justifyContent: "center", overflow: "hidden" },
-    backgroundCircleTop: { position: "absolute", width: 340, height: 340, borderRadius: 170, backgroundColor: "rgba(255,255,255,0.05)", top: -120, right: -100 },
-    backgroundCircleBottom: { position: "absolute", width: 260, height: 260, borderRadius: 130, backgroundColor: "rgba(255,255,255,0.04)", bottom: -80, left: -80 },
+    backgroundCircleTop: { position: "absolute", width: 380, height: 380, borderRadius: 190, backgroundColor: "rgba(56,189,248,0.08)", top: -165, right: -135 },
+    backgroundCircleBottom: { position: "absolute", width: 300, height: 300, borderRadius: 150, backgroundColor: "rgba(249,115,22,0.10)", bottom: -125, left: -115 },
     backgroundCircleMiddle: { position: "absolute", width: 180, height: 180, borderRadius: 90, backgroundColor: "rgba(255,255,255,0.03)", top: "35%", left: "60%" },
-    logoWrap: { alignItems: "center", justifyContent: "center", width: 148, height: 148 },
-    ring: { position: "absolute", width: 144, height: 144, borderRadius: 72, borderWidth: 2, borderColor: "rgba(255,255,255,0.5)" },
-    glowCircle: { position: "absolute", width: 118, height: 118, borderRadius: 59, backgroundColor: "rgba(255,255,255,0.12)" },
-    logoCard: {
-      width: 108,
-      height: 108,
-      borderRadius: 28,
-      backgroundColor: theme.colors.white,
-      borderWidth: 1.5,
-      borderColor: glass,
-      alignItems: "center",
-      justifyContent: "center",
-      shadowColor: theme.colors.overlay,
-      shadowOffset: { width: 0, height: 14 },
-      shadowOpacity: 0.3,
-      shadowRadius: 22,
-      elevation: 20,
-      overflow: "hidden",
-    },
-    logo: { width: "100%", height: "100%", borderRadius: 27 },
-    textBlock: { alignItems: "center", marginTop: 30, gap: 6 },
-    brandName: { fontSize: 38, fontWeight: "800", color: theme.colors.white, letterSpacing: 1.5 },
+    logoWrap: { alignItems: "center", justifyContent: "center", width: 142, height: 142 },
+    ring: { position: "absolute", width: 136, height: 136, borderRadius: 68, borderWidth: 1.5, borderColor: "rgba(125,211,252,0.48)" },
+    glowCircle: { position: "absolute", width: 112, height: 112, borderRadius: 56, backgroundColor: "rgba(56,189,248,0.13)" },
+    logo: { width: 112, height: 112, resizeMode: "contain" },
+    textBlock: { alignItems: "center", marginTop: 24, gap: 5, paddingHorizontal: 28 },
+    brandName: { fontSize: 36, fontWeight: "800", color: theme.colors.white, letterSpacing: 1.1 },
     tagline: { fontSize: 13, color: "rgba(255,255,255,0.78)", letterSpacing: 0.8, fontWeight: "500" },
-    dotsRow: { flexDirection: "row", alignItems: "center", gap: 9, marginTop: 58 },
+    dotsRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 46 },
     dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.58)" },
-    middleDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: "rgba(255,255,255,0.82)" },
+    middleDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: "#F97316" },
     footer: { position: "absolute", bottom: 48, alignItems: "center" },
-    footerText: { fontSize: 11, color: "rgba(255,255,255,0.52)", letterSpacing: 1.2, fontWeight: "500", textTransform: "uppercase" },
+    footerText: { fontSize: 10, color: "rgba(255,255,255,0.46)", letterSpacing: 1.5, fontWeight: "600", textTransform: "uppercase" },
   });
 }

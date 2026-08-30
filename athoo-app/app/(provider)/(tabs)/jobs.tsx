@@ -1,6 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useState , useMemo} from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   Platform,
   Pressable,
@@ -14,6 +14,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText, ProviderJobsSkeleton, ProviderMetricCard } from "@/components/design";
 import { EmptyView } from "@/components/ui/UiState";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 import type { AthooTheme } from "@/design/theme";
 import { useLang } from "@/context/LanguageContext";
 import { BookingCard } from "@/components/ui/BookingCard";
@@ -40,12 +42,14 @@ export default function ProviderJobsScreen() {
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { t, translate: tr } = useLang();
-  const { getMyBookings, loadBookings, isLoading } = useBookings();
+  const { getMyBookings, loadBookings, isLoading, hasMore, isLoadingMore, loadMoreBookings } = useBookings();
   const { getMyNegotiations } = useNegotiation();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const [activeFilter, setActiveFilter] =
     useState<typeof FILTERS[0]["value"]>("all");
+  const [refreshing, setRefreshing] = useState(false);
+  const lastFocusRefreshAtRef = useRef(0);
 
   const allBookings = user ? getMyBookings(user.id, "provider") : [];
   const myNegotiations = user ? getMyNegotiations(user.id) : [];
@@ -81,10 +85,24 @@ export default function ProviderJobsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadBookings();
+      const now = Date.now();
+      if (now - lastFocusRefreshAtRef.current >= 30_000) {
+        lastFocusRefreshAtRef.current = now;
+        void loadBookings({ silent: true });
+      }
       return undefined;
     }, [loadBookings])
   );
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadBookings({ silent: true });
+      lastFocusRefreshAtRef.current = Date.now();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadBookings]);
 
   return (
     <View style={[styles.container, { paddingTop: topPad, backgroundColor: theme.colors.background }]}>
@@ -125,7 +143,10 @@ export default function ProviderJobsScreen() {
             <Pressable
               key={f.value}
               onPress={() => setActiveFilter(f.value)}
-              style={[styles.filterChip, { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.border }, isActive && { backgroundColor: theme.colors.secondary, borderColor: theme.colors.secondary }]}
+              style={[styles.filterChip, isActive && styles.filterChipActive]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isActive }}
+              accessibilityLabel={f.label}
             >
               <Text
                 style={[styles.filterText, { color: theme.colors.textSecondary }, isActive && styles.filterTextActive]}
@@ -150,7 +171,7 @@ export default function ProviderJobsScreen() {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 80 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={isLoading} onRefresh={loadBookings} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => void handleRefresh()} />
         }
       >
         {isLoading && allBookings.length === 0 && activeFilter !== "negotiations" ? (
@@ -177,6 +198,8 @@ export default function ProviderJobsScreen() {
                     params: { negId: neg.id },
                   })
                 }
+                accessibilityRole="button"
+                accessibilityLabel={`${tr("Negotiation")} - ${neg.service}`}
               >
                 <View style={styles.negHeader}>
                   <View style={styles.negIcon}>
@@ -184,8 +207,8 @@ export default function ProviderJobsScreen() {
                   </View>
 
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.negService}>{neg.service}</Text>
-                    <Text style={styles.negCustomer}>{tr("From")}: {neg.customerName}</Text>
+                    <Text style={styles.negService} numberOfLines={1}>{neg.service}</Text>
+                    <Text style={styles.negCustomer} numberOfLines={1}>{tr("From")}: {neg.customerName}</Text>
                   </View>
 
                   <View
@@ -318,6 +341,19 @@ export default function ProviderJobsScreen() {
             />
           ))
         )}
+        {activeFilter !== "negotiations" && hasMore ? (
+          <Pressable
+            accessibilityRole="button"
+            disabled={isLoadingMore}
+            style={[styles.loadMoreButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+            onPress={() => void loadMoreBookings()}
+          >
+            <Icon name="chevrons-down" size={16} color={theme.colors.primary} />
+            <Text style={[styles.loadMoreText, { color: theme.colors.primary }]}>
+              {isLoadingMore ? tr("Loading older jobs...") : tr("Load older jobs")}
+            </Text>
+          </Pressable>
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -325,29 +361,46 @@ export default function ProviderJobsScreen() {
 
 const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
+  loadMoreButton: {
+    minHeight: redesign.control.standardHeight,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderRadius: radius.md,
+    marginTop: redesign.layout.cardGap,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    ...theme.shadows.sm,
+  },
+  loadMoreText: { fontSize: 14, fontWeight: "800" },
 
   header: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
+    gap: redesign.layout.cardGap,
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: 12,
+    paddingBottom: 10,
     backgroundColor: theme.colors.surface,
+    borderBottomWidth: redesign.visual.cardBorderWidth,
+    borderBottomColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
 
   title: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "800",
     color: theme.colors.text,
     flex: 1,
   },
 
   alertBadge: {
-    backgroundColor: theme.colors.danger + "20",
+    backgroundColor: theme.colors.dangerSoft,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 20,
+    borderRadius: radius.pill,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.danger + "25",
   },
 
   alertText: {
@@ -359,22 +412,22 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   summaryRow: {
     flexDirection: "row",
     gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingVertical: 8,
     backgroundColor: theme.colors.surface,
-    borderBottomWidth: 1,
+    borderBottomWidth: redesign.visual.cardBorderWidth,
     borderBottomColor: theme.colors.border,
   },
 
   summaryCard: {
     flex: 1,
-    borderRadius: 12,
-    padding: 10,
+    borderRadius: 10,
+    padding: 8,
     alignItems: "center",
   },
 
   summaryNum: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "800",
   },
 
@@ -386,23 +439,32 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   filterScroll: {
     backgroundColor: theme.colors.surface,
+    flexGrow: 0,
+    flexShrink: 0,
+    minHeight: 44,
+    maxHeight: 52,
   },
 
   filterContent: {
-    paddingHorizontal: 16,
-    paddingVertical: 4,
+    paddingLeft: redesign.layout.horizontalPadding,
+    paddingRight: redesign.layout.horizontalPadding + 8,
+    paddingVertical: 6,
     gap: 8,
+    alignItems: "center",
+    minHeight: redesign.control.standardHeight,
   },
 
   filterChip: {
+    minHeight: redesign.control.compactHeight,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 5,
     paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 14,
-    backgroundColor: theme.colors.background,
-    borderWidth: 1,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.border,
   },
 
@@ -418,14 +480,15 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   filterTextActive: {
-    color: theme.colors.surface,
+    color: theme.colors.onBrand,
   },
 
   filterBadge: {
     backgroundColor: theme.colors.danger,
-    width: 18,
+    minWidth: 18,
     height: 18,
-    borderRadius: 9,
+    paddingHorizontal: 4,
+    borderRadius: radius.pill,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -441,14 +504,18 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   scrollContent: {
-    padding: 16,
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: redesign.layout.cardGap,
     paddingBottom: 100,
-    gap: 12,
+    gap: redesign.layout.cardGap,
+    width: "100%",
+    maxWidth: redesign.layout.maxContentWidth,
+    alignSelf: "center",
   },
 
   empty: {
     alignItems: "center",
-    paddingVertical: 60,
+    paddingVertical: 42,
     gap: 10,
   },
 
@@ -466,33 +533,31 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   negCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 18,
-    padding: 16,
-    gap: 12,
-    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: redesign.layout.fieldGap,
+    gap: 10,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.secondary + "30",
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 2,
+    ...theme.shadows.sm,
   },
 
   negCardPressed: {
-    opacity: 0.9,
+    opacity: 0.82,
+    transform: [{ scale: redesign.visual.pressedScale }],
   },
 
   negHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+    minWidth: 0,
   },
 
   negIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: theme.colors.secondary + "20",
+    width: redesign.control.compactHeight,
+    height: redesign.control.compactHeight,
+    borderRadius: radius.md,
+    backgroundColor: theme.colors.premiumSoft,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -501,17 +566,20 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     color: theme.colors.text,
+    flexShrink: 1,
   },
 
   negCustomer: {
     fontSize: 12,
     color: theme.colors.textSecondary,
+    flexShrink: 1,
   },
 
   negStatusBadge: {
+    flexShrink: 0,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 20,
+    borderRadius: radius.pill,
   },
 
   negStatusText: {
@@ -527,10 +595,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   negAmount: {
     flex: 1,
     backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 10,
-    padding: 10,
+    borderRadius: radius.md,
+    padding: 9,
     alignItems: "center",
     gap: 2,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
   },
 
   negAmountLabel: {
@@ -551,13 +621,14 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   negAcceptBtn: {
     flex: 1,
+    minHeight: redesign.control.compactHeight,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 5,
     backgroundColor: theme.colors.success,
-    borderRadius: 10,
-    paddingVertical: 8,
+    borderRadius: radius.md,
+    ...theme.shadows.sm,
   },
 
   negAcceptText: {
@@ -568,14 +639,14 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   negCounterBtn: {
     flex: 1,
+    minHeight: redesign.control.compactHeight,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 5,
-    backgroundColor: theme.colors.secondary + "15",
-    borderRadius: 10,
-    paddingVertical: 8,
-    borderWidth: 1,
+    backgroundColor: theme.colors.premiumSoft,
+    borderRadius: radius.md,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.secondary + "40",
   },
 
@@ -587,14 +658,14 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   negRejectBtn: {
     flex: 1,
+    minHeight: redesign.control.compactHeight,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 5,
-    backgroundColor: theme.colors.danger + "10",
-    borderRadius: 10,
-    paddingVertical: 8,
-    borderWidth: 1,
+    backgroundColor: theme.colors.dangerSoft,
+    borderRadius: radius.md,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.danger + "30",
   },
 

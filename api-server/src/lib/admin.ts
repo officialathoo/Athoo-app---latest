@@ -82,7 +82,7 @@ export const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = {
   maintenanceMode: false,
   defaultVisitCharge: 200,
   maxBookingsPerDay: 10,
-  appVersion: "1.0.0",
+  appVersion: "2.0.0",
   minBookingNoticeHours: 1,
   allowGuestBrowsing: true,
   providerAutoApprove: false,
@@ -385,9 +385,9 @@ export function toPublicProvider(user: User | null | undefined) {
   };
 }
 
-export function toSafeUser<T extends Record<string, any>>(user: T | null | undefined) {
+export function safeUserAllowlist<T extends Record<string, any>>(user: T | null | undefined) {
   if (!user) return null;
-  const { password, expoPushToken, adminFailedLoginCount, adminLockedUntil, ...safeUser } = user;
+  const { password, expoPushToken, adminFailedLoginCount, adminLockedUntil, phone, email, cnicNumber, fatherName, location, birthDate, idDocument, idDocumentFront, idDocumentBack, resetCode, otpCode, ...safeUser } = user;
   return safeUser;
 }
 

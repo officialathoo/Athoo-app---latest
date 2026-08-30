@@ -20,6 +20,7 @@ export default function CustomerLayout() {
       <Stack.Screen name="book-service" />
       <Stack.Screen name="booking-detail" />
       <Stack.Screen name="chat-room" />
+      <Stack.Screen name="calls" />
       <Stack.Screen name="notifications" />
       <Stack.Screen name="negotiate" />
       <Stack.Screen name="billing" />

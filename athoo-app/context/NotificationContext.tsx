@@ -18,6 +18,7 @@ import { api, realtime } from "@/services/api";
 import { resolveNotificationTarget } from "@/services/notificationRouting";
 import { isExpoGoRuntime } from "@/lib/runtimeEnvironment";
 import { notificationService } from "@/services/NotificationService";
+import { useNavigationGuard } from "@/hooks/useNavigationGuard";
 
 
 
@@ -344,6 +345,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const notificationNavigationArmedAtRef = useRef<number>(Number.POSITIVE_INFINITY);
   const coldStartCheckedRef = useRef(false);
   const knownNotificationIdsRef = useRef<Set<string>>(new Set());
+  const lastRemoteSyncAtRef = useRef(0);
 
   const currentRole = user?.role === "provider" ? "provider" : user?.role === "customer" ? "customer" : null;
 
@@ -394,8 +396,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     if (!loadedRef.current) return;
     AsyncStorage.setItem(getStorageKey(user?.id), JSON.stringify(notifications)).catch(() => {});
   }, [notifications, user?.id]);
-  const syncRemoteNotifications = useCallback(async () => {
-    if (!user || !currentRole || remoteFetchInFlightRef.current) return;
+  const syncRemoteNotifications = useCallback(async (force = false) => {
+    if (!user?.id || !currentRole || remoteFetchInFlightRef.current) return;
+    const now = Date.now();
+    if (!force && now - lastRemoteSyncAtRef.current < 60_000) return;
     remoteFetchInFlightRef.current = true;
     try {
       const response = await api.getNotifications();
@@ -410,21 +414,21 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
           .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime())
           .slice(0, 100);
       });
+      lastRemoteSyncAtRef.current = Date.now();
     } catch {
-      // Remote notification sync must not destabilize local notification state.
     } finally {
       remoteFetchInFlightRef.current = false;
     }
-  }, [currentRole, user]);
+  }, [currentRole, user?.id]);
 
   useEffect(() => {
-    void syncRemoteNotifications();
+    void syncRemoteNotifications(true);
   }, [syncRemoteNotifications]);
 
   useEffect(() => {
     if (!user) return;
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") void syncRemoteNotifications();
+      if (state === "active") void syncRemoteNotifications(false);
     });
     return () => subscription.remove();
   }, [syncRemoteNotifications, user]);
@@ -461,6 +465,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     notificationNavigationArmedAtRef.current = Date.now() + 1500;
   }, [user?.id]);
 
+  const { push: guardedPush, replace: guardedReplace } = useNavigationGuard();
+
   const handleNotificationPress = useCallback(
     (notif: AppNotif) => {
       setNotifications((previous) =>
@@ -471,7 +477,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       }
 
       if (!user || !currentRole) {
-        router.replace("/auth/welcome");
+        guardedReplace("/auth/welcome");
         return;
       }
 
@@ -490,9 +496,9 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         ticketId: notif.ticketId,
         invoiceId: notif.invoiceId,
       }, role);
-      router.push(target as any);
+      guardedPush(target as any);
     },
-    [currentRole, user],
+    [currentRole, user, guardedPush, guardedReplace],
   );
 
   const push = useCallback(

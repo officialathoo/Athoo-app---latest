@@ -12,6 +12,12 @@ const BASELINE_FILE = path.join(ROOT, "sql", "database.sql");
 const MIGRATIONS_DIR = path.join(ROOT, "deploy", "migrations");
 const LOCK_KEY = 2_184_600_101;
 
+const LEGACY_DATABASE_ONLY_MIGRATIONS = new Set([
+  "20260720_phase26_release_blockers.sql",
+  "20260720_provider_document_expiry_lifecycle.sql",
+  "20260720_release_phase28_professional_workflow_integrity.sql",
+]);
+
 type Migration = { id: string; sql: string; checksum: string; source: string };
 
 type AppliedRow = { migration_id: string; checksum: string };
@@ -44,7 +50,7 @@ async function loadMigrations(): Promise<Migration[]> {
 
 async function ensureTable(client: pg.Client): Promise<void> {
   await client.query(`
-    CREATE TABLE IF NOT EXISTS athoo_schema_migrations (
+    CREATE TABLE IF NOT EXISTS public.athoo_schema_migrations (
       migration_id TEXT PRIMARY KEY,
       checksum TEXT NOT NULL,
       applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -55,7 +61,7 @@ async function ensureTable(client: pg.Client): Promise<void> {
 
 async function applied(client: pg.Client): Promise<Map<string, string>> {
   const result = await client.query<AppliedRow>(
-    "SELECT migration_id, checksum FROM athoo_schema_migrations ORDER BY migration_id",
+    "SELECT migration_id, checksum FROM public.athoo_schema_migrations ORDER BY migration_id",
   );
   return new Map(result.rows.map((row) => [row.migration_id, row.checksum]));
 }
@@ -87,6 +93,24 @@ async function main(): Promise<void> {
       }
     }
 
+    const localMigrationIds = new Set(
+      migrations.map((migration) => migration.id),
+    );
+    const databaseOnlyMigrationIds = [...existing.keys()]
+      .filter((migrationId) => !localMigrationIds.has(migrationId))
+      .sort((left, right) => left.localeCompare(right));
+    const unexpectedDatabaseOnlyMigrationIds =
+      databaseOnlyMigrationIds.filter(
+        (migrationId) =>
+          !LEGACY_DATABASE_ONLY_MIGRATIONS.has(migrationId),
+      );
+
+    if (unexpectedDatabaseOnlyMigrationIds.length > 0) {
+      throw new Error(
+        `Database contains unexpected migration ID(s) that are absent from the local migration history: ${unexpectedDatabaseOnlyMigrationIds.join(", ")}`,
+      );
+    }
+
     const pending = migrations.filter((migration) => !existing.has(migration.id));
     if (command === "status") {
       console.log(JSON.stringify({ applied: existing.size, pending: pending.map((m) => m.id) }, null, 2));
@@ -106,7 +130,7 @@ async function main(): Promise<void> {
       try {
         await client.query(normalizedSql(migration.sql));
         await client.query(
-          "INSERT INTO athoo_schema_migrations (migration_id, checksum, execution_ms) VALUES ($1, $2, $3)",
+          "INSERT INTO public.athoo_schema_migrations (migration_id, checksum, execution_ms) VALUES ($1, $2, $3)",
           [migration.id, migration.checksum, Date.now() - started],
         );
         await client.query("COMMIT");

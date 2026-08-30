@@ -1,0 +1,152 @@
+name: Upload Scanner Runtime
+
+on:
+  pull_request:
+    paths:
+      - "Dockerfile.scanner"
+      - "services/upload-scanner/**"
+      - "api-server/src/lib/uploadScanner.ts"
+      - "api-server/src/lib/uploadScannerMode.ts"
+      - "api-server/test/v2-2-upload-scanner-service-contract.test.ts"
+      - ".github/workflows/scanner-runtime.yml"
+  push:
+    branches: [main, develop]
+    paths:
+      - "Dockerfile.scanner"
+      - "services/upload-scanner/**"
+      - "api-server/src/lib/uploadScanner.ts"
+      - "api-server/src/lib/uploadScannerMode.ts"
+      - "api-server/test/v2-2-upload-scanner-service-contract.test.ts"
+      - ".github/workflows/scanner-runtime.yml"
+  workflow_dispatch:
+
+jobs:
+  scanner-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build upload scanner image
+        run: docker build --pull --file Dockerfile.scanner --tag athoo-upload-scanner:ci .
+
+      - name: Verify ClamAV scanner runtime contract
+        shell: bash
+        env:
+          SCANNER_TOKEN: athoo-ci-scanner-token-0123456789abcdef0123456789
+        run: |
+          set -euo pipefail
+
+          container_id="$(
+            docker run -d --rm \
+              -e SCANNER_TOKEN="$SCANNER_TOKEN" \
+              -e SCANNER_MAX_BYTES=10485760 \
+              -e SCANNER_MAX_CONCURRENCY=2 \
+              -e SCANNER_TIMEOUT_MS=120000 \
+              -p 127.0.0.1:18080:8080 \
+              athoo-upload-scanner:ci
+          )"
+
+          cleanup() {
+            echo "---- scanner container logs ----"
+            docker logs "$container_id" || true
+            docker stop "$container_id" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          ready=0
+
+          for attempt in $(seq 1 360); do
+            if curl -fsS \
+              http://127.0.0.1:18080/healthz \
+              > /tmp/scanner-health.json
+            then
+              ready=1
+              break
+            fi
+
+            running="$(
+              docker inspect \
+                --format '{{.State.Running}}' \
+                "$container_id" 2>/dev/null || true
+            )"
+
+            if [ "$running" != "true" ]; then
+              echo "Scanner container exited before becoming ready."
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          if [ "$ready" -ne 1 ]; then
+            echo "Scanner did not become healthy before timeout."
+            exit 1
+          fi
+
+          cat /tmp/scanner-health.json
+
+          python3 -c '
+          import json
+          with open("/tmp/scanner-health.json", encoding="utf-8") as f:
+              payload = json.load(f)
+          assert payload.get("ok") is True, payload
+          assert payload.get("engine") == "clamav", payload
+          '
+
+          printf '%s' \
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=' \
+            | base64 --decode > /tmp/clean.png
+
+          clean_json="$(
+            curl -fsS \
+              --request POST \
+              --header "Authorization: Bearer $SCANNER_TOKEN" \
+              --header "Content-Type: application/octet-stream" \
+              --data-binary @/tmp/clean.png \
+              http://127.0.0.1:18080/scan
+          )"
+
+          echo "Clean probe: $clean_json"
+
+          python3 -c '
+          import json, sys
+          payload = json.loads(sys.argv[1])
+          assert payload.get("clean") is True, payload
+          ' "$clean_json"
+
+          printf '%s' \
+            'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' \
+            > /tmp/eicar.com
+
+          eicar_json="$(
+            curl -fsS \
+              --request POST \
+              --header "Authorization: Bearer $SCANNER_TOKEN" \
+              --header "Content-Type: application/octet-stream" \
+              --data-binary @/tmp/eicar.com \
+              http://127.0.0.1:18080/scan
+          )"
+
+          echo "EICAR probe: $eicar_json"
+
+          python3 -c '
+          import json, sys
+          payload = json.loads(sys.argv[1])
+          assert payload.get("clean") is False, payload
+          ' "$eicar_json"
+
+          unauthorized_status="$(
+            curl -sS \
+              --output /tmp/unauthorized.json \
+              --write-out '%{http_code}' \
+              --request POST \
+              --header "Content-Type: application/octet-stream" \
+              --data-binary @/tmp/clean.png \
+              http://127.0.0.1:18080/scan
+          )"
+
+          test "$unauthorized_status" = "401"
+
+          echo "Scanner runtime contract passed."

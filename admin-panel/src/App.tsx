@@ -1,5 +1,6 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { hasAdminUiPermission } from "@/lib/permissions";
+import { api } from "@/lib/api";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -80,6 +81,31 @@ function AccessDenied() {
   );
 }
 
+// Warm the react-query cache for the heaviest landing queries while the
+// browser is idle, so first navigation into each area renders instantly.
+const IDLE_PREFETCH: { key: unknown[]; perm: string; load: () => Promise<unknown> }[] = [
+  { key: ["admin-dashboard"], perm: "dashboard.read", load: () => api<{ dashboard: unknown }>("/api/admin/dashboard") },
+  { key: ["sidebar-counts"], perm: "dashboard.read", load: () => api<{ counts: unknown }>("/api/admin/sidebar-counts") },
+  { key: ["admin-customers"], perm: "users.read", load: () => api<{ customers: unknown }>("/api/admin/customers?page=1&limit=25") },
+  { key: ["support-tickets", "all", "all", "", "", "", "", 1], perm: "support.read", load: () => api<{ tickets: unknown }>("/api/admin/support", { params: { status: "all", priority: "all", page: 1, limit: 25 } }) },
+  { key: ["reported-issues"], perm: "support.read", load: () => api<{ reports: unknown }>("/api/admin/report-issues") },
+];
+
+function IdlePrefetch({ admin, enabled }: { admin: any; enabled: boolean }) {
+  const adminId = admin?.id;
+  useEffect(() => {
+    if (!enabled || !adminId) return;
+    const timer = window.setTimeout(() => {
+      for (const entry of IDLE_PREFETCH) {
+        if (!hasAdminUiPermission(admin, entry.perm)) continue;
+        void queryClient.prefetchQuery({ queryKey: entry.key, queryFn: entry.load, staleTime: 30000 }).catch(() => undefined);
+      }
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [admin, adminId, enabled]);
+  return null;
+}
+
 function AppShell() {
   const { token, admin, loading, login, logout } = useAdmin();
   const [location] = useLocation();
@@ -118,6 +144,7 @@ function AppShell() {
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
       <a href="#admin-main-content" className="skip-link">Skip to main content</a>
+      <IdlePrefetch admin={admin} enabled={Boolean(token)} />
       <Sidebar admin={admin} onLogout={logout} />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Header pathname={location} />

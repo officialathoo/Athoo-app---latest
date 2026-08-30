@@ -23,6 +23,8 @@ import {
   AlertTriangle,
   Phone,
   CreditCard,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 
 type Tab = "pending" | "in_process" | "approved" | "rejected";
@@ -62,6 +64,15 @@ export function VerificationPage() {
   const { hasPermission } = usePermissions();
   const canWrite = hasPermission("verification.write");
   const [providers, setProviders] = useState<User[]>([]);
+  const [stats, setStats] = useState<Record<Tab, number>>({
+    pending: 0,
+    in_process: 0,
+    approved: 0,
+    rejected: 0,
+  });
+  const [pageNumber, setPageNumber] = useState(1);
+  const pageSize = 25;
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("pending");
@@ -82,10 +93,18 @@ export function VerificationPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await api<{ users: User[] }>("/api/admin/users", {
-        params: { role: "provider" },
+      const res = await api<{
+        users: User[];
+        total: number;
+        page: number;
+        limit: number;
+        stats: Record<Tab, number>;
+      }>("/api/admin/verification/providers", {
+        params: { status: tab, page: pageNumber, limit: pageSize },
       });
-      setProviders((res.users || []).filter((u) => !u.isDeactivated));
+      setProviders(res.users || []);
+      setTotal(Number(res.total || 0));
+      setStats(res.stats || { pending: 0, in_process: 0, approved: 0, rejected: 0 });
     } catch (e) {
       setLoadError((e as Error).message || "Failed to load providers");
     } finally {
@@ -107,7 +126,7 @@ export function VerificationPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [tab, pageNumber]);
 
   useEffect(() => {
     if (selected) loadDocs(selected.id);
@@ -192,14 +211,10 @@ export function VerificationPage() {
     }
   }
 
-  const grouped: Record<Tab, User[]> = {
-    pending: [],
-    in_process: [],
-    approved: [],
-    rejected: [],
-  };
-  providers.forEach((p) => grouped[getStatus(p)].push(p));
-  const displayList = grouped[tab];
+  const displayList = providers;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const rangeFrom = total ? (pageNumber - 1) * pageSize + 1 : 0;
+  const rangeTo = Math.min(pageNumber * pageSize, total);
 
   const columns = [
     ...(canWrite ? [{
@@ -305,14 +320,14 @@ export function VerificationPage() {
               {(Object.keys(TAB_LABEL) as Tab[]).map((t) => (
                 <button
                   key={t}
-                  onClick={() => { setTab(t); setSelectedIds(new Set()); }}
+                  onClick={() => { setTab(t); setPageNumber(1); setSelectedIds(new Set()); }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     tab === t
                       ? "bg-white text-slate-800 shadow-sm"
                       : "text-slate-500 hover:text-slate-700"
                   }`}
                 >
-                  {TAB_LABEL[t]} ({grouped[t].length})
+                  {TAB_LABEL[t]} ({stats[t] || 0})
                 </button>
               ))}
             </div>
@@ -358,6 +373,30 @@ export function VerificationPage() {
           emptyMessage={`No providers in ${TAB_LABEL[tab].toLowerCase()}.`}
           columns={columns}
         />
+        <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between gap-3 text-xs text-slate-500">
+          <span>Showing {rangeFrom}-{rangeTo} of {total} {TAB_LABEL[tab].toLowerCase()} providers</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={pageNumber <= 1 || loading}
+              onClick={() => { setPageNumber((value) => Math.max(1, value - 1)); setSelectedIds(new Set()); }}
+              className="p-1.5 rounded border border-slate-200 disabled:opacity-40"
+              aria-label="Previous verification page"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <span>Page {pageNumber} of {totalPages}</span>
+            <button
+              type="button"
+              disabled={pageNumber >= totalPages || loading}
+              onClick={() => { setPageNumber((value) => Math.min(totalPages, value + 1)); setSelectedIds(new Set()); }}
+              className="p-1.5 rounded border border-slate-200 disabled:opacity-40"
+              aria-label="Next verification page"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Provider Review Modal */}

@@ -13,7 +13,10 @@ test("runtime migration health matches the latest ordered migration", () => {
   const sharedMigrations = read("lib/db/src/migrations.ts");
   assert.ok(latest);
   assert.match(health, /LATEST_DATABASE_MIGRATION/);
-  assert.match(sharedMigrations, new RegExp(latest!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  const registeredLatest = sharedMigrations.match(
+    /LATEST_DATABASE_MIGRATION\s*=\s*"([^"]+)"/,
+  )?.[1];
+  assert.equal(registeredLatest, latest);
 });
 
 test("refund creation is client-idempotent in API, schema, migration and mobile", () => {

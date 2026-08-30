@@ -17,6 +17,8 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 import { api } from "@/services/api";
 import { uploadPickedImage, type UploadProgress } from "@/services/storage";
 import { apiErrorToMessage } from "@/lib/apiError";
@@ -157,7 +159,11 @@ export function ContactSupportScreen({ role }: { role: Role }) {
             accessibilityRole="button"
             accessibilityLabel={tr("View active support tickets")}
             onPress={() => router.push(ticketRoute)}
-            style={({ pressed }) => [styles.headerAction, { backgroundColor: theme.colors.infoSoft }, pressed && { opacity: 0.72 }]}
+            style={({ pressed }) => [
+              styles.headerAction,
+              { backgroundColor: theme.colors.infoSoft, borderColor: theme.colors.border },
+              pressed && styles.pressed,
+            ]}
           >
             <Icon name="list" size={19} color={theme.colors.primary} />
           </Pressable>
@@ -197,7 +203,7 @@ export function ContactSupportScreen({ role }: { role: Role }) {
                         backgroundColor: selected ? theme.colors.infoSoft : theme.colors.surface,
                         borderColor: selected ? accent : theme.colors.border,
                       },
-                      pressed && { opacity: 0.75 },
+                      pressed && styles.pressed,
                     ]}
                   >
                     <AppText variant="caption" style={{ color: selected ? accent : theme.colors.textSecondary }}>
@@ -220,8 +226,8 @@ export function ContactSupportScreen({ role }: { role: Role }) {
               style={({ pressed }) => [
                 styles.attach,
                 { borderColor: accent, backgroundColor: theme.colors.surface },
-                pressed && { opacity: 0.76 },
-                (loading || media.length >= 5) && { opacity: 0.5 },
+                pressed && styles.pressed,
+                (loading || media.length >= 5) && styles.disabled,
               ]}
             >
               <Icon name="camera" size={18} color={accent} />
@@ -311,21 +317,91 @@ export function ContactSupportScreen({ role }: { role: Role }) {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   flex: { flex: 1 },
-  content: { paddingHorizontal: 18, paddingTop: 20, gap: 22 },
-  headerAction: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  infoRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  section: { gap: 10 },
+  content: {
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: 16,
+    gap: redesign.layout.fieldGap,
+  },
+  headerAction: {
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: redesign.visual.cardBorderWidth,
+  },
+  pressed: { opacity: 0.82, transform: [{ scale: redesign.visual.pressedScale }] },
+  disabled: { opacity: redesign.visual.disabledOpacity },
+  infoRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  section: { gap: 9 },
   chips: { gap: 8, paddingVertical: 2, paddingEnd: 4 },
-  chip: { minHeight: 42, paddingHorizontal: 14, borderRadius: 21, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
-  attach: { minHeight: 50, borderRadius: 15, borderWidth: 1.5, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9, paddingHorizontal: 16 },
-  mediaRow: { minHeight: 48, borderRadius: 13, borderWidth: 1, flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 12 },
+  chip: {
+    minHeight: redesign.control.compactHeight,
+    paddingHorizontal: 12,
+    borderRadius: radius.pill,
+    borderWidth: redesign.visual.inputBorderWidth,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  attach: {
+    minHeight: redesign.control.standardHeight,
+    borderRadius: radius.md,
+    borderWidth: redesign.visual.inputBorderWidth,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 9,
+    paddingHorizontal: 16,
+  },
+  mediaRow: {
+    minHeight: redesign.control.standardHeight,
+    borderRadius: radius.md,
+    borderWidth: redesign.visual.cardBorderWidth,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    paddingHorizontal: 12,
+  },
   mediaName: { flex: 1 },
-  remove: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
-  messageInput: { minHeight: 150, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 15, paddingVertical: 14, fontSize: 15, lineHeight: 22 },
-  errorBox: { borderRadius: 14, borderWidth: 1, padding: 13, flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  remove: {
+    width: redesign.control.compactHeight,
+    height: redesign.control.compactHeight,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  messageInput: {
+    minHeight: 120,
+    borderRadius: radius.lg,
+    borderWidth: redesign.visual.inputBorderWidth,
+    paddingHorizontal: 13,
+    paddingVertical: 12,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  errorBox: {
+    borderRadius: radius.md,
+    borderWidth: redesign.visual.cardBorderWidth,
+    padding: 13,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
   progressNote: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9 },
-  successWrap: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16, paddingHorizontal: 24 },
-  successIcon: { width: 104, height: 104, borderRadius: 52, alignItems: "center", justifyContent: "center" },
+  successWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: redesign.layout.fieldGap,
+    paddingHorizontal: 24,
+  },
+  successIcon: {
+    width: 88,
+    height: 88,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   successMessage: { maxWidth: 520, lineHeight: 22 },
-  actionWidth: { maxWidth: 420 },
+  actionWidth: { maxWidth: 420, minHeight: redesign.control.standardHeight },
 });

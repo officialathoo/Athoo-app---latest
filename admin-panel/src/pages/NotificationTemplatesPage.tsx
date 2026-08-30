@@ -124,10 +124,28 @@ export function NotificationTemplatesPage() {
       Promise.allSettled(DEFAULT_TEMPLATES.map(t =>
         api("/api/admin/notification-templates", { method: "POST", body: JSON.stringify(t) })
       )),
-    onSuccess: () => {
-      toast({ title: "Default templates seeded" });
+    onSuccess: (results) => {
+      const created = results.filter((result) => result.status === "fulfilled").length;
+      const failed = results.length - created;
+
       qc.invalidateQueries({ queryKey: ["notification-templates"] });
+
+      if (failed === 0) {
+        toast({
+          title: "Default templates seeded",
+          description: `${created} templates created successfully`,
+        });
+        return;
+      }
+
+      toast({
+        title: created > 0 ? "Default templates partially seeded" : "No default templates were created",
+        description: `${created} created, ${failed} skipped or failed. Existing template keys are not overwritten.`,
+        variant: created > 0 ? "default" : "destructive",
+      });
     },
+    onError: (e: any) =>
+      toast({ title: e?.message || "Could not seed default templates", variant: "destructive" }),
   });
 
   const allTemplates = data?.templates ?? [];
@@ -195,8 +213,11 @@ export function NotificationTemplatesPage() {
         </div>
         <div className="flex justify-end gap-2">
           <button onClick={onCancel} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">Cancel</button>
-          <button onClick={() => onSubmit(form)} disabled={loading}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60 flex items-center gap-1.5">
+          <button
+            onClick={() => onSubmit(form)}
+            disabled={loading || !form.key.trim() || !form.name.trim() || !form.body.trim()}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60 flex items-center gap-1.5"
+          >
             <Save size={14} /> {loading ? "Saving…" : "Save Template"}
           </button>
         </div>
@@ -279,8 +300,7 @@ export function NotificationTemplatesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-800">Notification Templates</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Manage push, SMS, and email notification content</p>
-        </div>
+          <p className="text-sm text-slate-500 mt-0.5">Manage push, SMS, and email notification content</p>        </div>
         <div className="flex gap-2">
           {allTemplates.length === 0 && (
             <button onClick={() => seedMutation.mutate()} disabled={seedMutation.isPending}
@@ -294,6 +314,11 @@ export function NotificationTemplatesPage() {
             {showAdd ? "Cancel" : "Add Template"}
           </button>
         </div>
+      </div>
+
+      <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-xs text-blue-800 leading-relaxed">
+        <p><strong>Live overrides:</strong> an <strong>active push template</strong> whose key matches a notification type replaces that notification's title/body for every delivery — e.g. key <code className="font-mono bg-white px-1 rounded">booking</code>, <code className="font-mono bg-white px-1 rounded">message</code>, <code className="font-mono bg-white px-1 rounded">account</code>. A template can also be targeted explicitly with the <code className="font-mono bg-white px-1 rounded">templateKey</code> data field.</p>
+        <p className="mt-1">Placeholders like <code className="font-mono bg-white px-1 rounded">{"{{userName}}"}</code> and <code className="font-mono bg-white px-1 rounded">{"{{appName}}"}</code> are substituted from the notification's data; unmatched placeholders are removed. Changes apply within ~30 seconds.</p>
       </div>
 
       {canWrite && showAdd && (

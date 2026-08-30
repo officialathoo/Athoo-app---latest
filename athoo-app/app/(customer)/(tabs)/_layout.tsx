@@ -5,7 +5,7 @@ import React from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLang } from "@/context/LanguageContext";
-import { useNotifications } from "@/context/NotificationContext";
+import { redesign } from "@/design/redesign";
 
 function UnreadBadge({ count, backgroundColor }: { count: number; backgroundColor: string }) {
   const { theme } = useTheme();
@@ -19,7 +19,6 @@ function UnreadBadge({ count, backgroundColor }: { count: number; backgroundColo
 
 export default function CustomerTabLayout() {
   const { t } = useLang();
-  const { unreadCount } = useNotifications();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const safeBottom = Platform.OS === "web"
@@ -29,7 +28,9 @@ export default function CustomerTabLayout() {
   const tabPadBottom = safeBottom;
   const activeTabStyle = {
     backgroundColor: theme.colors.infoSoft,
-    borderRadius: theme.radius.sm,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.primary + "22",
   };
 
   return (
@@ -41,19 +42,19 @@ export default function CustomerTabLayout() {
         tabBarHideOnKeyboard: true,
         tabBarStyle: {
           backgroundColor: theme.colors.surface,
-          borderTopWidth: 1,
+          borderTopWidth: redesign.visual.cardBorderWidth,
           borderTopColor: theme.colors.divider,
           height: tabHeight,
           paddingBottom: tabPadBottom,
           paddingTop: 6,
-          ...theme.shadows.sm,
+          ...theme.shadows.md,
         },
         tabBarItemStyle: {
-          minHeight: 54,
+          minHeight: redesign.control.standardHeight,
           paddingVertical: 2,
         },
         tabBarLabelStyle: {
-          fontSize: 10,
+          ...theme.typography.caption,
           fontFamily: theme.typography.label.fontFamily,
           marginTop: 2,
         },
@@ -74,7 +75,6 @@ export default function CustomerTabLayout() {
       <Tabs.Screen name="profile" options={{ title: t.profile, tabBarIcon: ({ color, focused }) => (
         <View style={[styles.iconWrap, focused && activeTabStyle]}>
           <Icon name="user" size={theme.iconSize.md} color={color} />
-          <UnreadBadge count={unreadCount} backgroundColor={theme.colors.danger} />
         </View>
       ) }} />
     </Tabs>
@@ -84,8 +84,8 @@ export default function CustomerTabLayout() {
 const styles = StyleSheet.create({
   iconWrap: {
     position: "relative",
-    width: 44,
-    height: 32,
+    width: redesign.control.iconButtonSize,
+    height: 34,
     alignItems: "center",
     justifyContent: "center",
   },

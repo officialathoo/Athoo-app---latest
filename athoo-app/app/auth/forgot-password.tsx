@@ -2,7 +2,7 @@ import { Icon } from "@/components/ui/Icon";
 import { api } from "@/services/api";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -17,7 +17,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
+import { createAuthPalette } from "@/design/authPalette";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { apiErrorToMessage } from "@/lib/apiError";
 
 type Step = "identifier" | "otp" | "reset";
@@ -52,6 +54,7 @@ async function postJson(path: string, body: Record<string, any>) {
 export default function ForgotPasswordScreen() {
   const { role } = useLocalSearchParams<{ role?: Role }>();
   const { theme } = useTheme();
+  const auth = useMemo(() => createAuthPalette(theme), [theme]);
   const { translate: tr, textAlign, writingDirection, direction } = useLang();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const localizedText = useMemo(() => ({ textAlign, writingDirection }), [textAlign, writingDirection]);
@@ -76,6 +79,19 @@ export default function ForgotPasswordScreen() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [otpExpiresIn, setOtpExpiresIn] = useState(0);
+  const [otpResendIn, setOtpResendIn] = useState(0);
+
+  useEffect(() => {
+    if (step !== "otp") return;
+
+    const timer = setInterval(() => {
+      setOtpExpiresIn((value) => (value > 0 ? value - 1 : 0));
+      setOtpResendIn((value) => (value > 0 ? value - 1 : 0));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [step]);
 
   const goBackToLogin = () => {
     router.replace({
@@ -95,6 +111,7 @@ export default function ForgotPasswordScreen() {
       setLoading(true);
       const res = await postJson("/api/auth/forgot-password/send-otp", {
         identifier: trimmed,
+        role: safeRole,
       });
 
       if (__DEV__ && res?.code) {
@@ -102,6 +119,13 @@ export default function ForgotPasswordScreen() {
         Alert.alert(tr("Dev Mode OTP"), tr("Your OTP is: {{code}}", { code: res.code }));
       }
       setChallengeToken(res.challengeToken || "");
+      setOtp("");
+      setOtpExpiresIn(Math.max(0, Number(res.expiresInSeconds || 600)));
+      setOtpResendIn(Math.max(0, Number(res.resendAfterSeconds || 45)));
+      Alert.alert(
+        tr("Check for your code"),
+        tr(res?.message || "If an account matches these details and account type, a reset code will be sent. If no code arrives, check the email/phone and selected role."),
+      );
       setStep("otp");
     } catch (e: any) {
       Alert.alert(tr("Failed"), tr(apiErrorToMessage(e, "Failed to send reset OTP.")));
@@ -111,7 +135,12 @@ export default function ForgotPasswordScreen() {
   };
 
   const handleVerifyOtp = async () => {
-    if (!otp || otp.trim().length < 4) {
+    if (otpExpiresIn === 0) {
+      Alert.alert(tr("Code Expired"), tr("Code expired. Request a new OTP."));
+      return;
+    }
+
+    if (!otp || otp.trim().length !== 4) {
       Alert.alert(tr("Invalid OTP"), tr("Please enter the 4-digit OTP."));
       return;
     }
@@ -171,6 +200,8 @@ export default function ForgotPasswordScreen() {
     if (step === "otp") {
       setStep("identifier");
       setOtp("");
+      setOtpExpiresIn(0);
+      setOtpResendIn(0);
       return;
     }
     router.back();
@@ -187,7 +218,15 @@ export default function ForgotPasswordScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <LinearGradient
-          colors={isProvider ? [theme.colors.secondary, theme.colors.secondaryPressed] : [theme.colors.primary, theme.colors.primaryPressed]}
+          colors={
+            theme.dark
+              ? (isProvider
+                  ? [auth.emberInk, auth.emberDeep, auth.ember]
+                  : [auth.heroInk, auth.heroNavy, auth.heroBlue])
+              : isProvider
+                ? [theme.colors.secondaryPressed, theme.colors.secondary, auth.heroAmber]
+                : [theme.colors.primaryPressed, theme.colors.primary, auth.heroSky]
+          }
           style={[styles.hero, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 12 }]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -268,7 +307,7 @@ export default function ForgotPasswordScreen() {
               <View style={[styles.statusBox, localizedRow]}>
                 <Icon name="check-circle" size={18} color={theme.colors.success} />
                 <Text style={[styles.statusText, localizedText]}>
-                  {tr("OTP sent to {{identifier}}", { identifier })}
+                  {tr("If an account matches these details, a reset OTP has been sent.")}
                 </Text>
               </View>
 
@@ -297,10 +336,18 @@ export default function ForgotPasswordScreen() {
                 </View>
               </View>
 
+              <Text style={styles.otpTimer}>
+                {otpExpiresIn > 0
+                  ? tr("Code expires in {{time}}", {
+                      time: Math.floor(otpExpiresIn / 60) + ":" + String(otpExpiresIn % 60).padStart(2, "0"),
+                    })
+                  : tr("Code expired. Request a new OTP.")}
+              </Text>
+
               <Pressable
-                style={[styles.primaryBtn, loading && styles.btnDisabled]}
+                style={[styles.primaryBtn, (loading || otpExpiresIn === 0) && styles.btnDisabled]}
                 onPress={handleVerifyOtp}
-                disabled={loading}
+                disabled={loading || otpExpiresIn === 0}
               >
                 <LinearGradient
                   colors={isProvider ? [theme.colors.secondary, theme.colors.secondaryPressed] : [theme.colors.primary, theme.colors.primaryPressed]}
@@ -313,6 +360,18 @@ export default function ForgotPasswordScreen() {
                     {loading ? tr("Verifying...") : tr("Verify OTP")}
                   </Text>
                 </LinearGradient>
+              </Pressable>
+
+              <Pressable
+                style={[styles.resendBtn, (loading || otpResendIn > 0) && styles.btnDisabled]}
+                onPress={handleSendOtp}
+                disabled={loading || otpResendIn > 0}
+              >
+                <Text style={styles.resendText}>
+                  {otpResendIn > 0
+                    ? tr("Resend in {{seconds}}s", { seconds: otpResendIn })
+                    : tr("Resend OTP")}
+                </Text>
               </Pressable>
             </View>
           )}
@@ -396,23 +455,25 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   rowReverse: { flexDirection: "row-reverse" },
 
   hero: {
-    paddingHorizontal: 24,
-    paddingBottom: 36,
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingBottom: 38,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
+    backgroundColor: "rgba(255,255,255,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.16)",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 20,
+    marginBottom: 16,
   },
   logoRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    marginBottom: 20,
+    marginBottom: 14,
   },
   logoCircle: {
     width: 44,
@@ -423,31 +484,33 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     justifyContent: "center",
   },
   logoText: {
-    fontSize: 22,
-    fontWeight: "800",
+    ...theme.typography.h2,
     color: theme.colors.white,
     letterSpacing: -0.5,
   },
   heroTitle: {
-    fontSize: 26,
-    fontWeight: "800",
+    ...theme.typography.display,
     color: theme.colors.white,
     marginBottom: 6,
+    letterSpacing: -0.6,
   },
   heroSub: {
-    fontSize: 14,
+    ...theme.typography.body,
     color: "rgba(255,255,255,0.82)",
-    marginBottom: 16,
+    marginBottom: 15,
+    maxWidth: 520,
   },
   roleBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(255,255,255,0.09)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
     alignSelf: "flex-start",
-    paddingHorizontal: 12,
+    paddingHorizontal: 11,
     paddingVertical: 5,
-    borderRadius: 20,
+    borderRadius: theme.radius.pill,
   },
   roleBadgeText: {
     fontSize: 12,
@@ -458,59 +521,60 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   card: {
     flex: 1,
     backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
     marginTop: -20,
-    padding: 24,
-    paddingBottom: 48,
-    shadowColor: theme.colors.overlay,
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 8,
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: 24,
+    paddingBottom: 44,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    ...theme.shadows.md,
   },
 
-  form: { gap: 16 },
-  inputGroup: { gap: 6 },
-  label: { fontSize: 13, fontWeight: "600", color: theme.colors.text },
+  form: { gap: redesign.layout.fieldGap },
+  inputGroup: { gap: 7 },
+  label: { ...theme.typography.label, color: theme.colors.text },
 
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 14,
+    backgroundColor: theme.colors.input,
+    borderRadius: theme.radius.md,
     paddingHorizontal: 14,
-    paddingVertical: 13,
-    borderWidth: 1.5,
+    minHeight: redesign.control.standardHeight,
+    borderWidth: redesign.visual.inputBorderWidth,
     borderColor: theme.colors.border,
     gap: 10,
   },
   input: {
     flex: 1,
-    fontSize: 16,
+    ...theme.typography.bodyLg,
     color: theme.colors.text,
+    paddingVertical: 0,
   },
 
   otpWrapper: {
     justifyContent: "center",
-    borderColor: theme.colors.primary + "60",
-    backgroundColor: theme.colors.primary + "08",
+    borderColor: (theme.colors.primary + "66"),
+    backgroundColor: theme.colors.infoSoft,
   },
   otpInput: {
     textAlign: "center",
-    fontSize: 28,
+    fontSize: 27,
     fontWeight: "800",
-    letterSpacing: 16,
+    letterSpacing: 14,
   },
 
   statusBox: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: theme.colors.success + "15",
-    borderRadius: 12,
-    padding: 12,
+    backgroundColor: theme.colors.successSoft,
+    borderRadius: theme.radius.md,
+    padding: 11,
     borderWidth: 1,
-    borderColor: theme.colors.success + "30",
+    borderColor: theme.colors.success + "28",
   },
   statusText: {
     fontSize: 13,
@@ -522,34 +586,54 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: theme.colors.secondary + "15",
-    borderRadius: 12,
-    padding: 12,
+    backgroundColor: theme.colors.premiumSoft,
+    borderRadius: theme.radius.md,
+    padding: 11,
     borderWidth: 1,
-    borderColor: theme.colors.secondary + "30",
+    borderColor: theme.colors.secondary + "28",
   },
   hintText: {
     fontSize: 13,
     color: theme.colors.text,
   },
 
+  otpTimer: {
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    textAlign: "center",
+  },
+
+  resendBtn: {
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+
+  resendText: {
+    color: theme.colors.primary,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
   primaryBtn: {
-    borderRadius: 16,
+    borderRadius: theme.radius.md,
     overflow: "hidden",
+    ...theme.shadows.sm,
   },
   primaryBtnGrad: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
-    paddingVertical: 16,
+    minHeight: redesign.control.largeHeight,
   },
   primaryBtnText: {
-    fontSize: 16,
-    fontWeight: "700",
+    ...theme.typography.bodyLg,
+    fontFamily: theme.typography.h3.fontFamily,
     color: theme.colors.white,
   },
   btnDisabled: {
-    opacity: 0.6,
+    opacity: redesign.visual.disabledOpacity,
   },
 });

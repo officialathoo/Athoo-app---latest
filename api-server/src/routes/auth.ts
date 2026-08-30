@@ -1,13 +1,14 @@
 import { Router, type Response } from "express";
 import { logger } from "../lib/logger";
 import { db } from "@workspace/db";
-import { usersTable, otpsTable, loginHistoryTable, adminBlacklistTable, emailPreferencesTable } from "@workspace/db/schema";
+import { usersTable, otpsTable, loginHistoryTable, adminBlacklistTable, emailPreferencesTable, pushTokensTable } from "@workspace/db/schema";
 import { eq, and, or, desc, sql, ne } from "drizzle-orm";
 import { signAccessToken, signPurposeToken, verifyToken, requireAuth, type AuthRequest } from "../middlewares/auth";
 import { createSession, rotateSession, revokeSession, revokeAllUserSessions, normalizeSessionDeviceId } from "../lib/session";
-import { getPlatformSettings } from "../lib/admin";
+import { getPlatformSettings, safeUserAllowlist } from "../lib/admin";
 import { LEGAL_VERSION } from "../lib/legal";
-import { isOwnedUploadObjectPath, normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { isCleanOwnedUploadObjectPath } from "../lib/verifiedUploads";
 import { cleanupReplacedOwnedMedia } from "../lib/mediaLifecycle";
 // Rate limiting is handled globally by express-rate-limit in app.ts
 import * as bcrypt from "bcryptjs";
@@ -16,6 +17,7 @@ import { accountUnavailableResponse, cleanOtpPurpose, otpHashMatches, type OtpPu
 import { hasSeenDevice, normalizeEmailAddress, queueNewDeviceEmail, queuePasswordChangedEmail, queueWelcomeEmail, sendEmailChallenge, verifyEmailChallenge } from "../lib/emailAuth";
 import { deliverAuthenticationOtp } from "../lib/otpDelivery";
 import { recordUserActivity } from "../lib/inactivityLifecycle";
+import { recordUserEvent } from "../lib/userAudit";
 import { dateOnly, validateDocumentValidity } from "../lib/documentValidity";
 import { publicUserId } from "../lib/publicIds";
 
@@ -479,6 +481,236 @@ router.post("/email/send-otp", async (req, res) => {
   }
 });
 
+router.post("/email/verification/send", async (req, res) => {
+  try {
+    const email = normalizeEmailAddress(req.body?.email);
+    const expectedRole = cleanRole(req.body?.role);
+
+    if (!email) {
+      return res.status(400).json({
+        error: "Enter a valid email address.",
+        code: "INVALID_EMAIL",
+      });
+    }
+
+    if (!expectedRole) {
+      return res.status(400).json({
+        error: "Select Customer or Provider before verifying your email.",
+        code: "ROLE_REQUIRED",
+      });
+    }
+
+    const user = await findEmailLoginUser(email, expectedRole);
+    const unavailable = accountUnavailableResponse(user, expectedRole);
+
+    if (unavailable) {
+      return res.status(unavailable.status).json({
+        error: unavailable.error,
+        code: unavailable.code,
+      });
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        error: "No active Athoo account was found with this email address.",
+        code: "ACCOUNT_NOT_FOUND",
+      });
+    }
+
+    if (await isAuthIdentityBlacklisted(user.phone, email)) {
+      return res.status(403).json({
+        error: "This account is suspended. Please contact Athoo Support.",
+        code: "ACCOUNT_SUSPENDED",
+      });
+    }
+
+    if (user.emailVerified) {
+      return res.json({
+        success: true,
+        alreadyVerified: true,
+      });
+    }
+
+    const existingVerifiedOwner = await db.query.usersTable.findFirst({
+      where: and(
+        normalizedEmailCondition(email),
+        eq(usersTable.emailVerified, true),
+      ),
+    });
+
+    if (existingVerifiedOwner && existingVerifiedOwner.id !== user.id) {
+      return res.status(409).json({
+        error: "This email address is already verified on another account.",
+        code: "EMAIL_IN_USE",
+      });
+    }
+
+    const result = await sendEmailChallenge({
+      userId: user.id,
+      email,
+      name: user.name,
+      role: expectedRole,
+      purpose: "verify_email",
+    });
+
+    if (!result.success) {
+      const status =
+        result.errorCode === "EMAIL_OTP_RESEND_COOLDOWN" ? 429 : 503;
+
+      return res.status(status).json({
+        error:
+          result.errorCode === "EMAIL_OTP_RESEND_COOLDOWN"
+            ? "Please wait " +
+              result.resendAfterSeconds +
+              " seconds before requesting another email code."
+            : "The verification email could not be delivered. Please try again shortly.",
+        code: result.errorCode,
+        retryAfterSeconds: result.resendAfterSeconds,
+      });
+    }
+
+    const maskedEmail = email.replace(/^(.{1,2}).*(@.*)$/, "$1***$2");
+
+    return res.json({
+      success: true,
+      maskedEmail,
+      expiresInSeconds: result.expiresInSeconds,
+      resendAfterSeconds: result.resendAfterSeconds,
+      ...(result.code ? { code: result.code } : {}),
+    });
+  } catch (error) {
+    logger.error({ err: error }, "public email verification send failed");
+
+    return res.status(500).json({
+      error: "We could not send the email verification code.",
+      code: "EMAIL_VERIFICATION_SEND_FAILED",
+    });
+  }
+});
+
+router.post("/email/verification/verify", async (req, res) => {
+  try {
+    const email = normalizeEmailAddress(req.body?.email);
+    const expectedRole = cleanRole(req.body?.role);
+    const code = String(req.body?.code || "").trim();
+
+    if (!email || !/^\d{6}$/.test(code)) {
+      return res.status(400).json({
+        error: "Email and a valid 6-digit code are required.",
+        code: "EMAIL_VERIFICATION_REQUIRED",
+      });
+    }
+
+    if (!expectedRole) {
+      return res.status(400).json({
+        error: "Select Customer or Provider before verifying your email.",
+        code: "ROLE_REQUIRED",
+      });
+    }
+
+    const user = await findEmailLoginUser(email, expectedRole);
+    const unavailable = accountUnavailableResponse(user, expectedRole);
+
+    if (unavailable) {
+      return res.status(unavailable.status).json({
+        error: unavailable.error,
+        code: unavailable.code,
+      });
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        error: "No active Athoo account was found with this email address.",
+        code: "ACCOUNT_NOT_FOUND",
+      });
+    }
+
+    if (await isAuthIdentityBlacklisted(user.phone, email)) {
+      return res.status(403).json({
+        error: "This account is suspended. Please contact Athoo Support.",
+        code: "ACCOUNT_SUSPENDED",
+      });
+    }
+
+    if (user.emailVerified) {
+      return res.json({
+        success: true,
+        alreadyVerified: true,
+      });
+    }
+
+    const existingVerifiedOwner = await db.query.usersTable.findFirst({
+      where: and(
+        normalizedEmailCondition(email),
+        eq(usersTable.emailVerified, true),
+      ),
+    });
+
+    if (existingVerifiedOwner && existingVerifiedOwner.id !== user.id) {
+      return res.status(409).json({
+        error: "This email address is already verified on another account.",
+        code: "EMAIL_IN_USE",
+      });
+    }
+
+    const verified = await verifyEmailChallenge({
+      userId: user.id,
+      email,
+      purpose: "verify_email",
+      code,
+      role: expectedRole,
+    });
+
+    if (!verified.success) {
+      const status =
+        verified.code === "EMAIL_OTP_ATTEMPT_LIMIT" ? 429 : 400;
+
+      return res.status(status).json({
+        error:
+          verified.code === "EMAIL_OTP_EXPIRED"
+            ? "The email verification code has expired. Request a new code."
+            : verified.code === "EMAIL_OTP_ATTEMPT_LIMIT"
+              ? "Too many incorrect attempts. Request a new code."
+              : "The email verification code is incorrect.",
+        code: verified.code,
+        attemptsRemaining: verified.attemptsRemaining,
+      });
+    }
+
+    try {
+      await db
+        .update(usersTable)
+        .set({
+          emailVerified: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(usersTable.id, user.id));
+    } catch (error) {
+      if (postgresErrorCode(error) === "23505") {
+        return res.status(409).json({
+          error: "This email address is already verified on another account.",
+          code: "EMAIL_IN_USE",
+        });
+      }
+
+      throw error;
+    }
+
+    // Verification proves ownership of the mailbox only.
+    // A normal password/OTP login is still required to create a session.
+    return res.json({
+      success: true,
+    });
+  } catch (error) {
+    logger.error({ err: error }, "public email verification failed");
+
+    return res.status(500).json({
+      error: "We could not verify the email address.",
+      code: "EMAIL_VERIFICATION_FAILED",
+    });
+  }
+});
+
 router.post("/email/verify-otp", async (req, res) => {
   try {
     const email = normalizeEmailAddress(req.body?.email);
@@ -806,12 +1038,16 @@ router.post("/register", async (req, res) => {
 
 router.patch("/push-token", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const expoPushToken = typeof (req.body as any)?.expoPushToken === "string" ? (req.body as any).expoPushToken.trim() : "";
+    const body = (req.body || {}) as Record<string, unknown>;
+    const expoPushToken = typeof body.expoPushToken === "string" ? body.expoPushToken.trim() : "";
     const validExpoToken = /^(ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_-]+\]$/.test(expoPushToken);
     if (expoPushToken && !validExpoToken) {
       res.status(400).json({ error: "Invalid Expo push token", code: "INVALID_PUSH_TOKEN" });
       return;
     }
+    const deviceId = normalizeSessionDeviceId(firstHeaderValue(req.headers["x-athoo-device-id"]) || (typeof body.deviceId === "string" ? body.deviceId : "")) || null;
+    const platformRaw = typeof body.platform === "string" ? body.platform.trim().toLowerCase() : "";
+    const platform = ["ios", "android", "web"].includes(platformRaw) ? platformRaw : null;
 
     // An Expo token represents one installed app instance. Transfer token
     // ownership atomically so a reused device cannot remain attached to a
@@ -822,10 +1058,42 @@ router.patch("/push-token", requireAuth, async (req: AuthRequest, res: Response)
           .update(usersTable)
           .set({ expoPushToken: null, updatedAt: new Date() })
           .where(and(eq(usersTable.expoPushToken, expoPushToken), ne(usersTable.id, req.user!.userId)));
+
+        await tx
+          .insert(pushTokensTable)
+          .values({
+            id: crypto.randomUUID(),
+            userId: req.user!.userId,
+            token: expoPushToken,
+            deviceId,
+            platform,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .onConflictDoUpdate({
+            target: pushTokensTable.token,
+            set: { userId: req.user!.userId, deviceId, platform, updatedAt: new Date() },
+          });
+      } else if (deviceId) {
+        await tx
+          .delete(pushTokensTable)
+          .where(and(eq(pushTokensTable.userId, req.user!.userId), eq(pushTokensTable.deviceId, deviceId)));
+      } else {
+        await tx
+          .delete(pushTokensTable)
+          .where(eq(pushTokensTable.userId, req.user!.userId));
       }
+
+      const remaining = await tx
+        .select({ token: pushTokensTable.token })
+        .from(pushTokensTable)
+        .where(eq(pushTokensTable.userId, req.user!.userId))
+        .orderBy(desc(pushTokensTable.updatedAt))
+        .limit(1);
+
       await tx
         .update(usersTable)
-        .set({ expoPushToken: expoPushToken || null, updatedAt: new Date() })
+        .set({ expoPushToken: remaining[0]?.token ?? null, updatedAt: new Date() })
         .where(eq(usersTable.id, req.user!.userId));
     });
 
@@ -889,6 +1157,16 @@ router.post("/biometric-preference", requireAuth, async (req: AuthRequest, res: 
       .where(eq(usersTable.id, user.id))
       .returning();
 
+    void recordUserEvent({
+      actorId: user.id,
+      actorName: user.name,
+      actorRole: user.role,
+      action: enabled ? "account.biometric_enabled" : "account.biometric_disabled",
+      target: "user",
+      targetId: user.id,
+      ip: req.ip ?? null,
+    });
+
     res.json({ success: true, user: toSafeUser(updated) });
   } catch (e) {
     logger.error({ err: e }, "biometric preference error");
@@ -946,8 +1224,9 @@ router.patch("/me", requireAuth, async (req: AuthRequest, res: Response) => {
     }
     if (body.profileImage !== undefined) {
       const profileImage = normalizeStoredObjectPath(body.profileImage);
-      if (profileImage && !isOwnedUploadObjectPath(profileImage, user.id, ["shared", "private"])) {
-        res.status(400).json({ error: "Profile photo must be uploaded through your Athoo account" });
+      // Stronger successor to isOwnedUploadObjectPath(profileImage, ...): ownership alone is insufficient.
+      if (profileImage && !(await isCleanOwnedUploadObjectPath(profileImage, user.id, ["shared", "private"]))) {
+        res.status(400).json({ error: "Profile photo must be uploaded through your Athoo account and pass security scanning before use" });
         return;
       }
       updates.profileImage = profileImage || null;
@@ -974,6 +1253,19 @@ router.patch("/me", requireAuth, async (req: AuthRequest, res: Response) => {
 
     const [updated] = await db.update(usersTable).set(updates).where(eq(usersTable.id, user.id)).returning();
     if (body.profileImage !== undefined) cleanupReplacedOwnedMedia(user.profileImage, updated.profileImage, user.id);
+
+    const changedFields = Object.keys(updates).filter((field) => field !== "updatedAt");
+    void recordUserEvent({
+      actorId: user.id,
+      actorName: user.name,
+      actorRole: user.role,
+      action: "account.profile_updated",
+      target: "user",
+      targetId: user.id,
+      details: { fields: changedFields },
+      ip: req.ip ?? null,
+    });
+
     res.json({ user: toSafeUser(updated) });
   } catch (e) {
     logger.error({ err: e }, "update me error");
@@ -981,30 +1273,23 @@ router.patch("/me", requireAuth, async (req: AuthRequest, res: Response) => {
   }
 });
 
-// DELETE /auth/me — permanently delete account
-router.delete("/me", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    await db.delete(usersTable).where(eq(usersTable.id, req.user!.userId));
-    res.json({ success: true });
-  } catch (e) {
-    logger.error({ err: e }, "delete me error");
-    res.status(500).json({ error: "Failed to delete account" });
-  }
+// Legacy account-destruction endpoints are intentionally blocked. Account
+// deactivation and permanent deletion are high-risk actions and must pass the
+// purpose-bound password/email-OTP/mobile-OTP step-up workflow in /api/me/account.
+// Keeping an authenticated but unverified compatibility route would allow an
+// older or malicious client to bypass that protection.
+router.delete("/me", requireAuth, (_req: AuthRequest, res: Response) => {
+  return res.status(410).json({
+    error: "Fresh password or OTP verification is required. Update the app and try again.",
+    code: "STEP_UP_REQUIRED",
+  });
 });
 
-// POST /auth/deactivate — deactivate account (keep data, prevent login)
-router.post("/deactivate", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    await db
-      .update(usersTable)
-      .set({ isDeactivated: true, updatedAt: new Date() })
-      .where(eq(usersTable.id, req.user!.userId));
-
-    res.json({ success: true });
-  } catch (e) {
-    logger.error({ err: e }, "deactivate error");
-    res.status(500).json({ error: "Failed to deactivate account" });
-  }
+router.post("/deactivate", requireAuth, (_req: AuthRequest, res: Response) => {
+  return res.status(410).json({
+    error: "Fresh password or OTP verification is required. Update the app and try again.",
+    code: "STEP_UP_REQUIRED",
+  });
 });
 
 // GET /auth/users/:id — get public profile of any user
@@ -1019,7 +1304,7 @@ router.get("/users/:id", requireAuth, async (req: AuthRequest, res: Response) =>
       return;
     }
 
-    res.json({ user: toSafeUser(user) });
+    res.json({ user: safeUserAllowlist(user) });
   } catch (e) {
     logger.error({ err: e }, "get user error");
     res.status(500).json({ error: "Failed to get user" });
@@ -1085,7 +1370,7 @@ router.post("/login", async (req, res) => {
     };
 
     if (!identifier || !password) {
-      res.status(400).json({ error: "Email/phone and password are required" });
+      res.status(400).json({ error: "Email/phone and password are required.", code: "CREDENTIALS_REQUIRED" });
       return;
     }
 
@@ -1097,21 +1382,35 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ error: "Select Customer or Provider before signing in.", code: "ROLE_REQUIRED" });
     }
 
-    const user = await db.query.usersTable.findFirst({
-      where: and(
-        eq(usersTable.role, expectedRole),
-        or(
-          eq(usersTable.phone, normalizedPhone),
-          eq(usersTable.phone, normalizedIdentifier),
-          normalizedEmailCondition(normalizedEmail),
-        ),
+    const identityMatches = await db.query.usersTable.findMany({
+      where: or(
+        eq(usersTable.phone, normalizedPhone),
+        eq(usersTable.phone, normalizedIdentifier),
+        normalizedEmailCondition(normalizedEmail),
       ),
     });
+    const user = identityMatches.find((candidate) => candidate.role === expectedRole) || null;
+    if (!user) {
+      const otherAccount = identityMatches.find((candidate) => candidate.role === "customer" || candidate.role === "provider");
+      if (otherAccount) {
+        const actualRole = otherAccount.role === "provider" ? "provider" : "customer";
+        return res.status(409).json({
+          error: `This account is registered as a ${actualRole}. Choose ${actualRole === "provider" ? "Provider" : "Customer"} sign in.`,
+          code: "ACCOUNT_ROLE_MISMATCH",
+          actualRole,
+        });
+      }
+      return res.status(404).json({
+        error: normalizedIdentifier.includes("@")
+          ? "No active Athoo account was found with this email address."
+          : "No active Athoo account was found with this phone number.",
+        code: "ACCOUNT_NOT_FOUND",
+      });
+    }
     const unavailable = accountUnavailableResponse(user, expectedRole);
     if (unavailable) {
       return res.status(unavailable.status).json({ error: unavailable.error, code: unavailable.code });
     }
-    if (!user) return res.status(404).json({ error: "No active Athoo account was found with this identifier.", code: "ACCOUNT_NOT_FOUND" });
 
     // Check admin blacklist (phone or email)
     const blacklisted = await db.query.adminBlacklistTable.findFirst({
@@ -1124,14 +1423,14 @@ router.post("/login", async (req, res) => {
       ),
     });
     if (blacklisted) {
-      res.status(403).json({ error: "This account has been suspended. Please contact support." });
+      res.status(403).json({ error: "This account is suspended. Please contact Athoo Support.", code: "ACCOUNT_SUSPENDED" });
       return;
     }
 
     if (!user.password) {
       res.status(401).json({
-        error:
-          "This account uses OTP login. Please sign in with your phone number and OTP instead.",
+        error: "This account uses OTP login. Please sign in with your phone number and OTP instead.",
+        code: "OTP_LOGIN_REQUIRED",
       });
       return;
     }
@@ -1140,7 +1439,7 @@ router.post("/login", async (req, res) => {
 
     if (!valid) {
       db.insert(loginHistoryTable).values({ id: generateId(), userId: user.id, phone: user.phone, email: user.email, role: user.role, method: "password", success: false, failReason: "Incorrect password", ipAddress: req.ip, userAgent: req.headers["user-agent"] || null, deviceId: String(req.headers["x-athoo-device-id"] || "").trim().toLowerCase() || null }).catch(() => {});
-      res.status(401).json({ error: "Incorrect password. Please try again." });
+      res.status(401).json({ error: "Incorrect password. Please try again.", code: "PASSWORD_INCORRECT" });
       return;
     }
 
@@ -1165,7 +1464,7 @@ router.post("/login", async (req, res) => {
     });
   } catch (e) {
     logger.error({ err: e }, "login error");
-    return res.status(500).json({ error: "Login failed" });
+    return res.status(500).json({ error: "We could not sign you in. Please try again.", code: "LOGIN_FAILED" });
   }
 });
 
@@ -1231,11 +1530,19 @@ router.post("/set-password", requireAuth, async (req: AuthRequest, res: Response
 // 1. Send reset OTP (accepts phone OR email as identifier)
 router.post("/forgot-password/send-otp", async (req, res) => {
   try {
-    const { phone, email, identifier } = req.body;
+    const { phone, email, identifier, role: rawRole } = req.body;
     const rawInput = String(identifier || phone || email || "").trim();
 
     if (!rawInput || rawInput.length < 3) {
       return res.status(400).json({ error: "A valid phone number or email address is required" });
+    }
+
+    const expectedRole = rawRole === undefined ? null : cleanRole(String(rawRole));
+    if (rawRole !== undefined && !expectedRole) {
+      return res.status(400).json({
+        error: "Select Customer or Provider before requesting a password reset.",
+        code: "ROLE_REQUIRED",
+      });
     }
 
     const isEmail = rawInput.includes("@");
@@ -1248,7 +1555,11 @@ router.post("/forgot-password/send-otp", async (req, res) => {
         return res.status(400).json({ error: "Please enter a valid phone number or email address" });
       }
       const matchingUser = await db.query.usersTable.findFirst({
-        where: and(normalizedEmailCondition(cleanedEmail), eq(usersTable.emailVerified, true)),
+        where: and(
+          normalizedEmailCondition(cleanedEmail),
+          eq(usersTable.emailVerified, true),
+          expectedRole ? eq(usersTable.role, expectedRole) : undefined,
+        ),
       });
       // Keep the response generic, but never deliver recovery codes to an
       // unverified email address.
@@ -1265,7 +1576,10 @@ router.post("/forgot-password/send-otp", async (req, res) => {
         return res.status(400).json({ error: "Please enter a valid phone number or email address" });
       }
       user = await db.query.usersTable.findFirst({
-        where: eq(usersTable.phone, normalizedPhone),
+        where: and(
+          eq(usersTable.phone, normalizedPhone),
+          expectedRole ? eq(usersTable.role, expectedRole) : undefined,
+        ),
       });
     }
 
@@ -1276,9 +1590,27 @@ router.post("/forgot-password/send-otp", async (req, res) => {
     let smsSent = false;
     let deliveryChannel: string | null = null;
     let otpId: string | null = null;
+    let shouldIssueOtp = Boolean(user);
 
     if (user) {
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+      const previousOtp = await latestOtp(
+        normalizedPhone,
+        "password_reset",
+        user.role === "provider" ? "provider" : "customer",
+      );
+      const previousCreatedAt = previousOtp?.createdAt
+        ? new Date(previousOtp.createdAt).getTime()
+        : 0;
+      const remainingMs =
+        previousCreatedAt + OTP_RESEND_COOLDOWN_SECONDS * 1000 - Date.now();
+
+      if (previousOtp && !previousOtp.used && remainingMs > 0) {
+        shouldIssueOtp = false;
+      }
+    }
+
+    if (user && shouldIssueOtp) {
+      const expiresAt = new Date(Date.now() + OTP_TTL_SECONDS * 1000);
       await db
         .update(otpsTable)
         .set({ used: true })
@@ -1311,7 +1643,7 @@ router.post("/forgot-password/send-otp", async (req, res) => {
         code,
         purpose: "password_reset",
         role: user.role === "provider" ? "provider" : "customer",
-        expiresMinutes: 10,
+        expiresMinutes: Math.ceil(OTP_TTL_SECONDS / 60),
         email: user.emailVerified ? user.email : null,
         userId: user.id,
         userName: user.name,
@@ -1347,6 +1679,8 @@ router.post("/forgot-password/send-otp", async (req, res) => {
     return res.json({
       success: true,
       challengeToken,
+      expiresInSeconds: OTP_TTL_SECONDS,
+      resendAfterSeconds: OTP_RESEND_COOLDOWN_SECONDS,
       // Delivery details are intentionally hidden outside development so this
       // endpoint cannot be used to discover whether an account exists.
       ...(isDev && user ? { code, maskedPhone, emailSent, whatsappSent, smsSent, deliveryChannel } : {}),
@@ -1461,6 +1795,17 @@ router.post("/forgot-password/reset", async (req, res) => {
       logger.warn({ err: error, userId: user.id }, "password reset confirmation email queue failed"),
     );
 
+    void recordUserEvent({
+      actorId: user.id,
+      actorName: user.name,
+      actorRole: user.role,
+      action: "account.password_reset",
+      target: "user",
+      targetId: user.id,
+      details: { method: "forgot_password_otp", sessionsRevoked: true },
+      ip: req.ip ?? null,
+    });
+
     res.json({ success: true, message: "Password reset successful" });
     return;
   } catch (e) {
@@ -1485,13 +1830,44 @@ router.post("/refresh", async (req, res) => {
 router.post("/logout", requireAuth, async (req: AuthRequest, res: Response) => {
   // Remove this installation's notification ownership before invalidating the
   // session, so a signed-out phone cannot continue receiving private alerts.
-  await db.update(usersTable).set({ expoPushToken: null, biometricEnabled: false, updatedAt: new Date() }).where(eq(usersTable.id, req.user!.userId));
+  // Other devices the user is signed into keep their push registrations.
+  const deviceId = normalizeSessionDeviceId(firstHeaderValue(req.headers["x-athoo-device-id"]));
+  await db.transaction(async (tx) => {
+    if (deviceId) {
+      await tx
+        .delete(pushTokensTable)
+        .where(and(eq(pushTokensTable.userId, req.user!.userId), eq(pushTokensTable.deviceId, deviceId)));
+    } else {
+      await tx.delete(pushTokensTable).where(eq(pushTokensTable.userId, req.user!.userId));
+    }
+    const remaining = await tx
+      .select({ token: pushTokensTable.token })
+      .from(pushTokensTable)
+      .where(eq(pushTokensTable.userId, req.user!.userId))
+      .orderBy(desc(pushTokensTable.updatedAt))
+      .limit(1);
+    if (!remaining[0]) {
+      // No other device holds a registration, so clear the legacy mirror too.
+      await tx
+        .update(usersTable)
+        .set({ expoPushToken: null, biometricEnabled: false, updatedAt: new Date() })
+        .where(eq(usersTable.id, req.user!.userId));
+    } else {
+      await tx
+        .update(usersTable)
+        .set({ expoPushToken: remaining[0].token, biometricEnabled: false, updatedAt: new Date() })
+        .where(eq(usersTable.id, req.user!.userId));
+    }
+  });
   await revokeSession(req.user!.sessionId!, "logout");
   return res.json({ success: true });
 });
 
 router.post("/logout-all", requireAuth, async (req: AuthRequest, res: Response) => {
-  await db.update(usersTable).set({ expoPushToken: null, biometricEnabled: false, updatedAt: new Date() }).where(eq(usersTable.id, req.user!.userId));
+  await db.transaction(async (tx) => {
+    await tx.delete(pushTokensTable).where(eq(pushTokensTable.userId, req.user!.userId));
+    await tx.update(usersTable).set({ expoPushToken: null, biometricEnabled: false, updatedAt: new Date() }).where(eq(usersTable.id, req.user!.userId));
+  });
   await revokeAllUserSessions(req.user!.userId, "logout_all");
   return res.json({ success: true });
 });
@@ -1556,6 +1932,17 @@ router.post("/switch-role", requireAuth, async (req: AuthRequest, res: Response)
 
     const token = signAccessToken(updatedUser, req.user!.sessionId!);
 
+    void recordUserEvent({
+      actorId: userId,
+      actorName: user.name,
+      actorRole: newRole,
+      action: "account.role_switched",
+      target: "user",
+      targetId: userId,
+      details: { fromRole: user.role, toRole: newRole, verificationStatus: updateFields.verificationStatus ?? user.verificationStatus },
+      ip: req.ip ?? null,
+    });
+
     return res.json({
       success: true,
       token,
@@ -1568,4 +1955,3 @@ router.post("/switch-role", requireAuth, async (req: AuthRequest, res: Response)
 });
 
 export default router;
-

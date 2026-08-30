@@ -3,6 +3,7 @@ import { baseUrl, envBool, fetchWithTimeout, precisionFromText, validCoordinate 
 
 interface MapboxContextItem {
   name?: string;
+  country_code?: string;
 }
 
 interface MapboxFeature {
@@ -22,6 +23,7 @@ interface MapboxFeature {
       district?: MapboxContextItem;
       region?: MapboxContextItem;
       postcode?: MapboxContextItem;
+      country?: MapboxContextItem;
     };
   };
 }
@@ -61,7 +63,9 @@ function toResult(feature: MapboxFeature): GeoResult | null {
     lat,
     lng,
     city: context.place?.name || context.locality?.name,
+    area: context.locality?.name || context.district?.name,
     province: context.region?.name,
+    countryCode: String(context.country?.country_code || process.env.MAP_COUNTRY_CODE || "PK").toUpperCase(),
     postcode: context.postcode?.name,
     precision: precisionFromText(properties.feature_type),
     source: "mapbox",

@@ -79,9 +79,10 @@ test("release blueprints and runbooks use the authoritative candidate and latest
   const packageJson = json("package.json");
   const candidate = String(json("docs/qa/current-release-status.json").candidate);
   const candidatePattern = new RegExp(candidate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  assert.match(candidate, /^ATHOO_V2_2[A-Z0-9_.-]*\.zip$/);
   assert.match(final, candidatePattern);
-  assert.match(final, /20260720_release_phase28_professional_workflow_integrity\.sql/);
-  assert.match(launch, /Phase 28\.5 strict device-acceptance-integrity candidate/);
+  assert.match(launch, candidatePattern);
+  assert.match(final, /20260802_phase19_security_flow_performance\.sql/);
   assert.ok(packageJson.scripts["release:blueprints:validate"]);
   assert.match(packageJson.scripts["release:verify:code"], /release:blueprints:validate/);
 });

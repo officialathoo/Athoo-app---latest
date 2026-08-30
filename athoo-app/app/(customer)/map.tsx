@@ -7,6 +7,7 @@ import { useCategories } from "@/context/CategoriesContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { Provider } from "@/data/services";
 import { apiErrorToMessage } from "@/lib/apiError";
 import { api } from "@/services/api";
@@ -367,29 +368,29 @@ export default function CustomerMapScreen() {
 
 const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingBottom: 10 },
+  header: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: redesign.layout.horizontalPadding, paddingBottom: 10 },
   headerText: { flex: 1 },
-  iconBtn: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center", borderWidth: 1 },
-  title: { fontSize: 18, fontWeight: "800" },
-  subtitle: { marginTop: 2, fontSize: 13 },
-  searchBar: { marginHorizontal: 16, minHeight: 58, borderRadius: 16, borderWidth: 1, flexDirection: "row", alignItems: "center", gap: 11, paddingHorizontal: 14, marginBottom: 12 },
+  iconBtn: { width: redesign.control.iconButtonSize, height: redesign.control.iconButtonSize, borderRadius: theme.radius.md, alignItems: "center", justifyContent: "center", borderWidth: redesign.visual.cardBorderWidth, ...theme.shadows.sm },
+  title: { ...theme.typography.h2, letterSpacing: -0.25 },
+  subtitle: { marginTop: 2, ...theme.typography.caption },
+  searchBar: { marginHorizontal: redesign.layout.horizontalPadding, minHeight: redesign.control.largeHeight, borderRadius: theme.radius.lg, borderWidth: redesign.visual.inputBorderWidth, flexDirection: "row", alignItems: "center", gap: 11, paddingHorizontal: 14, marginBottom: 12, ...theme.shadows.sm },
   searchTextWrap: { flex: 1 },
-  searchPrimary: { fontSize: 14, fontWeight: "700" },
-  searchSecondary: { marginTop: 2, fontSize: 11 },
-  mapWrap: { marginHorizontal: 16, borderRadius: 18, overflow: "hidden", borderWidth: 1, height: 300 },
+  searchPrimary: { ...theme.typography.label },
+  searchSecondary: { marginTop: 2, ...theme.typography.caption },
+  mapWrap: { marginHorizontal: redesign.layout.horizontalPadding, borderRadius: theme.radius.xl, overflow: "hidden", borderWidth: redesign.visual.cardBorderWidth, height: 300, ...theme.shadows.sm },
   loadingBox: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10 },
-  loadingText: { fontSize: 13 },
-  errorBanner: { borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 12, flexDirection: "row", alignItems: "center", gap: 10 },
-  errorText: { flex: 1, fontSize: 13, fontWeight: "600" },
-  retryButton: { minHeight: 40, minWidth: 64, alignItems: "center", justifyContent: "center" },
-  retryText: { fontSize: 13, fontWeight: "800" },
-  content: { padding: 16, gap: 12 },
-  card: { borderRadius: 18, borderWidth: 1, padding: 14, gap: 12 },
-  cardTitle: { fontSize: 16, fontWeight: "800" },
-  cardText: { fontSize: 14, lineHeight: 20 },
-  primaryBtn: { minHeight: 48, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  disabledBtn: { opacity: 0.5 },
-  primaryBtnText: { color: theme.colors.white, fontSize: 15, fontWeight: "800" },
-  viewBtn: { minWidth: 62, paddingHorizontal: 14, minHeight: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  viewBtnText: { color: theme.colors.white, fontWeight: "800", fontSize: 13 },
+  loadingText: { ...theme.typography.body },
+  errorBanner: { borderWidth: redesign.visual.cardBorderWidth, borderRadius: theme.radius.md, padding: 12, marginBottom: 12, flexDirection: "row", alignItems: "center", gap: 10 },
+  errorText: { flex: 1, ...theme.typography.body, fontFamily: theme.typography.label.fontFamily },
+  retryButton: { minHeight: redesign.control.compactHeight, minWidth: 64, alignItems: "center", justifyContent: "center" },
+  retryText: { ...theme.typography.label },
+  content: { padding: redesign.layout.horizontalPadding, gap: redesign.layout.cardGap },
+  card: { borderRadius: theme.radius.xl, borderWidth: redesign.visual.cardBorderWidth, padding: 14, gap: 12, ...theme.shadows.sm },
+  cardTitle: { ...theme.typography.h3 },
+  cardText: { ...theme.typography.body },
+  primaryBtn: { minHeight: redesign.control.standardHeight, borderRadius: theme.radius.md, alignItems: "center", justifyContent: "center", ...theme.shadows.sm },
+  disabledBtn: { opacity: redesign.visual.disabledOpacity },
+  primaryBtnText: { color: theme.colors.white, ...theme.typography.label },
+  viewBtn: { minWidth: 62, paddingHorizontal: 14, minHeight: redesign.control.compactHeight, borderRadius: theme.radius.md, alignItems: "center", justifyContent: "center" },
+  viewBtnText: { color: theme.colors.white, ...theme.typography.label },
 });

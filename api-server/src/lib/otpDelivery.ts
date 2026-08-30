@@ -9,12 +9,13 @@ export interface AuthenticationOtpDeliveryArgs {
   otpId: string;
   phone: string;
   code: string;
-  purpose: "login" | "registration" | "password_reset";
+  purpose: "login" | "registration" | "password_reset" | "account_deactivate" | "account_delete";
   role: "customer" | "provider";
   expiresMinutes: number;
   email?: string | null;
   userId?: string | null;
   userName?: string | null;
+  deliveryChannels?: OtpDeliveryChannel[];
 }
 
 export interface OtpChannelResult {
@@ -331,9 +332,11 @@ export async function deliverAuthenticationOtp(args: AuthenticationOtpDeliveryAr
   // A registration challenge proves possession of the phone number, so it may
   // only use phone-bound channels. Email verification remains a separate,
   // explicit post-registration security control.
-  const channels = getOtpDeliveryChannels().filter((channel) =>
-    args.purpose === "registration" ? channel !== "email" : true,
-  );
+  const requested = args.deliveryChannels?.length ? new Set(args.deliveryChannels) : null;
+  const channels = getOtpDeliveryChannels().filter((channel) => {
+    if (requested && !requested.has(channel)) return false;
+    return args.purpose === "registration" ? channel !== "email" : true;
+  });
   const mode = getOtpDeliveryMode();
   const results: OtpChannelResult[] = [];
 

@@ -11,7 +11,18 @@ const admin = fs.readFileSync(new URL("../src/routes/admin.ts", import.meta.url)
  test("commission submissions reserve outstanding dues and require private evidence", () => {
   assert.match(payments, /availableToSubmit/);
   assert.match(payments, /SUM\(\$\{commissionPaymentsTable\.amount\}\)/);
-  assert.match(payments, /isOwnedUploadObjectPath\(screenshotUrl, providerId, \["private"\]\)/);
+  assert.match(
+    payments,
+    /await isCleanOwnedUploadObjectPath\(screenshotUrl, providerId, \["private"\]\)/,
+  );
+  assert.match(
+    payments,
+    /normalizedQrCodeUrl && !\(await isCleanOwnedUploadObjectPath\(normalizedQrCodeUrl, req\.user!\.userId, \["shared"\]\)\)/,
+  );
+  assert.doesNotMatch(
+    payments,
+    /normalizedQrCodeUrl && !isCleanOwnedUploadObjectPath/,
+  );
   assert.match(payments, /normalizeStoredObjectPath/);
   assert.match(payments, /Selected payment account is not active/);
   assert.match(payments, /clientRequestId/);

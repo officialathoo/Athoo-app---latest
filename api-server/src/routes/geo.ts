@@ -6,6 +6,9 @@
  */
 
 import { Router, type Response } from "express";
+import { db } from "@workspace/db";
+import { usersTable } from "@workspace/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { getRuntimeMapOverrides } from "../lib/mapRuntime";
 import { isInProcessCacheEnabled } from "../lib/infrastructureConfiguration";
@@ -364,6 +367,221 @@ router.get("/reverse", requireAuth, async (req: AuthRequest, res: Response) => {
   }
 });
 
+router.post("/provider-route-metrics", requireAuth, async (req: AuthRequest, res: Response) => {
+  const originLat = Number(req.body?.originLat);
+  const originLng = Number(req.body?.originLng);
+  if (!validCoordinate(originLat, originLng)) {
+    res.status(400).json({ error: "Valid origin coordinates are required" });
+    return;
+  }
+
+  const maximumDestinations = readBoundedIntegerEnvironment(
+    "GEO_ROUTE_METRICS_MAX_DESTINATIONS",
+    12,
+    1,
+    20,
+  );
+  const concurrency = readBoundedIntegerEnvironment(
+    "GEO_ROUTE_METRICS_CONCURRENCY",
+    3,
+    1,
+    6,
+  );
+
+  const rawProviderIds = Array.isArray(req.body?.providerIds) ? req.body.providerIds : [];
+  if (!rawProviderIds.length) {
+    res.json({ routes: [], source: "empty", maximumDestinations });
+    return;
+  }
+
+  if (rawProviderIds.length > maximumDestinations) {
+    res.status(400).json({
+      error: `A maximum of ${maximumDestinations} provider route destinations is allowed`,
+      code: "PROVIDER_ROUTE_METRICS_LIMIT_EXCEEDED",
+    });
+    return;
+  }
+
+  const providerIds: string[] = [];
+  const seenProviderIds = new Set<string>();
+  for (const rawProviderId of rawProviderIds) {
+    const providerId = String(rawProviderId || "").trim().slice(0, 120);
+    if (!providerId) {
+      res.status(400).json({ error: "Every provider route destination requires a valid provider id" });
+      return;
+    }
+    if (seenProviderIds.has(providerId)) continue;
+    seenProviderIds.add(providerId);
+    providerIds.push(providerId);
+  }
+
+  const providers = await db
+    .select({
+      id: usersTable.id,
+      latitude: usersTable.latitude,
+      longitude: usersTable.longitude,
+      locationAccuracy: usersTable.locationAccuracy,
+      locationUpdatedAt: usersTable.locationUpdatedAt,
+    })
+    .from(usersTable)
+    .where(
+      and(
+        inArray(usersTable.id, providerIds),
+        eq(usersTable.role, "provider"),
+        eq(usersTable.accountStatus, "active"),
+        eq(usersTable.isDeactivated, false),
+        eq(usersTable.isBlocked, false),
+        eq(usersTable.verificationStatus, "approved"),
+      ),
+    );
+
+  const maximumLocationAccuracy = Math.max(
+    25,
+    Math.min(1_000, Number(process.env.PROVIDER_LOCATION_MAX_ACCURACY_METERS || 250)),
+  );
+  const maximumLocationAgeMs = Math.max(
+    60_000,
+    Number(process.env.PROVIDER_LOCATION_MAX_AGE_MS || 30 * 60_000),
+  );
+
+  const providerById = new Map(providers.map((provider) => [provider.id, provider]));
+  const destinations: Array<{ id: string; lat: number; lng: number }> = [];
+
+  for (const providerId of providerIds) {
+    const provider = providerById.get(providerId);
+    if (!provider) continue;
+
+    const lat = Number(provider.latitude);
+    const lng = Number(provider.longitude);
+    if (!validCoordinate(lat, lng)) continue;
+
+    const locationAccuracy =
+      provider.locationAccuracy == null ? null : Number(provider.locationAccuracy);
+    if (
+      locationAccuracy != null &&
+      Number.isFinite(locationAccuracy) &&
+      locationAccuracy > maximumLocationAccuracy
+    ) {
+      continue;
+    }
+
+    const locationUpdatedAt = provider.locationUpdatedAt
+      ? new Date(provider.locationUpdatedAt).getTime()
+      : null;
+    if (
+      locationUpdatedAt != null &&
+      Number.isFinite(locationUpdatedAt) &&
+      Date.now() - locationUpdatedAt > maximumLocationAgeMs
+    ) {
+      continue;
+    }
+
+    destinations.push({ id: providerId, lat, lng });
+  }
+
+  const runtimeOverrides = await getRuntimeMapOverrides();
+  const config = getMapProviderConfiguration(runtimeOverrides);
+
+  const routed = await mapWithConcurrency(destinations, concurrency, async (destination) => {
+    const cacheKey =
+      `route-metric:${config.directionsProvider}:` +
+      `${originLat.toFixed(4)},${originLng.toFixed(4)}:` +
+      `${destination.lat.toFixed(4)},${destination.lng.toFixed(4)}`;
+
+    const cached = getCached<{
+      distanceKm: number;
+      durationMin: number | null;
+      source: string;
+      routed: true;
+    }>(cacheKey);
+
+    if (cached) {
+      return { id: destination.id, ...cached, source: `${cached.source}-cache` };
+    }
+
+    const request = {
+      originLat,
+      originLng,
+      destLat: destination.lat,
+      destLng: destination.lng,
+    };
+
+    try {
+      const primary = getMapOperationProvider(config.directionsProvider);
+      let result = primary?.directions ? await primary.directions(request) : null;
+
+      if (
+        !result &&
+        config.fallbackEnabled &&
+        config.directionsFallbackProvider !== config.directionsProvider
+      ) {
+        const fallback = getMapOperationProvider(config.directionsFallbackProvider);
+        if (fallback?.directions) result = await fallback.directions(request);
+      }
+
+      const distanceKm = Number(result?.distanceKm);
+      const durationValue = result?.durationMin == null ? null : Number(result.durationMin);
+      const durationMin =
+        durationValue != null && Number.isFinite(durationValue) && durationValue >= 0
+          ? durationValue
+          : null;
+      const isRealRoute =
+        result &&
+        result.source !== "straight_line" &&
+        Number.isFinite(distanceKm) &&
+        distanceKm >= 0 &&
+        Array.isArray(result.polyline) &&
+        result.polyline.length >= 2;
+
+      if (isRealRoute && result) {
+        const metric = {
+          distanceKm: Math.round(distanceKm * 10) / 10,
+          durationMin: durationMin == null ? null : Math.max(1, Math.round(durationMin)),
+          source: result.source,
+          routed: true as const,
+        };
+        setCached(cacheKey, metric, 5 * 60 * 1000);
+        return { id: destination.id, ...metric };
+      }
+    } catch (error) {
+      logger.warn(
+        {
+          err: error,
+          provider: config.directionsProvider,
+          operation: "provider-route-metrics",
+          destinationId: destination.id,
+        },
+        "provider route metric upstream unavailable",
+      );
+    }
+
+    return {
+      id: destination.id,
+      distanceKm: null,
+      durationMin: null,
+      source: "unavailable",
+      routed: false as const,
+    };
+  });
+
+  const routedById = new Map(routed.map((route) => [route.id, route]));
+  const routes = providerIds.map(
+    (providerId) =>
+      routedById.get(providerId) || {
+        id: providerId,
+        distanceKm: null,
+        durationMin: null,
+        source: "unavailable",
+        routed: false as const,
+      },
+  );
+
+  res.json({
+    routes,
+    source: config.directionsProvider,
+    maximumDestinations,
+  });
+});
 router.post("/route-metrics", requireAuth, async (req: AuthRequest, res: Response) => {
   const originLat = Number(req.body?.originLat);
   const originLng = Number(req.body?.originLng);

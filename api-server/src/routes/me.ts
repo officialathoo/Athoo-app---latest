@@ -1,10 +1,12 @@
 import { Router } from "express";
 import { logger } from "../lib/logger";
 import { db } from "@workspace/db";
-import { isOwnedUploadObjectPath, normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { isCleanOwnedUploadObjectPath } from "../lib/verifiedUploads";
 import { cleanupReplacedOwnedMedia } from "../lib/mediaLifecycle";
 import {
   appSettingsTable,
+  notificationPreferencesTable,
   notificationsTable,
   providerDocumentsTable,
   savedProvidersTable,
@@ -104,7 +106,8 @@ router.patch("/", async (req: AuthRequest, res) => {
     }
     if (body.profileImage !== undefined) {
       const profileImage = normalizeStoredObjectPath(body.profileImage);
-      if (profileImage && !isOwnedUploadObjectPath(profileImage, req.user!.userId, ["shared", "private"])) return res.status(400).json({ error: "Profile photo must be uploaded through your Athoo account" });
+      // Stronger successor to isOwnedUploadObjectPath(profileImage, ...): ownership alone is insufficient.
+      if (profileImage && !(await isCleanOwnedUploadObjectPath(profileImage, req.user!.userId, ["shared", "private"]))) return res.status(400).json({ error: "Profile photo must be uploaded through your Athoo account and pass security scanning before use" });
       update.profileImage = profileImage || null;
     }
     if (body.profileColor !== undefined) {
@@ -158,6 +161,75 @@ router.patch("/preferences", async (req: AuthRequest, res) => {
   } catch (e) {
     logger.error({ err: e }, "preferences update error");
     return res.status(500).json({ error: "Failed to update preferences" });
+  }
+});
+
+// ───────── Notification (push category) preferences ─────────
+//
+// Server-enforced switches for Athoo's own push delivery. Absence of a row
+// means every category is enabled. Calls and security-critical alerts always
+// attempt native delivery regardless of these switches.
+
+const NOTIFICATION_CATEGORY_COLUMNS = {
+  jobs: "jobsEnabled",
+  messages: "messagesEnabled",
+  calls: "callsEnabled",
+  general: "generalEnabled",
+} as const;
+
+function boolFlag(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return undefined;
+}
+
+async function ensureNotificationPreferencesRow(userId: string) {
+  const inserted = await db
+    .insert(notificationPreferencesTable)
+    .values({ userId })
+    .onConflictDoNothing({ target: notificationPreferencesTable.userId })
+    .returning();
+  if (inserted.length > 0) return inserted[0];
+  return db.query.notificationPreferencesTable.findFirst({
+    where: eq(notificationPreferencesTable.userId, userId),
+  });
+}
+
+router.get("/notification-preferences", async (req: AuthRequest, res) => {
+  try {
+    const preferences = await ensureNotificationPreferencesRow(req.user!.userId);
+    return res.json({ preferences });
+  } catch (e) {
+    logger.error({ err: e }, "notification preferences load error");
+    return res.status(500).json({ error: "Failed to load notification preferences" });
+  }
+});
+
+router.patch("/notification-preferences", async (req: AuthRequest, res) => {
+  try {
+    await ensureNotificationPreferencesRow(req.user!.userId);
+    const patch: Record<string, unknown> = { updatedAt: new Date() };
+    let changed = false;
+    for (const [key, column] of Object.entries(NOTIFICATION_CATEGORY_COLUMNS)) {
+      const value = boolFlag((req.body as Record<string, unknown>)?.[key]);
+      if (value !== undefined) {
+        patch[column] = value;
+        changed = true;
+      }
+    }
+    if (!changed) {
+      return res.status(400).json({ error: `No valid notification preferences supplied (expected: ${Object.keys(NOTIFICATION_CATEGORY_COLUMNS).join(", ")})` });
+    }
+    const [updated] = await db
+      .update(notificationPreferencesTable)
+      .set(patch)
+      .where(eq(notificationPreferencesTable.userId, req.user!.userId))
+      .returning();
+    return res.json({ preferences: updated });
+  } catch (e) {
+    logger.error({ err: e }, "notification preferences update error");
+    return res.status(500).json({ error: "Failed to update notification preferences" });
   }
 });
 
@@ -274,8 +346,9 @@ router.post("/documents", async (req: AuthRequest, res) => {
     const normalizedType = String(type || "").trim();
     const normalizedUrl = normalizeStoredObjectPath(url);
     if (!allowedTypes.includes(normalizedType) || !normalizedUrl) return res.status(400).json({ error: "Invalid document type or URL" });
-    if (!isOwnedUploadObjectPath(normalizedUrl, req.user!.userId, ["private"])) {
-      return res.status(400).json({ error: "Verification documents must use your private upload path" });
+    // Replaces isOwnedUploadObjectPath(normalizedUrl, req.user!.userId, ["private"]) with owner + clean-scan enforcement.
+    if (!(await isCleanOwnedUploadObjectPath(normalizedUrl, req.user!.userId, ["private"]))) {
+      return res.status(400).json({ error: "Verification documents must use your private upload path and pass security scanning before use" });
     }
 
     const existing = await db.query.providerDocumentsTable.findFirst({
@@ -507,4 +580,3 @@ router.patch("/schedule", async (req: AuthRequest, res) => {
 });
 
 export default router;
-

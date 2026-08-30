@@ -22,6 +22,7 @@ interface NominatimItem {
     county?: string;
     state?: string;
     postcode?: string;
+    country_code?: string;
   };
 }
 
@@ -57,6 +58,7 @@ function toResult(item: NominatimItem): GeoResult | null {
   if (label.length < 3) return null;
   const primary = item.name || (address.house_number && address.road ? `${address.house_number} ${address.road}` : address.road) || label.split(",")[0] || label;
   const city = address.city || address.town || address.village || address.county;
+  const area = address.neighbourhood || address.suburb || address.quarter || address.city_district;
   const secondary = [address.neighbourhood, address.suburb, address.quarter, address.city_district, city, address.state, address.postcode]
     .filter((value, index, values): value is string => Boolean(value) && value !== primary && values.indexOf(value) === index)
     .join(", ");
@@ -68,7 +70,9 @@ function toResult(item: NominatimItem): GeoResult | null {
     lat,
     lng,
     city,
+    area,
     province: address.state,
+    countryCode: String(address.country_code || process.env.MAP_COUNTRY_CODE || "PK").toUpperCase(),
     postcode: address.postcode,
     precision: precisionFromText(item.type),
     source: "nominatim",

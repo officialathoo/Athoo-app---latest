@@ -64,6 +64,8 @@ function statusLabel(s: string) {
   return "Pending Review";
 }
 
+const COMMISSION_DETAILS_BACKGROUND_REFRESH_MS = 60_000;
+
 export default function PayCommissionScreen() {
   const { theme } = useTheme();
   const { isUrdu, formatCurrency, formatDate: formatLocalizedDate, translate: tr } = useLang();
@@ -87,14 +89,30 @@ export default function PayCommissionScreen() {
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const [availableToSubmit, setAvailableToSubmit] = useState(0);
   const requestIdRef = useRef<string | null>(null);
+  const loadRequestInFlightRef = useRef(false);
+  const detailsLoadedRef = useRef(false);
+  const detailsLastLoadedAtRef = useRef(0);
 
   const pendingDues = user?.pendingCommission ?? 0;
   const commissionLimit = platformSettings.defaultCommissionLimit || user?.commissionLimit || 5000;
   const duesProgress = Math.min(1, pendingDues / commissionLimit);
 
-  async function load(showRefreshing = false) {
-    if (showRefreshing) setRefreshing(true);
-    setLoadError(null);
+  const load = useCallback(async (
+    mode: "initial" | "refresh" | "background" | "mutation" = "initial"
+  ) => {
+    if (loadRequestInFlightRef.current) return;
+
+    loadRequestInFlightRef.current = true;
+    if (mode === "initial" && !detailsLoadedRef.current) {
+      setLoading(true);
+    } else if (mode === "refresh") {
+      setRefreshing(true);
+    }
+
+    if (mode !== "background") {
+      setLoadError(null);
+    }
+
     try {
       const [acctRes, payRes] = await Promise.all([
         api.getPaymentAccounts(),
@@ -104,15 +122,37 @@ export default function PayCommissionScreen() {
       setAccounts((acctRes?.accounts || []) as PaymentAccount[]);
       setHistory((payRes?.payments || []) as SubmittedPayment[]);
       setAvailableToSubmit(Number(payRes?.availableToSubmit || 0));
+      detailsLoadedRef.current = true;
+      detailsLastLoadedAtRef.current = Date.now();
     } catch (error) {
-      setLoadError(apiErrorToMessage(error, tr("We couldn't load commission payment details. Please try again.")));
+      if (mode !== "background") {
+        setLoadError(
+          apiErrorToMessage(
+            error,
+            tr("We couldn't load commission payment details. Please try again.")
+          )
+        );
+      }
     } finally {
+      loadRequestInFlightRef.current = false;
       setLoading(false);
       setRefreshing(false);
     }
-  }
+  }, [refreshUser, tr]);
 
-  useFocusEffect(useCallback(() => { load(); }, []));
+  useFocusEffect(useCallback(() => {
+    if (!detailsLoadedRef.current) {
+      void load("initial");
+      return;
+    }
+
+    if (
+      Date.now() - detailsLastLoadedAtRef.current >=
+      COMMISSION_DETAILS_BACKGROUND_REFRESH_MS
+    ) {
+      void load("background");
+    }
+  }, [load]));
 
   async function pickScreenshot() {
     await new Promise<void>((resolve) => setTimeout(resolve, 200));
@@ -171,7 +211,7 @@ export default function PayCommissionScreen() {
       requestIdRef.current = null;
       showSuccess(tr("Payment Submitted"), tr("Your commission payment is under review. You'll be notified once approved."));
       resetForm();
-      load();
+      void load("mutation");
     } catch (e) {
       showError(tr("Submission Failed"), apiErrorToMessage(e, tr("We couldn't submit this payment. Please try again.")));
     } finally {
@@ -240,13 +280,13 @@ export default function PayCommissionScreen() {
           contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 40 }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={theme.colors.primary} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load("refresh")} tintColor={theme.colors.primary} />}
         >
           {loadError ? (
             <View style={styles.errorCard} accessibilityRole="alert">
               <Icon name="alert-circle" size={20} color={theme.colors.danger} />
               <View style={{ flex: 1 }}><Text style={styles.errorTitle}>{tr("Payment details unavailable")}</Text><Text style={styles.errorText}>{loadError}</Text></View>
-              <Pressable onPress={() => load()} style={styles.retryBtn}><Text style={styles.retryText}>{tr("Retry")}</Text></Pressable>
+              <Pressable onPress={() => void load("refresh")} style={styles.retryBtn}><Text style={styles.retryText}>{tr("Retry")}</Text></Pressable>
             </View>
           ) : null}
           {pendingDues === 0 ? (
@@ -447,18 +487,18 @@ export default function PayCommissionScreen() {
 function createStyles(theme: AthooTheme, isUrdu: boolean) {
   return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  header: { paddingHorizontal: 20, paddingBottom: 24, paddingTop: 12 },
+  header: { paddingHorizontal: 16, paddingBottom: 18, paddingTop: 10},
   backBtn: {
-    width: 44, height: 44, borderRadius: 12,
+    width: 38, height: 38, borderRadius: 12,
     backgroundColor: "rgba(255,255,255,0.2)",
-    alignItems: "center", justifyContent: "center", marginBottom: 10,
+    alignItems: "center", justifyContent: "center", marginBottom: 8,
   },
-  headerTitle: { fontSize: 20, fontWeight: "800", color: theme.colors.onBrand, marginBottom: 16 },
+  headerTitle: { fontSize: 18, fontWeight: "800", color: theme.colors.onBrand, marginBottom: 12},
   duesSummary: {
     backgroundColor: "rgba(255,255,255,0.15)",
-    borderRadius: 16, padding: 14,
+    borderRadius: 14, padding: 12,
     borderWidth: 1, borderColor: "rgba(255,255,255,0.25)",
-    gap: 10,
+    gap: 8,
   },
   duesRow: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center" },
   duesStat: { flex: 1, alignItems: "center", gap: 2 },
@@ -468,14 +508,14 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
   progressBg: { height: 6, backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 3, overflow: "hidden" },
   progressFill: { height: "100%", borderRadius: 3 },
 
-  scroll: { width: "100%", maxWidth: 760, alignSelf: "center", padding: 16, gap: 12 },
+  scroll: { width: "100%", maxWidth: 760, alignSelf: "center", padding: 14, gap: 10},
 
   errorCard: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 10, padding: 14, borderRadius: 14, backgroundColor: theme.colors.dangerSoft, borderWidth: 1, borderColor: theme.colors.danger },
   errorTitle: { fontSize: 14, fontWeight: "800", color: theme.colors.text, textAlign: isUrdu ? "right" : "left" },
   errorText: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 2, textAlign: isUrdu ? "right" : "left" },
   retryBtn: { minHeight: 44, paddingHorizontal: 14, borderRadius: 10, backgroundColor: theme.colors.primary, alignItems: "center", justifyContent: "center" },
   retryText: { color: theme.colors.white, fontWeight: "700" },
-  noDues: { alignItems: "center", paddingVertical: 60, gap: 12 },
+  noDues: { alignItems: "center", paddingVertical: 42, gap: 12 },
   noDuesTitle: { fontSize: 20, fontWeight: "700", color: theme.colors.text },
   noDuesSub: { fontSize: 14, color: theme.colors.textSecondary, textAlign: "center", lineHeight: 20 },
 
@@ -496,11 +536,11 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
   noAccountsText: { flex: 1, fontSize: 13, color: theme.colors.warning, lineHeight: 18 },
 
   accountCard: {
-    backgroundColor: theme.colors.surface, borderRadius: 16, padding: 14,
-    borderWidth: 2, borderColor: theme.colors.border, gap: 6,
+    backgroundColor: theme.colors.surface, borderRadius: 14, padding: 12,
+    borderWidth: 1, borderColor: theme.colors.border, gap: 6,
   },
   accountCardSelected: { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary + "06" },
-  accountLeft: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "flex-start", gap: 12 },
+  accountLeft: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "flex-start", gap: 10},
   accountRadio: {
     width: 20, height: 20, borderRadius: 10,
     borderWidth: 2, borderColor: theme.colors.border,
@@ -517,18 +557,18 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
   },
   qrWrap: {
     alignSelf: "center", alignItems: "center", gap: 6,
-    marginTop: 8, padding: 10, borderRadius: 14,
+    marginTop: 8, padding: 8, borderRadius: 12,
     backgroundColor: theme.colors.surfaceAlt,
     borderWidth: 1, borderColor: theme.colors.border,
   },
   qrImage: {
-    width: 180, height: 180, borderRadius: 10,
+    width: 160, height: 160, borderRadius: 10,
     backgroundColor: theme.colors.white,
   },
   qrCaption: { fontSize: 12, fontWeight: "700", color: theme.colors.textSecondary },
   bold: { fontWeight: "700", color: theme.colors.text },
 
-  formCard: { backgroundColor: theme.colors.surface, borderRadius: 18, padding: 16, gap: 16, borderWidth: 1, borderColor: theme.colors.border },
+  formCard: { backgroundColor: theme.colors.surface, borderRadius: 14, padding: 14, gap: 12, borderWidth: 1, borderColor: theme.colors.border },
   field: { gap: 6 },
   label: { fontSize: 13, fontWeight: "600", color: theme.colors.text },
   required: { color: theme.colors.danger },
@@ -538,40 +578,40 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12,
     backgroundColor: theme.colors.background, overflow: "hidden",
   },
-  inputPrefix: { paddingHorizontal: 14, fontSize: 14, fontWeight: "700", color: theme.colors.textSecondary, borderRightWidth: 1, borderRightColor: theme.colors.border, paddingVertical: 12 },
-  inputAmount: { flex: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, fontWeight: "700", color: theme.colors.text },
+  inputPrefix: { paddingHorizontal: 14, fontSize: 14, fontWeight: "700", color: theme.colors.textSecondary, borderRightWidth: 1, borderRightColor: theme.colors.border, paddingVertical: 10},
+  inputAmount: { flex: 1, paddingHorizontal: 14, paddingVertical: 10, fontSize: 16, fontWeight: "700", color: theme.colors.text },
   payFullBtn: { alignSelf: "flex-start" },
   payFullText: { fontSize: 12, color: theme.colors.primary, fontWeight: "600", textDecorationLine: "underline" },
   input: {
     borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 12,
+    paddingHorizontal: 14, paddingVertical: 10,
     fontSize: 14, color: theme.colors.text, backgroundColor: theme.colors.background,
   },
-  inputMulti: { minHeight: 80, textAlignVertical: "top" },
+  inputMulti: { minHeight: 72, textAlignVertical: "top" },
 
   photoBtn: {
-    borderWidth: 1.5, borderColor: theme.colors.border, borderRadius: 12,
+    borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12,
     borderStyle: "dashed", overflow: "hidden",
     backgroundColor: theme.colors.background,
   },
-  photoBtnInner: { padding: 20, alignItems: "center", gap: 6 },
+  photoBtnInner: { padding: 16, alignItems: "center", gap: 6 },
   photoBtnText: { fontSize: 14, fontWeight: "600", color: theme.colors.primary },
   photoBtnSub: { fontSize: 12, color: theme.colors.textMuted },
   photoPreviewRow: { padding: 10, gap: 8 },
-  photoPreview: { width: "100%", height: 160, borderRadius: 8, resizeMode: "cover" },
+  photoPreview: { width: "100%", height: 140, borderRadius: 8, resizeMode: "cover" },
   photoRemove: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 4, alignSelf: "flex-start" },
   photoRemoveText: { fontSize: 12, color: theme.colors.danger, fontWeight: "600" },
 
   submitBtn: {
     flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: theme.colors.primary, borderRadius: 14,
-    paddingVertical: 15, paddingHorizontal: 20, marginTop: 4,
+    backgroundColor: theme.colors.primary, borderRadius: 12,
+    paddingVertical: 13, paddingHorizontal: 20, marginTop: 4,
   },
   submitBtnDisabled: { opacity: 0.5 },
   submitBtnText: { fontSize: 15, fontWeight: "700", color: theme.colors.onBrand },
 
   historyCard: {
-    backgroundColor: theme.colors.surface, borderRadius: 14, padding: 14,
+    backgroundColor: theme.colors.surface, borderRadius: 12, padding: 12,
     borderWidth: 1, borderColor: theme.colors.border, gap: 6,
   },
   historyTop: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between" },

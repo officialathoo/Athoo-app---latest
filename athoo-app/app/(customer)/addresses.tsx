@@ -5,12 +5,14 @@ import { Icon } from "@/components/ui/Icon";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { useToast } from "@/context/ToastContext";
 import { apiErrorToMessage } from "@/lib/apiError";
 import { api } from "@/services/api";
 import { reverseGeocode } from "@/services/maps";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import * as ExpoLocation from "expo-location";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -32,8 +34,17 @@ type SavedAddress = {
   isDefault: boolean;
   latitude?: number | null;
   longitude?: number | null;
+  locationCity?: string | null;
+  locationArea?: string | null;
+  locationProvince?: string | null;
+  locationCountryCode?: string | null;
+  locationSource?: string | null;
+  locationAccuracy?: number | null;
+  locationConfirmedAt?: string | null;
   createdAt: string;
 };
+
+const ADDRESSES_BACKGROUND_REFRESH_MS = 60_000;
 
 export default function AddressesScreen() {
   const insets = useSafeAreaInsets();
@@ -47,6 +58,9 @@ export default function AddressesScreen() {
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const requestInFlightRef = useRef(false);
+  const loadedRef = useRef(false);
+  const lastLoadedAtRef = useRef(0);
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
   const [resolving, setResolving] = useState(false);
@@ -56,21 +70,65 @@ export default function AddressesScreen() {
   const [newAddress, setNewAddress] = useState("");
   const [newLatitude, setNewLatitude] = useState<number | undefined>(undefined);
   const [newLongitude, setNewLongitude] = useState<number | undefined>(undefined);
+  const [newLocationMeta, setNewLocationMeta] = useState<{
+    city: string;
+    area: string;
+    province?: string;
+    countryCode: string;
+    source: string;
+    accuracy?: number | null;
+    confirmedAt: string;
+  } | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setLoadError("");
+  const load = useCallback(async (
+    mode: "initial" | "refresh" | "background" = "initial"
+  ) => {
+    if (requestInFlightRef.current) return;
+
+    requestInFlightRef.current = true;
+    if (mode === "initial" && !loadedRef.current) {
+      setLoading(true);
+    } else if (mode === "refresh") {
+      setLoading(true);
+    }
+
+    if (mode !== "background") {
+      setLoadError("");
+    }
+
     try {
       const res = await api.getAddresses();
       setAddresses(res.addresses || []);
+      loadedRef.current = true;
+      lastLoadedAtRef.current = Date.now();
     } catch (error) {
-      setLoadError(apiErrorToMessage(error, tr("We could not load your saved addresses. Please try again.")));
+      if (mode !== "background") {
+        setLoadError(
+          apiErrorToMessage(
+            error,
+            tr("We could not load your saved addresses. Please try again.")
+          )
+        );
+      }
     } finally {
+      requestInFlightRef.current = false;
       setLoading(false);
     }
   }, [tr]);
 
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    if (!loadedRef.current) {
+      void load("initial");
+      return;
+    }
+
+    if (
+      Date.now() - lastLoadedAtRef.current >=
+      ADDRESSES_BACKGROUND_REFRESH_MS
+    ) {
+      void load("background");
+    }
+  }, [load]));
 
   const savedOptions = useMemo(
     () => addresses.map((address) => ({
@@ -79,6 +137,13 @@ export default function AddressesScreen() {
       address: address.address,
       latitude: address.latitude,
       longitude: address.longitude,
+      locationCity: address.locationCity,
+      locationArea: address.locationArea,
+      locationProvince: address.locationProvince,
+      locationCountryCode: address.locationCountryCode,
+      locationSource: address.locationSource,
+      locationAccuracy: address.locationAccuracy,
+      locationConfirmedAt: address.locationConfirmedAt,
     })),
     [addresses],
   );
@@ -87,6 +152,15 @@ export default function AddressesScreen() {
     setNewAddress(selection.address);
     setNewLatitude(selection.latitude);
     setNewLongitude(selection.longitude);
+    setNewLocationMeta(selection.city?.trim() && selection.area?.trim() && selection.countryCode?.trim() ? {
+      city: selection.city.trim(),
+      area: selection.area.trim(),
+      province: selection.province?.trim() || undefined,
+      countryCode: selection.countryCode?.trim().toUpperCase() || "",
+      source: selection.source,
+      accuracy: selection.accuracy ?? null,
+      confirmedAt: selection.confirmedAt || new Date().toISOString(),
+    } : null);
     if (!newLabel.trim()) {
       setNewLabel(selection.source === "current" ? tr("Current Location") : selection.primary || tr("Saved Place"));
     }
@@ -97,9 +171,24 @@ export default function AddressesScreen() {
     setNewLongitude(longitude);
     setResolving(true);
     try {
-      const resolved = await reverseGeocode(latitude, longitude);
-      setNewAddress(resolved || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
+      const [resolved, places] = await Promise.all([
+        reverseGeocode(latitude, longitude),
+        ExpoLocation.reverseGeocodeAsync({ latitude, longitude }).catch(() => []),
+      ]);
+      const place = places[0];
+      const city = place?.city || place?.subregion || place?.region || "";
+      const area = place?.district || place?.subregion || place?.name || place?.street || "";
+      setNewAddress(resolved || [place?.name, place?.street, area, city].filter(Boolean).join(", "));
+      setNewLocationMeta(city.trim() && area.trim() && place?.isoCountryCode?.trim() ? {
+        city: city.trim(),
+        area: area.trim(),
+        province: place?.region?.trim() || undefined,
+        countryCode: place?.isoCountryCode?.trim().toUpperCase() || "",
+        source: "pin",
+        confirmedAt: new Date().toISOString(),
+      } : null);
     } catch {
+      setNewLocationMeta(null);
       setNewAddress(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
     } finally {
       setResolving(false);
@@ -111,6 +200,7 @@ export default function AddressesScreen() {
     setNewAddress("");
     setNewLatitude(undefined);
     setNewLongitude(undefined);
+    setNewLocationMeta(null);
     setAdding(false);
   }, []);
 
@@ -123,6 +213,10 @@ export default function AddressesScreen() {
       showError(tr("Choose a location"), tr("Search for the address, use your current location, or place the pin on the map."));
       return;
     }
+    if (!newLocationMeta) {
+      showError(tr("Confirm city and area"), tr("Athoo could not verify the city and area for this address. Search the exact location or move the pin again."));
+      return;
+    }
     setSaving(true);
     try {
       const res = await api.addAddress({
@@ -131,6 +225,13 @@ export default function AddressesScreen() {
         icon: "map-pin",
         latitude: newLatitude,
         longitude: newLongitude,
+        locationCity: newLocationMeta.city,
+        locationArea: newLocationMeta.area,
+        locationProvince: newLocationMeta.province,
+        locationCountryCode: newLocationMeta.countryCode,
+        locationSource: newLocationMeta.source,
+        locationAccuracy: newLocationMeta.accuracy,
+        locationConfirmedAt: newLocationMeta.confirmedAt,
       });
       setAddresses((previous) => [...previous, res.address]);
       resetForm();
@@ -185,6 +286,15 @@ export default function AddressesScreen() {
             setNewLatitude(Number(defaultAddress.latitude));
             setNewLongitude(Number(defaultAddress.longitude));
             setNewAddress(defaultAddress.address);
+            setNewLocationMeta(defaultAddress.locationCity && defaultAddress.locationArea ? {
+              city: defaultAddress.locationCity,
+              area: defaultAddress.locationArea,
+              province: defaultAddress.locationProvince || undefined,
+              countryCode: defaultAddress.locationCountryCode || "PK",
+              source: "saved",
+              accuracy: defaultAddress.locationAccuracy ?? null,
+              confirmedAt: new Date().toISOString(),
+            } : null);
             return;
           }
           const pakistanCenter = { latitude: 30.3753, longitude: 69.3451 };
@@ -292,7 +402,7 @@ export default function AddressesScreen() {
         {loadError ? (
           <View style={[styles.errorState, { backgroundColor: theme.colors.dangerSoft, borderColor: theme.colors.danger }]}> 
             <Text style={[styles.errorText, { color: theme.colors.danger, textAlign, writingDirection }]}>{loadError}</Text>
-            <Pressable accessibilityRole="button" style={styles.retryButton} onPress={() => void load()}>
+            <Pressable accessibilityRole="button" style={styles.retryButton} onPress={() => void load("refresh")}>
               <Text style={[styles.retryText, { color: theme.colors.danger }]}>{tr("Retry")}</Text>
             </Pressable>
           </View>
@@ -368,50 +478,50 @@ export default function AddressesScreen() {
 
 const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16, borderBottomWidth: 1 },
-  headerButton: { width: 42, height: 42, borderRadius: 13, alignItems: "center", justifyContent: "center" },
-  headerTitle: { flex: 1, fontSize: 18, fontWeight: "800" },
-  content: { padding: 20, gap: 12 },
-  addForm: { borderRadius: 18, borderWidth: 1, padding: 16, gap: 12 },
-  formTitle: { fontSize: 16, fontWeight: "800" },
-  input: { minHeight: 50, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 11, fontSize: 14, borderWidth: 1 },
+  header: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: redesign.layout.horizontalPadding, paddingTop: 14, paddingBottom: 14, borderBottomWidth: redesign.visual.cardBorderWidth, ...theme.shadows.sm },
+  headerButton: { width: redesign.control.iconButtonSize, height: redesign.control.iconButtonSize, borderRadius: theme.radius.md, alignItems: "center", justifyContent: "center", borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border },
+  headerTitle: { flex: 1, ...theme.typography.h2, letterSpacing: -0.25 },
+  content: { padding: redesign.layout.horizontalPadding, gap: 12 },
+  addForm: { borderRadius: theme.radius.xl, borderWidth: redesign.visual.cardBorderWidth, padding: 16, gap: 12, ...theme.shadows.sm },
+  formTitle: { ...theme.typography.h3 },
+  input: { minHeight: redesign.control.standardHeight, borderRadius: theme.radius.md, paddingHorizontal: 13, paddingVertical: 11, ...theme.typography.body, borderWidth: redesign.visual.inputBorderWidth },
   addressDetailsInput: { minHeight: 82, textAlignVertical: "top" },
-  locationSearch: { minHeight: 64, borderRadius: 14, borderWidth: 1, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", gap: 10 },
+  locationSearch: { minHeight: redesign.control.largeHeight, borderRadius: theme.radius.lg, borderWidth: redesign.visual.inputBorderWidth, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", gap: 10 },
   locationSearchText: { flex: 1 },
-  locationPrimary: { fontSize: 14, fontWeight: "700" },
-  locationSecondary: { marginTop: 3, fontSize: 11 },
-  mapPreview: { borderRadius: 16, borderWidth: 1, overflow: "hidden" },
+  locationPrimary: { ...theme.typography.label },
+  locationSecondary: { marginTop: 3, ...theme.typography.caption },
+  mapPreview: { borderRadius: theme.radius.lg, borderWidth: redesign.visual.cardBorderWidth, overflow: "hidden", ...theme.shadows.sm },
   resolvingRow: { minHeight: 32, flexDirection: "row", alignItems: "center", gap: 8 },
-  resolvingText: { fontSize: 12 },
-  saveBtn: { minHeight: 50, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  disabled: { opacity: 0.6 },
-  saveBtnText: { color: theme.colors.white, fontWeight: "800", fontSize: 14 },
-  errorState: { borderRadius: 14, borderWidth: 1, padding: 13, flexDirection: "row", alignItems: "center", gap: 10 },
-  errorText: { flex: 1, fontSize: 13, lineHeight: 18, fontWeight: "600" },
-  retryButton: { minWidth: 58, minHeight: 40, alignItems: "center", justifyContent: "center" },
-  retryText: { fontSize: 13, fontWeight: "800" },
+  resolvingText: { ...theme.typography.caption },
+  saveBtn: { minHeight: redesign.control.standardHeight, borderRadius: theme.radius.md, alignItems: "center", justifyContent: "center", ...theme.shadows.sm },
+  disabled: { opacity: redesign.visual.disabledOpacity },
+  saveBtnText: { color: theme.colors.white, ...theme.typography.label },
+  errorState: { borderRadius: theme.radius.md, borderWidth: redesign.visual.cardBorderWidth, padding: 13, flexDirection: "row", alignItems: "center", gap: 10 },
+  errorText: { flex: 1, ...theme.typography.body, fontFamily: theme.typography.label.fontFamily },
+  retryButton: { minWidth: 58, minHeight: redesign.control.compactHeight, alignItems: "center", justifyContent: "center" },
+  retryText: { ...theme.typography.label },
   emptyState: { alignItems: "center", justifyContent: "center", paddingTop: 60, gap: 12, paddingHorizontal: 24 },
-  emptyTitle: { fontSize: 18, fontWeight: "800" },
-  emptyText: { fontSize: 14, lineHeight: 20 },
-  addFirstBtn: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 14, paddingHorizontal: 24, justifyContent: "center", marginTop: 8 },
-  addFirstText: { color: theme.colors.white, fontWeight: "800", fontSize: 14 },
-  addressCard: { flexDirection: "row", alignItems: "flex-start", gap: 12, borderRadius: 16, borderWidth: 1, padding: 14 },
-  addressIcon: { width: 42, height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  emptyTitle: { ...theme.typography.h2 },
+  emptyText: { ...theme.typography.body },
+  addFirstBtn: { minHeight: redesign.control.standardHeight, flexDirection: "row", alignItems: "center", gap: 8, borderRadius: theme.radius.md, paddingHorizontal: 24, justifyContent: "center", marginTop: 8, ...theme.shadows.sm },
+  addFirstText: { color: theme.colors.white, ...theme.typography.label },
+  addressCard: { flexDirection: "row", alignItems: "flex-start", gap: 12, borderRadius: theme.radius.lg, borderWidth: redesign.visual.cardBorderWidth, padding: 14, ...theme.shadows.sm },
+  addressIcon: { width: 42, height: 42, borderRadius: theme.radius.md, alignItems: "center", justifyContent: "center" },
   addressInfo: { flex: 1, gap: 4 },
   labelRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
-  addressLabel: { fontSize: 14, fontWeight: "800" },
-  defaultBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
-  defaultText: { fontSize: 10, fontWeight: "800" },
-  addressText: { fontSize: 13, lineHeight: 19 },
+  addressLabel: { ...theme.typography.label },
+  defaultBadge: { paddingHorizontal: 8, minHeight: 24, justifyContent: "center", borderRadius: theme.radius.pill },
+  defaultText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily },
+  addressText: { ...theme.typography.body },
   actionsRow: { flexDirection: "row", gap: 14, marginTop: 8, flexWrap: "wrap" },
-  actionBtn: { minHeight: 40, flexDirection: "row", alignItems: "center", gap: 6 },
-  actionBtnText: { fontSize: 12, fontWeight: "800" },
-  modalBackdrop: { position: "absolute", top: 0, bottom: 0, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.55)", padding: 20, justifyContent: "center", zIndex: 100 },
-  modalCard: { borderRadius: 18, padding: 20, gap: 12 },
-  modalTitle: { fontSize: 16, fontWeight: "800" },
-  modalBody: { fontSize: 13, lineHeight: 19 },
+  actionBtn: { minHeight: redesign.control.compactHeight, flexDirection: "row", alignItems: "center", gap: 6 },
+  actionBtnText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily },
+  modalBackdrop: { position: "absolute", top: 0, bottom: 0, left: 0, right: 0, backgroundColor: theme.colors.overlay, padding: 20, justifyContent: "center", zIndex: 100 },
+  modalCard: { borderRadius: theme.radius.xl, padding: 20, gap: 12, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border, ...theme.shadows.md },
+  modalTitle: { ...theme.typography.h3 },
+  modalBody: { ...theme.typography.body },
   modalRow: { flexDirection: "row", gap: 10, marginTop: 6 },
-  modalBtn: { flex: 1, minHeight: 46, borderRadius: 11, alignItems: "center", justifyContent: "center" },
-  modalBtnText: { fontWeight: "800", fontSize: 13 },
-  modalBtnDangerText: { color: theme.colors.white, fontWeight: "800", fontSize: 13 },
+  modalBtn: { flex: 1, minHeight: redesign.control.standardHeight, borderRadius: theme.radius.md, alignItems: "center", justifyContent: "center" },
+  modalBtnText: { ...theme.typography.label },
+  modalBtnDangerText: { color: theme.colors.white, ...theme.typography.label },
 });

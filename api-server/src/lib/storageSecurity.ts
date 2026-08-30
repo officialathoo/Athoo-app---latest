@@ -17,6 +17,9 @@ const MIME_EXTENSIONS: Record<string, Set<string>> = {
 };
 
 const SENSITIVE_NAME = /(cnic|nic[_-]?front|nic[_-]?back|selfie|identity|license|payment|receipt|commission|refund|evidence|bank)/i;
+const DANGEROUS_EXTENSION_SEGMENT = /(?:^|\.)(?:apk|app|bat|bin|cmd|com|cpl|dll|dmg|exe|gadget|hta|htm|html|iso|jar|js|jse|lnk|msi|msp|php[0-9]*|pif|ps1|py|rb|reg|scr|sh|svg|vb|vbe|vbs|wsf)(?:\.|$)/i;
+
+export type UploadScope = "private" | "shared";
 
 export interface UploadPolicyInput { name: string; size?: number; contentType?: string }
 
@@ -25,15 +28,22 @@ export function safeUploadName(name: string): string {
   return base.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-").slice(0, 120) || "file";
 }
 
-export function uploadScopeForName(name: string): "private" | "shared" {
+export function uploadScopeForName(name: string): UploadScope {
   return SENSITIVE_NAME.test(name) ? "private" : "shared";
 }
 
-export function userUploadKey(userId: string, name: string, id: string, date = new Date(), explicitScope?: "private" | "shared"): string {
+export function userUploadKey(userId: string, name: string, id: string, date = new Date(), explicitScope?: UploadScope): string {
   const scope = explicitScope || uploadScopeForName(name);
   return `uploads/${scope}/${userId}/${date.toISOString().slice(0, 10)}/${id}-${safeUploadName(name)}`;
 }
 
+export function userQuarantineKey(userId: string, name: string, id: string, date = new Date()): string {
+  return `uploads/quarantine/incoming/${userId}/${date.toISOString().slice(0, 10)}/${id}-${safeUploadName(name)}`;
+}
+
+export function userScanQuarantineKey(userId: string, name: string, id: string, date = new Date()): string {
+  return `uploads/quarantine/locked/${userId}/${date.toISOString().slice(0, 10)}/${id}-${safeUploadName(name)}`;
+}
 
 export function normalizeStoredObjectPath(value: unknown): string {
   const raw = String(value || "").trim();
@@ -63,6 +73,7 @@ export function validateOwnedUploadObjectPaths(values: unknown, userId: string, 
 
 export function canReadStorageKey(key: string, user: { userId: string; role: string }): boolean {
   const normalized = String(key || "").replace(/^\/+/, "");
+  if (normalized.startsWith("uploads/quarantine/")) return false;
   if (!normalized.startsWith("uploads/private/")) return true; // shared and legacy objects remain compatible
   if (user.role === "admin") return true;
   return normalized.startsWith(`uploads/private/${user.userId}/`);
@@ -79,7 +90,11 @@ export function validateUploadPolicy(input: UploadPolicyInput): string | null {
   const categoryMax = type.startsWith("image/") ? 15 * 1024 * 1024 : type === "application/pdf" ? 25 * 1024 * 1024 : 200 * 1024 * 1024;
   const max = Math.min(Number.isFinite(globalMax) && globalMax > 0 ? globalMax : categoryMax, categoryMax);
   if (Number(input.size) > max) return `File is too large. Maximum allowed size is ${Math.round(max / 1024 / 1024)}MB.`;
-  const ext = path.extname(safeUploadName(input.name)).toLowerCase();
+  const safeName = safeUploadName(input.name);
+  if (DANGEROUS_EXTENSION_SEGMENT.test(safeName)) {
+    return "Executable or active-content file names are not allowed";
+  }
+  const ext = path.extname(safeName).toLowerCase();
   const expected = MIME_EXTENSIONS[type];
   if (!ext || (expected && !expected.has(ext))) return "File extension does not match the declared content type";
   return null;

@@ -8,14 +8,15 @@ const read = (relativePath: string) => fs.readFileSync(path.join(root, relativeP
 const json = (relativePath: string) => JSON.parse(read(relativePath));
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-test("active release documents point only to the authoritative Phase 28.5 candidate", () => {
+test("active release documents point only to the authoritative Athoo V2.2 candidate", () => {
   const readme = read("README.md");
   const connected = read("docs/runbooks/FINAL_CONNECTED_DEPLOYMENT.md");
   const launch = read("docs/runbooks/PRODUCTION_LAUNCH_RUNBOOK.md");
   const candidate = String(json("docs/qa/current-release-status.json").candidate);
   const candidatePattern = new RegExp(escapeRegex(candidate));
+  assert.match(candidate, /^ATHOO_V2_2[A-Z0-9_.-]*\.zip$/);
   for (const text of [readme, connected, launch]) {
-    assert.doesNotMatch(text, /PHASE14|Phase 14/);
+    assert.doesNotMatch(text, /PHASE14|Phase 14|ATHOO_APP_V2_1_CONNECTED_CERTIFICATION_HARDENED/);
   }
   assert.match(connected, candidatePattern);
   assert.match(launch, candidatePattern);
@@ -63,11 +64,11 @@ test("cache and queue readiness never advertise adapters that are not active", (
 
 test("current certification remains honest about external launch gates", () => {
   const status = JSON.parse(read("docs/qa/current-release-status.json"));
-  assert.match(status.candidate, /^ATHOO_PHASE(?:23|24|28)_/);
-  assert.match(status.status, /(?:CONNECTED-VERIFICATION-READY|SOURCE-VERIFIED-CONNECTED-DEVICE-VALIDATION-PENDING|SOURCE-VERIFIED-STRICT-DEVICE-EVIDENCE-PENDING|SOURCE-HARDENED-LOCAL-VERIFICATION-PENDING|SOURCE-HARDENED-LOCAL-VALIDATION-PASSED)/);
+  assert.match(String(status.candidate), /^ATHOO_V2_2[A-Z0-9_.-]*\.zip$/);
+  assert.match(String(status.status), /V2\.2.*(?:PENDING|PASSED)/i);
   assert.match(status.launchDecision, /^NO-GO-/);
   assert.equal(status.externalVerification.connectedRuntime, "pending");
   assert.equal(status.externalVerification.androidDevice, "pending");
   assert.equal(status.externalVerification.iosDevice, "pending");
-  assert.equal(status.externalVerification.loadAndSecurity, "pending");
+  assert.equal(status.externalVerification.loadRecoveryAndSecurity, "pending");
 });

@@ -6,7 +6,7 @@ import { api } from "@/services/api";
 import { uploadPickedImage } from "@/services/storage";
 import * as ImagePicker from "expo-image-picker";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -83,6 +83,8 @@ function formatDate(value?: string | null): string {
   return Number.isNaN(parsed.getTime()) ? dateOnly(value) : parsed.toLocaleDateString("en-PK");
 }
 
+const VERIFICATION_DOCUMENTS_BACKGROUND_REFRESH_MS = 60_000;
+
 export default function VerificationDocumentsScreen() {
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -92,25 +94,66 @@ export default function VerificationDocumentsScreen() {
   const [requests, setRequests] = useState<RenewalRequest[]>([]);
   const [compliance, setCompliance] = useState<Compliance | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [uploadingType, setUploadingType] = useState<string | null>(null);
+  const loadRequestInFlightRef = useRef(false);
+  const documentsLoadedRef = useRef(false);
+  const documentsLastLoadedAtRef = useRef(0);
   const [validityDraft, setValidityDraft] = useState<ValidityDraft | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (
+    mode: "initial" | "refresh" | "background" | "mutation" = "initial"
+  ) => {
+    if (loadRequestInFlightRef.current) return;
+
+    loadRequestInFlightRef.current = true;
+    if (
+      (mode === "initial" && !documentsLoadedRef.current) ||
+      mode === "refresh"
+    ) {
+      setLoading(true);
+    }
+
+    if (mode !== "background") {
+      setLoadError("");
+    }
+
     try {
       const result = await api.getDocumentRenewals();
       setDocuments(result.documents || []);
       setRequests(result.requests || []);
       setCompliance(result.compliance || null);
-      await refreshUser();
+      documentsLoadedRef.current = true;
+      documentsLastLoadedAtRef.current = Date.now();
+      await refreshUser().catch(() => undefined);
     } catch (error) {
-      Alert.alert("Could not load documents", apiErrorToMessage(error, "We couldn't load your documents. Please try again."));
+      if (mode !== "background") {
+        setLoadError(
+          apiErrorToMessage(
+            error,
+            "We couldn't load your documents. Please try again."
+          )
+        );
+      }
     } finally {
+      loadRequestInFlightRef.current = false;
       setLoading(false);
     }
   }, [refreshUser]);
 
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    if (!documentsLoadedRef.current) {
+      void load("initial");
+      return;
+    }
+
+    if (
+      Date.now() - documentsLastLoadedAtRef.current >=
+      VERIFICATION_DOCUMENTS_BACKGROUND_REFRESH_MS
+    ) {
+      void load("background");
+    }
+  }, [load]));
 
   const byType = useMemo(() => new Map(documents.map((doc) => [doc.type, doc])), [documents]);
   const pendingByType = useMemo(() => {
@@ -199,7 +242,7 @@ export default function VerificationDocumentsScreen() {
       } else {
         await api.postDocument({ type: item.type, label: item.label, url: objectPath, ...validityPayload });
       }
-      await load();
+      await load("mutation");
       Alert.alert("Submitted", `${item.label} was sent for administrator review.`);
     } catch (error) {
       Alert.alert("Upload failed", apiErrorToMessage(error, "We couldn't upload this document. Please try again."));
@@ -239,7 +282,7 @@ export default function VerificationDocumentsScreen() {
         onPress: async () => {
           try {
             await api.cancelDocumentRenewal(request.id);
-            await load();
+            await load("mutation");
           } catch (error) {
             Alert.alert("Could not cancel", apiErrorToMessage(error, "Please try again."));
           }
@@ -287,7 +330,36 @@ export default function VerificationDocumentsScreen() {
           </View>
         ) : null}
 
-        {REQUIRED.map((item) => {
+        {loading && !documentsLoadedRef.current ? (
+          <View style={styles.policyBox} accessibilityRole="progressbar">
+            <ActivityIndicator size="small" color={theme.colors.primary} />
+            <Text style={styles.policyText}>Loading verification documents and review status...</Text>
+          </View>
+        ) : loadError && !documentsLoadedRef.current ? (
+          <View
+            style={[
+              styles.policyBox,
+              {
+                backgroundColor: theme.colors.dangerSoft,
+                borderColor: theme.colors.danger,
+              },
+            ]}
+            accessibilityRole="alert"
+          >
+            <Icon name="alert-circle" size={17} color={theme.colors.danger} />
+            <View style={{ flex: 1, gap: 8 }}>
+              <Text style={[styles.policyText, { color: theme.colors.danger }]}>{loadError}</Text>
+              <Pressable
+                onPress={() => void load("refresh")}
+                accessibilityRole="button"
+                testID="provider-verification-load-retry"
+              >
+                <Text style={{ color: theme.colors.primary, fontWeight: "800" }}>Retry</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : (
+          REQUIRED.map((item) => {
           const document = byType.get(item.type);
           const pending = pendingByType.get(item.type);
           const rejectedRequest = requests.find((request) => request.documentType === item.type && request.status === "rejected");
@@ -335,7 +407,24 @@ export default function VerificationDocumentsScreen() {
               )}
             </View>
           );
-        })}
+        })
+        )}
+
+        {loadError && documentsLoadedRef.current ? (
+          <View
+            style={[
+              styles.policyBox,
+              {
+                backgroundColor: theme.colors.dangerSoft,
+                borderColor: theme.colors.danger,
+              },
+            ]}
+            accessibilityRole="alert"
+          >
+            <Icon name="alert-circle" size={17} color={theme.colors.danger} />
+            <Text style={[styles.policyText, { color: theme.colors.danger, flex: 1 }]}>{loadError}</Text>
+          </View>
+        ) : null}
 
         <View style={styles.policyBox}>
           <Icon name="info" size={17} color={theme.colors.primary} />
@@ -344,7 +433,7 @@ export default function VerificationDocumentsScreen() {
           </Text>
         </View>
 
-        <Pressable onPress={() => void load()} disabled={loading} style={styles.refreshButton} testID="provider-verification-refresh">
+        <Pressable onPress={() => void load("refresh")} disabled={loading} style={styles.refreshButton} testID="provider-verification-refresh">
           {loading ? <ActivityIndicator size="small" color={theme.colors.primary} /> : <Icon name="refresh-cw" size={16} color={theme.colors.primary} />}
           <Text style={styles.refreshText}>{loading ? "Refreshing…" : "Refresh review status"}</Text>
         </Pressable>
@@ -418,47 +507,47 @@ export default function VerificationDocumentsScreen() {
 
 const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  header: { flexDirection: "row", alignItems: "center", gap: 12, padding: 18, backgroundColor: theme.colors.surfaceAlt, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
-  backButton: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.background },
-  title: { color: theme.colors.text, fontSize: 19, fontWeight: "800" },
+  header: { flexDirection: "row", alignItems: "center", gap: 10, padding: 14, backgroundColor: theme.colors.surfaceAlt, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  backButton: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.background },
+  title: { color: theme.colors.text, fontSize: 17, fontWeight: "800" },
   subtitle: { color: theme.colors.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 2 },
-  content: { padding: 18, gap: 12 },
-  complianceBox: { flexDirection: "row", gap: 11, padding: 15, borderRadius: 16, borderWidth: 1 },
+  content: { padding: 14, gap: 10},
+  complianceBox: { flexDirection: "row", gap: 9, padding: 12, borderRadius: 14, borderWidth: 1 },
   complianceTitle: { fontSize: 12, fontWeight: "900" },
   complianceText: { color: theme.colors.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 3 },
   deadline: { color: theme.colors.danger, fontSize: 12, fontWeight: "800", marginTop: 7 },
-  noteBox: { flexDirection: "row", gap: 10, padding: 14, borderRadius: 14, backgroundColor: theme.colors.danger + "12", borderWidth: 1, borderColor: theme.colors.danger + "30" },
+  noteBox: { flexDirection: "row", gap: 10, padding: 12, borderRadius: 12, backgroundColor: theme.colors.danger + "12", borderWidth: 1, borderColor: theme.colors.danger + "30" },
   noteText: { flex: 1, color: theme.colors.textSecondary, fontSize: 13, lineHeight: 18 },
-  card: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 16, padding: 14 },
-  statusIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.primary + "12" },
+  card: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 14, padding: 12},
+  statusIcon: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.primary + "12" },
   statusIconRejected: { backgroundColor: theme.colors.danger + "12" },
   cardBody: { flex: 1, gap: 3 },
   cardTitle: { color: theme.colors.text, fontSize: 14, fontWeight: "700" },
   cardStatus: { color: theme.colors.textSecondary, fontSize: 12, textTransform: "capitalize" },
   validityText: { color: theme.colors.textMuted, fontSize: 11 },
   rejection: { color: theme.colors.danger, fontSize: 11, lineHeight: 15 },
-  uploadButton: { minWidth: 76, minHeight: 38, paddingHorizontal: 12, borderRadius: 10, backgroundColor: theme.colors.primary, alignItems: "center", justifyContent: "center" },
+  uploadButton: { minWidth: 76, minHeight: 36, paddingHorizontal: 12, borderRadius: 10, backgroundColor: theme.colors.primary, alignItems: "center", justifyContent: "center" },
   uploadText: { color: theme.colors.onBrand, fontSize: 12, fontWeight: "700", textAlign: "center" },
   secondaryButton: { minWidth: 68, paddingHorizontal: 10, paddingVertical: 9, borderRadius: 10, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border },
   secondaryText: { color: theme.colors.textSecondary, fontSize: 12, fontWeight: "700", textAlign: "center" },
-  policyBox: { flexDirection: "row", gap: 10, padding: 14, borderRadius: 14, backgroundColor: theme.colors.primary + "0D", borderWidth: 1, borderColor: theme.colors.primary + "25" },
+  policyBox: { flexDirection: "row", gap: 10, padding: 12, borderRadius: 14, backgroundColor: theme.colors.primary + "0D", borderWidth: 1, borderColor: theme.colors.primary + "25" },
   policyText: { flex: 1, color: theme.colors.textSecondary, fontSize: 12, lineHeight: 18 },
-  refreshButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, padding: 14, marginTop: 6 },
+  refreshButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, padding: 12, marginTop: 6 },
   refreshText: { color: theme.colors.primary, fontWeight: "700", fontSize: 13 },
   overlay: { flex: 1, justifyContent: "center", padding: 20, backgroundColor: "rgba(0,0,0,0.58)" },
-  modalCard: { width: "100%", maxWidth: 460, alignSelf: "center", borderRadius: 22, padding: 22, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border },
-  modalTitle: { color: theme.colors.text, fontSize: 19, fontWeight: "800" },
-  modalText: { color: theme.colors.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 6, marginBottom: 17 },
-  field: { gap: 7, marginTop: 12 },
+  modalCard: { width: "100%", maxWidth: 460, alignSelf: "center", borderRadius: 18, padding: 18, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border },
+  modalTitle: { color: theme.colors.text, fontSize: 17, fontWeight: "800" },
+  modalText: { color: theme.colors.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 6, marginBottom: 12},
+  field: { gap: 7, marginTop: 10},
   fieldLabel: { color: theme.colors.text, fontSize: 13, fontWeight: "700" },
-  input: { minHeight: 49, borderRadius: 12, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.background, color: theme.colors.text, paddingHorizontal: 14, fontSize: 15 },
+  input: { minHeight: 44, borderRadius: 12, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.background, color: theme.colors.text, paddingHorizontal: 12, fontSize: 15 },
   checkRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10 },
   checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: theme.colors.primary, alignItems: "center", justifyContent: "center" },
   checkboxChecked: { backgroundColor: theme.colors.primary },
   checkText: { flex: 1, color: theme.colors.text, fontSize: 13, fontWeight: "600" },
-  actions: { flexDirection: "row", gap: 10, marginTop: 22 },
-  secondaryAction: { flex: 1, minHeight: 48, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.surfaceAlt },
+  actions: { flexDirection: "row", gap: 10, marginTop: 16},
+  secondaryAction: { flex: 1, minHeight: 44, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.surfaceAlt },
   secondaryActionText: { color: theme.colors.textSecondary, fontSize: 14, fontWeight: "700" },
-  primaryAction: { flex: 1.3, minHeight: 48, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.primary },
+  primaryAction: { flex: 1.3, minHeight: 44, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.primary },
   primaryActionText: { color: theme.colors.onBrand, fontSize: 14, fontWeight: "800" },
 });

@@ -19,12 +19,16 @@ import { useAuth } from "@/context/AuthContext";
 import { useBookings } from "@/context/BookingContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 import type { AthooTheme } from "@/design/theme";
 import { useNotifications } from "@/context/NotificationContext";
 import { useNegotiation } from "@/context/NegotiationContext";
 import { useBroadcast } from "@/context/BroadcastContext";
 import { api, realtime } from "@/services/api";
 import { apiErrorToMessage } from "@/lib/apiError";
+
+const PROVIDER_DASHBOARD_BACKGROUND_REFRESH_MS = 60_000;
 
 export default function ProviderDashboard() {
   const { user, refreshUser } = useAuth();
@@ -42,25 +46,64 @@ export default function ProviderDashboard() {
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [dashboardRefreshing, setDashboardRefreshing] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const dashboardRequestInFlightRef = useRef(false);
+  const dashboardLoadedRef = useRef(false);
+  const dashboardLastLoadedAtRef = useRef(0);
 
-  const loadDashboard = useCallback(async (refresh = false) => {
-    refresh ? setDashboardRefreshing(true) : setDashboardLoading(true);
-    setDashboardError(null);
+  const loadDashboard = useCallback(async (
+    mode: "initial" | "refresh" | "background" | "event" = "initial"
+  ) => {
+    if (dashboardRequestInFlightRef.current) return;
+
+    dashboardRequestInFlightRef.current = true;
+    if (mode === "refresh") {
+      setDashboardRefreshing(true);
+    } else if (mode === "initial" && !dashboardLoadedRef.current) {
+      setDashboardLoading(true);
+    }
+
+    if (mode === "initial" || mode === "refresh") {
+      setDashboardError(null);
+    }
+
     try {
       const response = await api.getProviderDashboard();
       setDashboard(response.dashboard);
+      dashboardLoadedRef.current = true;
+      dashboardLastLoadedAtRef.current = Date.now();
+
       if (typeof response.dashboard?.provider?.isAvailable === "boolean") {
         setIsAvailable(response.dashboard.provider.isAvailable);
       }
     } catch (error: any) {
-      setDashboardError(apiErrorToMessage(error, "Could not load provider dashboard. Please try again."));
+      if (mode === "initial" || mode === "refresh") {
+        setDashboardError(
+          apiErrorToMessage(
+            error,
+            "Could not load provider dashboard. Please try again."
+          )
+        );
+      }
     } finally {
+      dashboardRequestInFlightRef.current = false;
       setDashboardLoading(false);
       setDashboardRefreshing(false);
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { loadDashboard(false); }, [loadDashboard]));
+  useFocusEffect(useCallback(() => {
+    if (!dashboardLoadedRef.current) {
+      void loadDashboard("initial");
+      return;
+    }
+
+    if (
+      Date.now() - dashboardLastLoadedAtRef.current >=
+      PROVIDER_DASHBOARD_BACKGROUND_REFRESH_MS
+    ) {
+      void loadDashboard("background");
+    }
+  }, [loadDashboard]));
 
   useEffect(() => {
     if (latestBroadcast && latestBroadcast.id !== prevBroadcastId.current) {
@@ -111,7 +154,7 @@ export default function ProviderDashboard() {
         if (typeof next === "boolean") {
           setIsAvailable(next);
           refreshUser().catch(() => undefined);
-          loadDashboard(true).catch(() => undefined);
+          loadDashboard("event").catch(() => undefined);
         }
       }
       if (event?.type === "booking:updated" && event?.payload?.booking?.providerId === user?.id) {
@@ -119,12 +162,12 @@ export default function ProviderDashboard() {
         if (["accepted", "on_the_way", "arrived", "started", "in_progress"].includes(status)) {
           setIsAvailable(false);
           refreshUser().catch(() => undefined);
-          loadDashboard(true).catch(() => undefined);
+          loadDashboard("event").catch(() => undefined);
         }
         if (["completed", "cancelled"].includes(status)) {
           setIsAvailable(true);
           refreshUser().catch(() => undefined);
-          loadDashboard(true).catch(() => undefined);
+          loadDashboard("event").catch(() => undefined);
         }
       }
     });
@@ -155,7 +198,7 @@ export default function ProviderDashboard() {
   return (
     <View style={[styles.container, { paddingTop: topPad, backgroundColor: theme.colors.background }]}>
       {/* Broadcast New Job Popup */}
-      <Modal visible={!!broadcastPopup} transparent animationType="fade">
+      <Modal visible={!!broadcastPopup} transparent animationType="fade" statusBarTranslucent onRequestClose={() => { setBroadcastPopup(null); dismissLatestBroadcast(); }}>
         <View style={styles.popupOverlay}>
           <View style={[styles.popupCard, { backgroundColor: theme.colors.elevated }]}>
             <View style={styles.popupIconRow}>
@@ -234,10 +277,10 @@ export default function ProviderDashboard() {
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 80 }]}
-        refreshControl={<RefreshControl refreshing={dashboardRefreshing} onRefresh={() => loadDashboard(true)} />}
+        refreshControl={<RefreshControl refreshing={dashboardRefreshing} onRefresh={() => void loadDashboard("refresh")} />}
       >
         {dashboardError ? (
-          <Pressable style={styles.dashboardError} onPress={() => loadDashboard(true)} accessibilityRole="button" testID="provider-dashboard-retry">
+          <Pressable style={styles.dashboardError} onPress={() => void loadDashboard("refresh")} accessibilityRole="button" testID="provider-dashboard-retry">
             <Icon name="alert-circle" size={16} color={theme.colors.danger} />
             <Text style={styles.dashboardErrorText}>{tr(dashboardError)}. {tr("Tap to retry.")}</Text>
           </Pressable>
@@ -287,7 +330,7 @@ export default function ProviderDashboard() {
                 const next = !!res?.user?.isAvailable;
                 setIsAvailable(next);
                 await refreshUser();
-                await loadDashboard(true);
+                await loadDashboard("event");
               } catch (e: any) {
                 setIsAvailable(user?.isAvailable !== false);
                 Alert.alert("Availability", apiErrorToMessage(e, "You cannot turn available while busy on an active job."));
@@ -453,32 +496,45 @@ export default function ProviderDashboard() {
 
 const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  dashboardError: { marginHorizontal: 16, marginBottom: 12, padding: 12, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: theme.colors.danger + "10", borderWidth: 1, borderColor: theme.colors.danger + "30" },
+  dashboardError: {
+    marginBottom: redesign.layout.cardGap,
+    padding: 12,
+    borderRadius: radius.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: theme.colors.dangerSoft,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.danger + "30",
+  },
   dashboardErrorText: { flex: 1, color: theme.colors.danger, fontSize: 12, fontWeight: "600" },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 14,
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: 12,
+    paddingBottom: 10,
     backgroundColor: theme.colors.surface,
-    borderBottomWidth: 1,
+    borderBottomWidth: redesign.visual.cardBorderWidth,
     borderBottomColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
-  greeting: { fontSize: 18, fontWeight: "800", color: theme.colors.text },
+  greeting: { ...theme.typography.h2, color: theme.colors.text },
   subGreeting: {
     fontSize: 13,
     color: theme.colors.textSecondary,
     marginTop: 2,
   },
   notifBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: radius.md,
     backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
   },
   notifBadge: {
     position: "absolute",
@@ -498,14 +554,23 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     fontWeight: "800",
   },
   scroll: { flex: 1 },
-  scrollContent: { padding: 20, paddingBottom: 100, gap: 16 },
+  scrollContent: {
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: redesign.layout.cardGap,
+    paddingBottom: 100,
+    gap: redesign.layout.cardGap,
+    width: "100%",
+    maxWidth: redesign.layout.maxContentWidth,
+    alignSelf: "center",
+  },
   statusCard: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1.5,
+    borderRadius: radius.lg,
+    padding: redesign.layout.cardGap,
+    borderWidth: redesign.visual.cardBorderWidth,
+    ...theme.shadows.sm,
   },
   statusLeft: {
     flexDirection: "row",
@@ -524,16 +589,18 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     color: theme.colors.textSecondary,
     marginTop: 1,
   },
-  statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: redesign.layout.cardGap },
   statCard: {
     flex: 1,
     minWidth: "45%",
-    borderRadius: 14,
-    padding: 14,
+    borderRadius: radius.md,
+    padding: redesign.layout.cardGap,
     alignItems: "center",
     gap: 4,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
   },
-  statVal: { fontSize: 24, fontWeight: "800" },
+  statVal: { fontSize: 22, fontWeight: "800" },
   statLabel: {
     fontSize: 11,
     fontWeight: "600",
@@ -541,16 +608,25 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   section: { gap: 4 },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "800",
     color: theme.colors.text,
-    marginBottom: 10,
+    marginBottom: 8,
   },
-  empty: { alignItems: "center", paddingVertical: 40, gap: 10 },
+  empty: {
+    alignItems: "center",
+    paddingVertical: 32,
+    gap: 10,
+    backgroundColor: theme.colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
+  },
   emptyIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 22,
+    width: 60,
+    height: 60,
+    borderRadius: radius.lg,
     backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
@@ -564,11 +640,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   performanceCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 18,
-    padding: 16,
-    gap: 12,
-    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: redesign.layout.fieldGap,
+    gap: 10,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
   perfTitle: { fontSize: 15, fontWeight: "700", color: theme.colors.text },
   perfRow: {
@@ -583,8 +660,15 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   perfVal: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
 
-  earningsChart: { backgroundColor: theme.colors.surface, borderRadius: 18, padding: 16, borderWidth: 1, borderColor: theme.colors.border },
-  chartHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 },
+  earningsChart: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: radius.lg,
+    padding: redesign.layout.fieldGap,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
+  },
+  chartHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10},
   chartTitle: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
   chartTotal: { fontSize: 13, fontWeight: "700", color: theme.colors.primary },
   chartBars: { flexDirection: "row", alignItems: "flex-end", gap: 6, height: 80 },
@@ -597,17 +681,17 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: theme.colors.secondary + "12",
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1.5,
+    backgroundColor: theme.colors.premiumSoft,
+    borderRadius: radius.lg,
+    padding: redesign.layout.cardGap,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.secondary + "40",
   },
   broadcastBannerLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
   broadcastBannerIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: redesign.control.compactHeight,
+    height: redesign.control.compactHeight,
+    borderRadius: radius.md,
     backgroundColor: theme.colors.secondary,
     alignItems: "center",
     justifyContent: "center",
@@ -624,19 +708,18 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   popupCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 22,
-    padding: 20,
+    borderRadius: radius.xl,
+    padding: redesign.layout.sectionGap,
     width: "100%",
-    gap: 14,
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 20,
+    maxWidth: 520,
+    gap: redesign.layout.cardGap,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    ...theme.shadows.md,
   },
   popupIconRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   popupIconBg: {
-    width: 48, height: 48, borderRadius: 14,
+    width: redesign.control.iconButtonSize, height: redesign.control.iconButtonSize, borderRadius: radius.md,
     backgroundColor: theme.colors.secondary,
     alignItems: "center", justifyContent: "center",
   },
@@ -646,14 +729,24 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   popupRowText: { flex: 1, fontSize: 13, color: theme.colors.textSecondary, lineHeight: 18 },
   popupBtns: { flexDirection: "row", gap: 10, marginTop: 4 },
   popupDismiss: {
-    flex: 1, paddingVertical: 12, borderRadius: 12,
-    backgroundColor: theme.colors.surfaceAlt, alignItems: "center",
-    borderWidth: 1, borderColor: theme.colors.border,
+    flex: 1,
+    minHeight: redesign.control.standardHeight,
+    borderRadius: radius.md,
+    backgroundColor: theme.colors.surfaceAlt,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
   },
   popupDismissText: { fontSize: 14, fontWeight: "700", color: theme.colors.textSecondary },
   popupView: {
-    flex: 2, paddingVertical: 12, borderRadius: 12,
-    backgroundColor: theme.colors.secondary, alignItems: "center",
+    flex: 2,
+    minHeight: redesign.control.standardHeight,
+    borderRadius: radius.md,
+    backgroundColor: theme.colors.secondary,
+    alignItems: "center",
+    justifyContent: "center",
+    ...theme.shadows.sm,
   },
   popupViewText: { fontSize: 14, fontWeight: "800", color: theme.colors.onBrand },
 });

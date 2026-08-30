@@ -2,8 +2,12 @@ openapi: 3.1.0
 info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
-  version: 0.1.0
-  description: API specification
+  version: 0.2.0
+  description: |
+    Athoo services platform API. Covers the core customer/provider flows:
+    OTP auth and sessions, profile, notifications, calls, and road routing.
+    Remaining domains (bookings lifecycle, negotiations, broadcasts, finance,
+    admin) are being added incrementally.
 servers:
   - url: /api
     description: Base API path
@@ -12,6 +16,18 @@ tags:
     description: Health operations
   - name: storage
     description: Object storage operations
+  - name: auth
+    description: OTP authentication, sessions, and device push tokens
+  - name: account
+    description: Authenticated user profile
+  - name: notifications
+    description: In-app notification inbox and delivery preferences
+  - name: calls
+    description: WebRTC voice calls (configuration and history)
+  - name: geo
+    description: Map tiles, geocoding, and road routing
+security:
+  - bearerAuth: []
 paths:
   /healthz:
     get:
@@ -19,6 +35,7 @@ paths:
       tags: [health]
       summary: Health check
       description: Returns server health status
+      security: []
       responses:
         "200":
           description: Healthy
@@ -51,7 +68,446 @@ paths:
         "500":
           description: Failed to generate upload URL
 
+  /auth/send-otp:
+    post:
+      operationId: sendOtp
+      tags: [auth]
+      summary: Send a one-time code
+      description: Delivers an OTP over SMS or email for login or registration purposes. Rate limited per destination.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                phone:
+                  type: string
+                  description: E.164 or local phone number (required unless email is provided)
+                email:
+                  type: string
+                purpose:
+                  type: string
+                  enum: [login, register]
+                role:
+                  type: string
+                  enum: [customer, provider]
+              required: [purpose]
+      responses:
+        "200":
+          description: Code dispatched
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  isNewUser:
+                    type: boolean
+                    description: Whether this destination has no account yet
+        "400":
+          description: Invalid destination or purpose
+        "429":
+          description: Too many codes requested; retry later
+
+  /auth/verify-otp:
+    post:
+      operationId: verifyOtp
+      tags: [auth]
+      summary: Verify a one-time code and open a session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                phone:
+                  type: string
+                email:
+                  type: string
+                code:
+                  type: string
+                purpose:
+                  type: string
+                  enum: [login, register]
+                role:
+                  type: string
+                  enum: [customer, provider]
+                deviceId:
+                  type: string
+                  description: Stable client install identifier used for new-device alerts
+              required: [code]
+      responses:
+        "200":
+          description: Session created (or registration completed)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+        "400":
+          description: Invalid or expired code
+        "401":
+          description: Verification failed
+        "500":
+          description: Verification failure (see error.code)
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Complete registration after OTP verification
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                phone:
+                  type: string
+                name:
+                  type: string
+                role:
+                  type: string
+                  enum: [customer, provider]
+                deviceId:
+                  type: string
+              required: [phone, name, role]
+      responses:
+        "200":
+          description: Account created and session opened
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+        "400":
+          description: Invalid registration details
+        "409":
+          description: An account already exists for this destination
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [account]
+      summary: Current user profile
+      responses:
+        "200":
+          description: The authenticated user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: "#/components/schemas/SafeUser"
+                required: [user]
+        "401":
+          description: Not authenticated
+    patch:
+      operationId: updateMe
+      tags: [account]
+      summary: Update editable profile fields
+      description: Only display fields may change here. Phone/email changes require dedicated verification flows.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                location:
+                  type: string
+                bio:
+                  type: string
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  user:
+                    $ref: "#/components/schemas/SafeUser"
+        "401":
+          description: Not authenticated
+
+  /auth/push-token:
+    patch:
+      operationId: registerPushToken
+      tags: [auth]
+      summary: Register or replace the device Expo push token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expoPushToken:
+                  type: string
+                  nullable: true
+                  description: Pass null to unregister this device
+                deviceId:
+                  type: string
+                platform:
+                  type: string
+                  enum: [ios, android, web]
+      responses:
+        "200":
+          description: Registration result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  registered:
+                    type: boolean
+        "401":
+          description: Not authenticated
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Revoke the current session
+      description: Also releases push token ownership when this is the last logged-in device.
+      responses:
+        "200":
+          description: Session revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /me/notifications:
+    get:
+      operationId: listNotifications
+      tags: [notifications]
+      summary: List the inbox (newest first)
+      parameters:
+        - in: query
+          name: cursor
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+      responses:
+        "200":
+          description: A page of notifications
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPage"
+        "401":
+          description: Not authenticated
+    delete:
+      operationId: deleteAllNotifications
+      tags: [notifications]
+      summary: Clear the inbox
+      responses:
+        "200":
+          description: All notifications removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          description: Not authenticated
+
+  /me/notifications/{id}/read:
+    patch:
+      operationId: markNotificationRead
+      tags: [notifications]
+      summary: Mark one notification as read
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Marked read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          description: Not authenticated
+        "404":
+          description: Notification not found
+
+  /me/notifications/read-all:
+    post:
+      operationId: markAllNotificationsRead
+      tags: [notifications]
+      summary: Mark every notification as read
+      responses:
+        "200":
+          description: All marked read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          description: Not authenticated
+
+  /me/notification-preferences:
+    get:
+      operationId: getNotificationPreferences
+      tags: [notifications]
+      summary: Push category preferences
+      description: Preferences gate native push only; in-app and WebSocket delivery are always recorded.
+      responses:
+        "200":
+          description: Effective preferences (defaults applied when no row exists)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPreferencesState"
+        "401":
+          description: Not authenticated
+    patch:
+      operationId: updateNotificationPreferences
+      tags: [notifications]
+      summary: Update push category preferences
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                jobs: { type: boolean }
+                messages: { type: boolean }
+                calls: { type: boolean }
+                general: { type: boolean }
+      responses:
+        "200":
+          description: Updated preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPreferencesState"
+        "401":
+          description: Not authenticated
+
+  /calls/config:
+    get:
+      operationId: getCallConfig
+      tags: [calls]
+      summary: Secure call configuration
+      description: Returns ICE server configuration (Cloudflare TURN primary), production readiness, and audio fallback tuning.
+      responses:
+        "200":
+          description: Call configuration snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider:
+                    type: string
+                  productionReady:
+                    type: boolean
+                  hasTurn:
+                    type: boolean
+                  warning:
+                    type: string
+                    nullable: true
+                  credentialMode:
+                    type: string
+                    enum: [static, short-lived, none]
+        "401":
+          description: Not authenticated
+        "503":
+          description: Configuration temporarily unavailable
+
+  /calls/history:
+    get:
+      operationId: getCallHistory
+      tags: [calls]
+      summary: Recent calls involving the current user
+      description: Includes live names and stable public IDs for both parties at read time, plus the pair chat id for deep linking.
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, maximum: 5000, default: 0 }
+      responses:
+        "200":
+          description: A page of call history entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  calls:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CallHistoryEntry"
+                required: [calls]
+        "401":
+          description: Not authenticated
+        "500":
+          description: Failed to load call history
+
+  /geo/directions:
+    get:
+      operationId: getDirections
+      tags: [geo]
+      summary: Road-following route between two points
+      description: Uses the configured directions provider with fallback; degrades to a straight line when no provider is available. Cached ~5 minutes per endpoint pair.
+      parameters:
+        - in: query
+          name: originLat
+          required: true
+          schema: { type: number }
+        - in: query
+          name: originLng
+          required: true
+          schema: { type: number }
+        - in: query
+          name: destLat
+          required: true
+          schema: { type: number }
+        - in: query
+          name: destLng
+          required: true
+          schema: { type: number }
+      responses:
+        "200":
+          description: Polyline and route metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DirectionsResult"
+        "400":
+          description: Invalid coordinates
+        "401":
+          description: Not authenticated
+
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Session token returned by verify-otp/register/login.
+
   schemas:
     HealthStatus:
       type: object
@@ -99,3 +555,210 @@ components:
         - uploadURL
         - objectPath
         - metadata
+
+    SafeUser:
+      type: object
+      description: User record without secrets (password, push tokens, admin lockout state).
+      properties:
+        id:
+          type: string
+        publicId:
+          type: string
+          description: Stable human-facing identifier; survives name changes.
+        name:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: [customer, provider, admin]
+        isBlocked:
+          type: boolean
+        isDeactivated:
+          type: boolean
+        verificationStatus:
+          type: string
+          nullable: true
+      required:
+        - id
+        - role
+
+    AuthSession:
+      type: object
+      properties:
+        success:
+          type: boolean
+        purpose:
+          type: string
+        token:
+          type: string
+          description: Bearer session token
+        refreshToken:
+          type: string
+        expiresInSeconds:
+          type: number
+        replacedSessionCount:
+          type: number
+          description: Sessions invalidated by single-device enforcement
+        singleDeviceEnforced:
+          type: boolean
+        user:
+          $ref: "#/components/schemas/SafeUser"
+        isNewUser:
+          type: boolean
+      required:
+        - success
+        - token
+        - user
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+      required:
+        - success
+
+    NotificationItem:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        type:
+          type: string
+          description: Category key (booking, message, call, account, system, ...).
+        link:
+          type: string
+          nullable: true
+        data:
+          type: object
+          additionalProperties: true
+          nullable: true
+        isRead:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - type
+
+    NotificationPage:
+      type: object
+      properties:
+        notifications:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationItem"
+        unread:
+          type: number
+        hasMore:
+          type: boolean
+        nextCursor:
+          type: string
+          nullable: true
+      required:
+        - notifications
+
+    NotificationPreferencesState:
+      type: object
+      properties:
+        preferences:
+          type: object
+          properties:
+            userId:
+              type: string
+            jobsEnabled:
+              type: boolean
+            messagesEnabled:
+              type: boolean
+            callsEnabled:
+              type: boolean
+            generalEnabled:
+              type: boolean
+          required:
+            - userId
+            - jobsEnabled
+            - messagesEnabled
+            - callsEnabled
+            - generalEnabled
+      required:
+        - preferences
+
+    CallHistoryEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        direction:
+          type: string
+          enum: [incoming, outgoing]
+        otherUserId:
+          type: string
+        otherUserName:
+          type: string
+          nullable: true
+        otherUserPublicId:
+          type: string
+          nullable: true
+        service:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [ringing, active, ended, rejected]
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        endedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        chatId:
+          type: string
+          nullable: true
+          description: Pair chat id when a conversation exists, for deep linking.
+      required:
+        - id
+        - direction
+        - otherUserId
+        - status
+        - createdAt
+
+    DirectionsResult:
+      type: object
+      properties:
+        polyline:
+          type: array
+          items:
+            type: object
+            properties:
+              latitude:
+                type: number
+              longitude:
+                type: number
+            required: [latitude, longitude]
+        distanceKm:
+          type: number
+        durationMin:
+          type: number
+          nullable: true
+        source:
+          type: string
+          description: Provider name, `provider-cache`, or `straight_line` fallback.
+      required:
+        - polyline
+        - distanceKm
+        - source

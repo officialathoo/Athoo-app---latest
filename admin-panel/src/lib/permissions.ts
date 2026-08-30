@@ -3,26 +3,26 @@ import type { AdminUser } from "@/lib/types";
 export const ADMIN_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
   super_admin: ["*"],
   ops: [
-    "dashboard.read", "notifications.read", "users.read", "users.write", "providers.write",
-    "bookings.read", "bookings.write", "operations.read", "operations.write",
+    "dashboard.read", "notifications.read", "notifications.write", "notifications.manage", "users.read", "users.write", "providers.read", "providers.write", "providers.verification",
+    "bookings.read", "bookings.write", "bookings.cancel", "bookings.reassign", "operations.read", "operations.write",
     "verification.read", "verification.write", "complaints.read", "complaints.write",
-    "broadcasts.read", "broadcasts.write", "reports.read", "audit.read",
+    "broadcasts.read", "broadcasts.write", "reports.read", "reports.export", "audit.read", "audit.full", "log.view",
   ],
   finance: [
     "dashboard.read", "notifications.read", "users.read", "bookings.read",
-    "finance.read", "finance.write", "reports.read", "export.read", "audit.read", "settings.read",
+    "finance.read", "finance.write", "reports.read", "reports.export", "export.read", "export.write", "audit.read", "audit.full", "log.view", "settings.read",
   ],
   support: [
-    "dashboard.read", "notifications.read", "users.read", "bookings.read",
-    "complaints.read", "complaints.write", "support.read", "support.write", "broadcasts.read",
+    "dashboard.read", "notifications.read", "notifications.manage", "users.read", "bookings.read",
+    "complaints.read", "complaints.write", "support.read", "support.write", "broadcasts.read", "reports.read", "audit.read", "log.view",
   ],
   marketing: [
-    "dashboard.read", "notifications.read", "notifications.write", "marketing.read", "marketing.write",
-    "promotions.read", "promotions.write", "broadcasts.read", "broadcasts.write", "reports.read",
+    "dashboard.read", "notifications.read", "notifications.write", "notifications.manage", "marketing.read", "marketing.write",
+    "promotions.read", "promotions.write", "broadcasts.read", "broadcasts.write", "reports.read", "reports.export", "audit.read", "log.view",
   ],
   technical: [
-    "dashboard.read", "notifications.read", "users.read", "bookings.read", "operations.read",
-    "reports.read", "export.read", "audit.read", "settings.read", "settings.write",
+    "dashboard.read", "notifications.read", "notifications.manage", "users.read", "bookings.read", "operations.read",
+    "reports.read", "reports.export", "export.read", "export.write", "audit.read", "audit.full", "log.view", "settings.read", "settings.write", "settings.full",
   ],
 };
 

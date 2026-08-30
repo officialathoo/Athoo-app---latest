@@ -23,13 +23,13 @@ import { useNegotiation } from "@/context/NegotiationContext";
 import { useLang } from "@/context/LanguageContext";
 import { useNotifications } from "@/context/NotificationContext";
 import { buildRepeatBookingParams } from "@/utils/repeatBooking";
-import { ServiceHistoryInsights } from "@/components/design/ServiceHistoryInsights";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 
 export default function BookingsScreen() {
   const { user } = useAuth();
-  const { getMyBookings, pendingAlerts, consumeAlerts, rateBooking } = useBookings();
+  const { getMyBookings, pendingAlerts, consumeAlerts, rateBooking, hasMore, isLoadingMore, loadMoreBookings } = useBookings();
   const { getOrCreateChat } = useChat();
   const { push } = useNotifications();
   const [rateTarget, setRateTarget] = useState<Booking | null>(null);
@@ -106,11 +106,13 @@ export default function BookingsScreen() {
   const localizedText = { textAlign, writingDirection } as const;
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const [activeFilter, setActiveFilter] = useState<BookingStatus | "all">("all");
+  type BookingFilter = BookingStatus | "all" | "scheduled";
+  const [activeFilter, setActiveFilter] = useState<BookingFilter>("all");
   const [mainTab, setMainTab] = useState<"bookings" | "offers">("bookings");
 
-  const FILTERS: { label: string; value: BookingStatus | "all"; icon: string; color: string }[] = [
-    { label: isUrdu ? "سب" : "All", value: "all", icon: "list", color: theme.colors.primary },
+  const FILTERS: { label: string; value: BookingFilter; icon: string; color: string }[] = [
+    { label: isUrdu ? "Ø³Ø¨" : "All", value: "all", icon: "list", color: theme.colors.primary },
+    { label: tr("Scheduled"), value: "scheduled", icon: "calendar", color: theme.colors.secondary },
     { label: t.pending, value: "pending", icon: "clock", color: theme.colors.warning },
     { label: t.active, value: "accepted", icon: "check-circle", color: theme.colors.info },
     { label: t.inProgress, value: "in_progress", icon: "play-circle", color: theme.colors.accent },
@@ -119,15 +121,34 @@ export default function BookingsScreen() {
   ];
 
   const myNegotiations = user ? getMyNegotiations(user.id) : [];
-  const allBookings = user ? getMyBookings(user.id, "customer") : [];
+  const activeNegotiations = myNegotiations.filter(
+    (neg) => neg.status === "customer_offer" || neg.status === "provider_counter"
+  );
+  const allBookings = useMemo(() => {
+    const rows = user ? getMyBookings(user.id, "customer") : [];
+    const unique = new Map<string, Booking>();
+    for (const booking of rows) unique.set(booking.id, booking);
+    return Array.from(unique.values()).sort(
+      (a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()
+    );
+  }, [user, getMyBookings]);
+  const now = new Date();
+  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const isScheduledBooking = (booking: Booking) =>
+    (booking.status === "pending" || booking.status === "accepted") &&
+    Boolean(booking.scheduledDate) &&
+    booking.scheduledDate >= todayKey;
   const filtered = activeFilter === "all"
     ? allBookings
-    : allBookings.filter((b) => b.status === activeFilter);
+    : activeFilter === "scheduled"
+      ? allBookings.filter(isScheduledBooking)
+      : allBookings.filter((b) => b.status === activeFilter && !isScheduledBooking(b));
 
   const counts = {
     all: allBookings.length,
-    pending: allBookings.filter(b => b.status === "pending").length,
-    accepted: allBookings.filter(b => b.status === "accepted").length,
+    scheduled: allBookings.filter(isScheduledBooking).length,
+    pending: allBookings.filter(b => b.status === "pending" && !isScheduledBooking(b)).length,
+    accepted: allBookings.filter(b => b.status === "accepted" && !isScheduledBooking(b)).length,
     in_progress: allBookings.filter(b => b.status === "in_progress").length,
     completed: allBookings.filter(b => b.status === "completed").length,
     cancelled: allBookings.filter(b => b.status === "cancelled").length,
@@ -149,7 +170,7 @@ export default function BookingsScreen() {
         <View>
           <Text style={[styles.title, isUrdu && styles.urduText]}>{mainTab === "bookings" ? t.myBookings : t.myOffers}</Text>
           <Text style={[styles.subtitle, isUrdu && styles.urduText]}>
-            {mainTab === "bookings" ? `${allBookings.length} ${t.totalBookings}` : `${myNegotiations.length} ${t.priceNegotiations}`}
+            {mainTab === "bookings" ? `${allBookings.length} ${t.totalBookings}` : `${activeNegotiations.length} ${t.priceNegotiations}`}
           </Text>
         </View>
         <Pressable
@@ -177,15 +198,15 @@ export default function BookingsScreen() {
         >
           <Icon name="dollar-sign" size={14} color={mainTab === "offers" ? theme.colors.secondary : theme.colors.textMuted} />
           <Text style={[styles.mainTabText, mainTab === "offers" && { color: theme.colors.secondary }, isUrdu && styles.urduText]}>{t.myOffers}</Text>
-          {myNegotiations.length > 0 && <View style={[styles.tabBadge, mainTab === "offers" && { backgroundColor: theme.colors.secondary }]}>
-            <Text style={[styles.tabBadgeText, mainTab === "offers" && { color: theme.colors.onBrand }]}>{myNegotiations.length}</Text>
+          {activeNegotiations.length > 0 && <View style={[styles.tabBadge, mainTab === "offers" && { backgroundColor: theme.colors.secondary }]}>
+            <Text style={[styles.tabBadgeText, mainTab === "offers" && { color: theme.colors.onBrand }]}>{activeNegotiations.length}</Text>
           </View>}
         </Pressable>
       </View>
 
       {mainTab === "offers" ? (
         <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 80 }]} showsVerticalScrollIndicator={false}>
-          {myNegotiations.length === 0 ? (
+          {activeNegotiations.length === 0 ? (
             <View style={styles.empty}>
               <View style={styles.emptyIcon}><Icon name="dollar-sign" size={30} color={theme.colors.textMuted} /></View>
               <Text style={[styles.emptyTitle, localizedText]}>{tr("No price offers yet")}</Text>
@@ -194,7 +215,7 @@ export default function BookingsScreen() {
                 <Text style={styles.findBtnText}>{tr("Browse Services")}</Text>
               </Pressable>
             </View>
-          ) : myNegotiations.map((neg, i) => {
+          ) : activeNegotiations.map((neg, i) => {
             const st = getNegStatus(neg.status);
             return (
               <AnimatedCard key={`${neg.id}-${i}`} delay={i * 50}>
@@ -287,21 +308,6 @@ export default function BookingsScreen() {
                     </View>
                   )}
 
-                  {neg.status === "accepted" && neg.finalPrice !== undefined && (
-                    <View style={styles.negActions}>
-                      <Pressable
-                        style={styles.negBookNowBtn}
-                        onPress={() => router.push({
-                          pathname: "/(customer)/book-service",
-                          params: { providerId: neg.providerId, negotiatedPrice: String(neg.finalPrice) },
-                        })}
-                      >
-                        <Icon name="check-circle" size={14} color={theme.colors.onBrand} />
-                        <Text style={styles.negBookNowText}>Complete Booking · {formatCurrency(neg.finalPrice)}</Text>
-                      </Pressable>
-                    </View>
-                  )}
-
                   {neg.messages.length > 0 && (
                     <View style={styles.negLastMsg}>
                       <Icon name="message-circle" size={12} color={theme.colors.textMuted} />
@@ -367,12 +373,6 @@ export default function BookingsScreen() {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 80 }]}
         showsVerticalScrollIndicator={false}
       >
-        {activeFilter === "all" && (
-          <ServiceHistoryInsights
-            bookings={allBookings}
-            onBookAgain={(booking) => router.push({ pathname: "/(customer)/book-service" as any, params: buildRepeatBookingParams(booking) } as any)}
-          />
-        )}
         {filtered.length === 0 ? (
           <AnimatedCard>
             <View style={styles.empty}>
@@ -381,7 +381,7 @@ export default function BookingsScreen() {
               </View>
               <Text style={styles.emptyTitle}>No bookings</Text>
               <Text style={styles.emptySubtitle}>
-                {activeFilter === "all" ? "Book a service to get started" : `No ${activeFilter} bookings`}
+                {activeFilter === "all" ? "Book a service to get started" : activeFilter === "scheduled" ? tr("No scheduled bookings") : `No ${activeFilter} bookings`}
               </Text>
               {activeFilter === "all" && (
                 <Pressable style={styles.findBtn} onPress={() => router.push("/(customer)/(tabs)/search")}>
@@ -411,6 +411,18 @@ export default function BookingsScreen() {
             </AnimatedCard>
           ))
         )}
+
+        {mainTab === "bookings" && hasMore ? (
+          <Pressable
+            accessibilityRole="button"
+            disabled={isLoadingMore}
+            style={styles.billingLink}
+            onPress={() => void loadMoreBookings()}
+          >
+            <Icon name="chevrons-down" size={15} color={theme.colors.primary} />
+            <Text style={styles.billingLinkText}>{isLoadingMore ? tr("Loading older bookings...") : tr("Load older bookings")}</Text>
+          </Pressable>
+        ) : null}
 
         {filtered.length > 0 && (
           <AnimatedCard delay={filtered.length * 40 + 60}>
@@ -486,35 +498,37 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: 12,
     paddingBottom: 12,
     backgroundColor: theme.colors.surface,
-    borderBottomWidth: 1,
+    borderBottomWidth: redesign.visual.cardBorderWidth,
     borderBottomColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
-  title: { fontSize: 20, fontWeight: "800", color: theme.colors.text },
-  subtitle: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 },
+  title: { ...theme.typography.h2, color: theme.colors.text, letterSpacing: -0.3 },
+  subtitle: { ...theme.typography.caption, color: theme.colors.textSecondary, marginTop: 2 },
   newBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
     backgroundColor: theme.colors.primary,
     alignItems: "center",
     justifyContent: "center",
+    ...theme.shadows.sm,
   },
   summaryStrip: {
     flexDirection: "row",
     backgroundColor: theme.colors.surface,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingVertical: 10,
+    paddingHorizontal: redesign.layout.horizontalPadding,
     alignItems: "center",
-    borderBottomWidth: 1,
+    borderBottomWidth: redesign.visual.cardBorderWidth,
     borderBottomColor: theme.colors.border,
   },
   stripItem: { flex: 1, alignItems: "center", gap: 2 },
-  stripVal: { fontSize: 16, fontWeight: "800" },
-  stripLabel: { fontSize: 10, color: theme.colors.textSecondary, fontWeight: "600" },
+  stripVal: { ...theme.typography.h3 },
+  stripLabel: { ...theme.typography.caption, color: theme.colors.textSecondary, fontFamily: theme.typography.label.fontFamily },
   stripDiv: { width: 1, height: 30, backgroundColor: theme.colors.border },
   filterScroll: {
     backgroundColor: theme.colors.surface,
@@ -523,19 +537,19 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexGrow: 0,
     flexShrink: 0,
   },
-  filterContent: { paddingHorizontal: 16, paddingVertical: 10, gap: 8 },
+  filterContent: { paddingHorizontal: redesign.layout.horizontalPadding, paddingVertical: 9, gap: 8 },
   filterChip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 12,
+    gap: 6,
+    paddingHorizontal: 11,
     paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: theme.colors.background,
-    borderWidth: 1.5,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.border,
   },
-  filterText: { fontSize: 11, fontWeight: "600", color: theme.colors.textSecondary },
+  filterText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.textSecondary },
   filterTextActive: { color: theme.colors.onBrand },
   badge: {
     width: 16,
@@ -549,25 +563,27 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   badgeText: { fontSize: 9, fontWeight: "700", color: theme.colors.textSecondary },
   badgeTextActive: { color: theme.colors.onBrand },
   scroll: { flex: 1 },
-  scrollContent: { padding: 16, paddingBottom: 100, gap: 0 },
-  empty: { alignItems: "center", paddingVertical: 60, gap: 8 },
+  scrollContent: { padding: redesign.layout.horizontalPadding, paddingBottom: 100, gap: 0 },
+  empty: { alignItems: "center", paddingVertical: 42, gap: 8 },
   emptyIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
+    width: 56,
+    height: 56,
+    borderRadius: theme.radius.xl,
     backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 4,
   },
-  emptyTitle: { fontSize: 16, fontWeight: "700", color: theme.colors.text },
-  emptySubtitle: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center" },
+  emptyTitle: { ...theme.typography.h3, color: theme.colors.text },
+  emptySubtitle: { ...theme.typography.body, color: theme.colors.textSecondary, textAlign: "center" },
   findBtn: {
     marginTop: 10,
     backgroundColor: theme.colors.primary,
     paddingHorizontal: 24,
-    paddingVertical: 11,
-    borderRadius: 14,
+    minHeight: redesign.control.standardHeight,
+    borderRadius: theme.radius.md,
+    alignItems: "center",
+    justifyContent: "center",
   },
   findBtnText: { color: theme.colors.onBrand, fontWeight: "700", fontSize: 14 },
   bookAgainBtn: {
@@ -600,9 +616,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   mainTabRow: {
     flexDirection: "row",
     backgroundColor: theme.colors.surface,
-    borderBottomWidth: 1,
+    borderBottomWidth: redesign.visual.cardBorderWidth,
     borderBottomColor: theme.colors.border,
-    paddingHorizontal: 16,
+    paddingHorizontal: redesign.layout.horizontalPadding,
     gap: 4,
   },
   mainTab: {
@@ -611,13 +627,13 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
   },
   mainTabActive: { borderBottomColor: theme.colors.primary },
   mainTabActiveOrange: { borderBottomColor: theme.colors.secondary },
-  mainTabText: { fontSize: 13, fontWeight: "600", color: theme.colors.textMuted },
+  mainTabText: { ...theme.typography.label, color: theme.colors.textMuted },
   mainTabTextActive: { color: theme.colors.primary },
   tabBadge: {
     backgroundColor: theme.colors.border,
@@ -628,28 +644,24 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   tabBadgeText: { fontSize: 10, fontWeight: "700", color: theme.colors.textSecondary },
   negCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 18,
-    padding: 16,
-    gap: 12,
-    borderWidth: 1,
+    borderRadius: theme.radius.lg,
+    padding: 14,
+    gap: 10,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.secondary + "25",
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 3,
+    ...theme.shadows.sm,
   },
   negCardHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   negServiceIcon: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     borderRadius: 12,
     backgroundColor: theme.colors.secondary + "15",
     alignItems: "center",
     justifyContent: "center",
   },
-  negService: { fontSize: 15, fontWeight: "800", color: theme.colors.text },
-  negProvider: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 1 },
+  negService: { ...theme.typography.h3, color: theme.colors.text },
+  negProvider: { ...theme.typography.caption, color: theme.colors.textSecondary, marginTop: 1 },
   negBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   negBadgeText: { fontSize: 10, fontWeight: "700" },
   negAmtRow: { flexDirection: "row", gap: 10 },
@@ -657,7 +669,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 12,
-    padding: 10,
+    padding: 8,
     alignItems: "center",
     gap: 3,
   },
@@ -672,7 +684,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 6,
     backgroundColor: theme.colors.success,
     borderRadius: 12,
-    paddingVertical: 11,
+    paddingVertical: 10,
   },
   negAcceptText: { fontSize: 13, fontWeight: "700", color: theme.colors.onBrand },
   negRejectBtn: {
@@ -701,13 +713,15 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   negLastMsgText: { flex: 1, fontSize: 12, color: theme.colors.textSecondary, fontStyle: "italic" },
   urduText: { writingDirection: "rtl", textAlign: "right" },
   rateOverlay: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.5)",
+    flex: 1, backgroundColor: theme.colors.overlay,
     justifyContent: "flex-end",
   },
   rateBox: {
-    backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    padding: 24, paddingBottom: 40, gap: 16,
+    backgroundColor: theme.colors.elevated,
+    borderTopLeftRadius: theme.radius.xl, borderTopRightRadius: theme.radius.xl,
+    padding: 20, paddingBottom: 32, gap: 16,
+    borderTopWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
   },
   rateHandle: {
     width: 40, height: 4, borderRadius: 2,
@@ -718,21 +732,21 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   starsRow: { flexDirection: "row", justifyContent: "center", gap: 8 },
   ratingLabel: { fontSize: 15, fontWeight: "700", color: theme.colors.accent, textAlign: "center" },
   reviewInput: {
-    backgroundColor: theme.colors.background, borderRadius: 14, padding: 14,
-    fontSize: 14, color: theme.colors.text, minHeight: 90, textAlignVertical: "top",
-    borderWidth: 1, borderColor: theme.colors.border,
+    backgroundColor: theme.colors.input, borderRadius: theme.radius.md, padding: 14,
+    ...theme.typography.body, color: theme.colors.text, minHeight: 90, textAlignVertical: "top",
+    borderWidth: redesign.visual.inputBorderWidth, borderColor: theme.colors.border,
   },
   charCount: { fontSize: 11, color: theme.colors.textMuted, textAlign: "right" },
   rateActions: { flexDirection: "row", gap: 12 },
   rateCancelBtn: {
-    flex: 1, paddingVertical: 14, alignItems: "center",
+    flex: 1, paddingVertical: 12, alignItems: "center",
     borderRadius: 14, backgroundColor: theme.colors.surfaceAlt,
     borderWidth: 1, borderColor: theme.colors.border,
   },
   rateCancelText: { fontSize: 14, fontWeight: "700", color: theme.colors.textSecondary },
   rateSubmitBtn: {
     flex: 2, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: theme.colors.primary, borderRadius: 14, paddingVertical: 14,
+    backgroundColor: theme.colors.primary, borderRadius: 14, paddingVertical: 12,
   },
   rateSubmitText: { fontSize: 14, fontWeight: "700", color: theme.colors.onBrand },
 });

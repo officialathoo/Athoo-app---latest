@@ -1,19 +1,21 @@
 import { appLogger } from "@/lib/logger";
 import { apiErrorToMessage } from "@/lib/apiError";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, usePathname } from "expo-router";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, AppState, AppStateStatus, Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, AppState, AppStateStatus, Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
 import { Icon } from "@/components/ui/Icon";
+import { PrivateImage } from "@/services/storage";
 import { brandConfig } from "@/config/brand";
 import { soundService } from "@/services/SoundService";
 import { api, realtime } from "@/services/api";
 import { useAuth } from "./AuthContext";
 import { useTheme } from "./ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { useNavigationGuard } from "@/hooks/useNavigationGuard";
 
 // ─── WebRTC dynamic import (native dev build only) ───────────────────────────
 let WebRTCAvailable = false;
@@ -134,6 +136,7 @@ const OUTGOING_CALL_TIMEOUT_MS = 35_000;
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type CallState = "idle" | "incoming" | "outgoing" | "active" | "ended";
 export type CallMediaState = "idle" | "connecting" | "webrtc" | "fallback" | "failed";
+export type CallActionState = "idle" | "starting" | "accepting" | "rejecting" | "ending";
 
 export interface CallTransportDetails {
   candidateType?: string;
@@ -148,6 +151,7 @@ export interface ActiveCall {
   callerName: string;
   callerInitials: string;
   callerColor?: string;
+  profileImage?: string | null;
   service?: string;
   direction: "incoming" | "outgoing";
   state: CallState;
@@ -159,13 +163,15 @@ interface CallContextType {
   activeCall: ActiveCall | null;
   callDuration: number;
   isMuted: boolean;
+  remoteMuted: boolean;
   isSpeaker: boolean;
   mediaState: CallMediaState;
   transportLabel: string;
   transportDetails: CallTransportDetails | null;
+  callAction: CallActionState;
   setMuted: (v: boolean) => void;
   setSpeaker: (v: boolean) => Promise<void>;
-  startOutgoingCall: (receiverId: string, receiverName: string, service?: string, receiverColor?: string) => Promise<void>;
+  startOutgoingCall: (receiverId: string, receiverName: string, service?: string, receiverColor?: string, receiverProfileImage?: string | null) => Promise<void>;
   simulateIncomingCall: (callerName: string, service?: string) => void;
   acceptCall: () => Promise<void>;
   rejectCall: () => Promise<void>;
@@ -181,8 +187,9 @@ export function useCall() {
 }
 
 // ─── Incoming Call Overlay ────────────────────────────────────────────────────
-function IncomingCallOverlay({ call, onAccept, onReject }: {
+function IncomingCallOverlay({ call, action, onAccept, onReject }: {
   call: ActiveCall;
+  action: CallActionState;
   onAccept: () => void;
   onReject: () => void;
 }) {
@@ -190,6 +197,9 @@ function IncomingCallOverlay({ call, onAccept, onReject }: {
   const { theme } = useTheme();
   const styles = useMemo(() => createCallStyles(theme), [theme]);
   const slideAnim = useRef(new Animated.Value(-220)).current;
+  const actionBusy = action !== "idle";
+  const accepting = action === "accepting";
+  const rejecting = action === "rejecting";
 
   useEffect(() => {
     Animated.spring(slideAnim, { toValue: insets.top + 8, useNativeDriver: true }).start();
@@ -197,7 +207,7 @@ function IncomingCallOverlay({ call, onAccept, onReject }: {
 
   return (
     <Animated.View style={[styles.incomingOverlay, { transform: [{ translateY: slideAnim }] }]}>
-      <LinearGradient colors={[theme.colors.background, theme.colors.surfaceAlt, theme.colors.primaryPressed]} style={styles.incomingGrad}>
+      <LinearGradient colors={["#0D2B5E", "#1A3A6E", "#2D1B4E"]} style={styles.incomingGrad}>
         <View style={styles.incomingTop}>
           <Text style={styles.incomingLabel}>INCOMING CALL</Text>
           <View style={styles.incomingRingRow}>
@@ -206,26 +216,33 @@ function IncomingCallOverlay({ call, onAccept, onReject }: {
           </View>
         </View>
         <View style={styles.callerSection}>
-          <View style={[styles.callerAvatar, { backgroundColor: call.callerColor || theme.colors.primary }]}>
-            <Text style={styles.callerAvatarText}>{call.callerInitials}</Text>
-          </View>
+          <PrivateImage
+            objectPath={call.profileImage}
+            style={styles.callerAvatarImage}
+            resizeMode="cover"
+            fallback={
+              <View style={[styles.callerAvatar, { backgroundColor: call.callerColor || theme.colors.primary }]}>
+                <Text style={styles.callerAvatarText}>{call.callerInitials}</Text>
+              </View>
+            }
+          />
           <Text style={styles.callerName}>{call.callerName}</Text>
           {call.service && <Text style={styles.callerService}>{call.service}</Text>}
           <Text style={styles.callerSubtitle}>{`${brandConfig.displayName} ${brandConfig.descriptor}`}</Text>
         </View>
         <View style={styles.callActions}>
           <View style={{ width: 80, alignItems: "center" }}>
-            <Pressable style={styles.rejectCircle} onPress={onReject}>
+            <Pressable style={[styles.rejectCircle, actionBusy && styles.actionButtonDisabled]} onPress={onReject} disabled={actionBusy}>
               <View style={styles.rejectCircleInner}>
-                <Icon name="phone-off" size={26} color={theme.colors.white} />
+                {rejecting ? <ActivityIndicator size="small" color={theme.colors.white} /> : <Icon name="phone-off" size={26} color={theme.colors.white} />}
               </View>
             </Pressable>
             <Text style={styles.callActionLabel}>Decline</Text>
           </View>
           <View style={styles.callRipple}>
             <View style={styles.callRipple2} />
-            <Pressable style={styles.acceptCircle} onPress={onAccept}>
-              <Icon name="phone" size={26} color={theme.colors.white} />
+            <Pressable style={[styles.acceptCircle, actionBusy && styles.actionButtonDisabled]} onPress={onAccept} disabled={actionBusy}>
+              {accepting ? <ActivityIndicator size="small" color={theme.colors.white} /> : <Icon name="phone" size={26} color={theme.colors.white} />}
             </Pressable>
           </View>
           <View style={{ width: 80, alignItems: "center" }}>
@@ -238,32 +255,58 @@ function IncomingCallOverlay({ call, onAccept, onReject }: {
 }
 
 // ─── Active Call Banner ───────────────────────────────────────────────────────
-function ActiveCallBanner({ call, duration, onEnd }: {
+function ActiveCallBanner({ call, duration, action, onEnd }: {
   call: ActiveCall;
   duration: number;
+  action: CallActionState;
   onEnd: () => void;
 }) {
   const { theme } = useTheme();
   const styles = useMemo(() => createCallStyles(theme), [theme]);
+  const { push: guardedPush } = useNavigationGuard();
+  const outgoing = call.state === "outgoing";
+  const actionBusy = action !== "idle";
 
   function fmt(s: number) {
     return `${Math.floor(s / 60).toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
   }
 
   return (
-    <Pressable style={styles.activeBanner} onPress={() => router.push("/call" as any)}>
+    <Pressable style={styles.activeBanner} onPress={() => guardedPush("/call" as any)}>
       <View style={styles.activeLiveDot} />
       <View style={styles.activeCaller}>
-        <View style={[styles.activeAvatar, { backgroundColor: call.callerColor || theme.colors.primary }]}>
-          <Text style={styles.activeAvatarText}>{call.callerInitials}</Text>
-        </View>
-        <View>
+        <PrivateImage
+          objectPath={call.profileImage}
+          style={styles.activeAvatarImage}
+          resizeMode="cover"
+          fallback={
+            <View style={[styles.activeAvatar, { backgroundColor: call.callerColor || theme.colors.primary }]}>
+              <Text style={styles.activeAvatarText}>{call.callerInitials}</Text>
+            </View>
+          }
+        />
+        <View style={styles.activeIdentity}>
           <Text style={styles.activeName}>{call.callerName}</Text>
-          <Text style={styles.activeTimer}>{fmt(duration)}</Text>
+          <Text style={styles.activeTimer}>
+            {outgoing ? "Calling - tap to return" : `${fmt(duration)} - tap to return`}
+          </Text>
         </View>
       </View>
-      <Pressable style={styles.endBannerBtn} onPress={onEnd}>
-        <Icon name="phone-off" size={16} color={theme.colors.white} />
+      <Pressable
+        style={[styles.endBannerBtn, actionBusy && styles.actionButtonDisabled]}
+        disabled={actionBusy}
+        onPress={(event) => {
+          event.stopPropagation();
+          if (!actionBusy) onEnd();
+        }}
+        accessibilityRole="button"
+        accessibilityLabel="End call"
+      >
+        {actionBusy ? (
+          <ActivityIndicator size="small" color={theme.colors.white} />
+        ) : (
+          <Icon name="phone-off" size={16} color={theme.colors.white} />
+        )}
       </Pressable>
     </Pressable>
   );
@@ -272,6 +315,8 @@ function ActiveCallBanner({ call, duration, onEnd }: {
 // ─── Provider ─────────────────────────────────────────────────────────────────
 export function CallProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
+  const pathname = usePathname();
+  const { push: guardedPush, replace: guardedReplace } = useNavigationGuard();
   const iceConfigurationRef = useRef<{
     iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }>;
     iceTransportPolicy: "all" | "relay";
@@ -285,10 +330,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setMutedState] = useState(false);
+  const [remoteMuted, setRemoteMutedState] = useState(false);
   const [isSpeaker, setIsSpeaker] = useState(false);
   const [mediaState, setMediaState] = useState<CallMediaState>("idle");
   const [transportLabel, setTransportLabel] = useState("Checking secure audio");
   const [transportDetails, setTransportDetails] = useState<CallTransportDetails | null>(null);
+  const [callAction, setCallAction] = useState<CallActionState>("idle");
   const configuredCallProviderRef = useRef("unknown");
   const remoteAnswerAppliedRef = useRef(false);
   const mediaFailureAlertedRef = useRef(false);
@@ -303,6 +350,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       });
     } catch (error) {
       appLogger.warn("calls", "[CallContext] unable to update microphone track", error);
+    }
+    // Signal the counterpart so their UI can show our mute state. This must
+    // never mutate the remote peer's own microphone — only our local track
+    // above is touched. The remote indicator is handled separately.
+    const callId = activeCallIdRef.current;
+    if (callId) {
+      api.setCallMute(callId, v).catch((error) => {
+        appLogger.warn("calls", "[CallContext] unable to signal mute state", error);
+      });
     }
   }, []);
 
@@ -332,6 +388,27 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const activeCallRef = useRef<ActiveCall | null>(null);
   const mutedRef = useRef(false);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const callActionRef = useRef<CallActionState>("idle");
+
+  const beginCallAction = useCallback((action: Exclude<CallActionState, "idle">): boolean => {
+    if (callActionRef.current !== "idle") return false;
+    callActionRef.current = action;
+    setCallAction(action);
+    return true;
+  }, []);
+
+  const finishCallAction = useCallback((action: Exclude<CallActionState, "idle">) => {
+    if (callActionRef.current !== action) return;
+    callActionRef.current = "idle";
+    setCallAction("idle");
+  }, []);
+
+  const resetCallUiState = useCallback(() => {
+    mutedRef.current = false;
+    setMutedState(false);
+    setRemoteMutedState(false);
+    setIsSpeaker(false);
+  }, []);
 
   // WebRTC refs
   const pcRef = useRef<any>(null);
@@ -395,8 +472,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const state = activeCall?.state;
     appLogger.debug("calls", "[CallContext] state changed →", state, "callId:", activeCall?.callId);
-    if ((state === "incoming" || state === "outgoing") && appStateRef.current === "active") {
-      soundService.startRingtone().catch(() => {});
+    if (state === "incoming" && appStateRef.current === "active") {
+      soundService.startRingtone("incoming").catch(() => {});
+    } else if (state === "outgoing" && appStateRef.current === "active") {
+      soundService.startRingtone("outgoing").catch(() => {});
     } else {
       soundService.stopRingtone().catch(() => {});
     }
@@ -457,6 +536,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               if (candidatePollRef.current) clearInterval(candidatePollRef.current);
               closePeerConnection();
               stopVoiceStreaming();
+              resetCallUiState();
               setActiveCall(null);
               setCallDuration(0);
             }
@@ -1300,6 +1380,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         ...previous,
         offer: rawCall.offer || previous.offer,
         service: rawCall.service || previous.service,
+        profileImage: rawCall.callerProfileImage || previous.profileImage,
       } : null);
       return;
     }
@@ -1317,6 +1398,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       callerName: rawCall.callerName || "Unknown",
       callerInitials: initials,
       callerColor: rawCall.callerColor || brandConfig.colors.secondary,
+      profileImage: rawCall.callerProfileImage || undefined,
       service: rawCall.service,
       direction: "incoming",
       state: "incoming",
@@ -1345,6 +1427,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      if (message.type === "call:mute") {
+        const payload = message.payload as any;
+        if (!current || current.callId !== payload?.callId) return;
+        // Only reflects the counterpart's mute on our UI. It must never call
+        // setMuted (which would mute our own microphone).
+        setRemoteMutedState(Boolean(payload?.muted));
+        return;
+      }
+
       const callData = message.payload?.call as any;
       if (!callData?.id || !current || current.callId !== callData.id) return;
 
@@ -1366,6 +1457,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (candidatePollRef.current) { clearInterval(candidatePollRef.current); candidatePollRef.current = null; }
         closePeerConnection();
         stopVoiceStreaming();
+        resetCallUiState();
         setActiveCall(null);
         setCallDuration(0);
         setMediaState("idle");
@@ -1402,8 +1494,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       const state = activeCallRef.current?.state;
       if (next === "active") {
         void refreshCallConfiguration();
-        if (state === "incoming" || state === "outgoing") {
-          soundService.startRingtone().catch(() => {});
+        if (state === "incoming") {
+          soundService.startRingtone("incoming").catch(() => {});
+        } else if (state === "outgoing") {
+          soundService.startRingtone("outgoing").catch(() => {});
         }
         void checkIncoming();
       } else {
@@ -1437,54 +1531,60 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // ── Start outgoing call ─────────────────────────────────────────────────────
   const startOutgoingCall = useCallback(async (
-    receiverId: string, receiverName: string, service?: string, receiverColor?: string
+    receiverId: string,
+    receiverName: string,
+    service?: string,
+    receiverColor?: string,
+    receiverProfileImage?: string | null,
   ) => {
-    if (!user) return;
+    if (!user || activeCallRef.current || !beginCallAction("starting")) return;
+
     const myInitials = (user.name || "Me").split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
     const receiverInitials = receiverName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+    const pendingCallId = `pending-outgoing-${Date.now()}`;
+    const pendingCall: ActiveCall = {
+      callId: pendingCallId,
+      callerId: user.id,
+      callerName: receiverName,
+      callerInitials: receiverInitials,
+      callerColor: receiverColor || brandConfig.colors.primary,
+      profileImage: receiverProfileImage || undefined,
+      service,
+      direction: "outgoing",
+      state: "outgoing",
+    };
+    let serverCallId: string | null = null;
 
-    await refreshCallConfiguration();
-    mediaFailureAlertedRef.current = false;
-    remoteAnswerAppliedRef.current = false;
+    activeCallRef.current = pendingCall;
+    setActiveCall(pendingCall);
     setMediaState("connecting");
-    if (rtcProductionReadyRef.current && !canUseWebRtc()) {
-      setMediaState("failed");
-      setTransportLabel("Secure audio unavailable");
-      Alert.alert(
-        "Secure Call Unavailable",
-        "Cloudflare TURN is configured, but this app build could not start WebRTC. Please install the latest Athoo build.",
-      );
-      return;
-    }
+    setTransportLabel("Preparing secure call");
+    try { guardedPush("/call" as any); } catch {}
 
-    let offerSdp: string | undefined;
-    if (canUseWebRtc()) {
-      try {
+    try {
+      await refreshCallConfiguration();
+      mediaFailureAlertedRef.current = false;
+      remoteAnswerAppliedRef.current = false;
+
+      if (rtcProductionReadyRef.current && !canUseWebRtc()) {
+        throw new Error("SECURE_CALL_RUNTIME_UNAVAILABLE");
+      }
+
+      let offerSdp: string | undefined;
+      if (canUseWebRtc()) {
         const pc = await createPeerConnection(null, "caller");
         if (pc) {
           await soundService.setCallSpeakerMode(isSpeaker);
           const stream = await (require("react-native-webrtc").mediaDevices.getUserMedia)(VOICE_MEDIA_CONSTRAINTS);
-          if (!stream) throw new Error("Microphone stream was not created");
+          if (!stream) throw new Error("MICROPHONE_STREAM_UNAVAILABLE");
           localStreamRef.current = stream;
           stream.getTracks().forEach((track: any) => pc.addTrack(track, stream));
           const offer = await pc.createOffer({ offerToReceiveAudio: true });
           await pc.setLocalDescription(offer);
           offerSdp = JSON.stringify(offer);
         }
-      } catch (error) {
-        appLogger.error("calls", "[CallContext] secure WebRTC setup failed before dialing", error);
-        closePeerConnection();
-        setMediaState("failed");
-        setTransportLabel("Secure audio could not start");
-        Alert.alert(
-          "Call Could Not Start",
-          "Athoo could not prepare the microphone and secure audio relay. Check microphone permission and try again.",
-        );
-        return;
       }
-    }
 
-    try {
       const res = await api.startCall({
         receiverId,
         callerName: user.name,
@@ -1493,88 +1593,115 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         service,
         offer: offerSdp,
       });
-      const call = res.call as any;
-      if (pcRef.current && canUseWebRtc()) await flushPendingLocalCandidates(call.id, "caller");
+      const call = res.call as { id: string };
+      serverCallId = call.id;
 
-      setActiveCall({
-        callId: call.id,
-        callerId: user.id,
-        callerName: receiverName,
-        callerInitials: receiverInitials,
-        callerColor: receiverColor || brandConfig.colors.primary,
-        service,
-        direction: "outgoing",
-        state: "outgoing",
-      });
-      try { router.push("/call" as any); } catch {}
+      const confirmedCall: ActiveCall = { ...pendingCall, callId: serverCallId };
+      activeCallRef.current = confirmedCall;
+      setActiveCall((previous) => previous?.callId === pendingCallId ? confirmedCall : previous);
+
+      if (pcRef.current && canUseWebRtc()) {
+        void flushPendingLocalCandidates(call.id, "caller");
+      }
 
       if (outgoingStatusPollRef.current) clearInterval(outgoingStatusPollRef.current);
-      // Auto-cancel if receiver doesn't answer within timeout
       if (outgoingTimeoutRef.current) clearTimeout(outgoingTimeoutRef.current);
+
       outgoingTimeoutRef.current = setTimeout(async () => {
-        if (activeCallRef.current?.state === "outgoing") {
-          if (outgoingStatusPollRef.current) clearInterval(outgoingStatusPollRef.current);
-          try { await api.endCall(call.id); } catch {}
-          closePeerConnection();
-          setActiveCall(null);
-          setCallDuration(0);
-          setMediaState("idle");
-          Alert.alert("No Answer", "The other person didn't pick up. Please try again.");
+        if (activeCallRef.current?.callId !== serverCallId || activeCallRef.current.state !== "outgoing") return;
+        if (outgoingStatusPollRef.current) {
+          clearInterval(outgoingStatusPollRef.current);
+          outgoingStatusPollRef.current = null;
         }
+        try { await api.endCall(serverCallId!); } catch {}
+        closePeerConnection();
+        stopVoiceStreaming();
+        resetCallUiState();
+        activeCallRef.current = null;
+        setActiveCall(null);
+        setCallDuration(0);
+        setMediaState("idle");
+        Alert.alert("No Answer", "The other person didn't pick up. Please try again.");
       }, OUTGOING_CALL_TIMEOUT_MS);
 
       outgoingStatusPollInFlightRef.current = false;
       outgoingStatusPollRef.current = setInterval(async () => {
-        if (outgoingStatusPollInFlightRef.current) return;
+        if (outgoingStatusPollInFlightRef.current || !serverCallId) return;
         outgoingStatusPollInFlightRef.current = true;
         try {
-          const statusRes = await api.getCallStatus(call.id);
-          if (activeCallRef.current?.callId !== call.id) return;
+          const statusRes = await api.getCallStatus(serverCallId);
+          if (activeCallRef.current?.callId !== serverCallId) return;
           const callData = statusRes.call as any;
           const status = callData?.status;
-
-          await applyRemoteAnswer(call.id, callData);
+          await applyRemoteAnswer(serverCallId, callData);
 
           if (status === "active") {
-            if (outgoingTimeoutRef.current) { clearTimeout(outgoingTimeoutRef.current); outgoingTimeoutRef.current = null; }
+            if (outgoingTimeoutRef.current) {
+              clearTimeout(outgoingTimeoutRef.current);
+              outgoingTimeoutRef.current = null;
+            }
             const startedAt = callStartedAtMs(callData?.startedAt);
-            setActiveCall((p) => p ? { ...p, state: "active", startedAt } : null);
-            // Keep signaling alive until the SDP answer is applied. The realtime
-            // event is primary; this bounded poll is recovery for sleeping sockets.
+            setActiveCall((previous) => previous ? { ...previous, state: "active", startedAt } : null);
             if (!canUseWebRtc() || remoteAnswerAppliedRef.current) {
               clearInterval(outgoingStatusPollRef.current!);
               outgoingStatusPollRef.current = null;
             }
           } else if (status === "rejected" || status === "ended") {
-            if (outgoingTimeoutRef.current) { clearTimeout(outgoingTimeoutRef.current); outgoingTimeoutRef.current = null; }
+            if (outgoingTimeoutRef.current) {
+              clearTimeout(outgoingTimeoutRef.current);
+              outgoingTimeoutRef.current = null;
+            }
+            clearInterval(outgoingStatusPollRef.current!);
+            outgoingStatusPollRef.current = null;
+            if (candidatePollRef.current) clearInterval(candidatePollRef.current);
+            closePeerConnection();
+            stopVoiceStreaming();
+            resetCallUiState();
+            activeCallRef.current = null;
             setActiveCall(null);
             setCallDuration(0);
             setMediaState("idle");
-            clearInterval(outgoingStatusPollRef.current!);
-            if (candidatePollRef.current) clearInterval(candidatePollRef.current);
-            closePeerConnection();
             if (status === "rejected") Alert.alert("Call Declined", "The other person declined the call.");
           }
         } catch {
-          // Realtime acceptance/rejection is primary; polling is recovery only.
         } finally {
           outgoingStatusPollInFlightRef.current = false;
         }
       }, 1_000);
-
-    } catch (err) {
+    } catch (error) {
+      appLogger.error("calls", "[CallContext] secure WebRTC setup failed before dialing", error);
+      if (serverCallId) void api.endCall(serverCallId).catch(() => undefined);
       closePeerConnection();
+      stopVoiceStreaming();
+      resetCallUiState();
+      if (
+        activeCallRef.current?.callId === pendingCallId ||
+        activeCallRef.current?.callId === serverCallId
+      ) {
+        activeCallRef.current = null;
+        setActiveCall(null);
+      }
       setMediaState("failed");
       setTransportLabel("Call setup failed");
-      Alert.alert("Call Failed", apiErrorToMessage(err, "Unable to connect the call. Please check your connection and try again."));
+      const code = String((error as Error)?.message || "");
+      Alert.alert(
+        code === "SECURE_CALL_RUNTIME_UNAVAILABLE" ? "Secure Call Unavailable" : "Call Could Not Start",
+        code === "SECURE_CALL_RUNTIME_UNAVAILABLE"
+          ? "Secure calling is configured, but this installed app build cannot start WebRTC."
+          : apiErrorToMessage(error, "Athoo could not prepare the microphone or connect the call. Please try again."),
+      );
+    } finally {
+      finishCallAction("starting");
     }
-  }, [user, isSpeaker]);
+  }, [user, isSpeaker, beginCallAction, finishCallAction, resetCallUiState]);
 
-  // ── Accept incoming call ────────────────────────────────────────────────────
+  // Accept incoming call
   const acceptCall = useCallback(async () => {
     const current = activeCallRef.current;
-    if (!current) return;
+    if (!current || current.state !== "incoming" || !beginCallAction("accepting")) return;
 
+    try {
+    await soundService.stopRingtone().catch(() => {});
     await refreshCallConfiguration();
     mediaFailureAlertedRef.current = false;
     setMediaState("connecting");
@@ -1610,6 +1737,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       } catch (error) {
         appLogger.error("calls", "[CallContext] secure WebRTC setup failed while answering", error);
         closePeerConnection();
+        stopVoiceStreaming();
+        resetCallUiState();
         setMediaState("failed");
         setTransportLabel("Secure audio could not start");
         try { await api.rejectCall(current.callId); } catch {}
@@ -1628,62 +1757,126 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       acceptedCall = response.call;
     } catch (error) {
       closePeerConnection();
+      stopVoiceStreaming();
+      resetCallUiState();
+      setMediaState("idle");
+      setTransportLabel("Checking secure audio");
+      const pending = activeCallRef.current;
+      if (
+        pending?.callId === current.callId &&
+        pending.state === "incoming" &&
+        appStateRef.current === "active"
+      ) {
+        void soundService.startRingtone("incoming").catch(() => {});
+      }
       Alert.alert("Call Failed", apiErrorToMessage(error, "The call could not be accepted."));
       return;
     }
 
     const startedAt = callStartedAtMs(acceptedCall?.startedAt);
     setActiveCall((p) => p ? { ...p, state: "active", startedAt } : null);
-    try { router.push("/call" as any); } catch {}
-  }, [isSpeaker]);
+    try { guardedPush("/call" as any); } catch {}
+    } finally {
+      finishCallAction("accepting");
+    }
+  }, [isSpeaker, beginCallAction, finishCallAction, resetCallUiState]);
 
   // ── Reject call ─────────────────────────────────────────────────────────────
   const rejectCall = useCallback(async () => {
-    if (activeCallRef.current?.callId) {
-      try { await api.rejectCall(activeCallRef.current.callId); } catch {}
-    }
-    if (candidatePollRef.current) clearInterval(candidatePollRef.current);
-    closePeerConnection();
-    stopVoiceStreaming();
-    setActiveCall(null);
-    setCallDuration(0);
-    setMediaState("idle");
-  }, []);
+    if (!beginCallAction("rejecting")) return;
 
-  // ── End call ─────────────────────────────────────────────────────────────────
-  const endCall = useCallback(async () => {
-    const callId = activeCallRef.current?.callId;
-    // Clear all timers immediately so no more status polls fire
-    if (outgoingStatusPollRef.current) { clearInterval(outgoingStatusPollRef.current); outgoingStatusPollRef.current = null; }
-    outgoingStatusPollInFlightRef.current = false;
-    if (candidatePollRef.current) { clearInterval(candidatePollRef.current); candidatePollRef.current = null; }
-    candidatePollInFlightRef.current = false;
-    if (activeCallWatcherRef.current) { clearInterval(activeCallWatcherRef.current); activeCallWatcherRef.current = null; }
-    activeCallWatcherInFlightRef.current = false;
-    if (outgoingTimeoutRef.current) { clearTimeout(outgoingTimeoutRef.current); outgoingTimeoutRef.current = null; }
-    // Stop media before network call so the mic releases immediately
-    closePeerConnection();
-    stopVoiceStreaming();
-    // Tell server the call ended — do this BEFORE clearing state so activeCallRef.current
-    // is still populated if the API call is synchronous on the event loop.
-    if (callId) {
-      try { await api.endCall(callId); } catch {}
+    try {
+      await soundService.stopRingtone().catch(() => {});
+      const callId = activeCallRef.current?.callId;
+      if (callId) {
+        try {
+          await api.rejectCall(callId);
+        } catch (error) {
+          appLogger.warn("calls", "[CallContext] reject call request failed", error);
+        }
+      }
+      if (candidatePollRef.current) {
+        clearInterval(candidatePollRef.current);
+        candidatePollRef.current = null;
+      }
+      closePeerConnection();
+      stopVoiceStreaming();
+      resetCallUiState();
+      setActiveCall(null);
+      setCallDuration(0);
+      setMediaState("idle");
+    } finally {
+      finishCallAction("rejecting");
     }
-    setActiveCall(null);
-    setCallDuration(0);
-    setMediaState("idle");
-    mediaFailureAlertedRef.current = false;
-    soundService.playSuccess();
-  }, []);
+  }, [beginCallAction, finishCallAction, resetCallUiState]);
+
+  // End call
+  const endCall = useCallback(async () => {
+    if (!beginCallAction("ending")) return;
+
+    const callId = activeCallRef.current?.callId;
+    try {
+      await soundService.stopRingtone().catch(() => {});
+
+      if (outgoingStatusPollRef.current) {
+        clearInterval(outgoingStatusPollRef.current);
+        outgoingStatusPollRef.current = null;
+      }
+      outgoingStatusPollInFlightRef.current = false;
+
+      if (candidatePollRef.current) {
+        clearInterval(candidatePollRef.current);
+        candidatePollRef.current = null;
+      }
+      candidatePollInFlightRef.current = false;
+
+      if (activeCallWatcherRef.current) {
+        clearInterval(activeCallWatcherRef.current);
+        activeCallWatcherRef.current = null;
+      }
+      activeCallWatcherInFlightRef.current = false;
+
+      if (outgoingTimeoutRef.current) {
+        clearTimeout(outgoingTimeoutRef.current);
+        outgoingTimeoutRef.current = null;
+      }
+
+      closePeerConnection();
+      stopVoiceStreaming();
+      resetCallUiState();
+
+      if (callId) {
+        try {
+          await api.endCall(callId);
+        } catch (error) {
+          appLogger.warn("calls", "[CallContext] end call request failed", error);
+        }
+      }
+
+      setActiveCall(null);
+      setCallDuration(0);
+      setMediaState("idle");
+      mediaFailureAlertedRef.current = false;
+      void soundService.playSuccess();
+    } finally {
+      finishCallAction("ending");
+    }
+  }, [beginCallAction, finishCallAction, resetCallUiState]);
 
   return (
-    <CallContext.Provider value={{ activeCall, callDuration, isMuted, isSpeaker, mediaState, transportLabel, transportDetails, setMuted, setSpeaker, startOutgoingCall, simulateIncomingCall, acceptCall, rejectCall, endCall }}>
+    <CallContext.Provider value={{ activeCall, callDuration, isMuted, remoteMuted, isSpeaker, mediaState, transportLabel, transportDetails, callAction, setMuted, setSpeaker, startOutgoingCall, simulateIncomingCall, acceptCall, rejectCall, endCall }}>
       {children}
       {activeCall?.state === "incoming" && (
-        <IncomingCallOverlay call={activeCall} onAccept={acceptCall} onReject={rejectCall} />
+        <IncomingCallOverlay call={activeCall} action={callAction} onAccept={acceptCall} onReject={rejectCall} />
       )}
-      {activeCall?.state === "active" && (
-        <ActiveCallBanner call={activeCall} duration={callDuration} onEnd={endCall} />
+      {(activeCall?.state === "outgoing" || activeCall?.state === "active") &&
+      pathname !== "/call" && (
+        <ActiveCallBanner
+          call={activeCall}
+          duration={callDuration}
+          action={callAction}
+          onEnd={endCall}
+        />
       )}
     </CallContext.Provider>
   );
@@ -1699,22 +1892,24 @@ const createCallStyles = (theme: AthooTheme) => StyleSheet.create({
     paddingHorizontal: 20, paddingBottom: 28, paddingTop: 16,
   },
   incomingTop: { alignItems: "center", gap: 6, marginBottom: 20 },
-  incomingLabel: { fontSize: 13, color: theme.colors.white + "99", fontWeight: "600", letterSpacing: 1 },
+  incomingLabel: { fontSize: 13, color: theme.colors.white, fontWeight: "600", letterSpacing: 1 },
   incomingRingRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   incomingRingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.success },
   incomingRingText: { fontSize: 12, color: theme.colors.success, fontWeight: "700" },
   callerSection: { alignItems: "center", gap: 8, marginBottom: 24 },
-  callerAvatar: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: theme.colors.white + "4D" },
+  callerAvatar: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: theme.colors.white + "80", overflow: "hidden" },
+  callerAvatarImage: { width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: theme.colors.white + "99" },
   callerAvatarText: { fontSize: 30, fontWeight: "800", color: theme.colors.white },
   callerName: { fontSize: 24, fontWeight: "800", color: theme.colors.white },
-  callerService: { fontSize: 14, color: theme.colors.white + "B3", fontWeight: "500" },
-  callerSubtitle: { fontSize: 11, color: theme.colors.white + "73", marginTop: 2 },
+  callerService: { fontSize: 14, color: theme.colors.white + "E6", fontWeight: "500" },
+  callerSubtitle: { fontSize: 11, color: theme.colors.white + "CC", marginTop: 2 },
   callActions: { flexDirection: "row", justifyContent: "space-around", alignItems: "flex-start" },
   rejectCircle: { alignItems: "center", gap: 8 },
   acceptCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: theme.colors.success, alignItems: "center", justifyContent: "center" },
-  callRipple: { width: 80, height: 80, borderRadius: 40, backgroundColor: theme.colors.success + "33", alignItems: "center", justifyContent: "center" },
-  callRipple2: { ...StyleSheet.absoluteFillObject, borderRadius: 44, backgroundColor: theme.colors.success + "1A", margin: -6 },
-  callActionLabel: { fontSize: 12, color: theme.colors.white + "B3", fontWeight: "600" },
+  callRipple: { width: 80, height: 80, borderRadius: 40, backgroundColor: theme.colors.success + "4D", alignItems: "center", justifyContent: "center" },
+  callRipple2: { ...StyleSheet.absoluteFillObject, borderRadius: 44, backgroundColor: theme.colors.success + "26", margin: -6 },
+  callActionLabel: { fontSize: 12, color: theme.colors.white + "E6", fontWeight: "600" },
+  actionButtonDisabled: { opacity: 0.55 },
   rejectCircleInner: { width: 72, height: 72, borderRadius: 36, backgroundColor: theme.colors.danger, alignItems: "center", justifyContent: "center" },
   activeBanner: {
     position: "absolute", top: Platform.OS === "web" ? 67 : 54, left: 12, right: 12, zIndex: 8888,
@@ -1724,10 +1919,12 @@ const createCallStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   activeLiveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.white },
   activeCaller: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
-  activeAvatar: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  activeIdentity: { flex: 1, minWidth: 0 },
+  activeAvatar: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  activeAvatarImage: { width: 32, height: 32, borderRadius: 16 },
   activeAvatarText: { fontSize: 12, fontWeight: "700", color: theme.colors.white },
   activeName: { fontSize: 13, fontWeight: "700", color: theme.colors.white },
-  activeTimer: { fontSize: 12, color: theme.colors.white + "D9" },
+  activeTimer: { fontSize: 12, color: theme.colors.white + "E6" },
   endBannerBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: theme.colors.danger, alignItems: "center", justifyContent: "center" },
 });
 

@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
-import { api, setToken, setRefreshToken, clearToken, getToken, getRefreshToken, realtime, setUnauthorizedHandler } from "@/services/api";
+import { api, setToken, setRefreshToken, clearToken, getToken, getRefreshToken, restoreAccessToken, realtime, setUnauthorizedHandler } from "@/services/api";
 import { notificationService } from "@/services/NotificationService";
 import {
   authenticateWithBiometric,
@@ -50,6 +50,9 @@ export interface User {
   experience?: string;
   joinedAt?: string;
   savedProviders?: string[];
+  referralCode?: string | null;
+  referralCount?: number;
+  referredBy?: string | null;
   ratePerHour?: number | null;
   pendingCommission?: number;
   totalCommission?: number;
@@ -95,7 +98,7 @@ interface AuthContextType {
   requiresBiometric: boolean;
   sendOtp: (phone: string, purpose: "login" | "registration", role: AppUserRole, email?: string) => Promise<{ success: boolean; code?: string; message?: string; error?: string; expiresInSeconds?: number; resendAfterSeconds?: number }>;
   verifyOtpAndLogin: (phone: string, code: string, remember: boolean, purpose: "login" | "registration", role: AppUserRole) => Promise<{ success: boolean; isNewUser: boolean; user?: User | null; registrationToken?: string; error?: string }>;
-  sendEmailOtp: (email: string, role: AppUserRole) => Promise<{ success: boolean; code?: string; message?: string; maskedEmail?: string; expiresInSeconds?: number; resendAfterSeconds?: number; error?: string }>;
+  sendEmailOtp: (email: string, role: AppUserRole) => Promise<{ success: boolean; code?: string; message?: string; maskedEmail?: string; expiresInSeconds?: number; resendAfterSeconds?: number; error?: string; errorCode?: string }>;
   verifyEmailOtpAndLogin: (email: string, code: string, remember: boolean, role: AppUserRole) => Promise<{ success: boolean; user?: User | null; error?: string }>;
   loginWithPassword: (identifier: string, password: string, role: AppUserRole, remember?: boolean) => Promise<{ success: boolean; user?: User | null; error?: string }>;
   register: (data: RegisterData) => Promise<{
@@ -125,6 +128,8 @@ const SAVED_KEY = "athoo_saved_providers";
 const REMEMBER_KEY = "athoo_remember_me";
 const SESSION_USER_CACHE_KEY = "athoo_session_user_cache";
 const BIOMETRIC_RELOCK_MS = Math.max(60, Number(process.env.EXPO_PUBLIC_BIOMETRIC_RELOCK_SECONDS || 300)) * 1000;
+const QUICK_FOREGROUND_RESUME_MS = 15_000;
+const FOREGROUND_PROFILE_REFRESH_COOLDOWN_MS = 60_000;
 
 function toAppRole(role?: string): AppUserRole {
   return role === "provider" ? "provider" : "customer";
@@ -146,6 +151,8 @@ function isUnauthorizedError(error: unknown): boolean {
 }
 
 function isTransientNetworkError(error: unknown): boolean {
+  const code = String((error as any)?.code || "");
+  if (code === "SESSION_REFRESH_UNAVAILABLE") return true;
   const message = String((error as any)?.message || error || "").toLowerCase();
   return (
     message.includes("network request failed") ||
@@ -167,30 +174,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const backgroundedAtRef = useRef<number | null>(null);
   const lastProviderLocationSyncAtRef = useRef(0);
   const providerLocationSyncPromiseRef = useRef<Promise<void> | null>(null);
+  const foregroundSyncInFlightRef = useRef(false);
+  const lastForegroundProfileRefreshAtRef = useRef(0);
 
   const attachSavedProviders = useCallback(async (u: User | null) => {
     if (!u) return null;
     const storageKey = `${SAVED_KEY}_${u.id}`;
+    let cachedIds: string[] = [];
     try {
-      const response = await api.getSavedProviders();
-      const serverIds = Array.isArray(response?.ids) ? response.ids : [];
-      await AsyncStorage.setItem(storageKey, JSON.stringify(serverIds));
-      return { ...u, savedProviders: serverIds };
+      const savedRaw = await AsyncStorage.getItem(storageKey);
+      const parsed = savedRaw ? JSON.parse(savedRaw) : [];
+      cachedIds = Array.isArray(parsed) ? parsed.map(String) : [];
     } catch {
-      try {
-        const savedRaw = await AsyncStorage.getItem(storageKey);
-        const parsed = savedRaw ? JSON.parse(savedRaw) : [];
-        return { ...u, savedProviders: Array.isArray(parsed) ? parsed : [] };
-      } catch {
-        return { ...u, savedProviders: [] };
-      }
+      cachedIds = [];
     }
+
+    void api.getSavedProviders()
+      .then(async (response) => {
+        const serverIds = Array.isArray(response?.ids) ? response.ids.map(String) : [];
+        await AsyncStorage.setItem(storageKey, JSON.stringify(serverIds)).catch(() => undefined);
+        setUser((current) => {
+          if (!current || current.id !== u.id) return current;
+          const previous = Array.isArray(current.savedProviders) ? current.savedProviders : [];
+          if (
+            previous.length === serverIds.length &&
+            previous.every((value, index) => value === serverIds[index])
+          ) return current;
+          return { ...current, savedProviders: serverIds };
+        });
+      })
+      .catch(() => undefined);
+
+    return { ...u, savedProviders: cachedIds };
   }, []);
 
   const loadUser = useCallback(async () => {
     try {
-      const token = await getToken();
-      if (!token) {
+      let token = await getToken();
+      const refreshToken = token ? null : await getRefreshToken();
+      if (!token && !refreshToken) {
         await removeSecureItem(SESSION_USER_CACHE_KEY).catch(() => undefined);
         setUser(null);
         setRequiresBiometric(false);
@@ -209,6 +231,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
         await disableBiometric();
+      }
+
+      if (!token) {
+        const restored = await restoreAccessToken();
+        if (restored.status === "renewed" && restored.token) {
+          token = restored.token;
+        } else if (restored.status === "unavailable") {
+          const cachedRaw = await getSecureItem(SESSION_USER_CACHE_KEY);
+          const cached = cachedRaw ? sanitizeUser(JSON.parse(cachedRaw)) : null;
+          if (cached?.id && cached?.phone) setUser(cached);
+          setRequiresBiometric(false);
+          return;
+        } else {
+          await clearToken();
+          await removeSecureItem(SESSION_USER_CACHE_KEY).catch(() => undefined);
+          await disableBiometric();
+          setUser(null);
+          setRequiresBiometric(false);
+          return;
+        }
       }
 
       const res = await api.getMe();
@@ -275,24 +317,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshUser = useCallback(async (): Promise<boolean> => {
+    // Returning false also prevents this foreground cycle from treating a dead
+    // session as live: callers must bail out before any token-gated work runs.
     try {
       const res = await api.getMe();
       const rawUser = (res?.user as any) || null;
       if (!rawUser) return false;
-      const hydrated = await attachSavedProviders(sanitizeUser(rawUser));
-      setUser(hydrated);
+      const sanitized = sanitizeUser(rawUser);
+
+      setUser((current) => {
+        const next: User = {
+          ...sanitized,
+          savedProviders: current?.id === sanitized.id
+            ? current.savedProviders
+            : sanitized.savedProviders,
+        };
+        if (!current || current.id !== next.id) return next;
+        return JSON.stringify(current) === JSON.stringify(next) ? current : next;
+      });
       return true;
     } catch (error) {
       if (!isUnauthorizedError(error) && !isTransientNetworkError(error)) {
         appLogger.warn("auth", "Failed to refresh user profile", error);
       }
-      // The shared API unauthorized handler performs complete idempotent
-      // cleanup. Returning false also prevents this foreground cycle from
-      // registering push tokens or syncing provider location with a revoked
-      // access token while that cleanup completes asynchronously.
       return false;
     }
-  }, [attachSavedProviders]);
+  }, []);
 
   const syncProviderLocation = useCallback(async (force = false) => {
     if (!user?.id || user.role !== "provider" || requiresBiometric) return;
@@ -358,7 +408,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       void (async () => {
         const token = await getToken();
         if (!token) return;
-        await notificationService.syncPushToken(api.baseUrl, token, { force: true });
+        void notificationService.syncPushToken(api.baseUrl, token, { force: true });
       })();
     }, runtimeConfig.notifications.pushTokenSyncIntervalMs);
     return () => clearInterval(timer);
@@ -375,21 +425,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const backgroundedAt = backgroundedAtRef.current;
       backgroundedAtRef.current = null;
-      void (async () => {
-        const sessionValid = await refreshUser();
-        if (!sessionValid) return;
-        const token = await getToken();
-        if (!token) return;
-        await notificationService.syncPushToken(api.baseUrl, token, { force: true });
-        if (user.role === "provider" && user.isAvailable !== false) await syncProviderLocation(true);
+      const now = Date.now();
 
+      void (async () => {
         if (
           backgroundedAt &&
-          Date.now() - backgroundedAt >= BIOMETRIC_RELOCK_MS &&
+          now - backgroundedAt >= BIOMETRIC_RELOCK_MS &&
           await isBiometricEnabled() &&
           await isBiometricAvailable()
         ) {
           setRequiresBiometric(true);
+          return;
+        }
+
+        if (backgroundedAt && now - backgroundedAt < QUICK_FOREGROUND_RESUME_MS) return;
+        if (
+          foregroundSyncInFlightRef.current ||
+          now - lastForegroundProfileRefreshAtRef.current <
+            FOREGROUND_PROFILE_REFRESH_COOLDOWN_MS
+        ) return;
+
+        foregroundSyncInFlightRef.current = true;
+        lastForegroundProfileRefreshAtRef.current = now;
+        try {
+          const sessionValid = await refreshUser();
+          if (!sessionValid) return;
+          const token = await getToken();
+          if (token) void notificationService.syncPushToken(api.baseUrl, token, { force: true });
+          if (user.role === "provider" && user.isAvailable !== false) {
+            void syncProviderLocation(false);
+          }
+        } finally {
+          foregroundSyncInFlightRef.current = false;
         }
       })();
     });
@@ -442,6 +509,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const rawUser = (me?.user as any) || (res.user as any) || null;
       if (!rawUser) return { success: false, isNewUser: false, error: "User profile could not be loaded" };
       const hydrated = await attachSavedProviders(sanitizeUser(rawUser));
+      await setSecureItem(SESSION_USER_CACHE_KEY, JSON.stringify(hydrated)).catch(() => undefined);
       setUser(hydrated);
       setRequiresBiometric(false);
       return { success: true, isNewUser: false, user: hydrated };
@@ -462,7 +530,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         resendAfterSeconds: res.resendAfterSeconds,
       };
     } catch (error: unknown) {
-      return { success: false, error: apiErrorToMessage(error, "We could not send the email sign-in code. Please try another login method.") };
+      const errorCode =
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        typeof (error as { code?: unknown }).code === "string"
+          ? (error as { code: string }).code
+          : undefined;
+
+      return {
+        success: false,
+        error: apiErrorToMessage(
+          error,
+          "We could not send the email sign-in code. Please try another login method.",
+        ),
+        errorCode,
+      };
     }
   }, []);
 
@@ -478,6 +561,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const rawUser = (me?.user as any) || (res.user as any) || null;
       if (!rawUser) return { success: false, error: "User profile could not be loaded" };
       const hydrated = await attachSavedProviders(sanitizeUser(rawUser));
+      await setSecureItem(SESSION_USER_CACHE_KEY, JSON.stringify(hydrated)).catch(() => undefined);
       setUser(hydrated);
       setRequiresBiometric(false);
       return { success: true, user: hydrated };
@@ -498,6 +582,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const rawUser = (me?.user as any) || (res.user as any) || null;
       if (!rawUser) return { success: false, error: "User profile could not be loaded" };
       const hydrated = await attachSavedProviders(sanitizeUser(rawUser));
+      await setSecureItem(SESSION_USER_CACHE_KEY, JSON.stringify(hydrated)).catch(() => undefined);
       setUser(hydrated);
       setRequiresBiometric(false);
       return { success: true, user: hydrated };
@@ -538,6 +623,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const rawUser = (me?.user as any) || (res.user as any) || null;
       if (!rawUser) return { success: false, error: "User profile could not be loaded" };
       const hydrated = await attachSavedProviders(sanitizeUser({ ...rawUser, savedProviders: [] }));
+      await setSecureItem(SESSION_USER_CACHE_KEY, JSON.stringify(hydrated)).catch(() => undefined);
       setUser(hydrated);
       setRequiresBiometric(false);
       return {
@@ -698,10 +784,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const result = await authenticateWithBiometric("Sign in to Athoo");
       if (!result.success) return { success: false, error: result.error || "Authentication cancelled or failed" };
 
-      const token = await getToken();
+      let token = await getToken();
       if (!token) {
-        await disableBiometric();
-        return { success: false, error: "Session expired. Please login again." };
+        const restored = await restoreAccessToken();
+        if (restored.status === "renewed" && restored.token) {
+          token = restored.token;
+        } else if (restored.status === "unavailable") {
+          return { success: false, error: "Your session is saved, but Athoo cannot reconnect yet. Please try again." };
+        } else {
+          await clearLocalSession(true);
+          return { success: false, error: "Session expired. Please login again." };
+        }
       }
       const res = await api.getMe();
       const rawUser = (res?.user as any) || null;
@@ -788,6 +881,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await setToken(token, true);
         await setRefreshToken(refreshToken, true);
         await enableBiometric(user.phone, user.role);
+
+        const [localEnabled, savedPhone, savedRole] = await Promise.all([
+          isBiometricEnabled(),
+          getBiometricPhone(),
+          getBiometricRole(),
+        ]);
+        const expectedRole = user.role === "provider" ? "provider" : "customer";
+
+        if (
+          response.user?.biometricEnabled !== true ||
+          !localEnabled ||
+          savedPhone !== user.phone ||
+          savedRole !== expectedRole
+        ) {
+          throw new Error("Athoo could not securely save the biometric login setting on this device.");
+        }
       } catch (storageError) {
         await api.setBiometricPreference({ enabled: false }).catch(() => undefined);
         await disableBiometric().catch(() => undefined);
@@ -837,4 +946,3 @@ export function useAuth() {
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
 }
-

@@ -1,18 +1,18 @@
 import { Icon } from "@/components/ui/Icon";
+import { PrivateImage } from "@/services/storage";
 import { useCall } from "@/context/CallContext";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useMemo, useRef } from "react";
+import { ActivityIndicator, Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 function formatDuration(seconds: number) {
   return `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
 }
 
-const KEYPAD_NUMBERS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"];
 
 export default function CallScreen() {
   const { theme } = useTheme();
@@ -22,14 +22,15 @@ export default function CallScreen() {
     callDuration,
     endCall,
     isMuted,
+    remoteMuted,
     setMuted,
     isSpeaker,
     setSpeaker,
     mediaState,
     transportLabel,
     transportDetails,
+    callAction,
   } = useCall();
-  const [keypadVisible, setKeypadVisible] = useState(false);
   const pulseAnimation = useRef(new Animated.Value(1)).current;
   const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
   const insets = useSafeAreaInsets();
@@ -64,7 +65,10 @@ export default function CallScreen() {
 
   if (!activeCall) return null;
 
+  const preparing = callAction === "starting";
   const connecting = activeCall.state === "outgoing";
+  const active = activeCall.state === "active";
+  const controlsLocked = preparing || callAction === "ending";
   const mediaFailed = mediaState === "failed";
   const mediaReady = mediaState === "webrtc";
   const mediaFallback = mediaState === "fallback";
@@ -76,8 +80,8 @@ export default function CallScreen() {
         ? theme.colors.warning
         : theme.colors.success;
   const gradient = theme.dark
-    ? [theme.colors.background, theme.colors.surfaceAlt, theme.colors.primaryPressed] as const
-    : [theme.colors.primaryPressed, theme.colors.primary, theme.colors.secondaryPressed] as const;
+    ? ["#0A0F1E", "#0D2B5E", "#1A1A2E"] as const
+    : ["#0D2B5E", "#1A3A6E", "#2D1B4E"] as const;
 
   return (
     <LinearGradient colors={gradient} style={[styles.container, { paddingTop: topPadding }]}>
@@ -100,9 +104,17 @@ export default function CallScreen() {
       <View style={styles.callerSection}>
         <Animated.View style={[styles.avatarRipple, { transform: [{ scale: pulseAnimation }] }]}>
           <View style={styles.avatarRippleInner}>
-            <View style={[styles.callerAvatar, { backgroundColor: activeCall.callerColor || theme.colors.primary }]}>
-              <Text style={styles.callerAvatarText}>{activeCall.callerInitials}</Text>
-            </View>
+            <PrivateImage
+              objectPath={activeCall.profileImage}
+              style={styles.callerAvatarImage}
+              resizeMode="cover"
+              accessibilityLabel={`${activeCall.callerName} profile photo`}
+              fallback={
+                <View style={[styles.callerAvatar, { backgroundColor: activeCall.callerColor || theme.colors.primary }]}>
+                  <Text style={styles.callerAvatarText}>{activeCall.callerInitials}</Text>
+                </View>
+              }
+            />
           </View>
         </Animated.View>
 
@@ -112,7 +124,7 @@ export default function CallScreen() {
         <View style={styles.statusRow}>
           <View style={[styles.statusDot, { backgroundColor: mediaDotColor }]} />
           <Text style={[styles.statusText, !connecting && styles.activeDuration]}>
-            {connecting ? "Calling…" : formatDuration(callDuration)}
+            {preparing ? "Preparing..." : connecting ? "Calling..." : active ? formatDuration(callDuration) : "Connecting..."}
           </Text>
         </View>
 
@@ -131,7 +143,7 @@ export default function CallScreen() {
             mediaReady && { color: theme.colors.success },
             mediaFailed && { color: theme.colors.danger },
           ]}>
-            {connecting ? "Preparing secure audio" : transportLabel}
+            {preparing ? "Preparing secure audio" : connecting ? "Waiting for answer" : mediaState === "connecting" ? "Connecting secure audio" : transportLabel}
           </Text>
         </View>
 
@@ -141,31 +153,23 @@ export default function CallScreen() {
               transportDetails.candidateType ? transportDetails.candidateType.toUpperCase() : null,
               transportDetails.protocol ? transportDetails.protocol.toUpperCase() : null,
               transportDetails.roundTripMs !== undefined ? `${transportDetails.roundTripMs} ms RTT` : null,
-            ].filter(Boolean).join(" · ")}
+            ].filter(Boolean).join(" - ")}
           </Text>
         ) : null}
-        <Text style={styles.privacyBadge}>Phone number hidden · Athoo secure call</Text>
+        <Text style={styles.privacyBadge}>Phone number hidden - Athoo secure call</Text>
+        {remoteMuted ? (
+          <Text style={[styles.privacyBadge, { backgroundColor: theme.colors.danger, marginTop: 8 }]}>
+            The other person muted their microphone
+          </Text>
+        ) : null}
       </View>
 
-      {keypadVisible ? (
-        <View style={styles.keypadGrid}>
-          {KEYPAD_NUMBERS.map((number) => (
-            <Pressable
-              key={number}
-              style={({ pressed }) => [styles.keypadButton, pressed && styles.pressed]}
-              accessibilityRole="button"
-              accessibilityLabel={`Key ${number}`}
-            >
-              <Text style={styles.keypadNumber}>{number}</Text>
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
 
       <View style={[styles.controls, { paddingBottom: bottomPadding + 24 }]}>
         <View style={styles.controlsRow}>
           <Pressable
             style={({ pressed }) => [styles.controlButton, isMuted && styles.controlButtonActive, pressed && styles.pressed]}
+            disabled={controlsLocked}
             onPress={() => setMuted(!isMuted)}
             accessibilityRole="button"
             accessibilityState={{ selected: isMuted }}
@@ -176,7 +180,8 @@ export default function CallScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.controlButton, isSpeaker && styles.controlButtonActive, pressed && styles.pressed]}
-            onPress={() => setSpeaker(!isSpeaker)}
+            disabled={controlsLocked}
+            onPress={() => void setSpeaker(!isSpeaker)}
             accessibilityRole="button"
             accessibilityState={{ selected: isSpeaker }}
           >
@@ -184,53 +189,57 @@ export default function CallScreen() {
             <Text style={styles.controlLabel}>Speaker</Text>
           </Pressable>
 
-          <Pressable
-            style={({ pressed }) => [styles.controlButton, keypadVisible && styles.controlButtonActive, pressed && styles.pressed]}
-            onPress={() => setKeypadVisible(!keypadVisible)}
-            accessibilityRole="button"
-            accessibilityState={{ selected: keypadVisible }}
-          >
-            <Icon name="grid" size={22} color={keypadVisible ? theme.colors.warning : theme.colors.white} />
-            <Text style={styles.controlLabel}>Keypad</Text>
-          </Pressable>
         </View>
 
         <Pressable
-          style={({ pressed }) => [styles.endCallButton, pressed && styles.endCallPressed]}
-          onPress={endCall}
+          style={({ pressed }) => [
+            styles.endCallButton,
+            controlsLocked && styles.controlDisabled,
+            pressed && !controlsLocked && styles.endCallPressed,
+          ]}
+          disabled={controlsLocked}
+          onPress={() => void endCall()}
           accessibilityRole="button"
           accessibilityLabel="End call"
+          accessibilityState={{ busy: controlsLocked, disabled: controlsLocked }}
         >
-          <Icon name="phone-off" size={28} color={theme.colors.white} />
+          {callAction === "ending" ? (
+            <ActivityIndicator size="small" color={theme.colors.white} />
+          ) : (
+            <Icon name="phone-off" size={28} color={theme.colors.white} />
+          )}
         </Pressable>
-        <Text style={styles.endCallLabel}>End Call</Text>
+        <Text style={styles.endCallLabel}>
+          {preparing ? "Preparing call..." : callAction === "ending" ? "Ending..." : "End Call"}
+        </Text>
       </View>
     </LinearGradient>
   );
 }
 
 function createStyles(theme: AthooTheme) {
-  const glass = "rgba(255,255,255,0.15)";
-  const glassStrong = "rgba(255,255,255,0.25)";
-  const mutedWhite = "rgba(255,255,255,0.76)";
+  const glass = "rgba(255,255,255,0.22)";
+  const glassStrong = "rgba(255,255,255,0.35)";
+  const mutedWhite = "rgba(255,255,255,0.92)";
 
   return StyleSheet.create({
     container: { flex: 1 },
     header: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
     headerButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: glass, alignItems: "center", justifyContent: "center" },
-    headerLabel: { flex: 1, fontSize: 14, fontWeight: "600", color: mutedWhite },
+    headerLabel: { flex: 1, fontSize: 14, fontWeight: "600", color: theme.colors.white },
     encryptedBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: glass, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
-    encryptedText: { fontSize: 11, color: mutedWhite },
-    callerSection: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 24 },
-    avatarRipple: { width: 128, height: 128, borderRadius: 64, backgroundColor: "rgba(255,255,255,0.10)", alignItems: "center", justifyContent: "center" },
-    avatarRippleInner: { width: 108, height: 108, borderRadius: 54, backgroundColor: "rgba(255,255,255,0.12)", alignItems: "center", justifyContent: "center" },
-    callerAvatar: { width: 88, height: 88, borderRadius: 44, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: "rgba(255,255,255,0.38)" },
-    callerAvatarText: { fontSize: 34, fontWeight: "800", color: theme.colors.white },
-    callerName: { fontSize: 28, fontWeight: "800", color: theme.colors.white, letterSpacing: -0.5, textAlign: "center" },
-    callerService: { fontSize: 15, color: mutedWhite, fontWeight: "500", textAlign: "center" },
+    encryptedText: { fontSize: 11, color: theme.colors.white },
+    callerSection: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10, paddingHorizontal: 20, paddingVertical: 10 },
+    avatarRipple: { width: 176, height: 176, borderRadius: 88, backgroundColor: "rgba(25,132,255,0.18)", alignItems: "center", justifyContent: "center" },
+    avatarRippleInner: { width: 154, height: 154, borderRadius: 77, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(74,175,255,0.45)" },
+    callerAvatar: { width: 136, height: 136, borderRadius: 68, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: "rgba(255,255,255,0.7)", overflow: "hidden" },
+    callerAvatarImage: { width: 136, height: 136, borderRadius: 68, borderWidth: 3, borderColor: "rgba(255,255,255,0.8)" },
+    callerAvatarText: { fontSize: 38, fontWeight: "800", color: theme.colors.white },
+    callerName: { fontSize: 24, fontWeight: "800", color: theme.colors.white, letterSpacing: -0.4, textAlign: "center" },
+    callerService: { fontSize: 15, color: theme.colors.white, fontWeight: "500", textAlign: "center" },
     statusRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
     statusDot: { width: 8, height: 8, borderRadius: 4 },
-    statusText: { fontSize: 17, fontWeight: "700", color: mutedWhite, letterSpacing: 0.3 },
+    statusText: { fontSize: 17, fontWeight: "700", color: theme.colors.white, letterSpacing: 0.3 },
     activeDuration: { color: theme.colors.white, letterSpacing: 1.6 },
     transportBadge: {
       minHeight: 30,
@@ -239,32 +248,30 @@ function createStyles(theme: AthooTheme) {
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
-      backgroundColor: "rgba(255,255,255,0.12)",
+      backgroundColor: "rgba(255,255,255,0.18)",
       borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.16)",
+      borderColor: "rgba(255,255,255,0.25)",
     },
     transportBadgeReady: {
-      backgroundColor: "rgba(22,163,74,0.16)",
-      borderColor: "rgba(134,239,172,0.30)",
+      backgroundColor: "rgba(22,163,74,0.25)",
+      borderColor: "rgba(134,239,172,0.45)",
     },
     transportBadgeFailed: {
-      backgroundColor: "rgba(220,38,38,0.16)",
-      borderColor: "rgba(254,202,202,0.28)",
+      backgroundColor: "rgba(220,38,38,0.25)",
+      borderColor: "rgba(254,202,202,0.4)",
     },
-    transportText: { fontSize: 11, color: mutedWhite, fontWeight: "600" },
-    transportDetails: { fontSize: 10, color: "rgba(255,255,255,0.68)", fontWeight: "600", textAlign: "center" },
-    privacyBadge: { fontSize: 11, color: "rgba(255,255,255,0.60)", marginTop: 3, textAlign: "center" },
-    keypadGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 12, paddingHorizontal: 40, paddingBottom: 16 },
-    keypadButton: { width: 70, height: 60, borderRadius: 16, backgroundColor: glass, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)" },
-    keypadNumber: { fontSize: 22, fontWeight: "700", color: theme.colors.white },
-    controls: { alignItems: "center", paddingHorizontal: 20, gap: 16 },
-    controlsRow: { flexDirection: "row", gap: 16, justifyContent: "center" },
-    controlButton: { width: 82, minHeight: 72, borderRadius: 20, backgroundColor: glass, alignItems: "center", justifyContent: "center", gap: 6, borderWidth: 1, borderColor: "rgba(255,255,255,0.16)" },
-    controlButtonActive: { backgroundColor: glassStrong, borderColor: "rgba(255,255,255,0.30)" },
-    controlLabel: { fontSize: 11, color: mutedWhite, fontWeight: "600" },
+    transportText: { fontSize: 11, color: theme.colors.white, fontWeight: "600" },
+    transportDetails: { fontSize: 10, color: "rgba(255,255,255,0.85)", fontWeight: "600", textAlign: "center" },
+    privacyBadge: { fontSize: 11, color: "rgba(255,255,255,0.75)", marginTop: 3, textAlign: "center" },
+    controls: { alignItems: "center", paddingHorizontal: 16, gap: 12 },
+    controlsRow: { width: "100%", flexDirection: "row", gap: 10, justifyContent: "center" },
+    controlButton: { flex: 1, maxWidth: 120, minWidth: 100, minHeight: 64, borderRadius: 18, backgroundColor: glass, alignItems: "center", justifyContent: "center", gap: 5, borderWidth: 1, borderColor: "rgba(255,255,255,0.25)" },
+    controlDisabled: { opacity: 0.5 },
+    controlButtonActive: { backgroundColor: glassStrong, borderColor: "rgba(255,255,255,0.4)" },
+    controlLabel: { fontSize: 11, color: theme.colors.white, fontWeight: "600" },
     endCallButton: { width: 80, height: 80, borderRadius: 40, backgroundColor: theme.colors.danger, alignItems: "center", justifyContent: "center", shadowColor: theme.colors.danger, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.5, shadowRadius: 16, elevation: 12 },
     endCallPressed: { opacity: 0.82, transform: [{ scale: 0.96 }] },
-    endCallLabel: { fontSize: 13, color: mutedWhite, fontWeight: "600" },
+    endCallLabel: { fontSize: 13, color: theme.colors.white, fontWeight: "600" },
     pressed: { opacity: 0.76 },
   });
 }

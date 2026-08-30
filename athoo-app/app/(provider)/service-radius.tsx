@@ -10,6 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import { api } from "@/services/api";
 
 const RADIUS_OPTIONS = [5, 10, 15, 20, 30, 50];
+const CUSTOM_RADIUS = -1; // sentinel for "custom input"
 
 export default function ServiceRadiusScreen() {
   const { theme } = useTheme();
@@ -19,6 +20,7 @@ export default function ServiceRadiusScreen() {
   const { user, refreshUser } = useAuth();
   const [selected, setSelected] = useState<number>((user as any)?.maxTravelDistanceKm || 15);
   const [saving, setSaving] = useState(false);
+  const [customValue, setCustomValue] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -34,8 +36,12 @@ export default function ServiceRadiusScreen() {
 
   const handleSave = async () => {
     setSaving(true);
+    let radiusValue = selected;
+    if (selected === CUSTOM_RADIUS && customValue && Number.isFinite(Number(customValue)) && Number(customValue) > 0) {
+      radiusValue = Number(customValue);
+    }
     try {
-      const response = await api.updateServiceRadius(selected);
+      const response = await api.updateServiceRadius(radiusValue);
       setSelected(response.maxTravelDistanceKm);
       await refreshUser();
       Alert.alert("Saved", `Your service radius is set to ${response.maxTravelDistanceKm} km.`);
@@ -58,15 +64,30 @@ export default function ServiceRadiusScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.infoCard}>
-          <Icon name="map-pin" size={28} color={theme.colors.primary} />
-          <Text style={styles.infoTitle}>Set Your Travel Radius</Text>
-          <Text style={styles.infoDesc}>
-            Customers outside your selected radius won't see your profile in their search results. Choose a radius that balances reach and travel convenience.
-          </Text>
-        </View>
+<View style={styles.infoCard}>
+  <Icon name="map-pin" size={28} color={theme.colors.primary} />
+  <Text style={styles.infoTitle}>Set Your Travel Radius</Text>
+  <Text style={styles.infoDesc}>
+    Customers outside your selected radius won't see your profile in their search results. Choose a radius that balances reach and travel convenience.
+  </Text>
+</View>
 
-        <Text style={styles.sectionLabel}>Select Maximum Distance</Text>
+{selected === CUSTOM_RADIUS ? (
+  <View style={styles.customInput}>
+    <Text style={styles.customLabel}>Custom radius (km):</Text>
+    <TextInput
+      style={styles.customInputBox}
+      keyboardType="number-pad"
+      placeholder="e.g. 25"
+      value={customValue}
+      onChangeText={setCustomValue}
+      maxLength={5}
+      disabled={saving}
+    />
+  </View>
+) : null}
+
+<Text style={styles.sectionLabel}>Select Maximum Distance</Text>
         <View style={styles.optionsGrid}>
           {RADIUS_OPTIONS.map(km => (
             <Pressable
@@ -120,7 +141,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 20, paddingVertical: 14,
+    paddingHorizontal: 16, paddingVertical: 12,
     backgroundColor: theme.colors.surface, borderBottomWidth: 1, borderBottomColor: theme.colors.border,
   },
   backBtn: {
@@ -128,44 +149,50 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     backgroundColor: theme.colors.surfaceAlt, alignItems: "center", justifyContent: "center",
   },
   title: { fontSize: 18, fontWeight: "800", color: theme.colors.text },
-  content: { padding: 20, paddingBottom: 40, gap: 16 },
+  content: { padding: 16, paddingBottom: 40, gap: 12},
   infoCard: {
     alignItems: "center", backgroundColor: theme.colors.surface,
-    borderRadius: 18, padding: 24, gap: 10,
+    borderRadius: 14, padding: 18, gap: 10,
     shadowColor: theme.colors.shadow, shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1, shadowRadius: 8, elevation: 2,
+    shadowOpacity: 0.05, shadowRadius: 8, elevation: 1,
   },
-  infoTitle: { fontSize: 18, fontWeight: "800", color: theme.colors.text, textAlign: "center" },
+  infoTitle: { fontSize: 16, fontWeight: "800", color: theme.colors.text, textAlign: "center" },
   infoDesc: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center", lineHeight: 20 },
   sectionLabel: { fontSize: 13, fontWeight: "700", color: theme.colors.text, marginBottom: 2 },
-  optionsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  optionsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8},
   option: {
     flex: 1, minWidth: "28%", alignItems: "center",
-    backgroundColor: theme.colors.surface, borderRadius: 16, paddingVertical: 16,
-    borderWidth: 2, borderColor: theme.colors.border, gap: 2,
+    backgroundColor: theme.colors.surface, borderRadius: 14, paddingVertical: 12,
+    borderWidth: 1, borderColor: theme.colors.border, gap: 2,
   },
   optionSelected: { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary + "10" },
-  optionKm: { fontSize: 26, fontWeight: "900", color: theme.colors.text },
+  optionKm: { fontSize: 22, fontWeight: "900", color: theme.colors.text },
   optionKmSelected: { color: theme.colors.primary },
   optionUnit: { fontSize: 12, color: theme.colors.textSecondary, fontWeight: "600" },
   optionUnitSelected: { color: theme.colors.primary },
   optionTag: { fontSize: 9, fontWeight: "700", color: theme.colors.textMuted, marginTop: 2 },
   optionTagSelected: { color: theme.colors.primary + "CC" },
+  customInput: {
+    marginHorizontal: 16, marginVertical: 8, padding: 12, borderWidth: 1, borderColor: theme.colors.border,
+    borderRadius: 8, backgroundColor: theme.colors.surface, gap: 6,
+  },
+  customLabel: { fontSize: 14, fontWeight: "600", color: theme.colors.text },
+  customInputBox: { borderWidth: 1, borderColor: theme.colors.border, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 6, fontSize: 18, width: "100%" },
   selectedSummary: {
     flexDirection: "row", gap: 8, backgroundColor: theme.colors.primary + "10",
-    borderRadius: 12, padding: 14, alignItems: "flex-start",
+    borderRadius: 12, padding: 12, alignItems: "flex-start",
     borderWidth: 1, borderColor: theme.colors.primary + "30",
   },
   selectedSummaryText: { flex: 1, fontSize: 13, color: theme.colors.text, lineHeight: 20 },
   tipBox: {
-    backgroundColor: theme.colors.surfaceAlt, borderRadius: 14, padding: 16, gap: 6,
+    backgroundColor: theme.colors.surfaceAlt, borderRadius: 12, padding: 12, gap: 6,
     borderWidth: 1, borderColor: theme.colors.border,
   },
   tipTitle: { fontSize: 13, fontWeight: "700", color: theme.colors.text, marginBottom: 2 },
   tip: { fontSize: 12, color: theme.colors.textSecondary, lineHeight: 18 },
   saveBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 8, backgroundColor: theme.colors.primary, borderRadius: 16, paddingVertical: 16, marginTop: 4,
+    gap: 8, backgroundColor: theme.colors.primary, borderRadius: 14, paddingVertical: 14, marginTop: 4,
   },
   saveBtnText: { fontSize: 16, fontWeight: "800", color: theme.colors.onBrand },
 });

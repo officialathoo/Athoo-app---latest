@@ -1,8 +1,11 @@
 import { Icon } from "@/components/ui/Icon";
+import { brandConfig } from "@/config/brand";
+import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -17,7 +20,9 @@ import { Button } from "@/components/ui/Button";
 import { useAuth, UserRole } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
+import { createAuthPalette } from "@/design/authPalette";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { LegalAcceptanceCheckbox, LEGAL_VERSION } from "@/components/ui/LegalAcceptanceCheckbox";
 import { apiErrorToMessage } from "@/lib/apiError";
 
@@ -30,6 +35,7 @@ export default function RegisterScreen() {
 
   const { sendOtp, verifyOtpAndLogin, register, promptBiometricSetup } = useAuth();
   const { theme } = useTheme();
+  const auth = useMemo(() => createAuthPalette(theme), [theme]);
   const { translate: tr, textAlign, writingDirection, direction } = useLang();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const localizedText = useMemo(() => ({ textAlign, writingDirection }), [textAlign, writingDirection]);
@@ -147,18 +153,44 @@ export default function RegisterScreen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: topPad + 10 }]} keyboardShouldPersistTaps="handled">
-        <Pressable style={styles.backBtn} onPress={() => {
-          if (step === "otp") { setStep("phone"); setOtp(""); }
-          else if (step === "details" && !phoneParam) { setStep("otp"); }
-          else { router.back(); }
-        }}>
-          <Icon name="arrow-left" size={22} color={theme.colors.text} />
-        </Pressable>
+        <LinearGradient
+          colors={
+            theme.dark
+              ? [auth.heroInk, auth.heroNavy, auth.heroBlue]
+              : selectedRole === "provider"
+                ? [theme.colors.secondaryPressed, theme.colors.secondary, auth.heroAmber]
+                : [theme.colors.primaryPressed, theme.colors.primary, auth.heroSky]
+          }
+          style={styles.hero}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        >
+          <View style={styles.heroTop}>
+            <Pressable style={styles.backBtn} onPress={() => {
+              if (step === "otp") { setStep("phone"); setOtp(""); }
+              else if (step === "details" && !phoneParam) { setStep("otp"); }
+              else { router.back(); }
+            }}>
+              <Icon name="arrow-left" size={22} color={theme.colors.white} />
+            </Pressable>
+            <View style={styles.brandRow}>
+              <Image source={brandConfig.assets.appIcon} style={styles.brandIcon} resizeMode="cover" />
+              <Text style={styles.brandName}>{brandConfig.displayName}</Text>
+            </View>
+          </View>
 
-        <View style={styles.header}>
-          <Text style={[styles.title, localizedText]}>{step === "phone" ? tr("Create Account") : step === "otp" ? tr("Verify Phone") : tr("Your Details")}</Text>
-          <Text style={[styles.subtitle, localizedText]}>{step === "phone" ? tr("Enter your phone number to get started") : step === "otp" ? tr("We sent a code to {{phone}}", { phone }) : tr("Almost done! Fill in your details")}</Text>
-        </View>
+          <View style={styles.header}>
+            <Text style={[styles.title, localizedText]}>{step === "phone" ? tr("Create Account") : step === "otp" ? tr("Verify Phone") : tr("Your Details")}</Text>
+            <Text style={[styles.subtitle, localizedText]}>{step === "phone" ? tr("Enter your phone number to get started") : step === "otp" ? tr("We sent a code to {{phone}}", { phone }) : tr("Almost done! Fill in your details")}</Text>
+          </View>
+
+          <View style={styles.stepBadge}>
+            <Icon name={step === "phone" ? "phone" : step === "otp" ? "shield-check" : "user-check"} size={13} color={theme.colors.white} />
+            <Text style={styles.stepBadgeText}>
+              {step === "phone" ? tr("Step 1 - Mobile") : step === "otp" ? tr("Step 2 - Verification") : tr("Step 3 - Account Details")}
+            </Text>
+          </View>
+        </LinearGradient>
 
         {step === "phone" && <View style={styles.form}><View style={styles.inputGroup}><Text style={[styles.label, localizedText]}>{tr("Phone Number")}</Text><View style={[styles.inputWrapper, localizedRow]}><Icon name="phone" size={18} color={theme.colors.textMuted} /><TextInput style={[styles.input, localizedText]} value={phone} onChangeText={setPhone} placeholder="03XX-XXXXXXX" placeholderTextColor={theme.colors.textMuted} keyboardType="phone-pad" autoFocus /></View></View><Button title={loading ? tr("Sending...") : tr("Get Verification Code")} onPress={handleSendOtp} loading={loading} fullWidth style={{ marginTop: 8 }} /></View>}
 
@@ -184,27 +216,187 @@ export default function RegisterScreen() {
 const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   rowReverse: { flexDirection: "row-reverse" },
-  content: { padding: 24, paddingBottom: 60 },
-  backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt, alignItems: "center", justifyContent: "center", marginBottom: 24 },
-  header: { marginBottom: 32, gap: 8 },
-  title: { fontSize: 28, fontWeight: "800", color: theme.colors.text },
-  subtitle: { fontSize: 15, color: theme.colors.textSecondary, lineHeight: 22 },
-  form: { gap: 16 },
-  inputGroup: { gap: 8 },
-  label: { fontSize: 14, fontWeight: "600", color: theme.colors.text },
-  inputWrapper: { flexDirection: "row", alignItems: "center", backgroundColor: theme.colors.surface, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, borderWidth: 1.5, borderColor: theme.colors.border, gap: 10 },
-  input: { flex: 1, fontSize: 16, color: theme.colors.text },
-  otpInput: { fontSize: 24, fontWeight: "800", letterSpacing: 12 },
-  otpHintBox: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: theme.colors.secondary + "15", borderRadius: 12, padding: 12, borderWidth: 1, borderColor: theme.colors.secondary + "30" },
-  otpHintText: { fontSize: 13, color: theme.colors.text },
-  otpTimerText: { textAlign: "center", fontSize: 12, color: theme.colors.textSecondary },
-  otpTimerExpired: { color: theme.colors.danger, fontWeight: "700" },
-  resendBtn: { alignSelf: "center", paddingVertical: 8 },
-  resendText: { fontSize: 14, color: theme.colors.primary, fontWeight: "600" },
-  phoneDisplay: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: theme.colors.success + "15", borderRadius: 12, padding: 12, borderWidth: 1, borderColor: theme.colors.success + "30" },
-  phoneDisplayText: { fontSize: 13, color: theme.colors.text, fontWeight: "600" },
-  loginRow: { flexDirection: "row", justifyContent: "center", marginTop: 32 },
-  loginText: { fontSize: 14, color: theme.colors.textSecondary },
-  loginLink: { fontSize: 14, color: theme.colors.primary, fontWeight: "700" },
+  content: {
+    width: "100%",
+    maxWidth: redesign.layout.maxContentWidth,
+    alignSelf: "center",
+    paddingBottom: 52,
+  },
+  hero: {
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: 12,
+    paddingBottom: 42,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+  },
+  heroTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing.md,
+  },
+  backBtn: {
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
+    backgroundColor: "rgba(255,255,255,0.13)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.22)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  brandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+  },
+  brandIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: theme.colors.white,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.40)",
+  },
+  brandName: {
+    ...theme.typography.h3,
+    color: theme.colors.white,
+    letterSpacing: -0.3,
+  },
+  header: { marginTop: 26, gap: 6 },
+  title: {
+    ...theme.typography.display,
+    color: theme.colors.white,
+    letterSpacing: -0.7,
+  },
+  subtitle: {
+    ...theme.typography.body,
+    color: "rgba(255,255,255,0.82)",
+    maxWidth: 520,
+  },
+  stepBadge: {
+    alignSelf: "flex-start",
+    marginTop: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: theme.radius.pill,
+    backgroundColor: "rgba(255,255,255,0.13)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.24)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  stepBadgeText: {
+    ...theme.typography.caption,
+    color: theme.colors.white,
+    fontFamily: theme.typography.label.fontFamily,
+  },
+  form: {
+    gap: redesign.layout.fieldGap,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.xl,
+    padding: 20,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    marginHorizontal: redesign.layout.horizontalPadding,
+    marginTop: -18,
+    ...theme.shadows.md,
+  },
+  inputGroup: { gap: 7 },
+  label: {
+    ...theme.typography.label,
+    color: theme.colors.text,
+  },
+  inputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: theme.colors.input,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: 14,
+    minHeight: redesign.control.standardHeight,
+    borderWidth: redesign.visual.inputBorderWidth,
+    borderColor: theme.colors.border,
+    gap: 10,
+  },
+  input: {
+    flex: 1,
+    ...theme.typography.bodyLg,
+    color: theme.colors.text,
+    paddingVertical: 0,
+  },
+  otpInput: {
+    fontSize: 27,
+    lineHeight: 34,
+    fontFamily: theme.typography.h1.fontFamily,
+    letterSpacing: 14,
+    textAlign: "center",
+  },
+  otpHintBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: theme.colors.premiumSoft,
+    borderRadius: theme.radius.md,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.secondary + "40",
+  },
+  otpHintText: {
+    ...theme.typography.body,
+    color: theme.colors.text,
+  },
+  otpTimerText: {
+    ...theme.typography.caption,
+    textAlign: "center",
+    color: theme.colors.textSecondary,
+    marginTop: -2,
+  },
+  otpTimerExpired: {
+    color: theme.colors.danger,
+    fontFamily: theme.typography.label.fontFamily,
+  },
+  resendBtn: {
+    alignSelf: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  resendText: {
+    ...theme.typography.body,
+    color: theme.colors.primary,
+    fontFamily: theme.typography.label.fontFamily,
+  },
+  phoneDisplay: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: theme.colors.successSoft,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    borderWidth: 1,
+    borderColor: theme.colors.success + "40",
+  },
+  phoneDisplayText: {
+    ...theme.typography.body,
+    color: theme.colors.text,
+    fontFamily: theme.typography.label.fontFamily,
+  },
+  loginRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 22,
+    marginHorizontal: redesign.layout.horizontalPadding,
+    paddingVertical: 12,
+  },
+  loginText: {
+    ...theme.typography.body,
+    color: theme.colors.textSecondary,
+  },
+  loginLink: {
+    ...theme.typography.body,
+    color: theme.colors.primary,
+    fontFamily: theme.typography.h3.fontFamily,
+  },
 });
-

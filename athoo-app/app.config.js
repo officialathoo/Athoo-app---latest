@@ -129,7 +129,7 @@ const appScheme = readEnv(
 
 const appVersion = readEnv(
   "APP_VERSION",
-  "1.1.0",
+  "2.2.0",
 );
 
 const expoOwner = readEnv(
@@ -267,7 +267,7 @@ const splashBackgroundLight = readEnv(
 
 const splashBackgroundDark = readEnv(
   "SPLASH_BACKGROUND_DARK",
-  "#08111F",
+  "#061231",
 );
 
 const adaptiveIconBackground = readEnv(
@@ -539,6 +539,16 @@ const extra = {
     "EXPO_PUBLIC_SUPPORT_FACEBOOK_URL",
   ),
 
+  SUPPORT_X_URL: readEnv(
+    "EXPO_PUBLIC_SUPPORT_X_URL",
+    "https://x.com/athoo_services",
+  ),
+
+  WEBSITE_URL: readEnv(
+    "EXPO_PUBLIC_WEBSITE_URL",
+    "https://athoo.pk",
+  ),
+
   SUPPORT_EMAIL: readEnv(
     "EXPO_PUBLIC_SUPPORT_EMAIL",
   ),
@@ -694,6 +704,9 @@ module.exports = {
 
         NSPhotoLibraryAddUsageDescription:
           `${brandDisplayName} saves media to your photo library only when you request it.`,
+
+        UIFileSharingEnabled: true,
+        LSSupportsOpeningDocumentsInPlace: true,
       },
     },
 
@@ -702,7 +715,7 @@ module.exports = {
         splashBackgroundLight,
 
       translucent: false,
-      barStyle: "dark-content",
+      barStyle: "light-content",
     },
 
     android: {
@@ -746,7 +759,7 @@ module.exports = {
         "expo-splash-screen",
         {
           image: splashImagePath,
-          imageWidth: 220,
+          imageWidth: 200,
           resizeMode: "contain",
 
           backgroundColor:

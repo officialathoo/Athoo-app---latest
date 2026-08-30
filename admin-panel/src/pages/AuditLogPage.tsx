@@ -1,8 +1,11 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
-import { Search, Shield, ChevronLeft, ChevronRight, Loader2, Info, RefreshCw, Download, Filter } from "lucide-react";
+import { Search, Shield, ChevronLeft, ChevronRight, Loader2, Info, RefreshCw, Download, Filter, AlertTriangle } from "lucide-react";
 import { buildCsv } from "@/lib/csv";
+import { useAdmin } from "@/hooks/useAdmin";
+import { hasAdminUiPermission } from "@/lib/permissions";
+import type { AdminUser } from "@/lib/types";
 
 interface AuditEntry {
   id: string;
@@ -49,16 +52,24 @@ const ACTION_TYPES = ["All", "create", "update", "delete", "login", "ban", "unba
 
 export function AuditLogPage() {
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [actionFilter, setActionFilter] = useState("All");
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState<string | null>(null);
   const limit = 25;
+  const { admin } = useAdmin();
+  const canViewAudit = hasAdminUiPermission(admin, "audit.read");
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
   const { data, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ["audit-log", page, search, actionFilter],
+    queryKey: ["audit-log", page, debouncedSearch, actionFilter],
     queryFn: () =>
-      api<{ entries?: AuditEntry[]; logs?: AuditEntry[]; total: number }>(
-        `/api/admin/audit-log?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}${actionFilter !== "All" ? `&action=${encodeURIComponent(actionFilter)}` : ""}`
+      api<{ entries?: AuditEntry[]; logs?: AuditEntry[]; total: number; page?: number; limit?: number }>(
+        `/api/admin/audit-log?page=${page}&limit=${limit}&search=${encodeURIComponent(debouncedSearch)}${actionFilter !== "All" ? `&action=${encodeURIComponent(actionFilter)}` : ""}`
       ),
     staleTime: 30000,
   });
@@ -124,9 +135,9 @@ export function AuditLogPage() {
           <button
             onClick={handleExportCsv}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 text-sm font-medium"
-            title="Export CSV"
+            title="Export current filtered page as CSV"
           >
-            <Download size={14} /> CSV
+            <Download size={14} /> Page CSV
           </button>
         </div>
       </div>
@@ -185,12 +196,17 @@ export function AuditLogPage() {
                     {expanded === entry.id && (
                       <tr className="bg-slate-50">
                         <td colSpan={5} className="px-5 py-3 space-y-2">
+                          {entry.details && (entry.details as Record<string, string>).reason && (
+                            <p className="text-xs text-slate-700 bg-white border border-slate-200 rounded-lg p-3">
+                              <span className="font-semibold text-slate-800"><AlertTriangle size={12} className="inline mr-1" /> Reason: </span>{String((entry.details as Record<string, string>).reason)}
+                            </p>
+                          )}
                           {entry.ipAddress && (
                             <p className="text-xs text-slate-500 font-mono">
                               <span className="font-semibold text-slate-700">IP: </span>{entry.ipAddress}
                             </p>
                           )}
-                          {entry.details && (
+                          {entry.details && !entry.details.reason && (
                             <pre className="text-xs text-slate-600 font-mono bg-white border border-slate-200 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap max-h-32">
                               {JSON.stringify(entry.details, null, 2)}
                             </pre>

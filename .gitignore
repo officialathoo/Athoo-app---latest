@@ -2,6 +2,8 @@
 
 # compiled output
 dist
+dist-web
+dist-export
 tmp
 out-tsc
 *.tsbuildinfo

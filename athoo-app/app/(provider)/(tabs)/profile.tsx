@@ -1,5 +1,5 @@
 import { Icon } from "@/components/ui/Icon";
-import * as ImagePicker from "expo-image-picker";
+import { AvatarPickerModals } from "@/components/ui/AvatarPickerModals";
 import { pickFromCamera, pickFromGallery } from "@/utils/mediaPicker";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
@@ -10,7 +10,6 @@ import {
   Animated,
   InteractionManager,
   Linking,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -20,6 +19,7 @@ import {
   View,
 } from "react-native";
 import { BiometricLoginSetting } from "@/components/security/BiometricLoginSetting";
+import { InviteFriendsCard } from "@/components/profile/InviteFriendsCard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useBookings } from "@/context/BookingContext";
@@ -28,11 +28,16 @@ import { useCategories } from "@/context/CategoriesContext";
 import { api } from "@/services/api";
 import { uploadPickedImage, PrivateImage } from "@/services/storage";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 import type { AthooTheme } from "@/design/theme";
 import { getCategoryAppearance } from "@/utils/categoryAppearance";
 import { apiErrorToMessage } from "@/lib/apiError";
 import { runtimeConfig } from "@/config/runtime";
+import { appIdentity } from "@/config/appIdentity";
 
+
+const PROVIDER_PROFILE_BACKGROUND_REFRESH_MS = 60_000;
 
 export default function ProviderProfileScreen() {
   const { user, logout, updateUser, refreshUser } = useAuth();
@@ -59,6 +64,26 @@ export default function ProviderProfileScreen() {
   const [togglingAvail, setTogglingAvail] = useState(false);
   const availabilityProgress = useRef(new Animated.Value(user?.isAvailable ? 1 : 0)).current;
   const [uploadingPhoto, setUploadingPhoto] = React.useState(false);
+  const profileRefreshInFlightRef = useRef(false);
+  const profileLoadedRef = useRef(false);
+  const profileLastLoadedAtRef = useRef(0);
+
+  const refreshProfile = useCallback(async (
+    mode: "initial" | "background" | "event" = "initial"
+  ) => {
+    if (profileRefreshInFlightRef.current) return;
+
+    profileRefreshInFlightRef.current = true;
+    try {
+      await refreshUser();
+      profileLoadedRef.current = true;
+      profileLastLoadedAtRef.current = Date.now();
+    } catch {
+      // Keep the currently visible profile when a background refresh fails.
+    } finally {
+      profileRefreshInFlightRef.current = false;
+    }
+  }, [refreshUser]);
 
   const toggleAvailability = async (val: boolean) => {
     const previous = isAvailable;
@@ -78,8 +103,18 @@ export default function ProviderProfileScreen() {
   };
 
   useFocusEffect(useCallback(() => {
-    refreshUser().catch(() => {});
-  }, []));
+    if (!profileLoadedRef.current) {
+      void refreshProfile("initial");
+      return;
+    }
+
+    if (
+      Date.now() - profileLastLoadedAtRef.current >=
+      PROVIDER_PROFILE_BACKGROUND_REFRESH_MS
+    ) {
+      void refreshProfile("background");
+    }
+  }, [refreshProfile]));
 
   useEffect(() => {
     setIsAvailable(!!user?.isAvailable);
@@ -134,47 +169,11 @@ export default function ProviderProfileScreen() {
   const avatarColor = user?.profileColor || theme.colors.secondary;
 
   const handleDeactivate = () => {
-    Alert.alert(
-      "Deactivate Account",
-      "Your account will be hidden from the app. You can reactivate it by logging back in. Continue?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Deactivate",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await api.deactivateMe();
-              await logout();
-            } catch {
-              Alert.alert("Error", "Could not deactivate account. Please try again.");
-            }
-          },
-        },
-      ]
-    );
+    router.push("/(provider)/privacy" as any);
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert(
-      "Delete Account",
-      "Your account will be deactivated and scheduled for deletion after 7 days. You can cancel during the grace period by signing in again.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await api.requestAccountDeletion({ reason: "Requested from provider profile" });
-              await logout();
-            } catch {
-              Alert.alert("Error", "Could not delete account. Please try again.");
-            }
-          },
-        },
-      ]
-    );
+    router.push("/(provider)/privacy" as any);
   };
 
   const handleLogout = () => {
@@ -205,7 +204,6 @@ export default function ProviderProfileScreen() {
       title: t.workEarnings,
       items: [
         { icon: "crown", label: t.premiumPlan, color: theme.colors.warning, onPress: () => router.push("/(provider)/subscription") },
-        { icon: "dollar-sign", label: t.earningsHistory, color: theme.colors.success, onPress: () => router.push("/(provider)/earnings") },
         { icon: "file-text", label: t.invoices, color: theme.colors.primary, onPress: () => router.push("/(provider)/invoices") },
         { icon: "briefcase", label: t.myNegotiations, color: theme.colors.secondary, onPress: () => router.push("/(provider)/negotiations") },
         { icon: "calendar", label: t.availabilitySchedule, color: theme.colors.info, onPress: () => router.push("/(provider)/availability" as any) },
@@ -217,7 +215,7 @@ export default function ProviderProfileScreen() {
       title: t.account,
       items: [
         { icon: "file-check", label: tr("Verification documents & validity"), color: theme.colors.success, onPress: () => router.push("/(provider)/verification-documents") },
-        { icon: "bell", label: t.notifications, color: theme.colors.accent, onPress: () => router.push("/(provider)/notifications") },
+        { icon: "settings", label: tr("Notification Preferences"), color: theme.colors.accent, onPress: () => router.push("/notification-preferences" as any) },
         { icon: "mail", label: "Email & communication", color: theme.colors.primary, onPress: () => router.push("/email-preferences" as any) },
         { icon: "sun", label: t.appearance, color: theme.colors.accent, onPress: () => router.push("/appearance" as any) },
         { icon: "lock", label: t.changePassword, color: theme.colors.warning, onPress: () => router.push("/(provider)/change-password") },
@@ -317,10 +315,21 @@ export default function ProviderProfileScreen() {
         </View>
       </LinearGradient>
 
+      <InviteFriendsCard
+        role="provider"
+        referralCode={user?.referralCode}
+        referralCount={user?.referralCount}
+        delay={70}
+      />
+
       {user?.services && user.services.length > 0 && (
         <View style={styles.servicesCard}>
           <Text style={styles.cardTitle}>{t.myServices}</Text>
-          <View style={styles.servicesGrid}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.servicesGrid}
+          >
             {user.services.map((sid) => {
               const svc = getCategoryBySlug(sid);
               if (!svc) return <View key={sid} style={styles.serviceChip}><Text style={styles.serviceChipText}>{sid}</Text></View>;
@@ -332,7 +341,7 @@ export default function ProviderProfileScreen() {
                 </View>
               );
             })}
-          </View>
+          </ScrollView>
         </View>
       )}
 
@@ -446,77 +455,31 @@ export default function ProviderProfileScreen() {
         </Pressable>
       </View>
 
-      <Text style={styles.version}>Athoo Provider v1.0 • Pakistan</Text>
+      <Text style={styles.version}>Athoo Provider v{appIdentity.version} | Pakistan</Text>
 
-      <Modal visible={showAvatarModal} animationType="slide" transparent>
-        <Pressable style={styles.modalOverlay} onPress={() => setShowAvatarModal(false)}>
-          <View style={styles.avatarModalBox} onStartShouldSetResponder={() => true}>
-            <Text style={styles.colorPickerTitle}>Profile Picture</Text>
-            <View style={styles.avatarPreviewRow}>
-              {user?.profileImage ? (
-                <PrivateImage objectPath={user.profileImage} style={styles.avatarPreview} />
-              ) : (
-                <View style={[styles.avatarPreview, { backgroundColor: avatarColor, alignItems: "center", justifyContent: "center" }]}>
-                  <Text style={{ fontSize: 28, fontWeight: "800", color: theme.colors.onBrand }}>{initials}</Text>
-                </View>
-              )}
-              {user?.profileImage && (
-                <Pressable style={styles.removePhotoBtn} onPress={() => { updateUser({ profileImage: null as any }); setShowAvatarModal(false); }}>
-                  <Icon name="trash-2" size={14} color={theme.colors.danger} />
-                  <Text style={styles.removePhotoText}>Remove Photo</Text>
-                </Pressable>
-              )}
-            </View>
-            <Pressable style={styles.avatarOption} onPress={() => pickImage(false)}>
-              <View style={[styles.avatarOptIcon, { backgroundColor: theme.colors.primary + "15" }]}>
-                <Icon name="image" size={20} color={theme.colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.avatarOptLabel}>Upload from Gallery</Text>
-                <Text style={styles.avatarOptSub}>Choose a photo from your device</Text>
-              </View>
-              <Icon name="chevron-right" size={16} color={theme.colors.textMuted} />
-            </Pressable>
-            <Pressable style={styles.avatarOption} onPress={() => pickImage(true)}>
-              <View style={[styles.avatarOptIcon, { backgroundColor: theme.colors.accentSoft }]}>
-                <Icon name="camera" size={20} color={theme.colors.accent} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.avatarOptLabel}>Take a Selfie</Text>
-                <Text style={styles.avatarOptSub}>Use your camera</Text>
-              </View>
-              <Icon name="chevron-right" size={16} color={theme.colors.textMuted} />
-            </Pressable>
-            <Pressable style={styles.avatarOption} onPress={() => { setShowAvatarModal(false); setTimeout(() => setShowColorPicker(true), 300); }}>
-              <View style={[styles.avatarOptIcon, { backgroundColor: theme.colors.secondary + "15" }]}>
-                <Icon name="droplet" size={20} color={theme.colors.secondary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.avatarOptLabel}>Choose Color</Text>
-                <Text style={styles.avatarOptSub}>Pick an avatar color</Text>
-              </View>
-              <Icon name="chevron-right" size={16} color={theme.colors.textMuted} />
-            </Pressable>
-          </View>
-        </Pressable>
-      </Modal>
-
-      <Modal visible={showColorPicker} animationType="slide" transparent>
-        <Pressable style={styles.modalOverlay} onPress={() => setShowColorPicker(false)}>
-          <View style={styles.colorPickerBox} onStartShouldSetResponder={() => true}>
-            <Text style={styles.colorPickerTitle}>Choose Avatar Color</Text>
-            <View style={styles.colorGrid}>
-              {avatarColors.map((c) => (
-                <Pressable
-                  key={c}
-                  style={[styles.colorCircle, { backgroundColor: c }, user?.profileColor === c && styles.colorSelected]}
-                  onPress={() => { updateUser({ profileColor: c }); setShowColorPicker(false); }}
-                />
-              ))}
-            </View>
-          </View>
-        </Pressable>
-      </Modal>
+      <AvatarPickerModals
+        avatarVisible={showAvatarModal}
+        colorVisible={showColorPicker}
+        profileImage={user?.profileImage}
+        profileColor={user?.profileColor}
+        initials={initials}
+        avatarColors={avatarColors}
+        onCloseAvatar={() => setShowAvatarModal(false)}
+        onCloseColor={() => setShowColorPicker(false)}
+        onPickImage={(useCamera) => void pickImage(useCamera)}
+        onRemovePhoto={() => {
+          updateUser({ profileImage: null as any });
+          setShowAvatarModal(false);
+        }}
+        onChangeColor={(c) => {
+          updateUser({ profileColor: c });
+          setShowColorPicker(false);
+        }}
+        onChooseColor={() => {
+          setShowAvatarModal(false);
+          setTimeout(() => setShowColorPicker(true), 300);
+        }}
+      />
 
 
     </ScrollView>
@@ -526,17 +489,36 @@ export default function ProviderProfileScreen() {
 const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   content: { paddingBottom: 120 },
-  headerGrad: { paddingHorizontal: 20, paddingBottom: 24 },
-  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
-  headerTitle: { fontSize: 20, fontWeight: "800", color: theme.colors.onBrand },
-  editBtn: {
-    width: 36, height: 36, borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center",
+  headerGrad: {
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingBottom: redesign.layout.sectionGap,
   },
-  avatarSection: { flexDirection: "row", alignItems: "center", gap: 16, marginBottom: 20 },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: redesign.layout.fieldGap,
+  },
+  headerTitle: { ...theme.typography.h2, color: theme.colors.onBrand },
+  editBtn: {
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: radius.md,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: "rgba(255,255,255,0.22)",
+  },
+  avatarSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: redesign.layout.cardGap,
+    marginBottom: redesign.layout.fieldGap,
+  },
   avatarWrap: { position: "relative" },
   avatar: {
-    width: 76, height: 76, borderRadius: 38,
+    width: 68, height: 68, borderRadius: 34,
     alignItems: "center", justifyContent: "center",
     borderWidth: 3, borderColor: "rgba(255,255,255,0.5)",
   },
@@ -548,92 +530,166 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderWidth: 2, borderColor: theme.colors.onBrand,
   },
   userInfo: { flex: 1, gap: 4 },
-  userName: { fontSize: 20, fontWeight: "800", color: theme.colors.onBrand },
+  userName: { fontSize: 18, fontWeight: "800", color: theme.colors.onBrand },
   verifiedRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   userRole: { fontSize: 13, color: "rgba(255,255,255,0.8)" },
   verifiedBadge: {
-    flexDirection: "row", alignItems: "center", gap: 3,
-    backgroundColor: theme.colors.secondary + "30", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: theme.colors.premiumSoft,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
   },
   verifiedText: { fontSize: 10, fontWeight: "700", color: theme.colors.secondary },
   userPhone: { fontSize: 12, color: "rgba(255,255,255,0.65)" },
   userPublicId: { fontSize: 11, fontWeight: "700", color: "rgba(255,255,255,0.78)", letterSpacing: 0.4 },
   statsRow: {
-    flexDirection: "row", backgroundColor: "rgba(255,255,255,0.15)",
-    borderRadius: 18, padding: 14, alignItems: "center",
+    flexDirection: "row",
+    backgroundColor: "rgba(255,255,255,0.14)",
+    borderRadius: radius.lg,
+    padding: redesign.layout.cardGap,
+    alignItems: "center",
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: "rgba(255,255,255,0.16)",
   },
   stat: { flex: 1, alignItems: "center" },
-  statVal: { fontSize: 18, fontWeight: "800", color: theme.colors.onBrand },
+  statVal: { fontSize: 16, fontWeight: "800", color: theme.colors.onBrand },
   statLbl: { fontSize: 10, color: "rgba(255,255,255,0.7)", fontWeight: "500", marginTop: 2 },
   statDiv: { width: 1, height: 30, backgroundColor: "rgba(255,255,255,0.2)" },
   servicesCard: {
-    margin: 16, marginBottom: 0,
-    backgroundColor: theme.colors.surface, borderRadius: 18, padding: 16, gap: 12,
-    borderWidth: 1, borderColor: theme.colors.border,
+    marginHorizontal: redesign.layout.horizontalPadding,
+    marginTop: redesign.layout.cardGap,
+    marginBottom: 0,
+    backgroundColor: theme.colors.surface,
+    borderRadius: radius.lg,
+    padding: redesign.layout.fieldGap,
+    gap: 10,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
   cardTitle: { fontSize: 13, fontWeight: "700", color: theme.colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
-  servicesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  servicesGrid: { flexDirection: "row", gap: 8, paddingRight: 8 },
   serviceChip: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexShrink: 0,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    borderWidth: redesign.visual.cardBorderWidth,
   },
   serviceChipText: { fontSize: 12, fontWeight: "600" },
   availCard: {
-    flexDirection: "row", alignItems: "center",
-    margin: 16, marginBottom: 0,
-    backgroundColor: theme.colors.surface, borderRadius: 18, padding: 16,
-    borderWidth: 1, borderColor: theme.colors.border,
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: redesign.layout.horizontalPadding,
+    marginTop: redesign.layout.cardGap,
+    marginBottom: 0,
+    backgroundColor: theme.colors.surface,
+    borderRadius: radius.lg,
+    padding: redesign.layout.fieldGap,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
   availLeft: { flex: 1, flexDirection: "row", alignItems: "center", gap: 12 },
-  availDotIcon: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center", position: "relative" },
+  availDotIcon: {
+    width: redesign.control.compactHeight,
+    height: redesign.control.compactHeight,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
   availPulse: { position: "absolute", width: 20, height: 20, borderRadius: 10 },
   availDotInner: { width: 12, height: 12, borderRadius: 6 },
   availTitle: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
   availSub: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 },
   socialCard: {
-    margin: 16, marginBottom: 0,
-    backgroundColor: theme.colors.surface, borderRadius: 18, padding: 16, gap: 12,
-    borderWidth: 1, borderColor: theme.colors.border,
+    marginHorizontal: redesign.layout.horizontalPadding,
+    marginTop: redesign.layout.cardGap,
+    marginBottom: 0,
+    backgroundColor: theme.colors.surface,
+    borderRadius: radius.lg,
+    padding: redesign.layout.fieldGap,
+    gap: 10,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
   socialRow: { flexDirection: "row", gap: 10 },
   socialBtn: {
-    flex: 1, alignItems: "center", justifyContent: "center",
-    gap: 6, paddingVertical: 12, borderRadius: 14,
+    flex: 1,
+    minHeight: redesign.control.standardHeight,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderRadius: radius.md,
   },
   socialLabel: { fontSize: 11, fontWeight: "700" },
-  menuSection: { marginTop: 16, paddingHorizontal: 16 },
+  menuSection: {
+    marginTop: redesign.layout.cardGap,
+    paddingHorizontal: redesign.layout.horizontalPadding,
+  },
   sectionTitle: { fontSize: 12, fontWeight: "700", color: theme.colors.textMuted, textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 8, marginLeft: 4 },
   menuCard: {
-    backgroundColor: theme.colors.surface, borderRadius: 18,
-    borderWidth: 1, borderColor: theme.colors.border, overflow: "hidden",
+    backgroundColor: theme.colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    overflow: "hidden",
+    ...theme.shadows.sm,
   },
   menuItem: {
-    flexDirection: "row", alignItems: "center", gap: 14,
-    paddingHorizontal: 16, paddingVertical: 14,
+    minHeight: redesign.control.largeHeight,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: redesign.layout.cardGap,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   menuItemBorder: { borderBottomWidth: 1, borderBottomColor: theme.colors.border },
   menuPressed: { backgroundColor: theme.colors.surfaceAlt },
-  menuIcon: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  menuIcon: {
+    width: redesign.control.compactHeight,
+    height: redesign.control.compactHeight,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   menuLabel: { flex: 1, fontSize: 14, fontWeight: "600", color: theme.colors.text },
   langBadge: {
     backgroundColor: theme.colors.primary + "20", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
   },
   langBadgeText: { fontSize: 11, fontWeight: "700", color: theme.colors.primary },
   logoutBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 8, paddingVertical: 14, backgroundColor: theme.colors.danger + "10",
-    borderRadius: 14, marginHorizontal: 16, marginTop: 16,
+    minHeight: redesign.control.standardHeight,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: theme.colors.dangerSoft,
+    borderRadius: radius.md,
+    marginHorizontal: redesign.layout.horizontalPadding,
+    marginTop: redesign.layout.cardGap,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.danger + "25",
   },
   logoutText: { fontSize: 14, fontWeight: "600", color: theme.colors.danger },
   dangerZone: {
-    marginHorizontal: 20,
-    marginBottom: 16,
-    borderRadius: 18,
-    borderWidth: 1.5,
+    marginHorizontal: redesign.layout.horizontalPadding,
+    marginBottom: redesign.layout.fieldGap,
+    borderRadius: radius.lg,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.danger + "30",
     backgroundColor: theme.colors.surface,
-    padding: 16,
+    padding: redesign.layout.fieldGap,
     gap: 10,
+    ...theme.shadows.sm,
   },
   dangerTitle: { fontSize: 12, fontWeight: "800", color: theme.colors.danger, textTransform: "uppercase", letterSpacing: 0.5 },
   dangerBtn: {
@@ -642,75 +698,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 10,
     paddingVertical: 11,
     paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1,
+    borderRadius: radius.md,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.danger + "30",
     backgroundColor: "transparent",
   },
   dangerBtnText: { fontSize: 13, fontWeight: "600", color: theme.colors.danger, flex: 1 },
   version: { textAlign: "center", fontSize: 12, color: theme.colors.textMuted, marginTop: 12, marginBottom: 4 },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  colorPickerBox: {
-    backgroundColor: theme.colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    padding: 28, gap: 20,
-  },
-  colorPickerTitle: { fontSize: 17, fontWeight: "800", color: theme.colors.text },
-  colorGrid: { flexDirection: "row", flexWrap: "wrap", gap: 16, justifyContent: "center" },
-  colorCircle: { width: 52, height: 52, borderRadius: 26 },
-  colorSelected: { borderWidth: 4, borderColor: theme.colors.text },
-  avatarModalBox: {
-    backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 28,
-    gap: 8,
-  },
-  avatarPreviewRow: { flexDirection: "row", alignItems: "center", gap: 16, marginBottom: 8 },
-  avatarPreview: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    borderWidth: 3,
-    borderColor: theme.colors.border,
-  },
-  removePhotoBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: theme.colors.danger + "12",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  removePhotoText: { fontSize: 12, color: theme.colors.danger, fontWeight: "600" },
-  avatarOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    padding: 14,
-    borderRadius: 14,
-    backgroundColor: theme.colors.surfaceAlt,
-  },
-  avatarOptIcon: { width: 44, height: 44, borderRadius: 13, alignItems: "center", justifyContent: "center" },
-  avatarOptLabel: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
-  avatarOptSub: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 1 },
-  langBox: {
-    backgroundColor: theme.colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    padding: 28, gap: 8,
-  },
-  langHint: { fontSize: 12, color: theme.colors.textSecondary, marginBottom: 4 },
-  langOption: {
-    flexDirection: "row", alignItems: "center", gap: 12,
-    padding: 16, borderRadius: 14, backgroundColor: theme.colors.surfaceAlt,
-    borderWidth: 1.5, borderColor: "transparent",
-  },
-  langOptionActive: { backgroundColor: theme.colors.primary + "10", borderColor: theme.colors.primary + "40" },
-  langOptionText: { fontSize: 15, fontWeight: "700", color: theme.colors.text },
-  langOptionSub: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 },
-  langCancelBtn: {
-    backgroundColor: theme.colors.surfaceAlt, borderRadius: 14, paddingVertical: 13,
-    alignItems: "center", marginTop: 4,
-  },
-  langCancelText: { fontSize: 15, fontWeight: "600", color: theme.colors.textSecondary },
 });
-
