@@ -8,6 +8,7 @@ import {
   db,
   messagesTable,
   negotiationsTable,
+  paymentAccountsTable,
   usersTable,
   type UploadSecurityRecord,
 } from "@workspace/db";
@@ -123,6 +124,12 @@ export async function canReadStoredUploadObject(
     .where(eq(usersTable.profileImage, normalized))
     .limit(1);
   if (profile.length) return true;
+
+  const paymentQr = await db.select({ id: paymentAccountsTable.id })
+    .from(paymentAccountsTable)
+    .where(eq(paymentAccountsTable.qrCodeUrl, normalized))
+    .limit(1);
+  if (paymentQr.length) return true;
 
   const booking = await db.select({ id: bookingsTable.id })
     .from(bookingsTable)
