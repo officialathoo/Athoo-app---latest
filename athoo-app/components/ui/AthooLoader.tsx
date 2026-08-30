@@ -94,7 +94,7 @@ export function AthooLoader({ tagline }: AthooLoaderProps) {
         <Image
           source={brandConfig.assets.mark}
           style={styles.logo}
-          resizeMode="contain"
+          resizeMode="cover"
         />
       </Animated.View>
 

@@ -14,6 +14,6 @@ test("inactive account review queue endpoint is implemented and scoped to review
   assert.match(route, /accountStatus, "active"/);
   assert.match(route, /isDeactivated, false/);
   assert.match(route, /isBlocked, false/);
-  assert.match(route, /items: rows\.map\(toSafeUser\)/);
+  assert.match(route, /items: rows\.map\(safeUserAllowlist\)/);
   assert.match(route, /reviewQueue/);
 });
