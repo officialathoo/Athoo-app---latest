@@ -80,8 +80,8 @@ export default function CallScreen() {
         ? theme.colors.warning
         : theme.colors.success;
   const gradient = theme.dark
-    ? [theme.colors.background, theme.colors.surfaceAlt, theme.colors.primaryPressed] as const
-    : [theme.colors.primaryPressed, theme.colors.primary, theme.colors.secondaryPressed] as const;
+    ? ["#0A0F1E", "#0D2B5E", "#1A1A2E"] as const
+    : ["#0D2B5E", "#1A3A6E", "#2D1B4E"] as const;
 
   return (
     <LinearGradient colors={gradient} style={[styles.container, { paddingTop: topPadding }]}>
@@ -218,28 +218,28 @@ export default function CallScreen() {
 }
 
 function createStyles(theme: AthooTheme) {
-  const glass = "rgba(255,255,255,0.15)";
-  const glassStrong = "rgba(255,255,255,0.25)";
-  const mutedWhite = "rgba(255,255,255,0.76)";
+  const glass = "rgba(255,255,255,0.22)";
+  const glassStrong = "rgba(255,255,255,0.35)";
+  const mutedWhite = "rgba(255,255,255,0.92)";
 
   return StyleSheet.create({
     container: { flex: 1 },
     header: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
     headerButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: glass, alignItems: "center", justifyContent: "center" },
-    headerLabel: { flex: 1, fontSize: 14, fontWeight: "600", color: mutedWhite },
+    headerLabel: { flex: 1, fontSize: 14, fontWeight: "600", color: theme.colors.white },
     encryptedBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: glass, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
-    encryptedText: { fontSize: 11, color: mutedWhite },
+    encryptedText: { fontSize: 11, color: theme.colors.white },
     callerSection: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10, paddingHorizontal: 20, paddingVertical: 10 },
-    avatarRipple: { width: 176, height: 176, borderRadius: 88, backgroundColor: "rgba(25,132,255,0.12)", alignItems: "center", justifyContent: "center" },
-    avatarRippleInner: { width: 154, height: 154, borderRadius: 77, backgroundColor: "rgba(255,255,255,0.10)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(74,175,255,0.34)" },
-    callerAvatar: { width: 136, height: 136, borderRadius: 68, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: "rgba(255,255,255,0.54)", overflow: "hidden" },
-    callerAvatarImage: { width: 136, height: 136, borderRadius: 68, borderWidth: 3, borderColor: "rgba(255,255,255,0.66)" },
+    avatarRipple: { width: 176, height: 176, borderRadius: 88, backgroundColor: "rgba(25,132,255,0.18)", alignItems: "center", justifyContent: "center" },
+    avatarRippleInner: { width: 154, height: 154, borderRadius: 77, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(74,175,255,0.45)" },
+    callerAvatar: { width: 136, height: 136, borderRadius: 68, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: "rgba(255,255,255,0.7)", overflow: "hidden" },
+    callerAvatarImage: { width: 136, height: 136, borderRadius: 68, borderWidth: 3, borderColor: "rgba(255,255,255,0.8)" },
     callerAvatarText: { fontSize: 38, fontWeight: "800", color: theme.colors.white },
     callerName: { fontSize: 24, fontWeight: "800", color: theme.colors.white, letterSpacing: -0.4, textAlign: "center" },
-    callerService: { fontSize: 15, color: mutedWhite, fontWeight: "500", textAlign: "center" },
+    callerService: { fontSize: 15, color: theme.colors.white, fontWeight: "500", textAlign: "center" },
     statusRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
     statusDot: { width: 8, height: 8, borderRadius: 4 },
-    statusText: { fontSize: 17, fontWeight: "700", color: mutedWhite, letterSpacing: 0.3 },
+    statusText: { fontSize: 17, fontWeight: "700", color: theme.colors.white, letterSpacing: 0.3 },
     activeDuration: { color: theme.colors.white, letterSpacing: 1.6 },
     transportBadge: {
       minHeight: 30,
@@ -248,30 +248,30 @@ function createStyles(theme: AthooTheme) {
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
-      backgroundColor: "rgba(255,255,255,0.12)",
+      backgroundColor: "rgba(255,255,255,0.18)",
       borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.16)",
+      borderColor: "rgba(255,255,255,0.25)",
     },
     transportBadgeReady: {
-      backgroundColor: "rgba(22,163,74,0.16)",
-      borderColor: "rgba(134,239,172,0.30)",
+      backgroundColor: "rgba(22,163,74,0.25)",
+      borderColor: "rgba(134,239,172,0.45)",
     },
     transportBadgeFailed: {
-      backgroundColor: "rgba(220,38,38,0.16)",
-      borderColor: "rgba(254,202,202,0.28)",
+      backgroundColor: "rgba(220,38,38,0.25)",
+      borderColor: "rgba(254,202,202,0.4)",
     },
-    transportText: { fontSize: 11, color: mutedWhite, fontWeight: "600" },
-    transportDetails: { fontSize: 10, color: "rgba(255,255,255,0.68)", fontWeight: "600", textAlign: "center" },
-    privacyBadge: { fontSize: 11, color: "rgba(255,255,255,0.60)", marginTop: 3, textAlign: "center" },
+    transportText: { fontSize: 11, color: theme.colors.white, fontWeight: "600" },
+    transportDetails: { fontSize: 10, color: "rgba(255,255,255,0.85)", fontWeight: "600", textAlign: "center" },
+    privacyBadge: { fontSize: 11, color: "rgba(255,255,255,0.75)", marginTop: 3, textAlign: "center" },
     controls: { alignItems: "center", paddingHorizontal: 16, gap: 12 },
     controlsRow: { width: "100%", flexDirection: "row", gap: 10, justifyContent: "center" },
-    controlButton: { flex: 1, maxWidth: 120, minWidth: 100, minHeight: 64, borderRadius: 18, backgroundColor: glass, alignItems: "center", justifyContent: "center", gap: 5, borderWidth: 1, borderColor: "rgba(255,255,255,0.16)" },
+    controlButton: { flex: 1, maxWidth: 120, minWidth: 100, minHeight: 64, borderRadius: 18, backgroundColor: glass, alignItems: "center", justifyContent: "center", gap: 5, borderWidth: 1, borderColor: "rgba(255,255,255,0.25)" },
     controlDisabled: { opacity: 0.5 },
-    controlButtonActive: { backgroundColor: glassStrong, borderColor: "rgba(255,255,255,0.30)" },
-    controlLabel: { fontSize: 11, color: mutedWhite, fontWeight: "600" },
+    controlButtonActive: { backgroundColor: glassStrong, borderColor: "rgba(255,255,255,0.4)" },
+    controlLabel: { fontSize: 11, color: theme.colors.white, fontWeight: "600" },
     endCallButton: { width: 80, height: 80, borderRadius: 40, backgroundColor: theme.colors.danger, alignItems: "center", justifyContent: "center", shadowColor: theme.colors.danger, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.5, shadowRadius: 16, elevation: 12 },
     endCallPressed: { opacity: 0.82, transform: [{ scale: 0.96 }] },
-    endCallLabel: { fontSize: 13, color: mutedWhite, fontWeight: "600" },
+    endCallLabel: { fontSize: 13, color: theme.colors.white, fontWeight: "600" },
     pressed: { opacity: 0.76 },
   });
 }

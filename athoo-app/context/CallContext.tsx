@@ -15,6 +15,7 @@ import { api, realtime } from "@/services/api";
 import { useAuth } from "./AuthContext";
 import { useTheme } from "./ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { useNavigationGuard } from "@/hooks/useNavigationGuard";
 
 // ─── WebRTC dynamic import (native dev build only) ───────────────────────────
 let WebRTCAvailable = false;
@@ -206,7 +207,7 @@ function IncomingCallOverlay({ call, action, onAccept, onReject }: {
 
   return (
     <Animated.View style={[styles.incomingOverlay, { transform: [{ translateY: slideAnim }] }]}>
-      <LinearGradient colors={[theme.colors.background, theme.colors.surfaceAlt, theme.colors.primaryPressed]} style={styles.incomingGrad}>
+      <LinearGradient colors={["#0D2B5E", "#1A3A6E", "#2D1B4E"]} style={styles.incomingGrad}>
         <View style={styles.incomingTop}>
           <Text style={styles.incomingLabel}>INCOMING CALL</Text>
           <View style={styles.incomingRingRow}>
@@ -262,6 +263,7 @@ function ActiveCallBanner({ call, duration, action, onEnd }: {
 }) {
   const { theme } = useTheme();
   const styles = useMemo(() => createCallStyles(theme), [theme]);
+  const { push: guardedPush } = useNavigationGuard();
   const outgoing = call.state === "outgoing";
   const actionBusy = action !== "idle";
 
@@ -270,7 +272,7 @@ function ActiveCallBanner({ call, duration, action, onEnd }: {
   }
 
   return (
-    <Pressable style={styles.activeBanner} onPress={() => router.push("/call" as any)}>
+    <Pressable style={styles.activeBanner} onPress={() => guardedPush("/call" as any)}>
       <View style={styles.activeLiveDot} />
       <View style={styles.activeCaller}>
         <PrivateImage
@@ -314,6 +316,7 @@ function ActiveCallBanner({ call, duration, action, onEnd }: {
 export function CallProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const pathname = usePathname();
+  const { push: guardedPush, replace: guardedReplace } = useNavigationGuard();
   const iceConfigurationRef = useRef<{
     iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }>;
     iceTransportPolicy: "all" | "relay";
@@ -1556,7 +1559,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     setActiveCall(pendingCall);
     setMediaState("connecting");
     setTransportLabel("Preparing secure call");
-    try { router.push("/call" as any); } catch {}
+    try { guardedPush("/call" as any); } catch {}
 
     try {
       await refreshCallConfiguration();
@@ -1772,7 +1775,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     const startedAt = callStartedAtMs(acceptedCall?.startedAt);
     setActiveCall((p) => p ? { ...p, state: "active", startedAt } : null);
-    try { router.push("/call" as any); } catch {}
+    try { guardedPush("/call" as any); } catch {}
     } finally {
       finishCallAction("accepting");
     }
@@ -1889,23 +1892,23 @@ const createCallStyles = (theme: AthooTheme) => StyleSheet.create({
     paddingHorizontal: 20, paddingBottom: 28, paddingTop: 16,
   },
   incomingTop: { alignItems: "center", gap: 6, marginBottom: 20 },
-  incomingLabel: { fontSize: 13, color: theme.colors.white + "99", fontWeight: "600", letterSpacing: 1 },
+  incomingLabel: { fontSize: 13, color: theme.colors.white, fontWeight: "600", letterSpacing: 1 },
   incomingRingRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   incomingRingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.success },
   incomingRingText: { fontSize: 12, color: theme.colors.success, fontWeight: "700" },
   callerSection: { alignItems: "center", gap: 8, marginBottom: 24 },
-  callerAvatar: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: theme.colors.white + "4D", overflow: "hidden" },
-  callerAvatarImage: { width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: theme.colors.white + "66" },
+  callerAvatar: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: theme.colors.white + "80", overflow: "hidden" },
+  callerAvatarImage: { width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: theme.colors.white + "99" },
   callerAvatarText: { fontSize: 30, fontWeight: "800", color: theme.colors.white },
   callerName: { fontSize: 24, fontWeight: "800", color: theme.colors.white },
-  callerService: { fontSize: 14, color: theme.colors.white + "B3", fontWeight: "500" },
-  callerSubtitle: { fontSize: 11, color: theme.colors.white + "73", marginTop: 2 },
+  callerService: { fontSize: 14, color: theme.colors.white + "E6", fontWeight: "500" },
+  callerSubtitle: { fontSize: 11, color: theme.colors.white + "CC", marginTop: 2 },
   callActions: { flexDirection: "row", justifyContent: "space-around", alignItems: "flex-start" },
   rejectCircle: { alignItems: "center", gap: 8 },
   acceptCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: theme.colors.success, alignItems: "center", justifyContent: "center" },
-  callRipple: { width: 80, height: 80, borderRadius: 40, backgroundColor: theme.colors.success + "33", alignItems: "center", justifyContent: "center" },
-  callRipple2: { ...StyleSheet.absoluteFillObject, borderRadius: 44, backgroundColor: theme.colors.success + "1A", margin: -6 },
-  callActionLabel: { fontSize: 12, color: theme.colors.white + "B3", fontWeight: "600" },
+  callRipple: { width: 80, height: 80, borderRadius: 40, backgroundColor: theme.colors.success + "4D", alignItems: "center", justifyContent: "center" },
+  callRipple2: { ...StyleSheet.absoluteFillObject, borderRadius: 44, backgroundColor: theme.colors.success + "26", margin: -6 },
+  callActionLabel: { fontSize: 12, color: theme.colors.white + "E6", fontWeight: "600" },
   actionButtonDisabled: { opacity: 0.55 },
   rejectCircleInner: { width: 72, height: 72, borderRadius: 36, backgroundColor: theme.colors.danger, alignItems: "center", justifyContent: "center" },
   activeBanner: {
@@ -1921,7 +1924,7 @@ const createCallStyles = (theme: AthooTheme) => StyleSheet.create({
   activeAvatarImage: { width: 32, height: 32, borderRadius: 16 },
   activeAvatarText: { fontSize: 12, fontWeight: "700", color: theme.colors.white },
   activeName: { fontSize: 13, fontWeight: "700", color: theme.colors.white },
-  activeTimer: { fontSize: 12, color: theme.colors.white + "D9" },
+  activeTimer: { fontSize: 12, color: theme.colors.white + "E6" },
   endBannerBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: theme.colors.danger, alignItems: "center", justifyContent: "center" },
 });
 

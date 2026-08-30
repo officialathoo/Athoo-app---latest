@@ -91,9 +91,11 @@ export function AthooLoader({ tagline }: AthooLoaderProps) {
       <Animated.View style={[styles.logoWrap, { opacity: logoOpacity, transform: [{ scale: logoScale }] }]}>
         <Animated.View style={[styles.ring, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]} />
         <Animated.View style={[styles.glowCircle, { opacity: glowOpacity }]} />
-        <View style={styles.logoCard}>
-          <Image source={brandConfig.assets.mark} style={styles.logo} resizeMode="cover" />
-        </View>
+        <Image
+          source={brandConfig.assets.mark}
+          style={styles.logo}
+          resizeMode="contain"
+        />
       </Animated.View>
 
       <Animated.View style={[styles.textBlock, { opacity: textOpacity }]}>
@@ -127,23 +129,7 @@ function createStyles(theme: AthooTheme) {
     logoWrap: { alignItems: "center", justifyContent: "center", width: 142, height: 142 },
     ring: { position: "absolute", width: 136, height: 136, borderRadius: 68, borderWidth: 1.5, borderColor: "rgba(125,211,252,0.48)" },
     glowCircle: { position: "absolute", width: 112, height: 112, borderRadius: 56, backgroundColor: "rgba(56,189,248,0.13)" },
-    logoCard: {
-      width: 112,
-      height: 112,
-      borderRadius: 30,
-      backgroundColor: "rgba(7,31,78,0.82)",
-      borderWidth: 1,
-      borderColor: "rgba(78,182,255,0.52)",
-      alignItems: "center",
-      justifyContent: "center",
-      shadowColor: "#1685FF",
-      shadowOffset: { width: 0, height: 12 },
-      shadowOpacity: 0.36,
-      shadowRadius: 28,
-      elevation: 20,
-      overflow: "hidden",
-    },
-    logo: { width: "100%", height: "100%", borderRadius: 27 },
+    logo: { width: 112, height: 112, resizeMode: "contain" },
     textBlock: { alignItems: "center", marginTop: 24, gap: 5, paddingHorizontal: 28 },
     brandName: { fontSize: 36, fontWeight: "800", color: theme.colors.white, letterSpacing: 1.1 },
     tagline: { fontSize: 13, color: "rgba(255,255,255,0.78)", letterSpacing: 0.8, fontWeight: "500" },

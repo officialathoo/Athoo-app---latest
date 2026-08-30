@@ -198,7 +198,7 @@ export default function ProviderDashboard() {
   return (
     <View style={[styles.container, { paddingTop: topPad, backgroundColor: theme.colors.background }]}>
       {/* Broadcast New Job Popup */}
-      <Modal visible={!!broadcastPopup} transparent animationType="fade">
+      <Modal visible={!!broadcastPopup} transparent animationType="fade" statusBarTranslucent onRequestClose={() => { setBroadcastPopup(null); dismissLatestBroadcast(); }}>
         <View style={styles.popupOverlay}>
           <View style={[styles.popupCard, { backgroundColor: theme.colors.elevated }]}>
             <View style={styles.popupIconRow}>

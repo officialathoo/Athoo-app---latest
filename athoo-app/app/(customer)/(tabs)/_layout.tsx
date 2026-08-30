@@ -5,7 +5,6 @@ import React from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLang } from "@/context/LanguageContext";
-import { useNotifications } from "@/context/NotificationContext";
 import { redesign } from "@/design/redesign";
 
 function UnreadBadge({ count, backgroundColor }: { count: number; backgroundColor: string }) {
@@ -20,7 +19,6 @@ function UnreadBadge({ count, backgroundColor }: { count: number; backgroundColo
 
 export default function CustomerTabLayout() {
   const { t } = useLang();
-  const { unreadCount } = useNotifications();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const safeBottom = Platform.OS === "web"
@@ -77,7 +75,6 @@ export default function CustomerTabLayout() {
       <Tabs.Screen name="profile" options={{ title: t.profile, tabBarIcon: ({ color, focused }) => (
         <View style={[styles.iconWrap, focused && activeTabStyle]}>
           <Icon name="user" size={theme.iconSize.md} color={color} />
-          <UnreadBadge count={unreadCount} backgroundColor={theme.colors.danger} />
         </View>
       ) }} />
     </Tabs>

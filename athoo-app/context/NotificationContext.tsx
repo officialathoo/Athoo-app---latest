@@ -18,6 +18,7 @@ import { api, realtime } from "@/services/api";
 import { resolveNotificationTarget } from "@/services/notificationRouting";
 import { isExpoGoRuntime } from "@/lib/runtimeEnvironment";
 import { notificationService } from "@/services/NotificationService";
+import { useNavigationGuard } from "@/hooks/useNavigationGuard";
 
 
 
@@ -464,6 +465,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     notificationNavigationArmedAtRef.current = Date.now() + 1500;
   }, [user?.id]);
 
+  const { push: guardedPush, replace: guardedReplace } = useNavigationGuard();
+
   const handleNotificationPress = useCallback(
     (notif: AppNotif) => {
       setNotifications((previous) =>
@@ -474,7 +477,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       }
 
       if (!user || !currentRole) {
-        router.replace("/auth/welcome");
+        guardedReplace("/auth/welcome");
         return;
       }
 
@@ -493,9 +496,9 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         ticketId: notif.ticketId,
         invoiceId: notif.invoiceId,
       }, role);
-      router.push(target as any);
+      guardedPush(target as any);
     },
-    [currentRole, user],
+    [currentRole, user, guardedPush, guardedReplace],
   );
 
   const push = useCallback(

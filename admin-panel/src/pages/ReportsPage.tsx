@@ -33,6 +33,155 @@ const CHART_COLORS = ["#3b82f6", "#8b5cf6", "#22c55e", "#f59e0b", "#ef4444", "#0
 function toDate(d: Date) { return d.toISOString().split("T")[0]; }
 function daysAgo(n: number) { const d = new Date(); d.setDate(d.getDate() - n); return d; }
 
+type ReportTable = { name: string; header: string[]; rows: (string | number)[][] };
+
+function reportTables(report: ReportData): ReportTable[] {
+  return [
+    {
+      name: "Revenue",
+      header: ["Day", "Completed Jobs", "Job Value", "Commission", "Provider Earnings"],
+      rows: report.revenueByDay.map((r) => [r.day, r.completedBookings, r.jobValue, r.commission, r.providerEarnings]),
+    },
+    {
+      name: "New Users",
+      header: ["Day", "Customers", "Providers"],
+      rows: report.newUsersByDay.map((r) => [r.day, r.customers, r.providers]),
+    },
+    {
+      name: "Bookings by Status",
+      header: ["Status", "Count"],
+      rows: report.bookingsByStatus.map((r) => [r.status, r.count]),
+    },
+    {
+      name: "Bookings by Service",
+      header: ["Service", "Count", "Job Value", "Commission"],
+      rows: report.bookingsByService.map((r) => [r.service, r.count, r.jobValue, r.commission]),
+    },
+    {
+      name: "Top Providers",
+      header: ["Provider", "Jobs", "Rating", "Rating Count", "Pending Commission", "Total Commission"],
+      rows: report.topProviders.map((r) => [
+        r.name, r.totalJobs, r.ratingCount > 0 ? (r.rating / 10).toFixed(1) : "", r.ratingCount, r.pendingCommission, r.totalCommission,
+      ]),
+    },
+    {
+      name: "Top Services",
+      header: ["Service", "Count"],
+      rows: report.topServices.map((r) => [r.service, r.count]),
+    },
+    {
+      name: "Cash Movements",
+      header: ["Entry Type", "Amount", "Count"],
+      rows: report.cashMovements.map((r) => [r.entryType, r.amount, r.count]),
+    },
+    {
+      name: "Ledger by Day",
+      header: ["Day", "Commissions", "Withdrawals", "Refunds", "Subscriptions"],
+      rows: report.ledgerByDay.map((r) => [r.day, r.commissions, r.withdrawals, r.refunds, r.subscriptions]),
+    },
+  ];
+}
+
+function xmlText(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function sanitizeSheetName(name: string): string {
+  return name.replace(/[\\/?*[\]:]/g, " ").slice(0, 31);
+}
+
+function excelSheet(name: string, header: string[], rows: ReportTable["rows"]): string {
+  const headerRow = `<Row>${header.map((h) => `<Cell ss:StyleID="Header"><Data ss:Type="String">${xmlText(h)}</Data></Cell>`).join("")}</Row>`;
+  const body = rows
+    .map((row) =>
+      `<Row>${row
+        .map((cell) =>
+          typeof cell === "number" && Number.isFinite(cell)
+            ? `<Cell><Data ss:Type="Number">${cell}</Data></Cell>`
+            : `<Cell><Data ss:Type="String">${xmlText(cell)}</Data></Cell>`,
+        )
+        .join("")}</Row>`,
+    )
+    .join("");
+  return `<Worksheet ss:Name="${xmlText(sanitizeSheetName(name))}"><Table>${headerRow}${body}</Table></Worksheet>`;
+}
+
+function buildExcel(report: ReportData): string {
+  const sheets = reportTables(report).map((t) => excelSheet(t.name, t.header, t.rows)).join("");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles><Style ss:ID="Header"><Font ss:Bold="1"/></Style></Styles>
+ ${sheets}
+</Workbook>`;
+}
+
+function buildReportHtml(report: ReportData): string {
+  const escape = (s: unknown) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const totalRevenue = report.revenueByDay.reduce((a, d) => a + (d.jobValue || 0), 0);
+  const totalCommission = report.revenueByDay.reduce((a, d) => a + (d.commission || 0), 0);
+  const totalBookings = report.revenueByDay.reduce((a, d) => a + (d.completedBookings || 0), 0);
+  const totalNewUsers = report.newUsersByDay.reduce((a, d) => a + (d.customers || 0) + (d.providers || 0), 0);
+  const renderTable = ({ header, rows }: ReportTable) =>
+    `<table><thead><tr>${header.map((h) => `<th>${escape(h)}</th>`).join("")}</tr></thead><tbody>${rows
+      .map((row) => `<tr>${row.map((cell) => `<td>${escape(cell)}</td>`).join("")}</tr>`)
+      .join("")}</tbody></table>`;
+  const sections = reportTables(report)
+    .map((t) => `<section><h2>${escape(t.name)}</h2>${renderTable(t)}</section>`)
+    .join("");
+  return `<!doctype html><html><head><meta charset="utf-8"/>
+<title>Athoo Analytics Report</title>
+<style>
+@page { size: A4; margin: 14mm; }
+body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #0f172a; margin: 0; }
+header h1 { font-size: 22px; margin: 0 0 4px; }
+.subtitle { color: #64748b; font-size: 13px; margin-bottom: 20px; }
+.summary { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+.kpi { border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 16px; min-width: 170px; }
+.kpi .v { font-size: 20px; font-weight: 700; }
+.kpi .l { font-size: 11px; color: #64748b; margin-top: 2px; }
+section { margin-bottom: 22px; page-break-inside: auto; }
+h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .4px; color: #334155; margin: 0 0 8px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { background: #f1f5f9; text-align: left; color: #475569; }
+th, td { border: 1px solid #e2e8f0; padding: 6px 9px; }
+tr { page-break-inside: avoid; }
+@media print { .no-print { display: none; } }
+</style></head><body>
+<header>
+  <h1>Athoo Analytics &amp; Reports</h1>
+  <div class="subtitle">Period: ${escape(report.period.from)} &rarr; ${escape(report.period.to)} &middot; Generated ${new Date().toLocaleString()}</div>
+</header>
+<div class="summary">
+  <div class="kpi"><div class="v">${currency(totalRevenue)}</div><div class="l">Completed Job Value</div></div>
+  <div class="kpi"><div class="v">${currency(totalCommission)}</div><div class="l">Platform Commission</div></div>
+  <div class="kpi"><div class="v">${totalBookings.toLocaleString()}</div><div class="l">Completed Jobs</div></div>
+  <div class="kpi"><div class="v">${totalNewUsers.toLocaleString()}</div><div class="l">New Users</div></div>
+</div>
+${sections}
+</body></html>`;
+}
+
+function downloadBlob(content: string, mime: string, filename: string) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.setAttribute("download", filename);
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
 export function ReportsPage() {
   const { hasPermission } = usePermissions();
   const canExport = hasPermission("export.read");
@@ -74,6 +223,22 @@ export function ReportsPage() {
       .catch((error) => window.alert(error.message || "Export failed"));
   }
 
+  function handleExportExcel() {
+    if (!report) { window.alert("Report data is not ready yet. Please wait for it to load."); return; }
+    downloadBlob(buildExcel(report), "application/vnd.ms-excel", `athoo-analytics-${from}-${to}.xls`);
+  }
+
+  function handleExportPdf() {
+    if (!report) { window.alert("Report data is not ready yet. Please wait for it to load."); return; }
+    const win = window.open("", "_blank", "width=900,height=700");
+    if (!win) { window.alert("Pop-up blocked. Please allow pop-ups to export the PDF."); return; }
+    win.document.open();
+    win.document.write(buildReportHtml(report));
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 350);
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -93,12 +258,21 @@ export function ReportsPage() {
             <button className="flex items-center gap-2 px-3 py-2 bg-slate-800 text-white text-sm rounded-xl hover:bg-slate-700 transition-colors shadow-sm">
               <Download size={15} /> Export
             </button>
-            <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-10 py-1 w-44 hidden group-hover:block">
+            <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-10 py-1 w-48 hidden group-hover:block max-h-96 overflow-y-auto">
+              <div className="px-4 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">CSV</div>
               {["bookings", "users", "finance", "providers", "support"].map(t => (
                 <button key={t} onClick={() => handleExport(t)} className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 capitalize">
                   Export {t}
                 </button>
               ))}
+              <div className="border-t border-slate-100 my-1" />
+              <div className="px-4 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Document</div>
+              <button onClick={handleExportExcel} className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                Export Excel (.xls)
+              </button>
+              <button onClick={handleExportPdf} className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                Export PDF
+              </button>
             </div>
           </div>}
         </div>

@@ -14,9 +14,9 @@ import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
   Alert,
-  FlatList,
   Platform,
   Pressable,
+  SectionList,
   StyleSheet,
   Text,
   View,
@@ -55,6 +55,19 @@ function notificationVisual(
   return map[type] || map.system;
 }
 
+type PeriodKey = "today" | "week" | "earlier";
+
+function periodKey(timestamp: string): PeriodKey {
+  const parsed = new Date(timestamp).getTime();
+  if (!Number.isFinite(parsed)) return "earlier";
+  const dayStart = new Date();
+  dayStart.setHours(0, 0, 0, 0);
+  if (parsed >= dayStart.getTime()) return "today";
+  const weekStart = dayStart.getTime() - 6 * 86400000;
+  if (parsed >= weekStart) return "week";
+  return "earlier";
+}
+
 export function NotificationsScreen({ role }: { role: Role }) {
   const { theme } = useTheme();
   const { translate: tr, formatNumber, textAlign, writingDirection } = useLang();
@@ -84,12 +97,21 @@ export function NotificationsScreen({ role }: { role: Role }) {
     () => roleNotifications.filter((notification) => !notification.read).length,
     [roleNotifications],
   );
-  const filteredNotifications = useMemo(
-    () => filter === "unread"
+  const sections = useMemo(() => {
+    const visible = filter === "unread"
       ? roleNotifications.filter((notification) => !notification.read)
-      : roleNotifications,
-    [filter, roleNotifications],
-  );
+      : roleNotifications;
+    const grouped: Record<PeriodKey, AppNotif[]> = { today: [], week: [], earlier: [] };
+    for (const notification of visible) grouped[periodKey(notification.timestamp)].push(notification);
+    const order: Array<[PeriodKey, string]> = [
+      ["today", tr("Today")],
+      ["week", tr("This week")],
+      ["earlier", tr("Earlier")],
+    ];
+    return order
+      .map(([key, label]) => ({ key, label, data: grouped[key] }))
+      .filter((section) => section.data.length > 0);
+  }, [filter, roleNotifications]);
 
   const timeAgo = (timestamp: string) => {
     const parsed = new Date(timestamp).getTime();
@@ -154,15 +176,22 @@ export function NotificationsScreen({ role }: { role: Role }) {
         </Pressable>
       </View>
 
-      <FlatList
-        data={filteredNotifications}
+      <SectionList
+        sections={sections}
         keyExtractor={(item) => item.id}
+        stickySectionHeadersEnabled={false}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.content, responsiveContent, { paddingBottom: insets.bottom + 34 }]}
         removeClippedSubviews
         initialNumToRender={12}
         maxToRenderPerBatch={12}
         windowSize={10}
+        renderSectionHeader={({ section }) => (
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionLabel, localizedText]}>{section.label}</Text>
+            <Text style={[styles.sectionCount, { color: accent }]}>{formatNumber(section.data.length)}</Text>
+          </View>
+        )}
         ListHeaderComponent={
           <View>
         <AnimatedCard direction="fade" style={styles.summaryMotion}>
@@ -259,7 +288,7 @@ export function NotificationsScreen({ role }: { role: Role }) {
           </View>
         }
         ListEmptyComponent={
-          filteredNotifications.length === 0 ? (
+          sections.length === 0 ? (
           <AnimatedCard direction="fade" style={styles.emptyMotion}>
             <View style={styles.emptyCard}>
               <View style={[styles.emptyIcon, { backgroundColor: theme.colors.surfaceAlt }]}>
@@ -458,6 +487,16 @@ function createStyles(theme: AthooTheme) {
     },
     filterCountText: { fontSize: 9.5, fontWeight: "900" },
     list: { gap: 9 },
+    sectionHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingTop: 6,
+      paddingBottom: 8,
+      marginTop: 2,
+    },
+    sectionLabel: { ...theme.typography.caption, color: theme.colors.textSecondary, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5 },
+    sectionCount: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, fontWeight: "900" },
     itemMotion: { width: "100%" },
     notificationCard: {
       flexDirection: "row",

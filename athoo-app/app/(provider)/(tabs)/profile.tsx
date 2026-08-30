@@ -1,5 +1,5 @@
 import { Icon } from "@/components/ui/Icon";
-import * as ImagePicker from "expo-image-picker";
+import { AvatarPickerModals } from "@/components/ui/AvatarPickerModals";
 import { pickFromCamera, pickFromGallery } from "@/utils/mediaPicker";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
@@ -10,7 +10,6 @@ import {
   Animated,
   InteractionManager,
   Linking,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -458,75 +457,29 @@ export default function ProviderProfileScreen() {
 
       <Text style={styles.version}>Athoo Provider v{appIdentity.version} | Pakistan</Text>
 
-      <Modal visible={showAvatarModal} animationType="slide" transparent>
-        <Pressable style={styles.modalOverlay} onPress={() => setShowAvatarModal(false)}>
-          <View style={styles.avatarModalBox} onStartShouldSetResponder={() => true}>
-            <Text style={styles.colorPickerTitle}>Profile Picture</Text>
-            <View style={styles.avatarPreviewRow}>
-              {user?.profileImage ? (
-                <PrivateImage objectPath={user.profileImage} style={styles.avatarPreview} />
-              ) : (
-                <View style={[styles.avatarPreview, { backgroundColor: avatarColor, alignItems: "center", justifyContent: "center" }]}>
-                  <Text style={{ fontSize: 28, fontWeight: "800", color: theme.colors.onBrand }}>{initials}</Text>
-                </View>
-              )}
-              {user?.profileImage && (
-                <Pressable style={styles.removePhotoBtn} onPress={() => { updateUser({ profileImage: null as any }); setShowAvatarModal(false); }}>
-                  <Icon name="trash-2" size={14} color={theme.colors.danger} />
-                  <Text style={styles.removePhotoText}>Remove Photo</Text>
-                </Pressable>
-              )}
-            </View>
-            <Pressable style={styles.avatarOption} onPress={() => pickImage(false)}>
-              <View style={[styles.avatarOptIcon, { backgroundColor: theme.colors.primary + "15" }]}>
-                <Icon name="image" size={20} color={theme.colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.avatarOptLabel}>Upload from Gallery</Text>
-                <Text style={styles.avatarOptSub}>Choose a photo from your device</Text>
-              </View>
-              <Icon name="chevron-right" size={16} color={theme.colors.textMuted} />
-            </Pressable>
-            <Pressable style={styles.avatarOption} onPress={() => pickImage(true)}>
-              <View style={[styles.avatarOptIcon, { backgroundColor: theme.colors.accentSoft }]}>
-                <Icon name="camera" size={20} color={theme.colors.accent} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.avatarOptLabel}>Take a Selfie</Text>
-                <Text style={styles.avatarOptSub}>Use your camera</Text>
-              </View>
-              <Icon name="chevron-right" size={16} color={theme.colors.textMuted} />
-            </Pressable>
-            <Pressable style={styles.avatarOption} onPress={() => { setShowAvatarModal(false); setTimeout(() => setShowColorPicker(true), 300); }}>
-              <View style={[styles.avatarOptIcon, { backgroundColor: theme.colors.secondary + "15" }]}>
-                <Icon name="droplet" size={20} color={theme.colors.secondary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.avatarOptLabel}>Choose Color</Text>
-                <Text style={styles.avatarOptSub}>Pick an avatar color</Text>
-              </View>
-              <Icon name="chevron-right" size={16} color={theme.colors.textMuted} />
-            </Pressable>
-          </View>
-        </Pressable>
-      </Modal>
-
-      <Modal visible={showColorPicker} animationType="slide" transparent>
-        <Pressable style={styles.modalOverlay} onPress={() => setShowColorPicker(false)}>
-          <View style={styles.colorPickerBox} onStartShouldSetResponder={() => true}>
-            <Text style={styles.colorPickerTitle}>Choose Avatar Color</Text>
-            <View style={styles.colorGrid}>
-              {avatarColors.map((c) => (
-                <Pressable
-                  key={c}
-                  style={[styles.colorCircle, { backgroundColor: c }, user?.profileColor === c && styles.colorSelected]}
-                  onPress={() => { updateUser({ profileColor: c }); setShowColorPicker(false); }}
-                />
-              ))}
-            </View>
-          </View>
-        </Pressable>
-      </Modal>
+      <AvatarPickerModals
+        avatarVisible={showAvatarModal}
+        colorVisible={showColorPicker}
+        profileImage={user?.profileImage}
+        profileColor={user?.profileColor}
+        initials={initials}
+        avatarColors={avatarColors}
+        onCloseAvatar={() => setShowAvatarModal(false)}
+        onCloseColor={() => setShowColorPicker(false)}
+        onPickImage={(useCamera) => void pickImage(useCamera)}
+        onRemovePhoto={() => {
+          updateUser({ profileImage: null as any });
+          setShowAvatarModal(false);
+        }}
+        onChangeColor={(c) => {
+          updateUser({ profileColor: c });
+          setShowColorPicker(false);
+        }}
+        onChooseColor={() => {
+          setShowAvatarModal(false);
+          setTimeout(() => setShowColorPicker(true), 300);
+        }}
+      />
 
 
     </ScrollView>
@@ -752,81 +705,4 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   dangerBtnText: { fontSize: 13, fontWeight: "600", color: theme.colors.danger, flex: 1 },
   version: { textAlign: "center", fontSize: 12, color: theme.colors.textMuted, marginTop: 12, marginBottom: 4 },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  colorPickerBox: {
-    backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    padding: redesign.layout.horizontalPadding,
-    gap: redesign.layout.fieldGap,
-    ...theme.shadows.md,
-  },
-  colorPickerTitle: { fontSize: 17, fontWeight: "800", color: theme.colors.text },
-  colorGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12, justifyContent: "center" },
-  colorCircle: { width: 46, height: 46, borderRadius: 23},
-  colorSelected: { borderWidth: 4, borderColor: theme.colors.text },
-  avatarModalBox: {
-    backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    padding: redesign.layout.horizontalPadding,
-    gap: 8,
-    ...theme.shadows.md,
-  },
-  avatarPreviewRow: { flexDirection: "row", alignItems: "center", gap: 16, marginBottom: 8 },
-  avatarPreview: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 3,
-    borderColor: theme.colors.border,
-  },
-  removePhotoBtn: {
-    minHeight: redesign.control.compactHeight,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: theme.colors.dangerSoft,
-    paddingHorizontal: 12,
-    borderRadius: radius.md,
-  },
-  removePhotoText: { fontSize: 12, color: theme.colors.danger, fontWeight: "600" },
-  avatarOption: {
-    minHeight: redesign.control.largeHeight,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: redesign.layout.cardGap,
-    padding: 12,
-    borderRadius: radius.md,
-    backgroundColor: theme.colors.surfaceAlt,
-    borderWidth: redesign.visual.cardBorderWidth,
-    borderColor: theme.colors.border,
-  },
-  avatarOptIcon: {
-    width: redesign.control.iconButtonSize,
-    height: redesign.control.iconButtonSize,
-    borderRadius: radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarOptLabel: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
-  avatarOptSub: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 1 },
-  langBox: {
-    backgroundColor: theme.colors.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22,
-    padding: 20, gap: 8,
-  },
-  langHint: { fontSize: 12, color: theme.colors.textSecondary, marginBottom: 4 },
-  langOption: {
-    flexDirection: "row", alignItems: "center", gap: 12,
-    padding: 14, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt,
-    borderWidth: 1, borderColor: "transparent",
-  },
-  langOptionActive: { backgroundColor: theme.colors.primary + "10", borderColor: theme.colors.primary + "40" },
-  langOptionText: { fontSize: 15, fontWeight: "700", color: theme.colors.text },
-  langOptionSub: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 },
-  langCancelBtn: {
-    backgroundColor: theme.colors.surfaceAlt, borderRadius: 12, paddingVertical: 11,
-    alignItems: "center", marginTop: 4,
-  },
-  langCancelText: { fontSize: 15, fontWeight: "600", color: theme.colors.textSecondary },
 });

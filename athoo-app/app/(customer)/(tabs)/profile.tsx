@@ -1,5 +1,5 @@
 import { Icon } from "@/components/ui/Icon";
-import * as ImagePicker from "expo-image-picker";
+import { AvatarPickerModals } from "@/components/ui/AvatarPickerModals";
 import { pickFromCamera, pickFromGallery } from "@/utils/mediaPicker";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -9,7 +9,6 @@ import {
   Alert,
   InteractionManager,
   Linking,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -415,113 +414,29 @@ export default function ProfileScreen() {
 
       <Text style={styles.version}>Athoo v{appIdentity.version} | Available across Pakistan</Text>
 
-      <Modal visible={showAvatarModal} animationType="slide" transparent>
-        <Pressable style={styles.modalOverlay} onPress={() => setShowAvatarModal(false)}>
-          <View style={styles.avatarModalBox} onStartShouldSetResponder={() => true}>
-            <Text style={styles.colorPickerTitle}>Profile Picture</Text>
-
-            <View style={styles.avatarPreviewRow}>
-              {user?.profileImage ? (
-                <PrivateImage objectPath={user.profileImage} style={styles.avatarPreview} />
-              ) : (
-                <View
-                  style={[
-                    styles.avatarPreview,
-                    {
-                      backgroundColor: user?.profileColor || theme.colors.primary,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    },
-                  ]}
-                >
-                  <Text style={{ fontSize: 28, fontWeight: "800", color: theme.colors.onBrand }}>
-                    {initials}
-                  </Text>
-                </View>
-              )}
-
-              {user?.profileImage && (
-                <Pressable
-                  style={styles.removePhotoBtn}
-                  onPress={() => {
-                    updateUser({ profileImage: null as any });
-                    setShowAvatarModal(false);
-                  }}
-                >
-                  <Icon name="trash-2" size={14} color={theme.colors.danger} />
-                  <Text style={styles.removePhotoText}>Remove Photo</Text>
-                </Pressable>
-              )}
-            </View>
-
-            <Pressable style={styles.avatarOption} onPress={() => pickImage(false)}>
-              <View style={[styles.avatarOptIcon, { backgroundColor: theme.colors.primary + "15" }]}>
-                <Icon name="image" size={20} color={theme.colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.avatarOptLabel}>Upload from Gallery</Text>
-                <Text style={styles.avatarOptSub}>Choose a photo from your device</Text>
-              </View>
-              <Icon name="chevron-right" size={16} color={theme.colors.textMuted} />
-            </Pressable>
-
-            <Pressable style={styles.avatarOption} onPress={() => pickImage(true)}>
-              <View style={[styles.avatarOptIcon, { backgroundColor: theme.colors.accentSoft }]}>
-                <Icon name="camera" size={20} color={theme.colors.accent} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.avatarOptLabel}>Take a Selfie</Text>
-                <Text style={styles.avatarOptSub}>Use your camera</Text>
-              </View>
-              <Icon name="chevron-right" size={16} color={theme.colors.textMuted} />
-            </Pressable>
-
-            <Pressable
-              style={styles.avatarOption}
-              onPress={() => {
-                setShowAvatarModal(false);
-                setTimeout(() => setShowColorPicker(true), 300);
-              }}
-            >
-              <View style={[styles.avatarOptIcon, { backgroundColor: theme.colors.secondary + "15" }]}>
-                <Icon name="droplet" size={20} color={theme.colors.secondary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.avatarOptLabel}>Choose Color</Text>
-                <Text style={styles.avatarOptSub}>Pick an avatar color</Text>
-              </View>
-              <Icon name="chevron-right" size={16} color={theme.colors.textMuted} />
-            </Pressable>
-          </View>
-        </Pressable>
-      </Modal>
-
-      <Modal visible={showColorPicker} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Choose Avatar Color</Text>
-            <View style={styles.colorGrid}>
-              {avatarColors.map((c) => (
-                <Pressable
-                  key={c}
-                  style={[
-                    styles.colorDot,
-                    { backgroundColor: c },
-                    user?.profileColor === c && styles.colorDotActive,
-                  ]}
-                  onPress={() => {
-                    updateUser({ profileColor: c });
-                    setShowColorPicker(false);
-                  }}
-                />
-              ))}
-            </View>
-            <Pressable style={styles.modalClose} onPress={() => setShowColorPicker(false)}>
-              <Text style={styles.modalCloseText}>Cancel</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+      <AvatarPickerModals
+        avatarVisible={showAvatarModal}
+        colorVisible={showColorPicker}
+        profileImage={user?.profileImage}
+        profileColor={user?.profileColor}
+        initials={initials}
+        avatarColors={avatarColors}
+        onCloseAvatar={() => setShowAvatarModal(false)}
+        onCloseColor={() => setShowColorPicker(false)}
+        onPickImage={(useCamera) => void pickImage(useCamera)}
+        onRemovePhoto={() => {
+          updateUser({ profileImage: null as any });
+          setShowAvatarModal(false);
+        }}
+        onChangeColor={(c) => {
+          updateUser({ profileColor: c });
+          setShowColorPicker(false);
+        }}
+        onChooseColor={() => {
+          setShowAvatarModal(false);
+          setTimeout(() => setShowColorPicker(true), 300);
+        }}
+      />
 
 
     </ScrollView>
@@ -773,162 +688,6 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     paddingBottom: 20,
   },
 
-  langHint: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-    textAlign: "center",
-    marginBottom: 4,
-  },
-
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: theme.colors.overlay,
-    justifyContent: "flex-end",
-  },
-
-  modalBox: {
-    backgroundColor: theme.colors.elevated,
-    borderTopLeftRadius: theme.radius.xl,
-    borderTopRightRadius: theme.radius.xl,
-    padding: 24,
-    paddingBottom: 40,
-    gap: 12,
-    borderTopWidth: redesign.visual.cardBorderWidth,
-    borderColor: theme.colors.border,
-  },
-
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: theme.colors.text,
-    textAlign: "center",
-    marginBottom: 8,
-  },
-
-  colorGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 14,
-    justifyContent: "center",
-    paddingVertical: 8,
-  },
-
-  colorDot: { width: 46, height: 46, borderRadius: 23 },
-
-  colorDotActive: {
-    borderWidth: 3,
-    borderColor: theme.colors.text,
-  },
-
-  langOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1.5,
-    borderColor: theme.colors.border,
-  },
-
-  langOptionActive: {
-    borderColor: theme.colors.primary,
-    backgroundColor: theme.colors.primary + "10",
-  },
-
-  langLabel: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: "700",
-    color: theme.colors.text,
-  },
-
-  langSub: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-  },
-
-  modalClose: {
-    backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 14,
-    paddingVertical: 12,
-    alignItems: "center",
-    marginTop: 4,
-  },
-
-  modalCloseText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: theme.colors.textSecondary,
-  },
-
-  colorPickerTitle: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: theme.colors.text,
-  },
-
-  avatarModalBox: {
-    backgroundColor: theme.colors.elevated,
-    borderTopLeftRadius: theme.radius.xl,
-    borderTopRightRadius: theme.radius.xl,
-    padding: 28,
-    gap: 8,
-    borderTopWidth: redesign.visual.cardBorderWidth,
-    borderColor: theme.colors.border,
-  },
-
-  avatarPreviewRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
-    marginBottom: 8,
-  },
-
-  avatarPreview: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    borderWidth: 3,
-    borderColor: theme.colors.border,
-  },
-
-  removePhotoBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: theme.colors.danger + "12",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-
-  removePhotoText: {
-    fontSize: 12,
-    color: theme.colors.danger,
-    fontWeight: "600",
-  },
-
-  avatarOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    minHeight: redesign.control.largeHeight,
-    padding: 14,
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.colors.surfaceAlt,
-    borderWidth: redesign.visual.cardBorderWidth,
-    borderColor: theme.colors.border,
-  },
-
-  avatarOptIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 13,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
   referralCard: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     backgroundColor: theme.colors.primary + "10", borderRadius: 14,
@@ -955,16 +714,4 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   referralRight: { alignItems: "center", justifyContent: "center", gap: 2, marginLeft: 8, minWidth: 48, paddingLeft: 10, paddingRight: 2, borderLeftWidth: 1, borderLeftColor: theme.colors.primary + "25" },
   referralCount: { fontSize: 20, fontWeight: "900", color: theme.colors.primary },
   referralCountLbl: { fontSize: 10, fontWeight: "600", color: theme.colors.textSecondary },
-
-  avatarOptLabel: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: theme.colors.text,
-  },
-
-  avatarOptSub: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-    marginTop: 1,
-  },
 });

@@ -1542,6 +1542,13 @@ export default function JobDetailScreen() {
           visible={showArriveOtp || showCompleteOtp}
           animationType="slide"
           transparent
+          statusBarTranslucent
+          onRequestClose={() => {
+            setShowArriveOtp(false);
+            setShowCompleteOtp(false);
+            setOtpInput("");
+            setOtpError("");
+          }}
         >
           <KeyboardAvoidingView
             style={{ flex: 1 }}

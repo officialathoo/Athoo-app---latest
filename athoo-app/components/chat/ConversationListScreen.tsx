@@ -10,7 +10,7 @@ import { apiErrorToMessage } from "@/lib/apiError";
 import { PrivateImage } from "@/services/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Alert,
   Platform,
@@ -18,6 +18,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -84,6 +85,35 @@ export function ConversationListScreen({
     ? theme.colors.infoSoft
     : theme.colors.premiumSoft;
   const otherRoleFallback = isCustomer ? t.provider : t.customer;
+
+  const [query, setQuery] = useState("");
+  type ChatItem = (typeof myChats)[number];
+
+  const otherNameFor = (chat: ChatItem): string =>
+    user?.id === chat.participant1Id
+      ? chat.participant2Name || otherRoleFallback
+      : chat.participant1Name || otherRoleFallback;
+
+  const filteredChats = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return myChats;
+    return myChats.filter((chat) => {
+      const name = otherNameFor(chat).toLowerCase();
+      const message = (chat.lastMessage || "").toLowerCase();
+      const service = (chat.service || "").toLowerCase();
+      return name.includes(q) || message.includes(q) || service.includes(q);
+    });
+  }, [myChats, query, user?.id]);
+
+  const unreadChats = useMemo(
+    () => filteredChats.filter((chat) => Number(chat.unreadCount || 0) > 0),
+    [filteredChats],
+  );
+  const readChats = useMemo(
+    () => filteredChats.filter((chat) => !(Number(chat.unreadCount || 0) > 0)),
+    [filteredChats],
+  );
+  const orderedChats = useMemo(() => [...unreadChats, ...readChats], [unreadChats, readChats]);
 
   const openDiscovery = () => {
     if (isCustomer) {
@@ -346,7 +376,85 @@ export function ConversationListScreen({
             </View>
           </AnimatedCard>
         ) : (
-          myChats.map((chat, index) => {
+          <>
+            <View
+              style={[
+                styles.searchBox,
+                {
+                  backgroundColor: theme.colors.background,
+                  borderColor: theme.colors.border,
+                },
+              ]}
+            >
+              <Icon name="search" size={16} color={theme.colors.textMuted} />
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder={tr("Search conversations")}
+                placeholderTextColor={theme.colors.textMuted}
+                style={[styles.searchInput, localizedText, { color: theme.colors.text }]}
+                returnKeyType="search"
+                autoCorrect={false}
+                accessibilityLabel={tr("Search conversations")}
+              />
+              {query.length > 0 ? (
+                <Pressable
+                  onPress={() => setQuery("")}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={tr("Clear search")}
+                >
+                  <Icon name="x" size={16} color={theme.colors.textMuted} />
+                </Pressable>
+              ) : null}
+            </View>
+
+            {filteredChats.length === 0 ? (
+              <AnimatedCard direction="fade" style={styles.noMatchesMotion}>
+                <View style={styles.noMatchesCard}>
+                  <View style={[styles.noMatchesIcon, { backgroundColor: theme.colors.surfaceAlt }]}>
+                    <Icon name="search" size={26} color={theme.colors.textMuted} />
+                  </View>
+                  <Text style={[styles.noMatchesTitle, localizedText]}>{tr("No matches found")}</Text>
+                  <Text style={[styles.noMatchesText, localizedText]}>
+                    {tr("Try a different name, service or message keyword.")}
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => setQuery("")}
+                    style={({ pressed }) => [
+                      styles.noMatchesAction,
+                      {
+                        backgroundColor: accent,
+                        opacity: pressed ? 0.82 : 1,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.noMatchesActionText,
+                        {
+                          color: isCustomer ? theme.colors.onBrand : theme.colors.onLight,
+                        },
+                      ]}
+                    >
+                      {tr("Clear search")}
+                    </Text>
+                  </Pressable>
+                </View>
+              </AnimatedCard>
+            ) : (
+              orderedChats.map((chat, index) => {
+            if (index === unreadChats.length && unreadChats.length > 0 && readChats.length > 0) {
+              return (
+                <View key={`chat-section-${index}`} style={styles.sectionHeader}>
+                  <Text style={[styles.sectionLabel, localizedText]}>{tr("All conversations")}</Text>
+                  <View style={[styles.sectionCount, { backgroundColor: accentSoft }]}>
+                    <Text style={[styles.sectionCountText, { color: accent }]}>{readChats.length}</Text>
+                  </View>
+                </View>
+              );
+            }
             const isParticipantOne =
               user?.id === chat.participant1Id;
             const otherId = isParticipantOne
@@ -593,7 +701,9 @@ export function ConversationListScreen({
                 </Pressable>
               </AnimatedCard>
             );
-          })
+            })
+            )}
+          </>
         )}
       </ScrollView>
     </View>
@@ -676,6 +786,48 @@ function createStyles(theme: AthooTheme) {
       paddingTop: 14,
       gap: 10,
     },
+    searchBox: {
+      minHeight: redesign.control.standardHeight,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 9,
+      paddingHorizontal: 13,
+      borderRadius: theme.radius.lg,
+      borderWidth: redesign.visual.cardBorderWidth,
+    },
+    searchInput: {
+      flex: 1,
+      fontSize: 14,
+      paddingVertical: 0,
+    },
+    noMatchesMotion: { width: "100%" },
+    noMatchesCard: {
+      minHeight: 300,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 28,
+      paddingVertical: 36,
+      borderRadius: theme.radius.xl,
+      borderWidth: redesign.visual.cardBorderWidth,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.surface,
+      ...theme.shadows.sm,
+    },
+    noMatchesIcon: { width: 62, height: 62, borderRadius: theme.radius.xl, alignItems: "center", justifyContent: "center", marginBottom: 14 },
+    noMatchesTitle: { ...theme.typography.h2, color: theme.colors.text, textAlign: "center" },
+    noMatchesText: { marginTop: 6, ...theme.typography.body, color: theme.colors.textSecondary, textAlign: "center", maxWidth: 330 },
+    noMatchesAction: { minHeight: redesign.control.compactHeight, marginTop: 16, paddingHorizontal: 16, borderRadius: theme.radius.md, alignItems: "center", justifyContent: "center", ...theme.shadows.sm },
+    noMatchesActionText: { fontSize: 13, fontWeight: "900" },
+    sectionHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 7,
+      paddingTop: 10,
+      paddingBottom: 6,
+    },
+    sectionLabel: { ...theme.typography.caption, color: theme.colors.textSecondary, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5 },
+    sectionCount: { minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
+    sectionCountText: { fontSize: 10, fontWeight: "900" },
     cardMotion: {
       width: "100%",
     },

@@ -819,7 +819,7 @@ export default function ProviderRegisterScreen() {
         </ScrollView>
       </View>
 
-      <Modal visible={showCnicNotice} transparent animationType="fade">
+      <Modal visible={showCnicNotice} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setShowCnicNotice(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Pressable style={styles.modalClose} onPress={() => router.back()}>

@@ -305,7 +305,7 @@ export default function BroadcastStatusScreen() {
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
       {/* Broadcast Expired — Continue or Cancel modal */}
-      <Modal visible={showExpireModal} transparent animationType="fade">
+      <Modal visible={showExpireModal} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setShowExpireModal(false)}>
         <View style={styles.expireOverlay}>
           <View style={styles.expireCard}>
             <View style={styles.expireIconWrap}>
