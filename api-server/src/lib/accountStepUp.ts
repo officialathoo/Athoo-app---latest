@@ -37,7 +37,7 @@ export function accountActionPurpose(action: AccountAction): "account_deactivate
   return action === "deactivate" ? "account_deactivate" : "account_delete";
 }
 
-function hashPhoneCode(phone: string, purpose: string, code: string): string {
+export function hashPhoneCode(phone: string, purpose: string, code: string): string {
   const secret = String(process.env.OTP_HASH_SECRET || process.env.JWT_SECRET || "").trim();
   if (!secret) throw new Error("OTP_HASH_SECRET or JWT_SECRET is required");
   return crypto.createHmac("sha256", secret).update(`${purpose}:${phone}:${code}`).digest("hex");

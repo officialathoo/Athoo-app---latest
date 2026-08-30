@@ -5,7 +5,7 @@ import { usersTable, otpsTable, loginHistoryTable, adminBlacklistTable, emailPre
 import { eq, and, or, desc, sql, ne } from "drizzle-orm";
 import { signAccessToken, signPurposeToken, verifyToken, requireAuth, type AuthRequest } from "../middlewares/auth";
 import { createSession, rotateSession, revokeSession, revokeAllUserSessions, normalizeSessionDeviceId } from "../lib/session";
-import { getPlatformSettings } from "../lib/admin";
+import { getPlatformSettings, safeUserAllowlist } from "../lib/admin";
 import { LEGAL_VERSION } from "../lib/legal";
 import { normalizeStoredObjectPath } from "../lib/storageSecurity";
 import { isCleanOwnedUploadObjectPath } from "../lib/verifiedUploads";

@@ -385,7 +385,7 @@ export function toPublicProvider(user: User | null | undefined) {
   };
 }
 
-function safeUserAllowlist<T extends Record<string, any>>(user: T | null | undefined) {
+export function safeUserAllowlist<T extends Record<string, any>>(user: T | null | undefined) {
   if (!user) return null;
   const { password, expoPushToken, adminFailedLoginCount, adminLockedUntil, phone, email, cnicNumber, fatherName, location, birthDate, idDocument, idDocumentFront, idDocumentBack, resetCode, otpCode, ...safeUser } = user;
   return safeUser;

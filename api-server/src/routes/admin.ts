@@ -49,7 +49,7 @@ import {
   getPlatformSettings,
   savePlatformSettings,
   PlatformSettingsValidationError,
-  toSafeUser,
+  safeUserAllowlist,
 } from "../lib/admin";
 import { notifyUser, notifyUsers } from "../lib/notifications";
 import { restoreProviderAvailabilityIfCompliant } from "../lib/documentCompliance";
@@ -119,7 +119,7 @@ router.get("/me", async (req: AuthRequest, res) => {
       return res.status(404).json({ error: "Admin not found" });
     }
 
-    return res.json({ admin: toSafeUser(admin) });
+    return res.json({ admin: safeUserAllowlist(admin) });
   } catch (error) {
     logger.error({ err: error }, "admin me error");
     return res.status(500).json({ error: "Failed to load admin profile" });
@@ -638,7 +638,7 @@ router.get("/customers", requirePermission("users.read"), async (req: AuthReques
       db.select().from(usersTable).where(where).orderBy(direction === "asc" ? sql`${orderColumn} asc` : sql`${orderColumn} desc`).limit(limit).offset(offset),
       db.select({ total: sql<number>`count(*)::int` }).from(usersTable).where(where),
     ]);
-    return res.json({ customers: rows.map(toSafeUser), total: Number(countRow?.total || 0), page, limit });
+    return res.json({ customers: rows.map(safeUserAllowlist), total: Number(countRow?.total || 0), page, limit });
   } catch (error) { logger.error({ err: error }, "admin customer list error"); return res.status(500).json({ error: "Failed to load customers" }); }
 });
 
@@ -718,7 +718,7 @@ router.get("/customers/:id/activity", requirePermission("users.read"), async (re
       db.select().from(broadcastRequestsTable).where(eq(broadcastRequestsTable.customerId, userId)).orderBy(desc(broadcastRequestsTable.createdAt)).limit(100),
     ]);
     const completed = bookings.filter((b: any) => b.status === "completed");
-    return res.json({ user: toSafeUser(customer), capabilities: { bookings: canBookings, finance: canFinance, support: canSupport, audit: canAudit }, stats: { totalBookings: bookings.length, active: bookings.filter((b: any) => ["pending", "accepted", "in_progress"].includes(b.status)).length, completed: completed.length, cancelled: bookings.filter((b: any) => b.status === "cancelled").length, totalAmount: completed.reduce((sum: number, b: any) => sum + Number(b.price || 0), 0), offersSubmitted: negotiations.length, offersAccepted: negotiations.filter((n: any) => n.status === "accepted").length, offersRejected: negotiations.filter((n: any) => n.status === "rejected").length, notifications: notifications.length, complaints: tickets.length }, bookings, negotiations, notifications, complaints: tickets, reviewsGiven, reviewsReceived: [], invoices, commissions: [], withdrawals: [], refunds, loginHistory: logins, broadcasts, documents: [] });
+    return res.json({ user: safeUserAllowlist(customer), capabilities: { bookings: canBookings, finance: canFinance, support: canSupport, audit: canAudit }, stats: { totalBookings: bookings.length, active: bookings.filter((b: any) => ["pending", "accepted", "in_progress"].includes(b.status)).length, completed: completed.length, cancelled: bookings.filter((b: any) => b.status === "cancelled").length, totalAmount: completed.reduce((sum: number, b: any) => sum + Number(b.price || 0), 0), offersSubmitted: negotiations.length, offersAccepted: negotiations.filter((n: any) => n.status === "accepted").length, offersRejected: negotiations.filter((n: any) => n.status === "rejected").length, notifications: notifications.length, complaints: tickets.length }, bookings, negotiations, notifications, complaints: tickets, reviewsGiven, reviewsReceived: [], invoices, commissions: [], withdrawals: [], refunds, loginHistory: logins, broadcasts, documents: [] });
   } catch (error) { logger.error({ err: error }, "admin customer activity error"); return res.status(500).json({ error: "Failed to load customer activity" }); }
 });
 
@@ -758,7 +758,7 @@ router.get("/users", requirePermission("users.read"), async (req, res) => {
       .limit(limit)
       .offset(offset);
 
-    return res.json({ users: users.map((user) => toSafeUser(user)), page, limit });
+    return res.json({ users: users.map((user) => safeUserAllowlist(user)), page, limit });
   } catch (error) {
     logger.error({ err: error }, "admin users error");
     return res.status(500).json({ error: "Failed to load users" });
@@ -775,7 +775,7 @@ router.get("/users/:id", requirePermission("users.read"), async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    return res.json({ user: toSafeUser(user) });
+    return res.json({ user: safeUserAllowlist(user) });
   } catch (error) {
     logger.error({ err: error }, "admin user detail error");
     return res.status(500).json({ error: "Failed to load user details" });
@@ -819,7 +819,7 @@ router.get("/providers", requirePermission("users.read"), async (req, res) => {
       db.select().from(usersTable).where(where).orderBy(desc(usersTable.updatedAt)).limit(limit).offset(offset),
       db.select({ total: sql<number>`count(*)::int` }).from(usersTable).where(where),
     ]);
-    return res.json({ providers: providers.map((provider) => toSafeUser(provider)), page, limit, total: Number(summary?.total || 0) });
+    return res.json({ providers: providers.map((provider) => safeUserAllowlist(provider)), page, limit, total: Number(summary?.total || 0) });
   } catch (error) {
     logger.error({ err: error }, "admin providers error");
     return res.status(500).json({ error: "Failed to load providers" });
@@ -857,7 +857,7 @@ router.patch("/providers/:id/commission-limit", requirePermission("finance.write
       where: eq(usersTable.id, String(req.params.id)),
     });
     await logAdminAction(req, "provider_commission_limit_updated", "user", req.params.id, { commissionLimit: limit });
-    return res.json({ provider: toSafeUser(updated) });
+    return res.json({ provider: safeUserAllowlist(updated) });
   } catch (error) {
     logger.error({ err: error }, "admin commission limit error");
     return res.status(500).json({ error: "Failed to update commission limit" });
@@ -900,7 +900,7 @@ router.post("/providers/:id/commission-payment", requirePermission("finance.writ
       where: eq(usersTable.id, String(req.params.id)),
     });
     await logAdminAction(req, "provider_commission_payment_recorded", "user", req.params.id, { amount });
-    return res.json({ provider: toSafeUser(updated) });
+    return res.json({ provider: safeUserAllowlist(updated) });
   } catch (error) {
     logger.error({ err: error }, "admin commission payment error");
     return res.status(500).json({ error: "Failed to record commission payment" });
@@ -1579,7 +1579,7 @@ router.patch("/users/:id/availability", requirePermission("users.write"), async 
       data: { isAvailable, source: "admin" },
     }).catch(() => undefined);
     await logAdminAction(req, "provider_availability_overridden", "user", providerId, { isAvailable, reason, providerName: provider.name });
-    return res.json({ user: toSafeUser(updated) });
+    return res.json({ user: safeUserAllowlist(updated) });
   } catch (error) {
     logger.error({ err: error }, "provider availability override error");
     return res.status(500).json({ error: "Failed to update provider availability" });
@@ -1631,7 +1631,7 @@ router.patch("/users/:id/block", requirePermission("users.write"), async (req: A
     await notifyUser({ userId: providerId, title: "Provider account blocked", body: reason, type: "system", link: "/provider/profile", data: { source: "admin" }, email: { category: "security", templateKey: "account_status", variables: { status: "blocked", reason } } }).catch(() => undefined);
     const updated = await db.query.usersTable.findFirst({ where: eq(usersTable.id, providerId) });
     await logAdminAction(req, "provider_blocked", "user", providerId, { reason, providerName: provider.name });
-    return res.json({ user: toSafeUser(updated) });
+    return res.json({ user: safeUserAllowlist(updated) });
   } catch (e) {
     logger.error({ err: e }, "provider block error");
     return res.status(500).json({ error: "Failed to block provider" });
@@ -1649,7 +1649,7 @@ router.patch("/users/:id/unblock", requirePermission("users.write"), async (req:
     await notifyUser({ userId: providerId, title: "Provider account unblocked", body: reason, type: "system", link: "/provider/profile", data: { source: "admin" }, email: { category: "security", templateKey: "account_status", variables: { status: "active", reason } } }).catch(() => undefined);
     const updated = await db.query.usersTable.findFirst({ where: eq(usersTable.id, providerId) });
     await logAdminAction(req, "provider_unblocked", "user", providerId, { reason, providerName: provider.name });
-    return res.json({ user: toSafeUser(updated) });
+    return res.json({ user: safeUserAllowlist(updated) });
   } catch (e) {
     logger.error({ err: e }, "provider unblock error");
     return res.status(500).json({ error: "Failed to unblock provider" });
@@ -1696,7 +1696,7 @@ router.get("/verification/providers", requirePermission("verification.read"), as
 
     const stats = statsRows[0] || { pending: 0, inProcess: 0, approved: 0, rejected: 0 };
     return res.json({
-      users: rows.map(toSafeUser),
+      users: rows.map(safeUserAllowlist),
       total: Number(total || 0),
       page,
       limit,
@@ -1760,7 +1760,7 @@ router.patch("/users/:id/verification-status", requirePermission("verification.w
       sendEmail({ to: updated.email, subject: emailBody.subject, html: emailBody.html, text: emailBody.text }).catch(() => undefined);
     }
     await logAdminAction(req, "provider_verification_status_updated", "user", target.id, { status, note: note?.trim(), providerName: target.name });
-    return res.json({ user: toSafeUser(updated) });
+    return res.json({ user: safeUserAllowlist(updated) });
   } catch (e) {
     logger.error({ err: e }, "verification status error");
     return res.status(500).json({ error: "Failed to update verification status" });
@@ -1818,7 +1818,7 @@ router.patch("/users/:id/deactivate", requirePermission("users.write"), async (r
     await notifyUser({ userId: providerId, title: "Provider account deactivated", body: reason, type: "system", link: "/provider/profile", data: { source: "admin" }, email: { category: "security", templateKey: "account_status", variables: { status: "deactivated", reason } } }).catch(() => undefined);
     const updated = await db.query.usersTable.findFirst({ where: eq(usersTable.id, providerId) });
     await logAdminAction(req, "provider_deactivated", "user", providerId, { reason, providerName: provider.name });
-    return res.json({ user: toSafeUser(updated) });
+    return res.json({ user: safeUserAllowlist(updated) });
   } catch (e) {
     return res.status(500).json({ error: "Failed to deactivate provider" });
   }
@@ -1835,7 +1835,7 @@ router.patch("/users/:id/reactivate", requirePermission("users.write"), async (r
     await notifyUser({ userId: providerId, title: "Provider account reactivated", body: reason, type: "system", link: "/provider/profile", data: { source: "admin" }, email: { category: "security", templateKey: "account_status", variables: { status: "active", reason } } }).catch(() => undefined);
     const updated = await db.query.usersTable.findFirst({ where: eq(usersTable.id, providerId) });
     await logAdminAction(req, "provider_reactivated", "user", providerId, { reason, providerName: provider.name });
-    return res.json({ user: toSafeUser(updated) });
+    return res.json({ user: safeUserAllowlist(updated) });
   } catch (e) {
     return res.status(500).json({ error: "Failed to reactivate provider" });
   }
@@ -1870,7 +1870,7 @@ router.patch("/users/:id/profile", requirePermission("users.write"), async (req:
     if (updated) await propagateChatProfileIdentity(providerId, updated.name);
     await notifyUser({ userId: providerId, title: "Provider profile updated", body: reason, type: "system", link: "/provider/profile", data: { source: "admin" } }).catch(() => undefined);
     await logAdminAction(req, "provider_profile_updated", "user", providerId, { fields: ["name", "location", "bio"], reason, providerName: updated?.name });
-    return res.json({ user: toSafeUser(updated) });
+    return res.json({ user: safeUserAllowlist(updated) });
   } catch (e) {
     logger.error({ err: e }, "admin provider profile update error");
     return res.status(500).json({ error: "Failed to update provider profile" });
@@ -1886,7 +1886,7 @@ router.patch("/users/:id/notes", requirePermission("users.write"), async (req: A
     }).where(eq(usersTable.id, String(req.params.id)));
     const updated = await db.query.usersTable.findFirst({ where: eq(usersTable.id, String(req.params.id)) });
     await logAdminAction(req, "user_notes_updated", "user", req.params.id, { userName: updated?.name });
-    return res.json({ user: toSafeUser(updated) });
+    return res.json({ user: safeUserAllowlist(updated) });
   } catch (e) {
     return res.status(500).json({ error: "Failed to update notes" });
   }
@@ -1960,7 +1960,7 @@ router.patch("/users/:id/commission-limit", requirePermission("finance.write"), 
     }).where(eq(usersTable.id, String(req.params.id)));
     const updated = await db.query.usersTable.findFirst({ where: eq(usersTable.id, String(req.params.id)) });
     await logAdminAction(req, "user_commission_limit_updated", "user", req.params.id, { commissionLimit: limit, userName: user.name });
-    return res.json({ user: toSafeUser(updated) });
+    return res.json({ user: safeUserAllowlist(updated) });
   } catch (e) {
     return res.status(500).json({ error: "Failed to update commission limit" });
   }
@@ -2603,7 +2603,7 @@ router.get("/admin-users", requireSuperAdmin, async (_req, res) => {
       .from(usersTable)
       .where(eq(usersTable.role, "admin"))
       .orderBy(desc(usersTable.joinedAt));
-    return res.json({ admins: admins.map((a) => toSafeUser(a)) });
+    return res.json({ admins: admins.map((a) => safeUserAllowlist(a)) });
   } catch (e) {
     return res.status(500).json({ error: "Failed to load admin users" });
   }
@@ -2645,7 +2645,7 @@ router.post("/admin-users", requireSuperAdmin, async (req: AuthRequest, res) => 
 
     await db.insert(usersTable).values(newAdmin);
     await logAdminAction(req, "admin_user_created", "admin_user", newAdmin.id, { name: newAdmin.name, adminRole: newAdmin.adminRole });
-    return res.json({ admin: toSafeUser(newAdmin as any) });
+    return res.json({ admin: safeUserAllowlist(newAdmin as any) });
   } catch (e) {
     return res.status(500).json({ error: "Failed to create admin user" });
   }
@@ -2690,7 +2690,7 @@ router.patch("/admin-users/:id", requireSuperAdmin, async (req: AuthRequest, res
       await revokeAllUserSessions(req.params.id, "admin_security_profile_changed");
     }
     await logAdminAction(req, "admin_user_updated", "admin_user", req.params.id, { adminRole: updateData.adminRole, permissionsChanged: adminPermissions !== undefined, passwordChanged: Boolean(password?.trim()) });
-    return res.json({ admin: toSafeUser(updated) });
+    return res.json({ admin: safeUserAllowlist(updated) });
   } catch (e) {
     return res.status(500).json({ error: "Failed to update admin user" });
   }
@@ -3146,7 +3146,7 @@ router.get("/inactive-accounts", requirePermission("users.read"), async (req: Au
     const total = Number(countRow?.total || 0);
     res.setHeader("Server-Timing", `inactive-accounts;dur=${Date.now() - startedAt}`);
     return res.json({
-      items: rows.map(toSafeUser),
+      items: rows.map(safeUserAllowlist),
       total,
       limit,
       offset,
@@ -3553,7 +3553,7 @@ router.get("/users/:id/activity", requirePermission("users.read"), async (req: A
     const commissionPaidTotal = (commissions as any[]).filter((c) => c.status === "paid").reduce((s: number, c: any) => s + Number(c.amount ?? 0), 0);
 
     return res.json({
-      user: toSafeUser(user),
+      user: safeUserAllowlist(user),
       stats: {
         totalBookings: total,
         active,

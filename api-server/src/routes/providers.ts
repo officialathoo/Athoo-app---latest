@@ -4,7 +4,7 @@ import { db } from "@workspace/db";
 import { usersTable, bookingsTable, serviceCategoriesTable, reviewsTable, notificationsTable, negotiationsTable } from "@workspace/db/schema";
 import { eq, and, or, arrayContains, isNotNull, isNull, asc, desc, gt, lt, ne, sql, inArray, gte, getTableColumns } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../middlewares/auth";
-import { toPublicProvider, toSafeUser } from "../lib/admin";
+import { toPublicProvider, safeUserAllowlist } from "../lib/admin";
 import { getProviderActiveWorkBlock, activeWorkHttpPayload } from "../lib/businessRules";
 import { ReviewSubmissionError, submitBookingReview } from "../domain/reviews";
 import { emitToUser } from "../lib/eventBus";
@@ -623,7 +623,7 @@ router.patch("/location", requireAuth, async (req: AuthRequest, res) => {
       accuracy,
       updatedAt: updated.updatedAt,
     });
-    res.json({ success: true, user: toSafeUser(updated) });
+    res.json({ success: true, user: safeUserAllowlist(updated) });
   } catch (error) {
     logger.error({ err: error, userId: req.user?.userId }, "provider location update error");
     res.status(500).json({ error: "Failed to update provider location" });
@@ -658,7 +658,7 @@ router.patch("/service-radius", requireAuth, async (req: AuthRequest, res) => {
       updatedAt: new Date(),
     }).where(eq(usersTable.id, provider.id)).returning();
     emitToUser(provider.id, "provider:availability", { isAvailable: updated.isAvailable, reason: "service_radius_updated" });
-    res.json({ maxTravelDistanceKm: radius, user: toSafeUser(updated) });
+    res.json({ maxTravelDistanceKm: radius, user: safeUserAllowlist(updated) });
   } catch (error) {
     logger.error({ err: error, userId: req.user?.userId }, "provider service radius update error");
     res.status(500).json({ error: "Failed to update service radius" });
@@ -669,7 +669,7 @@ router.get("/availability", requireAuth, async (req: AuthRequest, res) => {
   try {
     const user = await db.query.usersTable.findFirst({ where: eq(usersTable.id, req.user!.userId) });
     if (!user) { res.status(404).json({ error: "User not found" }); return; }
-    res.json({ user: toSafeUser(user) });
+    res.json({ user: safeUserAllowlist(user) });
   } catch {
     res.status(500).json({ error: "Failed to load availability" });
   }
@@ -732,7 +732,7 @@ router.patch("/availability", requireAuth, async (req: AuthRequest, res) => {
       .where(eq(usersTable.id, req.user!.userId));
     const user = await db.query.usersTable.findFirst({ where: eq(usersTable.id, req.user!.userId) });
     emitToUser(req.user!.userId, "provider:availability", { isAvailable, reason: "provider_toggle" });
-    res.json({ user: toSafeUser(user) });
+    res.json({ user: safeUserAllowlist(user) });
   } catch (e) {
     res.status(500).json({ error: "Failed to update availability" });
   }
