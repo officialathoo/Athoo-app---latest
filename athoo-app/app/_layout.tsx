@@ -82,7 +82,9 @@ function SessionRouteGuard() {
       const wrongRolePath = user.role === "provider"
         ? rootSegment === "(customer)"
         : rootSegment === "(provider)";
-      const authenticatedAuthPathAllowed = pathname === "/auth/email-verification";
+      const authenticatedAuthPathAllowed =
+        pathname === "/auth/email-verification" ||
+        pathname === "/auth/forgot-password";
       if (pathname === "/" || (pathname.startsWith("/auth") && !authenticatedAuthPathAllowed) || wrongRolePath) {
         destination = home;
       }
