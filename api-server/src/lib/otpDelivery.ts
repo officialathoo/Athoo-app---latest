@@ -462,10 +462,15 @@ export async function deliverAuthenticationOtp(
   args: AuthenticationOtpDeliveryArgs,
 ): Promise<AuthenticationOtpDeliveryResult> {
   const mode = getOtpDeliveryMode();
-  const requested = args.deliveryChannels?.length ? args.deliveryChannels : getOtpDeliveryChannels();
-  // Registration must prove possession of the phone number. Email is only a fallback for login/password recovery.
-  const channelAllowedForPurpose = (channel: OtpDeliveryChannel) =>
-    args.purpose === "registration" ? channel !== "email" : true;
+  const hasExplicitChannels = Array.isArray(args.deliveryChannels) && args.deliveryChannels.length > 0;
+  const requested = hasExplicitChannels ? args.deliveryChannels! : getOtpDeliveryChannels();
+  // Registration must prove phone possession. Login through the mobile/phone OTP route
+  // must also stay on the selected mobile channel; email login uses /auth/email/send-otp.
+  const channelAllowedForPurpose = (channel: OtpDeliveryChannel) => {
+    if (args.purpose === "registration") return channel !== "email";
+    if (!hasExplicitChannels && args.purpose === "login") return channel !== "email";
+    return true;
+  };
   const channels = requested.filter(channelAllowedForPurpose);
   const results: OtpChannelResult[] = [];
 
