@@ -1,6 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import React, { useState, useEffect , useMemo} from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View, ActivityIndicator } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Platform } from "react-native";
@@ -82,7 +82,7 @@ export default function ServiceRadiusScreen() {
       value={customValue}
       onChangeText={setCustomValue}
       maxLength={5}
-      disabled={saving}
+      editable={!saving}
     />
   </View>
 ) : null}
