@@ -59,6 +59,7 @@ function SessionRouteGuard() {
   const pathname = usePathname();
   const segments = useSegments();
   const pendingDestinationRef = useRef<string | null>(null);
+  const retryDestinationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (isLoading) return;
@@ -92,15 +93,32 @@ function SessionRouteGuard() {
 
     if (!destination || destination === pathname) {
       pendingDestinationRef.current = null;
+      if (retryDestinationTimerRef.current) {
+        clearTimeout(retryDestinationTimerRef.current);
+        retryDestinationTimerRef.current = null;
+      }
       return;
     }
     if (pendingDestinationRef.current === destination) return;
     pendingDestinationRef.current = destination;
     router.replace(destination as never);
+
+    if (retryDestinationTimerRef.current) {
+      clearTimeout(retryDestinationTimerRef.current);
+    }
+    retryDestinationTimerRef.current = setTimeout(() => {
+      if (pendingDestinationRef.current === destination) {
+        router.replace(destination as never);
+      }
+    }, 80);
   }, [isLoading, pathname, requiresBiometric, segments, user]);
 
   useEffect(() => {
     pendingDestinationRef.current = null;
+    if (retryDestinationTimerRef.current) {
+      clearTimeout(retryDestinationTimerRef.current);
+      retryDestinationTimerRef.current = null;
+    }
   }, [pathname]);
 
   return null;
