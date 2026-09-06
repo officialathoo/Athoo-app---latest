@@ -149,6 +149,16 @@ export function ChangePasswordScreen() {
     }
   };
 
+  const resetPasswordWithOtp = () => {
+    const role = user?.role === "provider" ? "provider" : "customer";
+    void logout().finally(() => {
+      router.replace({
+        pathname: "/auth/forgot-password",
+        params: { role, source: "change-password" },
+      } as any);
+    });
+  };
+
   return (
     <KeyboardAvoidingView style={[styles.screen, { backgroundColor: theme.colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScreenHeader title={tr("Account security")} />
@@ -209,10 +219,7 @@ export function ChangePasswordScreen() {
             />
             <Button
               title={tr("Forgot password? Reset with OTP")}
-              onPress={() => router.push({
-                pathname: "/auth/forgot-password",
-                params: { role: user?.role === "provider" ? "provider" : "customer" },
-              } as any)}
+              onPress={resetPasswordWithOtp}
               variant="ghost"
               fullWidth
             />
