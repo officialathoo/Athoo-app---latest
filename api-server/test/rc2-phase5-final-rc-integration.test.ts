@@ -23,7 +23,8 @@ test("authentication OTP delivery is provider-neutral, configurable, and product
   assert.match(delivery, /deliverEmailNow/);
   assert.match(delivery, /registration_otp/);
   assert.doesNotMatch(delivery, /args\.purpose === "registration"[\s\S]{0,80}"email_verification"/);
-  assert.match(delivery, /args\.purpose === "registration" \? channel !== "email"/);
+  assert.match(delivery, /if \(args\.purpose === "registration"\) return channel !== "email";/);
+  assert.match(delivery, /!hasExplicitChannels && args\.purpose === "login"/);
   assert.match(delivery, /first_success/);
   assert.match(auth, /existingUser\?\.emailVerified \? existingUser\.email : null/);
   assert.match(auth, /deliverAuthenticationOtp/);
