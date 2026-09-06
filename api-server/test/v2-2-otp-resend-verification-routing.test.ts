@@ -38,6 +38,18 @@ test("forgot password has expiry and resend UX", () => {
   assert.ok(backend.includes("resendAfterSeconds: OTP_RESEND_COOLDOWN_SECONDS"));
 });
 
+test("selected login OTP channel stays on the selected contact method", () => {
+  const login = source("athoo-app/app/auth/login.tsx");
+  const delivery = source("api-server/src/lib/otpDelivery.ts");
+
+  assert.ok(login.includes('otpChannel === "phone"'));
+  assert.ok(login.includes('await sendOtp(phone.trim(), "login", roleValue)'));
+  assert.ok(login.includes('await sendEmailOtp(email.trim().toLowerCase(), roleValue)'));
+  assert.ok(delivery.includes('!hasExplicitChannels && args.purpose === "login"'));
+  assert.ok(delivery.includes('if (args.purpose === "registration") return channel !== "email";'));
+  assert.ok(delivery.includes('return channel !== "email";'));
+});
+
 test("account action OTP has expiry and resend cooldown", () => {
   const text = source("athoo-app/components/screens/AccountActionVerificationModal.tsx");
 
