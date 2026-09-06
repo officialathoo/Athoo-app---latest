@@ -105,7 +105,7 @@ export function getOtpDeliveryMode(): OtpDeliveryMode {
 
 function evolutionWhatsAppConfiguration() {
   return {
-    baseUrl: env("EVOLUTION_API_URL").replace(/\/+$/, ""),
+    baseUrl: env("EVOLUTION_API_BASE_URL", env("EVOLUTION_API_URL")).replace(/\/+$/, ""),
     apiKey: env("EVOLUTION_API_KEY"),
     instance: env("EVOLUTION_INSTANCE", "Athoo"),
     timeoutMs: envInt("EVOLUTION_TIMEOUT_MS", 10_000, 1_000, 60_000),
