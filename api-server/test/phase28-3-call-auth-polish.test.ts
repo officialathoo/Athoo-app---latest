@@ -38,7 +38,8 @@ test("Phase 28.3 uses one curved logo surface and compact professional auth choi
   assert.match(chooser, /roleCard:[\s\S]*minHeight: 94/);
   assert.match(chooser, /numberOfLines=\{1\} style=\{styles\.roleTitle\}/);
   assert.doesNotMatch(chooser, /borderColor: theme\.colors\.secondary \}, pressed/);
-  assert.match(loader, /resizeMode="cover"/);
-  assert.match(loader, /logoWrap: \{ alignItems: "center", justifyContent: "center", width: 142, height: 142 \}/);
-  assert.match(loader, /logo: \{ width: 112, height: 112, resizeMode: "contain" \}/);
+  assert.match(loader, /logoTileWrap: \{ width: 238, height: 238/);
+  assert.match(loader, /logoTile: \{ width: 224, height: 224, borderRadius: 58/);
+  assert.match(loader, /logoMark: \{ width: 162, height: 162/);
+  assert.match(loader, /loaderBarGradient/);
 });
