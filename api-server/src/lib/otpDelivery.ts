@@ -165,7 +165,7 @@ function requestedOtpChannelNames(): string[] {
 function preferConfiguredEvolutionWhatsApp(channels: OtpDeliveryChannel[]): OtpDeliveryChannel[] {
   if (!evolutionWhatsAppConfigured()) return channels;
 
-  const withoutEvolution = channels.filter((channel) => channel !== "evolution_whatsapp");
+  const withoutEvolution: OtpDeliveryChannel[] = channels.filter((channel) => channel !== "evolution_whatsapp");
   const whatsappCloudIndex = withoutEvolution.indexOf("whatsapp_cloud");
 
   if (whatsappCloudIndex >= 0 && !whatsappConfigured()) {
