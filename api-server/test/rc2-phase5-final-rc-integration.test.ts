@@ -12,9 +12,12 @@ test("authentication OTP delivery is provider-neutral, configurable, and product
   const validator = read("scripts/tools/validate-environment.mjs");
   const health = read("api-server/src/routes/health.ts");
 
-  assert.match(delivery, /export type OtpDeliveryChannel = "whatsapp_cloud" \| "email" \| "http_sms"/);
+  assert.match(delivery, /export type OtpDeliveryChannel = "evolution_whatsapp" \| "whatsapp_cloud" \| "email" \| "http_sms"/);
   assert.match(delivery, /OTP_DELIVERY_CHANNELS/);
   assert.match(delivery, /OTP_DELIVERY_MODE/);
+  assert.match(delivery, /EVOLUTION_API_BASE_URL/);
+  assert.match(delivery, /EVOLUTION_API_KEY/);
+  assert.match(delivery, /EVOLUTION_INSTANCE/);
   assert.match(delivery, /WHATSAPP_GRAPH_BASE_URL/);
   assert.match(delivery, /SMS_HTTP_ENDPOINT/);
   assert.match(delivery, /deliverEmailNow/);
