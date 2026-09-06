@@ -53,13 +53,12 @@ const queryClient = new QueryClient({
   },
 });
 
-
 function SessionRouteGuard() {
   const { user, isLoading, requiresBiometric } = useAuth();
   const pathname = usePathname();
   const segments = useSegments();
   const pendingDestinationRef = useRef<string | null>(null);
-  const retryDestinationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryDestinationTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -93,33 +92,34 @@ function SessionRouteGuard() {
 
     if (!destination || destination === pathname) {
       pendingDestinationRef.current = null;
-      if (retryDestinationTimerRef.current) {
-        clearTimeout(retryDestinationTimerRef.current);
-        retryDestinationTimerRef.current = null;
-      }
+      retryDestinationTimersRef.current.forEach((timer) => clearTimeout(timer));
+      retryDestinationTimersRef.current = [];
       return;
     }
-    if (pendingDestinationRef.current === destination) return;
+
     pendingDestinationRef.current = destination;
     router.replace(destination as never);
 
-    if (retryDestinationTimerRef.current) {
-      clearTimeout(retryDestinationTimerRef.current);
-    }
-    retryDestinationTimerRef.current = setTimeout(() => {
-      if (pendingDestinationRef.current === destination) {
-        router.replace(destination as never);
-      }
-    }, 80);
+    retryDestinationTimersRef.current.forEach((timer) => clearTimeout(timer));
+    retryDestinationTimersRef.current = [80, 240, 520].map((delayMs) =>
+      setTimeout(() => {
+        if (pendingDestinationRef.current === destination && pathname !== destination) {
+          router.replace(destination as never);
+        }
+      }, delayMs),
+    );
   }, [isLoading, pathname, requiresBiometric, segments, user]);
 
   useEffect(() => {
     pendingDestinationRef.current = null;
-    if (retryDestinationTimerRef.current) {
-      clearTimeout(retryDestinationTimerRef.current);
-      retryDestinationTimerRef.current = null;
-    }
+    retryDestinationTimersRef.current.forEach((timer) => clearTimeout(timer));
+    retryDestinationTimersRef.current = [];
   }, [pathname]);
+
+  useEffect(() => () => {
+    retryDestinationTimersRef.current.forEach((timer) => clearTimeout(timer));
+    retryDestinationTimersRef.current = [];
+  }, []);
 
   return null;
 }
