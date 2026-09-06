@@ -47,7 +47,8 @@ test("Phase 30.2E computes nearby distance on the server without exposing provid
   assert.match(route, /distanceKm: discoveredDistance/);
 
   const projectionStart = admin.indexOf("export function safeUserAllowlist");
-  const projectionEnd = admin.indexOf("export function safeUserAllowlist", projectionStart + 1);
+  const nextExport = admin.indexOf("\nexport ", projectionStart + 1);
+  const projectionEnd = nextExport === -1 ? admin.length : nextExport;
   assert.ok(projectionStart >= 0 && projectionEnd > projectionStart);
   const projection = admin.slice(projectionStart, projectionEnd);
 
