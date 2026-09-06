@@ -50,6 +50,17 @@ test("selected login OTP channel stays on the selected contact method", () => {
   assert.ok(delivery.includes('return channel !== "email";'));
 });
 
+test("password reset OTP stays on email or mobile based on entered contact", () => {
+  const selectedRecovery = source("api-server/src/routes/authSelectedRecovery.ts");
+  const routes = source("api-server/src/routes/index.ts");
+
+  assert.ok(routes.indexOf('router.use("/auth", authSelectedRecoveryRouter)') < routes.indexOf('router.use("/auth", authRouter)'));
+  assert.ok(selectedRecovery.includes('const selectedContact = rawInput.includes("@") ? "email" : "mobile";'));
+  assert.ok(selectedRecovery.includes('selectedContact === "email"'));
+  assert.ok(selectedRecovery.includes('["email"]'));
+  assert.ok(selectedRecovery.includes('["evolution_whatsapp", "whatsapp_cloud", "http_sms"]'));
+});
+
 test("account action OTP has expiry and resend cooldown", () => {
   const text = source("athoo-app/components/screens/AccountActionVerificationModal.tsx");
 
@@ -80,9 +91,12 @@ test("email OTP login rejects unknown and unverified email accounts", () => {
 
 test("password recovery preserves account enumeration protection", () => {
   const backend = source("api-server/src/routes/auth.ts");
+  const selectedRecovery = source("api-server/src/routes/authSelectedRecovery.ts");
 
   assert.ok(backend.includes("eq(usersTable.emailVerified, true)"));
   assert.ok(backend.includes("If an account matches those details, a reset OTP has been sent."));
+  assert.ok(selectedRecovery.includes("eq(usersTable.emailVerified, true)"));
+  assert.ok(selectedRecovery.includes("If an account matches those details, a reset OTP has been sent."));
 });
 
 
@@ -137,11 +151,16 @@ test("email verification screen supports unauthenticated login verification", ()
 test("forgot password recovery respects selected account role", () => {
   const mobile = source("athoo-app/app/auth/forgot-password.tsx");
   const backend = source("api-server/src/routes/auth.ts");
+  const selectedRecovery = source("api-server/src/routes/authSelectedRecovery.ts");
 
   assert.ok(mobile.includes("role: safeRole"));
   assert.ok(backend.includes("role: rawRole"));
+  assert.ok(selectedRecovery.includes("role: rawRole"));
   assert.ok(backend.includes('code: "ROLE_REQUIRED"'));
+  assert.ok(selectedRecovery.includes('code: "ROLE_REQUIRED"'));
   const roleBindings = backend.match(/expectedRole \? eq\(usersTable\.role, expectedRole\) : undefined/g) || [];
+  const selectedRoleBindings = selectedRecovery.match(/expectedRole \? eq\(usersTable\.role, expectedRole\) : undefined/g) || [];
   assert.ok(roleBindings.length >= 2);
+  assert.ok(selectedRoleBindings.length >= 2);
   assert.ok(backend.includes("If an account matches those details, a reset OTP has been sent."));
 });
