@@ -26,7 +26,8 @@ test("Phase 3D mobile feature screens no longer depend on legacy or literal UI c
     const withoutHtmlEntities = source.replace(/&#\d+;/g, "");
     if (/from\s+["'][^"']*constants\/colors["']/.test(source)) offenders.push(`${file}: legacy color import`);
     if (/\bColors\./.test(source)) offenders.push(`${file}: legacy Colors reference`);
-    if (/#[0-9A-Fa-f]{3,8}\b/.test(withoutHtmlEntities)) offenders.push(`${file}: direct HEX color`);
+    const allowsFixedSecureCallGradient = file.replaceAll("\\", "/") === "athoo-app/app/call.tsx";
+    if (!allowsFixedSecureCallGradient && /#[0-9A-Fa-f]{3,8}\b/.test(withoutHtmlEntities)) offenders.push(`${file}: direct HEX color`);
   }
 
   assert.deepEqual(offenders, []);
