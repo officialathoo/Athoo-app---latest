@@ -445,9 +445,9 @@ export async function deliverAuthenticationOtp(
   const mode = getOtpDeliveryMode();
   const requested = args.deliveryChannels?.length ? args.deliveryChannels : getOtpDeliveryChannels();
   // Registration must prove possession of the phone number. Email is only a fallback for login/password recovery.
-  const channels = args.purpose === "registration"
-    ? requested.filter((channel) => channel !== "email")
-    : requested;
+  const channelAllowedForPurpose = (channel: OtpDeliveryChannel) =>
+    args.purpose === "registration" ? channel !== "email" : true;
+  const channels = requested.filter(channelAllowedForPurpose);
   const results: OtpChannelResult[] = [];
 
   for (const channel of channels) {
