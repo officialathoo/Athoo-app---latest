@@ -88,7 +88,7 @@ export function ChangePasswordScreen() {
   const { theme } = useTheme();
   const { translate: tr } = useLang();
   const insets = useSafeAreaInsets();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -209,7 +209,10 @@ export function ChangePasswordScreen() {
             />
             <Button
               title={tr("Forgot password? Reset with OTP")}
-              onPress={() => router.push("/auth/forgot-password" as any)}
+              onPress={() => router.push({
+                pathname: "/auth/forgot-password",
+                params: { role: user?.role === "provider" ? "provider" : "customer" },
+              } as any)}
               variant="ghost"
               fullWidth
             />
