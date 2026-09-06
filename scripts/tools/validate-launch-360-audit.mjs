@@ -218,7 +218,7 @@ requireText("api-server/src/lib/otpDelivery.ts", [
 ]);
 
 requireText("api-server/src/routes/bookings.ts", [
-  ["start PIN lifetime", "PIN_TTL_MS = 3 * 60 * 1000"],
+  ["start PIN lifetime", /PIN_TTL_MS\s*=\s*3\s*\*\s*60\s*\*\s*1000/],
   ["start PIN field", "startPin"],
   ["completion PIN field", "completePin"],
   ["invoice creation", "tx.insert(invoicesTable)"],
@@ -269,7 +269,7 @@ if (appConfig.includes("ACCESS_BACKGROUND_LOCATION") || appConfig.includes("NSLo
 
 requireText("athoo-app/services/api.ts", [
   ["configured API base URL", "EXPO_PUBLIC_API_BASE_URL"],
-  ["device id header support", "x-athoo-device-id"],
+  ["device id header support", /X-Athoo-Device-Id/i],
 ]);
 
 const easRoot = requireText("eas.json", [
