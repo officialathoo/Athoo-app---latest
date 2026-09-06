@@ -39,5 +39,6 @@ test("Phase 28.3 uses one curved logo surface and compact professional auth choi
   assert.match(chooser, /numberOfLines=\{1\} style=\{styles\.roleTitle\}/);
   assert.doesNotMatch(chooser, /borderColor: theme\.colors\.secondary \}, pressed/);
   assert.match(loader, /resizeMode="cover"/);
-  assert.match(loader, /logo: \{ width: "100%", height: "100%", borderRadius: 27 \}/);
+  assert.match(loader, /logoWrap: \{ alignItems: "center", justifyContent: "center", width: 142, height: 142 \}/);
+  assert.match(loader, /logo: \{ width: 112, height: 112, resizeMode: "contain" \}/);
 });
