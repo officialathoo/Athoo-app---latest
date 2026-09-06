@@ -91,18 +91,6 @@ function normalizeChannel(value: string): OtpDeliveryChannel | null {
   return null;
 }
 
-export function getOtpDeliveryChannels(): OtpDeliveryChannel[] {
-  const configured = env("OTP_DELIVERY_CHANNELS", "whatsapp_cloud,email")
-    .split(",")
-    .map(normalizeChannel)
-    .filter((channel): channel is OtpDeliveryChannel => Boolean(channel));
-  return [...new Set(configured)];
-}
-
-export function getOtpDeliveryMode(): OtpDeliveryMode {
-  return env("OTP_DELIVERY_MODE", "first_success").toLowerCase() === "all" ? "all" : "first_success";
-}
-
 function evolutionWhatsAppConfiguration() {
   return {
     baseUrl: env("EVOLUTION_API_BASE_URL", env("EVOLUTION_API_URL")).replace(/\/+$/, ""),
@@ -166,6 +154,37 @@ function whatsappConfigured(): boolean {
 function smsConfigured(): boolean {
   const config = smsConfiguration();
   return config.provider === "http_json" && Boolean(config.endpoint);
+}
+
+function requestedOtpChannelNames(): string[] {
+  const explicit = env("OTP_DELIVERY_CHANNELS");
+  if (explicit) return explicit.split(",");
+  return evolutionWhatsAppConfigured() ? ["evolution_whatsapp", "email"] : ["whatsapp_cloud", "email"];
+}
+
+function preferConfiguredEvolutionWhatsApp(channels: OtpDeliveryChannel[]): OtpDeliveryChannel[] {
+  if (!evolutionWhatsAppConfigured()) return channels;
+
+  const withoutEvolution = channels.filter((channel) => channel !== "evolution_whatsapp");
+  const whatsappCloudIndex = withoutEvolution.indexOf("whatsapp_cloud");
+
+  if (whatsappCloudIndex >= 0 && !whatsappConfigured()) {
+    withoutEvolution.splice(whatsappCloudIndex, 1, "evolution_whatsapp");
+    return [...new Set(withoutEvolution)];
+  }
+
+  return ["evolution_whatsapp", ...withoutEvolution];
+}
+
+export function getOtpDeliveryChannels(): OtpDeliveryChannel[] {
+  const configured = requestedOtpChannelNames()
+    .map(normalizeChannel)
+    .filter((channel): channel is OtpDeliveryChannel => Boolean(channel));
+  return preferConfiguredEvolutionWhatsApp([...new Set(configured)]);
+}
+
+export function getOtpDeliveryMode(): OtpDeliveryMode {
+  return env("OTP_DELIVERY_MODE", "first_success").toLowerCase() === "all" ? "all" : "first_success";
 }
 
 export async function getOtpDeliveryConfigurationStatus(): Promise<OtpDeliveryConfigurationStatus> {
