@@ -13,89 +13,66 @@ export function AthooLoader({ tagline }: AthooLoaderProps) {
   const { theme } = useTheme();
   const resolvedTagline = tagline || `${brandConfig.descriptor} Across Pakistan`;
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const logoScale = useRef(new Animated.Value(0.5)).current;
+  const logoScale = useRef(new Animated.Value(0.94)).current;
   const logoOpacity = useRef(new Animated.Value(0)).current;
   const textOpacity = useRef(new Animated.Value(0)).current;
-  const glowOpacity = useRef(new Animated.Value(0.4)).current;
-  const dot1Y = useRef(new Animated.Value(0)).current;
-  const dot2Y = useRef(new Animated.Value(0)).current;
-  const dot3Y = useRef(new Animated.Value(0)).current;
-  const ringScale = useRef(new Animated.Value(1)).current;
-  const ringOpacity = useRef(new Animated.Value(0.35)).current;
+  const haloOpacity = useRef(new Animated.Value(0.58)).current;
+  const loaderProgress = useRef(new Animated.Value(0)).current;
+  const orbitShift = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const animations: Animated.CompositeAnimation[] = [];
-    const timers: ReturnType<typeof setTimeout>[] = [];
-
     const intro = Animated.parallel([
-      Animated.spring(logoScale, { toValue: 1, damping: 14, stiffness: 130, mass: 0.9, useNativeDriver: true }),
-      Animated.timing(logoOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
+      Animated.spring(logoScale, { toValue: 1, damping: 16, stiffness: 115, mass: 0.85, useNativeDriver: true }),
+      Animated.timing(logoOpacity, { toValue: 1, duration: 420, useNativeDriver: true }),
+      Animated.timing(textOpacity, { toValue: 1, duration: 520, delay: 210, useNativeDriver: true }),
     ]);
-    animations.push(intro);
+
+    const halo = Animated.loop(Animated.sequence([
+      Animated.timing(haloOpacity, { toValue: 0.92, duration: 1350, useNativeDriver: true }),
+      Animated.timing(haloOpacity, { toValue: 0.52, duration: 1350, useNativeDriver: true }),
+    ]));
+
+    const loader = Animated.loop(Animated.sequence([
+      Animated.timing(loaderProgress, { toValue: 1, duration: 1050, useNativeDriver: true }),
+      Animated.timing(loaderProgress, { toValue: 0, duration: 1050, useNativeDriver: true }),
+    ]));
+
+    const orbit = Animated.loop(Animated.sequence([
+      Animated.timing(orbitShift, { toValue: 1, duration: 3200, useNativeDriver: true }),
+      Animated.timing(orbitShift, { toValue: 0, duration: 3200, useNativeDriver: true }),
+    ]));
+
+    animations.push(intro, halo, loader, orbit);
     intro.start();
+    halo.start();
+    loader.start();
+    orbit.start();
 
-    timers.push(setTimeout(() => {
-      const text = Animated.timing(textOpacity, { toValue: 1, duration: 450, useNativeDriver: true });
-      animations.push(text);
-      text.start();
-    }, 350));
+    return () => animations.forEach((animation) => animation.stop());
+  }, [haloOpacity, loaderProgress, logoOpacity, logoScale, orbitShift, textOpacity]);
 
-    const glow = Animated.loop(Animated.sequence([
-      Animated.timing(glowOpacity, { toValue: 0.7, duration: 1200, useNativeDriver: true }),
-      Animated.timing(glowOpacity, { toValue: 0.35, duration: 1200, useNativeDriver: true }),
-    ]));
-    const ringPulse = Animated.loop(Animated.sequence([
-      Animated.timing(ringScale, { toValue: 1.35, duration: 1600, useNativeDriver: true }),
-      Animated.timing(ringScale, { toValue: 1, duration: 1600, useNativeDriver: true }),
-    ]));
-    const ringFade = Animated.loop(Animated.sequence([
-      Animated.timing(ringOpacity, { toValue: 0, duration: 1600, useNativeDriver: true }),
-      Animated.timing(ringOpacity, { toValue: 0.35, duration: 0, useNativeDriver: true }),
-    ]));
-    animations.push(glow, ringPulse, ringFade);
-    glow.start();
-    ringPulse.start();
-    ringFade.start();
-
-    const bounceDot = (dot: Animated.Value, delay: number) => {
-      const animation = Animated.loop(Animated.sequence([
-        Animated.delay(delay),
-        Animated.timing(dot, { toValue: -9, duration: 260, useNativeDriver: true }),
-        Animated.timing(dot, { toValue: 0, duration: 260, useNativeDriver: true }),
-        Animated.delay(480),
-      ]));
-      animations.push(animation);
-      animation.start();
-    };
-
-    timers.push(setTimeout(() => {
-      bounceDot(dot1Y, 0);
-      bounceDot(dot2Y, 160);
-      bounceDot(dot3Y, 320);
-    }, 700));
-
-    return () => {
-      timers.forEach(clearTimeout);
-      animations.forEach((animation) => animation.stop());
-    };
-  }, [dot1Y, dot2Y, dot3Y, glowOpacity, logoOpacity, logoScale, ringOpacity, ringScale, textOpacity]);
-
-  const gradient = ["#061231", "#0B3FA8", "#08172F"] as const;
+  const loaderTranslateX = loaderProgress.interpolate({ inputRange: [0, 1], outputRange: [0, 89] });
+  const loaderScaleX = loaderProgress.interpolate({ inputRange: [0, 1], outputRange: [0.72, 1.1] });
+  const glowTranslateX = loaderProgress.interpolate({ inputRange: [0, 1], outputRange: [-30, 30] });
+  const glowScale = loaderProgress.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1.08] });
+  const orbitTranslateY = orbitShift.interpolate({ inputRange: [0, 1], outputRange: [0, -22] });
 
   return (
-    <LinearGradient colors={gradient} style={styles.container} start={{ x: 0.3, y: 0 }} end={{ x: 0.7, y: 1 }}>
-      <View style={styles.backgroundCircleTop} />
-      <View style={styles.backgroundCircleBottom} />
-      <View style={styles.backgroundCircleMiddle} />
+    <LinearGradient colors={["#020814", "#061E61", "#02123C", "#020814"]} style={styles.container} start={{ x: 0.32, y: 0 }} end={{ x: 0.78, y: 1 }}>
+      <Animated.View style={[styles.blueAura, { opacity: haloOpacity }]} />
+      <View style={styles.deepVignette} />
+      <View style={styles.orangeAura} />
+      <Animated.View style={[styles.orbitBlue, { transform: [{ translateY: orbitTranslateY }, { rotate: "-12deg" }] }]} />
+      <Animated.View style={[styles.orbitOrange, { transform: [{ translateY: orbitTranslateY }, { rotate: "-20deg" }] }]} />
+      <View style={styles.lowerRibbon} />
 
-      <Animated.View style={[styles.logoWrap, { opacity: logoOpacity, transform: [{ scale: logoScale }] }]}>
-        <Animated.View style={[styles.ring, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]} />
-        <Animated.View style={[styles.glowCircle, { opacity: glowOpacity }]} />
-        <Image
-          source={brandConfig.assets.mark}
-          style={styles.logo}
-          resizeMode="cover"
-        />
+      <Animated.View style={[styles.logoTileWrap, { opacity: logoOpacity, transform: [{ scale: logoScale }] }]}>
+        <View style={styles.logoTileShadow} />
+        <LinearGradient colors={["#1BDAFF", "#0075FF", "#003DCD"]} style={styles.logoTile} start={{ x: 0.08, y: 0.02 }} end={{ x: 0.92, y: 0.98 }}>
+          <LinearGradient colors={["rgba(255,255,255,0.30)", "rgba(255,255,255,0.02)"]} style={styles.logoTileGloss} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
+          <Image source={brandConfig.assets.mark} style={styles.logoMark} resizeMode="contain" />
+        </LinearGradient>
       </Animated.View>
 
       <Animated.View style={[styles.textBlock, { opacity: textOpacity }]}>
@@ -103,40 +80,41 @@ export function AthooLoader({ tagline }: AthooLoaderProps) {
         <Text style={styles.tagline}>{resolvedTagline}</Text>
       </Animated.View>
 
-      <View style={styles.dotsRow}>
-        {[dot1Y, dot2Y, dot3Y].map((translateY, index) => (
-          <Animated.View
-            key={index}
-            style={[styles.dot, index === 1 && styles.middleDot, { transform: [{ translateY }] }]}
-          />
-        ))}
-      </View>
-
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>Secure Services - Pakistan</Text>
+      <View style={styles.loaderZone} pointerEvents="none">
+        <Animated.View style={[styles.loaderGlow, { transform: [{ translateX: glowTranslateX }, { scale: glowScale }] }]} />
+        <View style={styles.loaderTrack}>
+          <LinearGradient colors={["rgba(12,96,255,0.40)", "rgba(24,200,255,0.34)", "rgba(255,145,0,0.34)"]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.loaderTrackTint} />
+          <Animated.View style={[styles.loaderBar, { transform: [{ translateX: loaderTranslateX }, { scaleX: loaderScaleX }] }]}>
+            <LinearGradient colors={["#0B6DFF", "#1FE5FF", "#FF9A00"]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.loaderBarGradient} />
+          </Animated.View>
+        </View>
       </View>
     </LinearGradient>
   );
 }
 
 function createStyles(theme: AthooTheme) {
-  const glass = theme.dark ? "rgba(255,255,255,0.13)" : "rgba(255,255,255,0.18)";
   return StyleSheet.create({
-    container: { flex: 1, alignItems: "center", justifyContent: "center", overflow: "hidden" },
-    backgroundCircleTop: { position: "absolute", width: 380, height: 380, borderRadius: 190, backgroundColor: "rgba(56,189,248,0.08)", top: -165, right: -135 },
-    backgroundCircleBottom: { position: "absolute", width: 300, height: 300, borderRadius: 150, backgroundColor: "rgba(249,115,22,0.10)", bottom: -125, left: -115 },
-    backgroundCircleMiddle: { position: "absolute", width: 180, height: 180, borderRadius: 90, backgroundColor: "rgba(255,255,255,0.03)", top: "35%", left: "60%" },
-    logoWrap: { alignItems: "center", justifyContent: "center", width: 142, height: 142 },
-    ring: { position: "absolute", width: 136, height: 136, borderRadius: 68, borderWidth: 1.5, borderColor: "rgba(125,211,252,0.48)" },
-    glowCircle: { position: "absolute", width: 112, height: 112, borderRadius: 56, backgroundColor: "rgba(56,189,248,0.13)" },
-    logo: { width: 112, height: 112, resizeMode: "contain" },
-    textBlock: { alignItems: "center", marginTop: 24, gap: 5, paddingHorizontal: 28 },
-    brandName: { fontSize: 36, fontWeight: "800", color: theme.colors.white, letterSpacing: 1.1 },
-    tagline: { fontSize: 13, color: "rgba(255,255,255,0.78)", letterSpacing: 0.8, fontWeight: "500" },
-    dotsRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 46 },
-    dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.58)" },
-    middleDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: "#F97316" },
-    footer: { position: "absolute", bottom: 48, alignItems: "center" },
-    footerText: { fontSize: 10, color: "rgba(255,255,255,0.46)", letterSpacing: 1.5, fontWeight: "600", textTransform: "uppercase" },
+    container: { flex: 1, alignItems: "center", justifyContent: "center", overflow: "hidden", backgroundColor: "#020814" },
+    blueAura: { position: "absolute", top: "10%", alignSelf: "center", width: 470, height: 470, borderRadius: 235, backgroundColor: "rgba(0,119,255,0.34)", shadowColor: "#008CFF", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.88, shadowRadius: 70 },
+    deepVignette: { position: "absolute", width: "120%", height: "120%", borderRadius: 360, borderWidth: 1, borderColor: "rgba(25,77,210,0.08)", bottom: -220, right: -145 },
+    orangeAura: { position: "absolute", width: 300, height: 300, borderRadius: 150, backgroundColor: "rgba(255,132,0,0.32)", right: -120, bottom: "25%", shadowColor: "#FF8800", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.85, shadowRadius: 60 },
+    orbitBlue: { position: "absolute", width: 760, height: 760, borderRadius: 380, borderWidth: 2, borderColor: "rgba(0,156,255,0.34)", bottom: -335, left: -265 },
+    orbitOrange: { position: "absolute", width: 680, height: 680, borderRadius: 340, borderTopWidth: 1.4, borderRightWidth: 1.2, borderColor: "rgba(255,145,0,0.54)", bottom: -210, right: -245 },
+    lowerRibbon: { position: "absolute", width: 760, height: 160, borderTopWidth: 2, borderColor: "rgba(0,206,255,0.40)", borderRadius: 380, bottom: -26, left: -160, transform: [{ rotate: "-11deg" }] },
+    logoTileWrap: { width: 238, height: 238, alignItems: "center", justifyContent: "center", marginTop: -66 },
+    logoTileShadow: { position: "absolute", width: 224, height: 224, borderRadius: 58, backgroundColor: "rgba(0,34,140,0.48)", shadowColor: "#008DFF", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.92, shadowRadius: 44, elevation: 18 },
+    logoTile: { width: 224, height: 224, borderRadius: 58, alignItems: "center", justifyContent: "center", borderWidth: 1.2, borderColor: "rgba(125,232,255,0.70)", overflow: "hidden" },
+    logoTileGloss: { position: "absolute", top: 0, left: 0, width: "100%", height: "48%", borderTopLeftRadius: 58, borderTopRightRadius: 58, opacity: 0.72 },
+    logoMark: { width: 162, height: 162, transform: [{ translateY: 3 }] },
+    textBlock: { alignItems: "center", marginTop: 42, paddingHorizontal: 24 },
+    brandName: { fontSize: 60, lineHeight: 68, fontWeight: "900", color: theme.colors.white, letterSpacing: -1.8, textAlign: "center", textShadowColor: "rgba(255,255,255,0.20)", textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 8 },
+    tagline: { marginTop: 8, fontSize: 19, lineHeight: 25, color: "rgba(226,237,255,0.82)", letterSpacing: 0.1, fontWeight: "500", textAlign: "center" },
+    loaderZone: { marginTop: 62, width: 170, height: 44, alignItems: "center", justifyContent: "center" },
+    loaderGlow: { position: "absolute", width: 55, height: 55, borderRadius: 28, backgroundColor: "rgba(0,170,255,0.18)" },
+    loaderTrack: { position: "relative", width: 94, height: 8, overflow: "hidden", borderRadius: 999, backgroundColor: "rgba(255,255,255,0.14)", shadowColor: "#0084FF", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.42, shadowRadius: 22, elevation: 9 },
+    loaderTrackTint: { ...StyleSheet.absoluteFillObject, borderRadius: 999, opacity: 0.55 },
+    loaderBar: { position: "absolute", top: 0, left: -40, width: 43, height: "100%", borderRadius: 999, overflow: "hidden", shadowColor: "#1FE5FF", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 14, elevation: 10 },
+    loaderBarGradient: { flex: 1, borderRadius: 999 },
   });
 }
