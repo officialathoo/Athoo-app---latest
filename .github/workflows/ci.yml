@@ -31,6 +31,8 @@ jobs:
         run: pnpm ops:validate
       - name: Release blueprints check
         run: pnpm release:blueprints:validate
+      - name: Launch 360 audit
+        run: pnpm launch:360-audit
       - name: Security scan
         run: pnpm security:scan
       - name: Mobile workspace check
