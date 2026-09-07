@@ -134,7 +134,6 @@ export default function ProviderRegisterScreen() {
   const [loading, setLoading] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [emailVerificationParams, setEmailVerificationParams] = useState<Record<string, string> | null>(null);
   const [otpVerified, setOtpVerified] = useState(false);
   const [registrationToken, setRegistrationToken] = useState("");
   const [showCnicNotice, setShowCnicNotice] = useState(true);
@@ -228,7 +227,7 @@ export default function ProviderRegisterScreen() {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: isVideo ? ("videos" as const) : ("images" as const),
         quality: 0.85,
-        ...(isVideo ? { videoMaxDuration: 30 } : { allowsEditing: true, aspect: doc.id === "selfie" ? [1, 1] as [number, number] : [4, 3] as [number, number] }),
+        ...(isVideo ? { videoMaxDuration: 30 } : { allowsEditing: true }),
       });
       if (!result.canceled && result.assets?.[0]) {
         setDocFiles(prev => ({ ...prev, [doc.id]: result.assets[0].uri }));
@@ -254,7 +253,7 @@ export default function ProviderRegisterScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: isVideo ? ("videos" as const) : ("images" as const),
         quality: 0.85,
-        ...(isVideo ? { videoMaxDuration: 30 } : { allowsEditing: true, aspect: [4, 3] as [number, number] }),
+        ...(isVideo ? { videoMaxDuration: 30 } : { allowsEditing: true }),
       });
       if (!result.canceled && result.assets?.[0]) {
         setDocFiles(prev => ({ ...prev, [doc.id]: result.assets[0].uri }));
@@ -357,7 +356,6 @@ export default function ProviderRegisterScreen() {
       registrationToken,
     });
     if (ok.success) {
-      // Upload KYC documents to object storage and save to the API
       const docEntries = Object.entries(docFiles);
       if (docEntries.length > 0) {
         const docLabel: Record<string, string> = {
@@ -402,24 +400,12 @@ export default function ProviderRegisterScreen() {
           return;
         }
       }
-
-      if (form.email && ok.emailVerificationRequired) {
-        setEmailVerificationParams({
-          role: "provider",
-          sent: String(ok.emailVerificationSent === true),
-          expires: String(ok.emailVerificationExpiresInSeconds || 600),
-          resend: String(ok.emailVerificationResendAfterSeconds || 45),
-          ...(__DEV__ && ok.emailVerificationCode ? { code: ok.emailVerificationCode } : {}),
-        });
-      }
       setShowSuccess(true);
     } else {
       Alert.alert(tr("Registration Error"), tr(apiErrorToMessage(ok.error, "Could not create account. Please try again.")));
     }
     setLoading(false);
   };
-
- 
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
@@ -430,22 +416,16 @@ export default function ProviderRegisterScreen() {
           </Pressable>
           <Text style={[styles.headerTitle, localizedText]}>{tr("Provider Registration")}</Text>
           <Text style={[styles.headerSubtitle, localizedText]}>{tr("Join Athoo as a verified professional")}</Text>
-
           <View style={[styles.stepsRow, localizedRow]}>
             {steps.map((s, i) => (
               <React.Fragment key={i}>
                 <View style={styles.stepItem}>
                   <View style={[styles.stepCircle, i === step && styles.stepActive, i < step && styles.stepDone]}>
-                    {i < step
-                      ? <Icon name="check" size={14} color={theme.colors.white} />
-                      : <Icon name={s.icon as any} size={14} color={i === step ? theme.colors.white : "rgba(255,255,255,0.4)"} />
-                    }
+                    {i < step ? <Icon name="check" size={14} color={theme.colors.white} /> : <Icon name={s.icon as any} size={14} color={i === step ? theme.colors.white : "rgba(255,255,255,0.4)"} />}
                   </View>
                   <Text style={[styles.stepLabel, localizedText, i === step && styles.stepLabelActive]}>{s.title}</Text>
                 </View>
-                {i < steps.length - 1 && (
-                  <View style={[styles.stepLine, i < step && styles.stepLineDone]} />
-                )}
+                {i < steps.length - 1 && <View style={[styles.stepLine, i < step && styles.stepLineDone]} />}
               </React.Fragment>
             ))}
           </View>
@@ -454,57 +434,17 @@ export default function ProviderRegisterScreen() {
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           {step === 0 && (
             <View style={styles.formSection}>
-              <Text style={styles.formSectionTitle}>
-                <Icon name="user" size={15} color={theme.colors.primary} />{"  "}{tr("Personal Information")}
-              </Text>
-
+              <Text style={styles.formSectionTitle}><Icon name="user" size={15} color={theme.colors.primary} />{"  "}{tr("Personal Information")}</Text>
               <InputField label={tr("Full Name")} value={form.name} onChange={(v: string) => update("name", v)} placeholder={tr("As on CNIC")} required />
               <InputField label={tr("Father's Name")} value={form.fatherName} onChange={(v: string) => update("fatherName", v)} placeholder={tr("Father's full name")} required />
-              <InputField
-                label={tr("CNIC Number")}
-                value={form.cnic}
-                onChange={(v: string) => update("cnic", v.replace(/\D/g, "").slice(0, 13))}
-                placeholder="3740012345678"
-                keyboardType="numeric"
-                required
-                maxLength={13}
-              />
-              <Pressable
-                style={[styles.declarationRow, localizedRow, { marginBottom: 10 }]}
-                onPress={() => updateBoolean("cnicLifetime", !form.cnicLifetime)}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: form.cnicLifetime }}
-              >
-                <View style={[styles.checkbox, form.cnicLifetime && styles.checkboxChecked]}>
-                  {form.cnicLifetime && <Icon name="check" size={14} color={theme.colors.white} />}
-                </View>
+              <InputField label={tr("CNIC Number")} value={form.cnic} onChange={(v: string) => update("cnic", v.replace(/\D/g, "").slice(0, 13))} placeholder="3740012345678" keyboardType="numeric" required maxLength={13} />
+              <Pressable style={[styles.declarationRow, localizedRow, { marginBottom: 10 }]} onPress={() => updateBoolean("cnicLifetime", !form.cnicLifetime)} accessibilityRole="checkbox" accessibilityState={{ checked: form.cnicLifetime }}>
+                <View style={[styles.checkbox, form.cnicLifetime && styles.checkboxChecked]}>{form.cnicLifetime && <Icon name="check" size={14} color={theme.colors.white} />}</View>
                 <Text style={styles.declarationText}>{tr("This CNIC has lifetime validity")}</Text>
               </Pressable>
-              {!form.cnicLifetime && (
-                <InputField
-                  label={tr("CNIC Valid Until")}
-                  value={form.cnicExpiry}
-                  onChange={(v: string) => update("cnicExpiry", v.replace(/[^0-9-]/g, "").slice(0, 10))}
-                  placeholder="YYYY-MM-DD"
-                  keyboardType="numbers-and-punctuation"
-                  required
-                  maxLength={10}
-                />
-              )}
-              <InputField
-                label={tr("Phone Number")}
-                value={form.phone}
-                onChange={(v: string) => update("phone", v)}
-                placeholder="03XX-XXXXXXX"
-                keyboardType="phone-pad"
-                required
-              />
-              {otpVerified && (
-                <View style={[styles.verifiedRow, localizedRow]}>
-                  <Icon name="check-circle" size={14} color={theme.colors.success} />
-                  <Text style={[styles.verifiedText, localizedText]}>{tr("Phone number verified")}</Text>
-                </View>
-              )}
+              {!form.cnicLifetime && <InputField label={tr("CNIC Valid Until")} value={form.cnicExpiry} onChange={(v: string) => update("cnicExpiry", v.replace(/[^0-9-]/g, "").slice(0, 10))} placeholder="YYYY-MM-DD" keyboardType="numbers-and-punctuation" required maxLength={10} />}
+              <InputField label={tr("Phone Number")} value={form.phone} onChange={(v: string) => update("phone", v)} placeholder="03XX-XXXXXXX" keyboardType="phone-pad" required />
+              {otpVerified && <View style={[styles.verifiedRow, localizedRow]}><Icon name="check-circle" size={14} color={theme.colors.success} /><Text style={[styles.verifiedText, localizedText]}>{tr("Phone number verified")}</Text></View>}
               {!otpVerified && (
                 <Pressable style={styles.sendOtpBtn} onPress={async () => {
                   if (!form.phone) { Alert.alert(tr("Enter phone number first")); return; }
@@ -512,65 +452,28 @@ export default function ProviderRegisterScreen() {
                   const isPakistani = /^(92|0)?3\d{9}$/.test(cleaned);
                   if (!isPakistani) { Alert.alert(tr("Invalid Phone"), tr("Please enter a valid Pakistani mobile number (e.g. 03XX-XXXXXXX).")); return; }
                   const res = await sendOtp(form.phone, "registration", "provider", form.email || undefined);
-                  if (!res.success || res.error) {
-                    Alert.alert(tr("Failed"), tr(apiErrorToMessage(res.error || res.message, "Unable to send OTP. Please try again.")));
-                    return;
-                  }
+                  if (!res.success || res.error) { Alert.alert(tr("Failed"), tr(apiErrorToMessage(res.error || res.message, "Unable to send OTP. Please try again."))); return; }
                   if (__DEV__) setOtpHint(res.code || "");
                   setShowOtp(true);
                   if (__DEV__ && res.code) Alert.alert(tr("Your OTP Code"), tr("Code: {{code}}\n\nEnter this code in the field below.", { code: res.code }), [{ text: "OK" }]);
-                }}>
-                  <Text style={[styles.sendOtpText, localizedText]}>{tr("Send Verification Code")}</Text>
-                </Pressable>
+                }}><Text style={[styles.sendOtpText, localizedText]}>{tr("Send Verification Code")}</Text></Pressable>
               )}
-              {otpHint ? (
-                <View style={[styles.verifiedRow, localizedRow]}>
-                  <Icon name="info" size={14} color={theme.colors.secondary} />
-                  <Text style={[styles.verifiedText, localizedText, { color: theme.colors.secondary }]}>{tr("OTP code: {{code}}", { code: otpHint })}</Text>
-                </View>
-              ) : null}
+              {otpHint ? <View style={[styles.verifiedRow, localizedRow]}><Icon name="info" size={14} color={theme.colors.secondary} /><Text style={[styles.verifiedText, localizedText, { color: theme.colors.secondary }]}>{tr("OTP code: {{code}}", { code: otpHint })}</Text></View> : null}
               <InputField label={tr("Email Address")} value={form.email} onChange={(v: string) => update("email", v)} placeholder="your@email.com" keyboardType="email-address" />
-
-              <Text style={[styles.formSectionTitle, { marginTop: 12 }]}>
-                <Icon name="tool" size={15} color={theme.colors.primary} />{"  "}{tr("Services & Details")}
-              </Text>
-
+              <Text style={[styles.formSectionTitle, { marginTop: 12 }]}><Icon name="tool" size={15} color={theme.colors.primary} />{"  "}{tr("Services & Details")}</Text>
               <View style={styles.inputGroup}>
                 <Text style={[styles.label, localizedText]}>{tr("Services Offered")} <Text style={{ color: theme.colors.danger }}>*</Text></Text>
                 <View style={[styles.servicesGrid, localizedRow]}>
                   {categories.map((s) => {
                     const sel = form.services.includes(s.slug || s.id);
                     const appearance = getCategoryAppearance(s, theme);
-                    return (
-                      <Pressable
-                        key={s.id}
-                        onPress={() => toggleService(s.slug || s.id)}
-                        style={[styles.serviceChip, sel && { backgroundColor: appearance.selectedBackground, borderColor: appearance.accent }]}
-                      >
-                        <Icon name={s.icon as any} size={13} color={sel ? appearance.accent : theme.colors.textSecondary} />
-                        <Text style={[styles.serviceChipText, sel && { color: appearance.accent }]}>{s.name}</Text>
-                      </Pressable>
-                    );
+                    return <Pressable key={s.id} onPress={() => toggleService(s.slug || s.id)} style={[styles.serviceChip, sel && { backgroundColor: appearance.selectedBackground, borderColor: appearance.accent }]}><Icon name={s.icon as any} size={13} color={sel ? appearance.accent : theme.colors.textSecondary} /><Text style={[styles.serviceChipText, sel && { color: appearance.accent }]}>{s.name}</Text></Pressable>;
                   })}
                 </View>
               </View>
-
               <InputField label={tr("Years of Experience")} value={form.experience} onChange={(v: string) => update("experience", v)} placeholder={tr("e.g. 5 years")} />
-              <InputField
-                label={tr("Hourly Rate (PKR)")}
-                value={form.hourlyRate}
-                onChange={(v: string) => update("hourlyRate", v.replace(/\D/g, ""))}
-                placeholder="e.g. 1500"
-                keyboardType="numeric"
-              />
-              <InputField
-                label={tr("Professional Bio")}
-                value={form.bio}
-                onChange={(v: string) => update("bio", v)}
-                placeholder={tr("Describe your expertise, experience, and what makes you the best choice...")}
-                multiline
-                maxLength={300}
-              />
+              <InputField label={tr("Hourly Rate (PKR)")} value={form.hourlyRate} onChange={(v: string) => update("hourlyRate", v.replace(/\D/g, ""))} placeholder="e.g. 1500" keyboardType="numeric" />
+              <InputField label={tr("Professional Bio")} value={form.bio} onChange={(v: string) => update("bio", v)} placeholder={tr("Describe your expertise, experience, and what makes you the best choice...")} multiline maxLength={300} />
               <CityPicker value={form.city} onChange={(city) => update("city", city)} required testID="provider-city-picker" />
               <InputField label={tr("Area/Address")} value={form.address} onChange={(v: string) => update("address", v)} placeholder={tr("Your working area")} />
             </View>
@@ -578,118 +481,31 @@ export default function ProviderRegisterScreen() {
 
           {step === 1 && (
             <View style={styles.formSection}>
-              <Text style={styles.formSectionTitle}>
-                <Icon name="file-text" size={15} color={theme.colors.primary} />{"  "}{tr("Document Upload")}
-              </Text>
-              <View style={[styles.infoBox, { marginBottom: 8 }]}>
-                <Icon name="info" size={14} color={theme.colors.primary} />
-                <Text style={styles.infoText}>
-                  {tr("All documents are encrypted and reviewed only by Athoo's verification team. Your data is never shared publicly.")}
-                </Text>
-              </View>
-
+              <Text style={styles.formSectionTitle}><Icon name="file-text" size={15} color={theme.colors.primary} />{"  "}{tr("Document Upload")}</Text>
+              <View style={[styles.infoBox, { marginBottom: 8 }]}><Icon name="info" size={14} color={theme.colors.primary} /><Text style={styles.infoText}>{tr("All documents are encrypted and reviewed only by Athoo's verification team. Your data is never shared publicly.")}</Text></View>
               <View style={styles.validityCard}>
                 <Text style={[styles.label, localizedText]}>{tr("Police Verification Validity")}</Text>
                 <Text style={styles.validityHint}>{tr("Enter the exact dates printed on the certificate. Athoo does not assume a fixed validity period.")}</Text>
-                <InputField
-                  label={tr("Issue Date")}
-                  value={form.policeIssuedAt}
-                  onChange={(v: string) => update("policeIssuedAt", v.replace(/[^0-9-]/g, "").slice(0, 10))}
-                  placeholder="YYYY-MM-DD"
-                  keyboardType="numbers-and-punctuation"
-                  required
-                  maxLength={10}
-                />
-                <InputField
-                  label={tr("Valid Until")}
-                  value={form.policeExpiresAt}
-                  onChange={(v: string) => update("policeExpiresAt", v.replace(/[^0-9-]/g, "").slice(0, 10))}
-                  placeholder="YYYY-MM-DD"
-                  keyboardType="numbers-and-punctuation"
-                  required
-                  maxLength={10}
-                />
+                <InputField label={tr("Issue Date")} value={form.policeIssuedAt} onChange={(v: string) => update("policeIssuedAt", v.replace(/[^0-9-]/g, "").slice(0, 10))} placeholder="YYYY-MM-DD" keyboardType="numbers-and-punctuation" required maxLength={10} />
+                <InputField label={tr("Valid Until")} value={form.policeExpiresAt} onChange={(v: string) => update("policeExpiresAt", v.replace(/[^0-9-]/g, "").slice(0, 10))} placeholder="YYYY-MM-DD" keyboardType="numbers-and-punctuation" required maxLength={10} />
               </View>
-
               {docItems.map((doc) => {
                 const uploaded = uploadedDocs.includes(doc.id);
                 const fileUri = docFiles[doc.id];
-                return (
-                  <Pressable
-                    key={doc.id}
-                    style={[styles.docItem, uploaded && styles.docItemUploaded]}
-                    onPress={() => handleDocUpload(doc)}
-                  >
-                    <View style={[styles.docIconBox, { backgroundColor: uploaded ? theme.colors.success + "15" : theme.colors.surfaceAlt }]}>
-                      {fileUri ? (
-                        <Image source={{ uri: fileUri }} style={styles.docThumb} />
-                      ) : (
-                        <Icon name={doc.icon as any} size={20} color={uploaded ? theme.colors.success : theme.colors.textSecondary} />
-                      )}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <View style={[styles.docLabelRow, localizedRow]}>
-                        <Text style={styles.docLabel}>{doc.label}</Text>
-                        {doc.required && (
-                          <Text style={[styles.docRequired, localizedText]}>{tr("Required")}</Text>
-                        )}
-                      </View>
-                      <Text style={styles.docHint}>
-                        {uploaded
-                          ? tr("✓ Uploaded — tap to replace or remove")
-                          : (doc.id === "selfie" ? tr("📷 Tap to open camera") : tr("📁 Tap for camera or gallery"))}
-                      </Text>
-                    </View>
-                    <View style={[styles.docCheck, uploaded && styles.docCheckDone]}>
-                      <Icon name={uploaded ? "check" : (doc.id === "selfie" ? "camera" : "upload")} size={14} color={uploaded ? theme.colors.white : theme.colors.textMuted} />
-                    </View>
-                  </Pressable>
-                );
+                return <Pressable key={doc.id} style={[styles.docItem, uploaded && styles.docItemUploaded]} onPress={() => handleDocUpload(doc)}><View style={[styles.docIconBox, { backgroundColor: uploaded ? theme.colors.success + "15" : theme.colors.surfaceAlt }]}>{fileUri ? <Image source={{ uri: fileUri }} style={styles.docThumb} /> : <Icon name={doc.icon as any} size={20} color={uploaded ? theme.colors.success : theme.colors.textSecondary} />}</View><View style={{ flex: 1 }}><View style={[styles.docLabelRow, localizedRow]}><Text style={styles.docLabel}>{doc.label}</Text>{doc.required && <Text style={[styles.docRequired, localizedText]}>{tr("Required")}</Text>}</View><Text style={styles.docHint}>{uploaded ? tr("✓ Uploaded — tap to replace or remove") : (doc.id === "selfie" ? tr("📷 Tap to open camera") : tr("📁 Tap for camera or gallery"))}</Text></View><View style={[styles.docCheck, uploaded && styles.docCheckDone]}><Icon name={uploaded ? "check" : (doc.id === "selfie" ? "camera" : "upload")} size={14} color={uploaded ? theme.colors.white : theme.colors.textMuted} /></View></Pressable>;
               })}
-
-              <View style={[styles.policeBox, localizedRow]}>
-                <Icon name="shield" size={16} color={theme.colors.primary} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.policeTitle, localizedText]}>{tr("Police Verification")}</Text>
-                  <Text style={styles.policeText}>
-                    {tr("Upload a current police character certificate and enter the exact issue and valid-until dates printed on it. Athoo will remind you before renewal is due.")}
-                  </Text>
-                </View>
-              </View>
+              <View style={[styles.policeBox, localizedRow]}><Icon name="shield" size={16} color={theme.colors.primary} /><View style={{ flex: 1 }}><Text style={[styles.policeTitle, localizedText]}>{tr("Police Verification")}</Text><Text style={styles.policeText}>{tr("Upload a current police character certificate and enter the exact issue and valid-until dates printed on it. Athoo will remind you before renewal is due.")}</Text></View></View>
             </View>
           )}
 
           {step === 2 && (
             <View style={styles.formSection}>
-              <Text style={styles.formSectionTitle}>
-                <Icon name="clock" size={15} color={theme.colors.primary} />{"  "}{tr("Under Review")}
-              </Text>
-
+              <Text style={styles.formSectionTitle}><Icon name="clock" size={15} color={theme.colors.primary} />{"  "}{tr("Under Review")}</Text>
               <View style={styles.reviewCard}>
-                <View style={styles.reviewIconCircle}>
-                  <Icon name="search" size={28} color={theme.colors.primary} />
-                </View>
+                <View style={styles.reviewIconCircle}><Icon name="search" size={28} color={theme.colors.primary} /></View>
                 <Text style={[styles.reviewTitle, localizedText]}>{tr("Your Application is Being Reviewed")}</Text>
-                <Text style={styles.reviewText}>
-                  {tr("Our team will verify your documents, CNIC, and police verification within 24-48 hours. You'll receive a notification once approved.")}
-                </Text>
-
-                <View style={styles.reviewChecklist}>
-                  {[
-                    "Identity verification (CNIC)",
-                    "Document authenticity check",
-                    "Police background check",
-                    "Skills & experience review",
-                  ].map((item, i) => (
-                    <View key={i} style={[styles.checkRow, localizedRow]}>
-                      <View style={styles.checkCircle}>
-                        <Icon name="clock" size={11} color={theme.colors.primary} />
-                      </View>
-                      <Text style={[styles.checkText, localizedText]}>{tr(item)}</Text>
-                    </View>
-                  ))}
-                </View>
-
+                <Text style={styles.reviewText}>{tr("Our team will verify your documents, CNIC, and police verification within 24-48 hours. You'll receive a notification once approved.")}</Text>
+                <View style={styles.reviewChecklist}>{["Identity verification (CNIC)", "Document authenticity check", "Police background check", "Skills & experience review"].map((item, i) => <View key={i} style={[styles.checkRow, localizedRow]}><View style={styles.checkCircle}><Icon name="clock" size={11} color={theme.colors.primary} /></View><Text style={[styles.checkText, localizedText]}>{tr(item)}</Text></View>)}</View>
                 <View style={styles.reviewSummary}>
                   <Text style={[styles.reviewSummaryTitle, localizedText]}>{tr("Summary")}</Text>
                   <View style={[styles.summaryRow, localizedRow]}><Text style={[styles.summaryKey, localizedText]}>{tr("Name")}</Text><Text style={styles.summaryVal}>{form.name}</Text></View>
@@ -704,390 +520,36 @@ export default function ProviderRegisterScreen() {
             </View>
           )}
 
-          {step === 2 && (
-            <View style={styles.declarationBox}>
-              <Pressable
-                style={[styles.declarationRow, localizedRow]}
-                onPress={() => setDeclarationAccepted(!declarationAccepted)}
-              >
-                <View style={[styles.checkbox, declarationAccepted && styles.checkboxChecked]}>
-                  {declarationAccepted && <Icon name="check" size={14} color={theme.colors.white} />}
-                </View>
-                <Text style={styles.declarationText}>
-                  {tr("I declare that all the information and documents provided above are true, accurate, and to the best of my knowledge.")}
-                </Text>
-              </Pressable>
-              <View style={{ marginTop: 12 }}>
-                <LegalAcceptanceCheckbox value={legalAccepted} onChange={setLegalAccepted} />
-              </View>
-            </View>
-          )}
+          {step === 2 && <View style={styles.declarationBox}><Pressable style={[styles.declarationRow, localizedRow]} onPress={() => setDeclarationAccepted(!declarationAccepted)}><View style={[styles.checkbox, declarationAccepted && styles.checkboxChecked]}>{declarationAccepted && <Icon name="check" size={14} color={theme.colors.white} />}</View><Text style={styles.declarationText}>{tr("I declare that all the information and documents provided above are true, accurate, and to the best of my knowledge.")}</Text></Pressable><View style={{ marginTop: 12 }}><LegalAcceptanceCheckbox value={legalAccepted} onChange={setLegalAccepted} /></View></View>}
 
-          <View style={styles.footer}>
-            <Pressable
-              style={[
-                styles.nextBtn,
-                loading && styles.btnDisabled,
-                step === 2 && (!declarationAccepted || !legalAccepted) && styles.btnDisabled,
-              ]}
-              onPress={handleNext}
-              disabled={loading || (step === 2 && (!declarationAccepted || !legalAccepted))}
-            >
-              <LinearGradient
-                colors={[theme.colors.primary, theme.colors.primaryPressed]}
-                style={styles.nextBtnGrad}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-              >
-                <Text style={styles.nextBtnText}>
-                  {loading ? tr("Submitting...") : step === 2 ? tr("Submit Application") : tr("Continue")}
-                </Text>
-                <Icon name={step === 2 ? "send" : "arrow-right"} size={18} color={theme.colors.white} />
-              </LinearGradient>
-            </Pressable>
-          </View>
+          <View style={styles.footer}><Pressable style={[styles.nextBtn, loading && styles.btnDisabled, step === 2 && (!declarationAccepted || !legalAccepted) && styles.btnDisabled]} onPress={handleNext} disabled={loading || (step === 2 && (!declarationAccepted || !legalAccepted))}><LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.nextBtnGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}><Text style={styles.nextBtnText}>{loading ? tr("Submitting...") : step === 2 ? tr("Submit Application") : tr("Continue")}</Text><Icon name={step === 2 ? "send" : "arrow-right"} size={18} color={theme.colors.white} /></LinearGradient></Pressable></View>
         </ScrollView>
       </View>
 
-      <Modal visible={showCnicNotice} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Pressable style={styles.modalClose} onPress={() => router.back()}>
-              <Icon name="x" size={20} color={theme.colors.text} />
-            </Pressable>
-            <View style={styles.modalIconWrap}>
-              <Icon name="alert-circle" size={36} color={theme.colors.primary} />
-            </View>
-            <Text style={[styles.modalTitle, localizedText]}>{tr("Important Notice")}</Text>
-            <Text style={styles.modalBody}>
-              {tr("Please add all your information exactly as it appears on your CNIC and other legal documents. False or incorrect details will lead to rejection of your application and may result in a permanent ban.")}
-            </Text>
-            <Pressable
-              style={styles.modalOkBtn}
-              onPress={() => setShowCnicNotice(false)}
-            >
-              <LinearGradient
-                colors={[theme.colors.primary, theme.colors.primaryPressed]}
-                style={styles.modalOkGrad}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-              >
-                <Text style={[styles.modalOkText, localizedText]}>{tr("I Understand, Continue")}</Text>
-                <Icon name="arrow-right" size={18} color={theme.colors.white} />
-              </LinearGradient>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+      <Modal visible={showCnicNotice} transparent animationType="fade"><View style={styles.modalOverlay}><View style={styles.modalCard}><Pressable style={styles.modalClose} onPress={() => router.back()}><Icon name="x" size={20} color={theme.colors.text} /></Pressable><View style={styles.modalIconWrap}><Icon name="alert-circle" size={36} color={theme.colors.primary} /></View><Text style={[styles.modalTitle, localizedText]}>{tr("Important Notice")}</Text><Text style={styles.modalBody}>{tr("Please add all your information exactly as it appears on your CNIC and other legal documents. False or incorrect details will lead to rejection of your application and may result in a permanent ban.")}</Text><Pressable style={styles.modalOkBtn} onPress={() => setShowCnicNotice(false)}><LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.modalOkGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}><Text style={[styles.modalOkText, localizedText]}>{tr("I Understand, Continue")}</Text><Icon name="arrow-right" size={18} color={theme.colors.white} /></LinearGradient></Pressable></View></View></Modal>
 
-      <OtpModal
-        visible={showOtp}
-        title={tr("Phone Verification")}
-        subtitle={tr("Enter the 4-digit code shown below")}
-        sentTo={form.phone}
-        hint={otpHint}
-        onVerify={async (code: string) => {
-          const res = await verifyOtpAndLogin(form.phone, code, true, "registration", "provider");
-          if (!res.success) {
-            Alert.alert(tr("Invalid Code"), tr(apiErrorToMessage(res.error, "The code you entered is incorrect. Check the code shown above.")));
-            return;
-          }
+      <OtpModal visible={showOtp} title={tr("Phone Verification")} subtitle={tr("Enter the 4-digit code sent to your phone")} sentTo={form.phone} hint={otpHint} onVerify={async (code: string) => {
+        const res = await verifyOtpAndLogin(form.phone, code, true, "registration", "provider");
+        if (!res.success) { Alert.alert(tr("Invalid Code"), tr(apiErrorToMessage(res.error, "The code you entered is incorrect."))); return; }
+        if (!res.registrationToken) { Alert.alert(tr("Verification Failed"), tr("Phone verification could not be completed. Please request a new code.")); return; }
+        setRegistrationToken(res.registrationToken); setOtpVerified(true); setShowOtp(false); setOtpHint("");
+      }} onResend={async () => { const res = await sendOtp(form.phone, "registration", "provider", form.email || undefined); if (!res.success || res.error) throw new Error(res.error || res.message || "Unable to resend OTP"); if (__DEV__) setOtpHint(res.code || ""); }} onCancel={() => setShowOtp(false)} />
 
-          if (!res.registrationToken) {
-            Alert.alert(tr("Verification Failed"), tr("Phone verification could not be completed. Please request a new code."));
-            return;
-          }
-
-          setRegistrationToken(res.registrationToken);
-          setOtpVerified(true);
-          setShowOtp(false);
-          setOtpHint("");
-        }}
-        onResend={async () => {
-          const res = await sendOtp(form.phone, "registration", "provider", form.email || undefined);
-          if (!res.success || res.error) throw new Error(res.error || res.message || "Unable to resend OTP");
-          if (__DEV__) setOtpHint(res.code || "");
-        }}
-        onCancel={() => setShowOtp(false)}
-      />
-
-      <SuccessModal
-        visible={showSuccess}
-        title={tr("Application Submitted!")}
-        subtitle={tr("Your provider registration is under review. Our team will verify your documents and approve your account within 24-48 hours.")}
-        primaryAction={{
-          label: emailVerificationParams ? tr("Verify Email") : tr("Go to Home"),
-          onPress: () => emailVerificationParams
-            ? router.replace({ pathname: "/auth/email-verification" as any, params: emailVerificationParams })
-            : router.replace("/(provider)/(tabs)/dashboard"),
-        }}
-        secondaryAction={{ label: tr("Back to Login"), onPress: () => router.replace("/auth/welcome") }}
-        onClose={() => router.replace("/auth/welcome")}
-      />
+      <SuccessModal visible={showSuccess} title={tr("Application Submitted!")} subtitle={tr("Your provider registration is under review. Our team will verify your documents and approve your account within 24-48 hours.")} primaryAction={{ label: tr("Go to Home"), onPress: () => router.replace("/(provider)/(tabs)/dashboard") }} secondaryAction={{ label: tr("Back to Login"), onPress: () => router.replace("/auth/welcome") }} onClose={() => router.replace("/auth/welcome")} />
     </KeyboardAvoidingView>
   );
 }
 
 const createStyles = (theme: AthooTheme) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.background },
-  rowReverse: { flexDirection: "row-reverse" },
-  headerGrad: { paddingHorizontal: 20, paddingBottom: 20 },
-  backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 10,
-    marginTop: 10,
-  },
-  headerTitle: { fontSize: 20, fontWeight: "800", color: theme.colors.white },
-  headerSubtitle: { fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 2, marginBottom: 16 },
-  stepsRow: { flexDirection: "row", alignItems: "center" },
-  stepItem: { alignItems: "center", gap: 4 },
-  stepCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stepActive: { backgroundColor: theme.colors.surface },
-  stepDone: { backgroundColor: theme.colors.success },
-  stepLabel: { fontSize: 10, color: "rgba(255,255,255,0.5)", fontWeight: "600" },
-  stepLabelActive: { color: theme.colors.white },
-  stepLine: { flex: 1, height: 2, backgroundColor: "rgba(255,255,255,0.2)", marginBottom: 14 },
-  stepLineDone: { backgroundColor: theme.colors.success },
-  scroll: { flex: 1 },
-  scrollContent: { padding: 20, paddingBottom: 100 },
-  formSection: { gap: 14 },
-  formSectionTitle: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: theme.colors.text,
-    marginTop: 6,
-    marginBottom: 4,
-  },
-  inputGroup: { gap: 6 },
-  label: { fontSize: 13, fontWeight: "600", color: theme.colors.text },
-  inputWrapper: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: theme.colors.surface,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-    borderWidth: 1.5,
-    borderColor: theme.colors.border,
-  },
-  input: { flex: 1, fontSize: 14, color: theme.colors.text },
-  charCount: { fontSize: 10, color: theme.colors.textMuted, alignSelf: "flex-end" },
-  verifiedRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: theme.colors.success + "10",
-    padding: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: theme.colors.success + "30",
-  },
-  verifiedText: { fontSize: 13, fontWeight: "600", color: theme.colors.success },
-  sendOtpBtn: {
-    backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 12,
-    padding: 12,
-    alignItems: "center",
-    borderWidth: 1.5,
-    borderColor: theme.colors.primary,
-  },
-  sendOtpText: { fontSize: 14, fontWeight: "700", color: theme.colors.primary },
-  servicesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  serviceChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1.5,
-    borderColor: theme.colors.border,
-  },
-  serviceChipText: { fontSize: 12, fontWeight: "600", color: theme.colors.textSecondary },
-  infoBox: {
-    flexDirection: "row",
-    gap: 10,
-    backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.primary + "25",
-  },
-  infoText: { flex: 1, fontSize: 12, color: theme.colors.textSecondary, lineHeight: 18 },
-  docItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    backgroundColor: theme.colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1.5,
-    borderColor: theme.colors.border,
-  },
-  docItemUploaded: { borderColor: theme.colors.success, backgroundColor: theme.colors.success + "05" },
-  docIconBox: {
-    width: 44, height: 44, borderRadius: 12,
-    alignItems: "center", justifyContent: "center", overflow: "hidden",
-  },
-  docThumb: { width: 44, height: 44, borderRadius: 10, resizeMode: "cover" },
-  docLabelRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  docLabel: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
-  docRequired: { fontSize: 9, fontWeight: "700", color: theme.colors.danger, backgroundColor: theme.colors.danger + "15", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 },
-  docStatus: { fontSize: 11, color: theme.colors.textSecondary, marginTop: 2 },
-  docHint: { fontSize: 11, color: theme.colors.textSecondary, marginTop: 2 },
-  docCheck: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: theme.colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  docCheckDone: { backgroundColor: theme.colors.success },
-  validityCard: {
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 14,
-    backgroundColor: theme.colors.surfaceAlt,
-    gap: 10,
-  },
-  validityHint: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: theme.colors.textSecondary,
-  },
-  policeBox: {
-    flexDirection: "row",
-    gap: 12,
-    backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: theme.colors.primary + "25",
-    marginTop: 4,
-  },
-  policeTitle: { fontSize: 14, fontWeight: "700", color: theme.colors.text, marginBottom: 4 },
-  policeText: { fontSize: 12, color: theme.colors.textSecondary, lineHeight: 18 },
-  reviewCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: 20,
-    padding: 20,
-    alignItems: "center",
-    gap: 14,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  reviewIconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: theme.colors.surfaceAlt,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: theme.colors.primary + "30",
-  },
-  reviewTitle: { fontSize: 18, fontWeight: "800", color: theme.colors.text, textAlign: "center" },
-  reviewText: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center", lineHeight: 20 },
-  reviewChecklist: { width: "100%", gap: 10 },
-  checkRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  checkCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: theme.colors.surfaceAlt,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: theme.colors.primary + "30",
-  },
-  checkText: { fontSize: 13, color: theme.colors.textSecondary },
-  reviewSummary: { width: "100%", backgroundColor: theme.colors.background, borderRadius: 14, padding: 14, gap: 8 },
-  reviewSummaryTitle: { fontSize: 13, fontWeight: "700", color: theme.colors.text, marginBottom: 4 },
-  summaryRow: { flexDirection: "row", justifyContent: "space-between" },
-  summaryKey: { fontSize: 12, color: theme.colors.textSecondary },
-  summaryVal: { fontSize: 12, fontWeight: "700", color: theme.colors.text },
-  footer: { marginTop: 24 },
-  nextBtn: { borderRadius: 18, overflow: "hidden" },
-  nextBtnGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 17 },
-  nextBtnText: { fontSize: 16, fontWeight: "800", color: theme.colors.white },
-  btnDisabled: { opacity: 0.5 },
-  declarationBox: {
-    marginHorizontal: 16,
-    marginTop: 12,
-    backgroundColor: theme.colors.warningSoft,
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: theme.colors.warning,
-  },
-  declarationRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: theme.colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 1,
-  },
-  checkboxChecked: { backgroundColor: theme.colors.primary },
-  declarationText: { flex: 1, fontSize: 12, color: theme.colors.text, lineHeight: 18 },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 24,
-  },
-  modalCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: 20,
-    padding: 24,
-    width: "100%",
-    maxWidth: 380,
-    alignItems: "center",
-  },
-  modalClose: { position: "absolute", top: 12, right: 12, padding: 6 },
-  modalIconWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: theme.colors.infoSoft,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
-  },
-  modalTitle: { fontSize: 20, fontWeight: "800", color: theme.colors.text, marginBottom: 8 },
-  modalBody: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-    textAlign: "center",
-    lineHeight: 21,
-    marginBottom: 20,
-  },
-  modalOkBtn: { width: "100%", borderRadius: 12, overflow: "hidden" },
-  modalOkGrad: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    gap: 8,
-  },
-  modalOkText: { color: theme.colors.white, fontWeight: "700", fontSize: 15 },
+  container: { flex: 1, backgroundColor: theme.colors.background }, rowReverse: { flexDirection: "row-reverse" }, headerGrad: { paddingHorizontal: 20, paddingBottom: 20 },
+  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center", marginBottom: 10, marginTop: 10 },
+  headerTitle: { fontSize: 20, fontWeight: "800", color: theme.colors.white }, headerSubtitle: { fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 2, marginBottom: 16 },
+  stepsRow: { flexDirection: "row", alignItems: "center" }, stepItem: { alignItems: "center", gap: 4 }, stepCircle: { width: 34, height: 34, borderRadius: 17, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" }, stepActive: { backgroundColor: theme.colors.surface }, stepDone: { backgroundColor: theme.colors.success }, stepLabel: { fontSize: 10, color: "rgba(255,255,255,0.5)", fontWeight: "600" }, stepLabelActive: { color: theme.colors.white }, stepLine: { flex: 1, height: 2, backgroundColor: "rgba(255,255,255,0.2)", marginBottom: 14 }, stepLineDone: { backgroundColor: theme.colors.success },
+  scroll: { flex: 1 }, scrollContent: { padding: 20, paddingBottom: 100 }, formSection: { gap: 14 }, formSectionTitle: { fontSize: 15, fontWeight: "800", color: theme.colors.text, marginTop: 6, marginBottom: 4 }, inputGroup: { gap: 6 }, label: { fontSize: 13, fontWeight: "600", color: theme.colors.text }, inputWrapper: { flexDirection: "row", alignItems: "center", backgroundColor: theme.colors.surface, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 13, borderWidth: 1.5, borderColor: theme.colors.border }, input: { flex: 1, fontSize: 14, color: theme.colors.text }, charCount: { fontSize: 10, color: theme.colors.textMuted, alignSelf: "flex-end" },
+  verifiedRow: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: theme.colors.success + "10", padding: 10, borderRadius: 10, borderWidth: 1, borderColor: theme.colors.success + "30" }, verifiedText: { fontSize: 13, fontWeight: "600", color: theme.colors.success }, sendOtpBtn: { backgroundColor: theme.colors.surfaceAlt, borderRadius: 12, padding: 12, alignItems: "center", borderWidth: 1.5, borderColor: theme.colors.primary }, sendOtpText: { fontSize: 14, fontWeight: "700", color: theme.colors.primary }, servicesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 }, serviceChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: theme.colors.surface, borderWidth: 1.5, borderColor: theme.colors.border }, serviceChipText: { fontSize: 12, fontWeight: "600", color: theme.colors.textSecondary },
+  infoBox: { flexDirection: "row", gap: 10, backgroundColor: theme.colors.surfaceAlt, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: theme.colors.primary + "25" }, infoText: { flex: 1, fontSize: 12, color: theme.colors.textSecondary, lineHeight: 18 }, docItem: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: theme.colors.surface, borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: theme.colors.border }, docItemUploaded: { borderColor: theme.colors.success, backgroundColor: theme.colors.success + "05" }, docIconBox: { width: 44, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center", overflow: "hidden" }, docThumb: { width: 44, height: 44, borderRadius: 10, resizeMode: "cover" }, docLabelRow: { flexDirection: "row", alignItems: "center", gap: 6 }, docLabel: { fontSize: 14, fontWeight: "700", color: theme.colors.text }, docRequired: { fontSize: 9, fontWeight: "700", color: theme.colors.danger, backgroundColor: theme.colors.danger + "15", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 }, docStatus: { fontSize: 11, color: theme.colors.textSecondary, marginTop: 2 }, docHint: { fontSize: 11, color: theme.colors.textSecondary, marginTop: 2 }, docCheck: { width: 30, height: 30, borderRadius: 15, backgroundColor: theme.colors.border, alignItems: "center", justifyContent: "center" }, docCheckDone: { backgroundColor: theme.colors.success },
+  validityCard: { borderWidth: 1, borderColor: theme.colors.border, borderRadius: 16, padding: 14, marginBottom: 14, backgroundColor: theme.colors.surfaceAlt, gap: 10 }, validityHint: { fontSize: 12, lineHeight: 18, color: theme.colors.textSecondary }, policeBox: { flexDirection: "row", gap: 12, backgroundColor: theme.colors.surfaceAlt, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: theme.colors.primary + "25", marginTop: 4 }, policeTitle: { fontSize: 14, fontWeight: "700", color: theme.colors.text, marginBottom: 4 }, policeText: { fontSize: 12, color: theme.colors.textSecondary, lineHeight: 18 },
+  reviewCard: { backgroundColor: theme.colors.surface, borderRadius: 20, padding: 20, alignItems: "center", gap: 14, borderWidth: 1, borderColor: theme.colors.border }, reviewIconCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: theme.colors.surfaceAlt, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: theme.colors.primary + "30" }, reviewTitle: { fontSize: 18, fontWeight: "800", color: theme.colors.text, textAlign: "center" }, reviewText: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center", lineHeight: 20 }, reviewChecklist: { width: "100%", gap: 10 }, checkRow: { flexDirection: "row", alignItems: "center", gap: 10 }, checkCircle: { width: 24, height: 24, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: theme.colors.primary + "30" }, checkText: { fontSize: 13, color: theme.colors.textSecondary }, reviewSummary: { width: "100%", backgroundColor: theme.colors.background, borderRadius: 14, padding: 14, gap: 8 }, reviewSummaryTitle: { fontSize: 13, fontWeight: "700", color: theme.colors.text, marginBottom: 4 }, summaryRow: { flexDirection: "row", justifyContent: "space-between" }, summaryKey: { fontSize: 12, color: theme.colors.textSecondary }, summaryVal: { fontSize: 12, fontWeight: "700", color: theme.colors.text },
+  footer: { marginTop: 24 }, nextBtn: { borderRadius: 18, overflow: "hidden" }, nextBtnGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 17 }, nextBtnText: { fontSize: 16, fontWeight: "800", color: theme.colors.white }, btnDisabled: { opacity: 0.5 }, declarationBox: { marginHorizontal: 16, marginTop: 12, backgroundColor: theme.colors.warningSoft, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: theme.colors.warning }, declarationRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 }, checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: theme.colors.primary, alignItems: "center", justifyContent: "center", marginTop: 1 }, checkboxChecked: { backgroundColor: theme.colors.primary }, declarationText: { flex: 1, fontSize: 12, color: theme.colors.text, lineHeight: 18 },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "center", paddingHorizontal: 24 }, modalCard: { backgroundColor: theme.colors.surface, borderRadius: 20, padding: 24, width: "100%", maxWidth: 380, alignItems: "center" }, modalClose: { position: "absolute", top: 12, right: 12, padding: 6 }, modalIconWrap: { width: 72, height: 72, borderRadius: 36, backgroundColor: theme.colors.infoSoft, alignItems: "center", justifyContent: "center", marginBottom: 16 }, modalTitle: { fontSize: 20, fontWeight: "800", color: theme.colors.text, marginBottom: 8 }, modalBody: { fontSize: 14, color: theme.colors.textSecondary, textAlign: "center", lineHeight: 21, marginBottom: 20 }, modalOkBtn: { width: "100%", borderRadius: 12, overflow: "hidden" }, modalOkGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 14, gap: 8 }, modalOkText: { color: theme.colors.white, fontWeight: "700", fontSize: 15 },
 });
-
