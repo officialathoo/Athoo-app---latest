@@ -5,6 +5,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon } from "@/components/ui/Icon";
 import { AppText } from "./AppText";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 
 interface ScreenHeaderProps {
   title: string;
@@ -41,7 +43,6 @@ export function ScreenHeader({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={accessibilityLabel || "Go back"}
-          hitSlop={8}
           onPress={onBack || (() => router.back())}
           style={({ pressed }) => [
             styles.back,
@@ -73,26 +74,27 @@ export function ScreenHeader({
 
 export const responsiveContent = {
   width: "100%" as const,
-  maxWidth: 760,
+  maxWidth: redesign.layout.maxContentWidth,
   alignSelf: "center" as const,
 };
 
 const styles = StyleSheet.create({
   shell: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 16,
+    paddingHorizontal: redesign.layout.compactHorizontalPadding,
   },
   inner: {
     width: "100%",
-    maxWidth: 900,
+    maxWidth: redesign.layout.maxContentWidth,
     alignSelf: "center",
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
   },
   back: {
-    width: 44, height: 44,
-    borderRadius: 13,
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: "center",
     justifyContent: "center",
@@ -103,8 +105,8 @@ const styles = StyleSheet.create({
     gap: 1,
   },
   right: {
-    minWidth: 42,
-    minHeight: 42,
+    minWidth: redesign.control.iconButtonSize,
+    minHeight: redesign.control.iconButtonSize,
     alignItems: "flex-end",
     justifyContent: "center",
   },
