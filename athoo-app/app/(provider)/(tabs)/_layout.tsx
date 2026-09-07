@@ -32,29 +32,14 @@ function NegotiationAlertHandler() {
   return null;
 }
 
-/**
- * BroadcastAlertHandler — mounts inside the provider tab navigator so it has
- * access to the navigation context. Watches `latestBroadcast` from
- * BroadcastContext and fires the in-app popup + ringtone every time a new
- * broadcast job arrives, even if the app is already open.
- *
- * Belt-and-suspenders: BroadcastContext also calls push() / playRingtone()
- * directly, but those can fire before the navigation tree is ready when the
- * app cold-starts. This handler runs inside the fully-mounted navigator so
- * the popup can navigate correctly on tap.
- */
 function BroadcastAlertHandler() {
   const { latestBroadcast, dismissLatestBroadcast } = useBroadcast();
   const lastIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!latestBroadcast) return;
-    if (lastIdRef.current === latestBroadcast.id) return; // already processed
+    if (lastIdRef.current === latestBroadcast.id) return;
     lastIdRef.current = latestBroadcast.id;
-
-    // NotificationContext and the backend push own audio and OS delivery.
-    // This navigator-level handler only releases the transient popup state.
-    // Auto-dismiss after 30 s so future alerts are never blocked
     const timer = setTimeout(dismissLatestBroadcast, 30_000);
     return () => clearTimeout(timer);
   }, [latestBroadcast]);
@@ -85,7 +70,7 @@ function UnreadBadge({ count, backgroundColor }: { count: number; backgroundColo
 export default function ProviderTabLayout() {
   const { t } = useLang();
   const { openBroadcastCount } = useBroadcast();
-  const { unreadCount, unreadMessageCount } = useNotifications();
+  const { unreadMessageCount } = useNotifications();
   const { bookings } = useBookings();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
@@ -94,6 +79,12 @@ export default function ProviderTabLayout() {
     : Math.max(insets.bottom, Platform.OS === "android" ? 8 : 6);
   const tabHeight = Platform.OS === "web" ? 84 : 64 + safeBottom;
   const tabPadBottom = safeBottom;
+  const activeTabStyle = {
+    backgroundColor: theme.colors.warningSoft,
+    borderRadius: theme.radius.md,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.secondary + "22",
+  };
 
   return (
     <>
@@ -107,7 +98,7 @@ export default function ProviderTabLayout() {
           tabBarHideOnKeyboard: true,
           tabBarStyle: {
             backgroundColor: theme.colors.surface,
-            borderTopWidth: 1,
+            borderTopWidth: redesign.visual.cardBorderWidth,
             borderTopColor: theme.colors.divider,
             height: tabHeight,
             paddingBottom: tabPadBottom,
@@ -119,7 +110,7 @@ export default function ProviderTabLayout() {
             paddingVertical: 2,
           },
           tabBarLabelStyle: {
-            fontSize: 10,
+            ...theme.typography.caption,
             fontFamily: theme.typography.label.fontFamily,
             marginTop: 2,
           },
@@ -130,7 +121,7 @@ export default function ProviderTabLayout() {
           options={{
             title: t.dashboard,
             tabBarIcon: ({ color, focused }) => (
-              <View style={[styles.iconWrap, focused && { backgroundColor: theme.colors.warningSoft, borderRadius: theme.radius.sm }]}>
+              <View style={[styles.iconWrap, focused && activeTabStyle]}>
                 <Icon name="grid" size={theme.iconSize.md} color={color} />
                 {openBroadcastCount > 0 && (
                   <BroadcastBadge count={openBroadcastCount} backgroundColor={theme.colors.danger} />
@@ -148,7 +139,7 @@ export default function ProviderTabLayout() {
                 (b) => b.status === "pending"
               ).length;
               return (
-                <View style={[styles.iconWrap, focused && { backgroundColor: theme.colors.warningSoft, borderRadius: theme.radius.sm }]}>
+                <View style={[styles.iconWrap, focused && activeTabStyle]}>
                   <Icon name="briefcase" size={theme.iconSize.md} color={color} />
                   {pendingCount > 0 && <UnreadBadge count={pendingCount} backgroundColor={theme.colors.danger} />}
                 </View>
@@ -161,7 +152,7 @@ export default function ProviderTabLayout() {
           options={{
             title: t.earnings,
             tabBarIcon: ({ color, focused }) => (
-              <View style={[styles.iconWrap, focused && { backgroundColor: theme.colors.warningSoft, borderRadius: theme.radius.sm }]}>
+              <View style={[styles.iconWrap, focused && activeTabStyle]}>
                 <Icon name="dollar-sign" size={theme.iconSize.md} color={color} />
               </View>
             ),
@@ -172,7 +163,7 @@ export default function ProviderTabLayout() {
           options={{
             title: t.chat,
             tabBarIcon: ({ color, focused }) => (
-              <View style={[styles.iconWrap, focused && { backgroundColor: theme.colors.warningSoft, borderRadius: theme.radius.sm }]}>
+              <View style={[styles.iconWrap, focused && activeTabStyle]}>
                 <Icon name="message-circle" size={theme.iconSize.md} color={color} />
                 {unreadMessageCount > 0 && <UnreadBadge count={unreadMessageCount} backgroundColor={theme.colors.danger} />}
               </View>
@@ -184,7 +175,7 @@ export default function ProviderTabLayout() {
           options={{
             title: t.profile,
             tabBarIcon: ({ color, focused }) => (
-              <View style={[styles.iconWrap, focused && { backgroundColor: theme.colors.warningSoft, borderRadius: theme.radius.sm }]}>
+              <View style={[styles.iconWrap, focused && activeTabStyle]}>
                 <Icon name="user" size={theme.iconSize.md} color={color} />
               </View>
             ),
@@ -200,8 +191,8 @@ const styles = StyleSheet.create({
     position: "relative",
     alignItems: "center",
     justifyContent: "center",
-    width: 44,
-    height: 32,
+    width: redesign.control.iconButtonSize,
+    height: 34,
   },
   badge: {
     position: "absolute",
