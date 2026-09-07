@@ -278,7 +278,7 @@ export async function queueNewDeviceEmail(user: { id: string; email?: string | n
   const digest = crypto.createHash("sha256").update(`${user.id}|${identity}`).digest("hex").slice(0, 20);
   return queueEmail({
     userId: user.id,
-    to: user.email,
+    to: email,
     templateKey: "new_device_login",
     category: "security",
     dedupeKey: `new-device:${user.id}:${digest}`,
