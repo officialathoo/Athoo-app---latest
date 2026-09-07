@@ -249,7 +249,7 @@ async function request<T = any>(path: string, options: RequestOptions = {}): Pro
     params,
     headers,
     body,
-    timeoutMs = DEFAULT_TIMEOUT_MS,
+    timeoutMs = path === "/api/auth/send-otp" || path === "/api/auth/forgot-password/send-otp" ? 120000 : DEFAULT_TIMEOUT_MS,
     method = "GET",
     ...rest
   } = options;
