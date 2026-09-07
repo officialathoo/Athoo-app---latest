@@ -3,6 +3,7 @@ import { StyleProp, TextInput, TextInputProps, View, ViewStyle } from "react-nat
 import { AppText } from "./AppText";
 import { useTheme } from "@/context/ThemeContext";
 import { useOptionalLang } from "@/context/LanguageContext";
+import { redesign } from "@/design/redesign";
 
 interface AppInputProps extends TextInputProps {
   label?: string;
@@ -21,22 +22,25 @@ export function AppInput({ label, error, containerStyle, style, onFocus, onBlur,
       <TextInput
         {...props}
         accessibilityLabel={props.accessibilityLabel ?? label ?? props.placeholder}
+        accessibilityState={{
+          ...props.accessibilityState,
+          disabled: props.editable === false || props.accessibilityState?.disabled,
+        }}
         maxFontSizeMultiplier={props.maxFontSizeMultiplier ?? 1.5}
         onFocus={(event) => { setFocused(true); onFocus?.(event); }}
         onBlur={(event) => { setFocused(false); onBlur?.(event); }}
         placeholderTextColor={theme.colors.textMuted}
         style={[
           {
-            minHeight: 50,
+            minHeight: redesign.control.standardHeight,
             borderRadius: theme.radius.md,
-            borderWidth: focused ? 2 : 1,
+            borderWidth: focused ? redesign.visual.focusedBorderWidth : redesign.visual.inputBorderWidth,
             borderColor: error ? theme.colors.danger : focused ? theme.colors.primary : theme.colors.border,
             backgroundColor: props.editable === false ? theme.colors.surfaceAlt : theme.colors.input,
             color: theme.colors.text,
             paddingHorizontal: theme.spacing.lg,
             paddingVertical: theme.spacing.md,
-            fontFamily: "Inter_400Regular",
-            fontSize: 15,
+            ...theme.typography.bodyLg,
             textAlign: language?.textAlign ?? "left",
             writingDirection: language?.writingDirection ?? "ltr",
             textAlignVertical: props.multiline ? "top" : "center",
