@@ -127,19 +127,6 @@ export default function RegisterScreen() {
     }
     const registeredRole: AppRole = ok.user?.role === "provider" ? "provider" : "customer";
     await promptBiometricSetup(phone.trim(), registeredRole);
-    if (email.trim() && ok.emailVerificationRequired) {
-      router.replace({
-        pathname: "/auth/email-verification" as any,
-        params: {
-          role: registeredRole,
-          sent: String(ok.emailVerificationSent === true),
-          expires: String(ok.emailVerificationExpiresInSeconds || 600),
-          resend: String(ok.emailVerificationResendAfterSeconds || 45),
-          ...(__DEV__ && ok.emailVerificationCode ? { code: ok.emailVerificationCode } : {}),
-        },
-      });
-      return;
-    }
     const dest = registeredRole === "provider" ? "/(provider)/(tabs)/dashboard" : "/(customer)/(tabs)/home";
     router.replace(dest as any);
   };
@@ -155,21 +142,21 @@ export default function RegisterScreen() {
           <Icon name="arrow-left" size={22} color={theme.colors.text} />
         </Pressable>
 
-        <View style={styles.header}>
-          <Text style={[styles.title, localizedText]}>{step === "phone" ? tr("Create Account") : step === "otp" ? tr("Verify Phone") : tr("Your Details")}</Text>
-          <Text style={[styles.subtitle, localizedText]}>{step === "phone" ? tr("Enter your phone number to get started") : step === "otp" ? tr("We sent a code to {{phone}}", { phone }) : tr("Almost done! Fill in your details")}</Text>
+        <View style={[styles.header, step === "otp" && styles.otpCentered]}>
+          <Text style={[styles.title, localizedText, step === "otp" && styles.otpCenteredText]}>{step === "phone" ? tr("Create Account") : step === "otp" ? tr("Verify Phone") : tr("Your Details")}</Text>
+          <Text style={[styles.subtitle, localizedText, step === "otp" && styles.otpCenteredText]}>{step === "phone" ? tr("Enter your phone number to get started") : step === "otp" ? tr("We sent a code to {{phone}}", { phone }) : tr("Almost done! Fill in your details")}</Text>
         </View>
 
         {step === "phone" && <View style={styles.form}><View style={styles.inputGroup}><Text style={[styles.label, localizedText]}>{tr("Phone Number")}</Text><View style={[styles.inputWrapper, localizedRow]}><Icon name="phone" size={18} color={theme.colors.textMuted} /><TextInput style={[styles.input, localizedText]} value={phone} onChangeText={setPhone} placeholder="03XX-XXXXXXX" placeholderTextColor={theme.colors.textMuted} keyboardType="phone-pad" autoFocus /></View></View><Button title={loading ? tr("Sending...") : tr("Get Verification Code")} onPress={handleSendOtp} loading={loading} fullWidth style={{ marginTop: 8 }} /></View>}
 
         {step === "otp" && (
-          <View style={styles.form}>
+          <View style={[styles.form, styles.otpForm]}>
             {otpHint ? <View style={[styles.otpHintBox, localizedRow]}><Icon name="info" size={14} color={theme.colors.secondary} /><Text style={styles.otpHintText}>{tr("Your OTP: {{code}}", { code: otpHint })}</Text></View> : null}
-            <View style={styles.inputGroup}><Text style={[styles.label, localizedText]}>{tr("4-Digit OTP")}</Text><View style={[styles.inputWrapper, localizedRow]}><Icon name="lock" size={18} color={theme.colors.textMuted} /><TextInput style={[styles.input, styles.otpInput]} value={otp} onChangeText={(v) => setOtp(v.replace(/[^0-9]/g, "").slice(0, 4))} placeholder="----" placeholderTextColor={theme.colors.textMuted} keyboardType="number-pad" maxLength={4} autoFocus /></View></View>
+            <View style={[styles.inputGroup, styles.otpInputGroup]}><Text style={[styles.label, styles.otpCenteredText]}>{tr("4-Digit OTP")}</Text><View style={[styles.inputWrapper, styles.otpWrapper]}><Icon name="lock" size={18} color={theme.colors.textMuted} /><TextInput style={[styles.input, styles.otpInput]} value={otp} onChangeText={(v) => setOtp(v.replace(/[^0-9]/g, "").slice(0, 4))} placeholder="----" placeholderTextColor={theme.colors.textMuted} keyboardType="number-pad" maxLength={4} autoFocus textAlign="center" /></View></View>
             <Text style={[styles.otpTimerText, otpExpiresIn === 0 && styles.otpTimerExpired]}>{otpExpiresIn > 0 ? tr("Code expires in {{time}}", { time: `${Math.floor(otpExpiresIn / 60)}:${String(otpExpiresIn % 60).padStart(2, "0")}` }) : tr("Code expired. Request a new OTP.")}</Text>
             <Button title={loading ? tr("Verifying...") : tr("Verify & Continue")} onPress={handleVerifyOtp} loading={loading} disabled={otpExpiresIn === 0} fullWidth style={{ marginTop: 8 }} />
-            <Pressable style={styles.resendBtn} disabled={loading || otpResendIn > 0} onPress={handleSendOtp}><Text style={[styles.resendText, localizedText, (loading || otpResendIn > 0) && { color: theme.colors.textMuted }]}>{otpResendIn > 0 ? tr("Resend in {{seconds}}s", { seconds: otpResendIn }) : tr("Resend OTP")}</Text></Pressable>
-            <Pressable style={styles.resendBtn} onPress={() => { setStep("phone"); setOtp(""); setOtpExpiresIn(0); setOtpResendIn(0); }}><Text style={[styles.resendText, localizedText]}>{tr("Change phone number")}</Text></Pressable>
+            <Pressable style={styles.resendBtn} disabled={loading || otpResendIn > 0} onPress={handleSendOtp}><Text style={[styles.resendText, (loading || otpResendIn > 0) && { color: theme.colors.textMuted }]}>{otpResendIn > 0 ? tr("Resend in {{seconds}}s", { seconds: otpResendIn }) : tr("Resend OTP")}</Text></Pressable>
+            <Pressable style={styles.resendBtn} onPress={() => { setStep("phone"); setOtp(""); setOtpExpiresIn(0); setOtpResendIn(0); }}><Text style={styles.resendText}>{tr("Change phone number")}</Text></Pressable>
           </View>
         )}
 
@@ -194,17 +181,21 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   label: { fontSize: 14, fontWeight: "600", color: theme.colors.text },
   inputWrapper: { flexDirection: "row", alignItems: "center", backgroundColor: theme.colors.surface, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, borderWidth: 1.5, borderColor: theme.colors.border, gap: 10 },
   input: { flex: 1, fontSize: 16, color: theme.colors.text },
-  otpInput: { fontSize: 24, fontWeight: "800", letterSpacing: 12 },
-  otpHintBox: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: theme.colors.secondary + "15", borderRadius: 12, padding: 12, borderWidth: 1, borderColor: theme.colors.secondary + "30" },
-  otpHintText: { fontSize: 13, color: theme.colors.text },
+  otpCentered: { alignItems: "center" },
+  otpCenteredText: { textAlign: "center" },
+  otpForm: { alignItems: "stretch" },
+  otpInputGroup: { alignItems: "stretch" },
+  otpWrapper: { justifyContent: "center" },
+  otpInput: { fontSize: 24, fontWeight: "800", letterSpacing: 12, textAlign: "center" },
+  otpHintBox: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: theme.colors.secondary + "15", borderRadius: 12, padding: 12, borderWidth: 1, borderColor: theme.colors.secondary + "30" },
+  otpHintText: { fontSize: 13, color: theme.colors.text, textAlign: "center" },
   otpTimerText: { textAlign: "center", fontSize: 12, color: theme.colors.textSecondary },
   otpTimerExpired: { color: theme.colors.danger, fontWeight: "700" },
   resendBtn: { alignSelf: "center", paddingVertical: 8 },
-  resendText: { fontSize: 14, color: theme.colors.primary, fontWeight: "600" },
+  resendText: { fontSize: 14, color: theme.colors.primary, fontWeight: "600", textAlign: "center" },
   phoneDisplay: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: theme.colors.success + "15", borderRadius: 12, padding: 12, borderWidth: 1, borderColor: theme.colors.success + "30" },
   phoneDisplayText: { fontSize: 13, color: theme.colors.text, fontWeight: "600" },
   loginRow: { flexDirection: "row", justifyContent: "center", marginTop: 32 },
   loginText: { fontSize: 14, color: theme.colors.textSecondary },
   loginLink: { fontSize: 14, color: theme.colors.primary, fontWeight: "700" },
 });
-
