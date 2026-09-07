@@ -1,5 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import { runtimeConfig } from "@/config/runtime";
+import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import { redesign } from "@/design/redesign";
 import { radius } from "@/design/tokens";
@@ -103,7 +104,7 @@ function TypingDots({ accent }: { accent: string }) {
   }, [dot1, dot2, dot3]);
 
   return (
-    <View style={styles.typingBubble}>
+    <View style={styles.typingBubble} accessibilityLabel="Typing">
       {[dot1, dot2, dot3].map((dot, index) => (
         <Animated.View key={index} style={[styles.typingDot, { transform: [{ translateY: dot }] }]} />
       ))}
@@ -113,10 +114,13 @@ function TypingDots({ accent }: { accent: string }) {
 
 export function ChatbotScreen({ role }: { role: ChatbotRole }) {
   const { theme } = useTheme();
+  const { translate: tr, textAlign, writingDirection, direction } = useLang();
   const accent = role === "provider" ? theme.colors.secondary : theme.colors.primary;
   const styles = useMemo(() => createStyles(theme, accent), [accent, theme]);
   const faq = role === "provider" ? PROVIDER_FAQ : CUSTOMER_FAQ;
-  const title = role === "provider" ? "Provider Support" : "Athoo Assistant";
+  const title = role === "provider" ? tr("Provider Support") : tr("Athoo Assistant");
+  const localizedText = useMemo(() => ({ textAlign, writingDirection }), [textAlign, writingDirection]);
+  const localizedRow = direction === "rtl" ? styles.rowReverse : undefined;
   const [messages, setMessages] = useState<Message[]>(() => [buildIntro(role)]);
   const [input, setInput] = useState("");
   const [botTyping, setBotTyping] = useState(false);
@@ -169,37 +173,59 @@ export function ChatbotScreen({ role }: { role: ChatbotRole }) {
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0}>
       <View style={[styles.container, { paddingTop: topPadding }]}>
         <LinearGradient colors={gradient} style={styles.header}>
-          <Pressable style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]} onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back">
+          <Pressable
+            style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}
+            onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel={tr("Go back")}
+          >
             <Icon name="arrow-left" size={20} color={theme.colors.white} />
           </Pressable>
-          <View style={styles.botInfo}>
+          <View style={[styles.botInfo, localizedRow]}>
             <View style={styles.botAvatar}>
               <Icon name="cpu" size={18} color={theme.colors.white} />
             </View>
             <View style={styles.botCopy}>
-              <Text style={styles.botName}>{title}</Text>
-              <View style={styles.onlineRow}>
+              <Text style={[styles.botName, localizedText]}>{title}</Text>
+              <View style={[styles.onlineRow, localizedRow]}>
                 <View style={styles.onlineDot} />
-                <Text style={styles.onlineText}>Always online</Text>
+                <Text style={[styles.onlineText, localizedText]}>{tr("Always online")}</Text>
               </View>
             </View>
           </View>
           {runtimeConfig.support.whatsappUrl ? (
-            <Pressable style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]} onPress={() => void openUrl(runtimeConfig.support.whatsappUrl!)} accessibilityRole="button" accessibilityLabel="Open WhatsApp support">
+            <Pressable
+              style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}
+              onPress={() => void openUrl(runtimeConfig.support.whatsappUrl!)}
+              accessibilityRole="button"
+              accessibilityLabel={tr("Open WhatsApp support")}
+            >
               <Icon name="phone" size={17} color={theme.colors.white} />
             </Pressable>
           ) : <View style={styles.headerSpacer} />}
         </LinearGradient>
 
-        <ScrollView ref={scrollRef} style={styles.chat} contentContainerStyle={styles.chatContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          ref={scrollRef}
+          style={styles.chat}
+          contentContainerStyle={styles.chatContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           {messages.length === 1 && !botTyping ? (
             <View style={styles.quickSection}>
-              <Text style={styles.quickLabel}>Frequently Asked</Text>
+              <Text style={[styles.quickLabel, localizedText]}>{tr("Frequently Asked")}</Text>
               <View style={styles.quickGrid}>
                 {faq.map((item) => (
-                  <Pressable key={item.question} style={({ pressed }) => [styles.quickChip, pressed && styles.pressed]} onPress={() => void sendMessage(item.question)}>
+                  <Pressable
+                    key={item.question}
+                    style={({ pressed }) => [styles.quickChip, localizedRow, pressed && styles.pressed]}
+                    onPress={() => void sendMessage(item.question)}
+                    accessibilityRole="button"
+                    accessibilityLabel={tr(item.question)}
+                  >
                     <Icon name={item.icon as any} size={14} color={accent} />
-                    <Text style={styles.quickText}>{item.question}</Text>
+                    <Text style={[styles.quickText, localizedText]}>{tr(item.question)}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -216,7 +242,7 @@ export function ChatbotScreen({ role }: { role: ChatbotRole }) {
                   </View>
                 ) : null}
                 <View style={[styles.bubble, userMessage ? styles.userBubble : styles.botBubble]}>
-                  <Text style={[styles.bubbleText, userMessage && styles.userBubbleText]}>{message.text}</Text>
+                  <Text style={styles.bubbleText}>{message.text}</Text>
                   <Text style={[styles.bubbleTime, userMessage && styles.userBubbleTime]}>{message.time}</Text>
                 </View>
               </View>
@@ -235,9 +261,15 @@ export function ChatbotScreen({ role }: { role: ChatbotRole }) {
 
         <View style={[styles.inputArea, { paddingBottom: bottomPadding + 10 }]}>
           {socialLinks.length ? (
-            <View style={styles.socialRow}>
+            <View style={[styles.socialRow, localizedRow]}>
               {socialLinks.map((link) => (
-                <Pressable key={link.key} style={({ pressed }) => [styles.socialButton, { borderColor: link.color }, pressed && styles.pressed]} onPress={() => void openUrl(link.url)} accessibilityRole="link" accessibilityLabel={`Open ${link.label}`}>
+                <Pressable
+                  key={link.key}
+                  style={({ pressed }) => [styles.socialButton, { borderColor: link.color }, localizedRow, pressed && styles.pressed]}
+                  onPress={() => void openUrl(link.url)}
+                  accessibilityRole="link"
+                  accessibilityLabel={tr("Open {{name}}", { name: link.label })}
+                >
                   <Icon name={link.icon as any} size={14} color={link.color} />
                   <Text style={[styles.socialText, { color: link.color }]}>{link.label}</Text>
                 </Pressable>
@@ -245,10 +277,10 @@ export function ChatbotScreen({ role }: { role: ChatbotRole }) {
             </View>
           ) : null}
 
-          <View style={[styles.inputRow, inputFocused && styles.inputRowFocused]}>
+          <View style={[styles.inputRow, localizedRow, inputFocused && styles.inputRowFocused]}>
             <TextInput
-              style={styles.input}
-              placeholder="Ask a question…"
+              style={[styles.input, localizedText]}
+              placeholder={tr("Ask a question…")}
               value={input}
               onChangeText={setInput}
               placeholderTextColor={theme.colors.textMuted}
@@ -257,13 +289,15 @@ export function ChatbotScreen({ role }: { role: ChatbotRole }) {
               onBlur={() => setInputFocused(false)}
               returnKeyType="send"
               multiline={false}
+              accessibilityLabel={tr("Ask Athoo Assistant a question")}
             />
             <Pressable
               style={({ pressed }) => [styles.sendButton, (!input.trim() || botTyping) && styles.sendButtonDisabled, pressed && input.trim() && !botTyping && styles.pressed]}
               onPress={() => void sendMessage(input)}
               disabled={!input.trim() || botTyping}
               accessibilityRole="button"
-              accessibilityLabel="Send message"
+              accessibilityLabel={tr("Send message")}
+              accessibilityState={{ disabled: !input.trim() || botTyping, busy: botTyping }}
             >
               <Icon name="send" size={18} color={theme.colors.white} />
             </Pressable>
@@ -278,23 +312,24 @@ function createStyles(theme: AthooTheme, accent: string) {
   return StyleSheet.create({
     flex: { flex: 1 },
     container: { flex: 1, backgroundColor: theme.colors.background },
+    rowReverse: { flexDirection: "row-reverse" },
     header: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: redesign.layout.horizontalPadding, paddingTop: 12, paddingBottom: 12 },
     headerButton: { width: redesign.control.iconButtonSize, height: redesign.control.iconButtonSize, borderRadius: radius.md, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center", borderWidth: redesign.visual.cardBorderWidth, borderColor: "rgba(255,255,255,0.22)" },
     headerSpacer: { width: redesign.control.iconButtonSize, height: redesign.control.iconButtonSize },
     botInfo: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
     botAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.22)", alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "rgba(255,255,255,0.36)" },
     botCopy: { flex: 1 },
-    botName: { fontSize: 15, fontWeight: "800", color: theme.colors.white },
+    botName: { ...theme.typography.label, color: theme.colors.white },
     onlineRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 2 },
     onlineDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: theme.colors.success },
-    onlineText: { fontSize: 11, color: "rgba(255,255,255,0.86)" },
+    onlineText: { ...theme.typography.caption, color: "rgba(255,255,255,0.86)" },
     chat: { flex: 1 },
     chatContent: { paddingHorizontal: redesign.layout.horizontalPadding, paddingTop: redesign.layout.cardGap, gap: 8, paddingBottom: redesign.layout.sectionGap },
     quickSection: { gap: 8, marginBottom: 6 },
-    quickLabel: { fontSize: 12, fontWeight: "700", color: theme.colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
-    quickGrid: { gap: 6},
+    quickLabel: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
+    quickGrid: { gap: 6 },
     quickChip: { minHeight: redesign.control.compactHeight, flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: theme.colors.elevated, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 10, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border, ...theme.shadows.sm },
-    quickText: { fontSize: 13, fontWeight: "600", color: theme.colors.text, flex: 1 },
+    quickText: { ...theme.typography.label, color: theme.colors.text, flex: 1 },
     messageRow: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
     messageRowUser: { justifyContent: "flex-end" },
     messageRowBot: { justifyContent: "flex-start" },
@@ -302,19 +337,18 @@ function createStyles(theme: AthooTheme, accent: string) {
     bubble: { maxWidth: "82%", borderRadius: radius.lg, paddingVertical: 10, paddingHorizontal: 12, gap: 4 },
     botBubble: { backgroundColor: theme.colors.elevated, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: theme.colors.border, ...theme.shadows.sm },
     userBubble: { backgroundColor: accent, borderBottomRightRadius: 4 },
-    bubbleText: { fontSize: 14, lineHeight: 21, color: theme.colors.text },
-    userBubbleText: { color: theme.colors.white },
-    bubbleTime: { fontSize: 10, color: theme.colors.textMuted, alignSelf: "flex-end" },
+    bubbleText: { ...theme.typography.body, color: theme.colors.text },
+    bubbleTime: { ...theme.typography.caption, fontSize: 10, lineHeight: 14, color: theme.colors.textMuted, alignSelf: "flex-end" },
     userBubbleTime: { color: "rgba(255,255,255,0.72)" },
     typingBubble: { flexDirection: "row", alignItems: "center", backgroundColor: theme.colors.elevated, borderRadius: radius.lg, borderBottomLeftRadius: 4, paddingHorizontal: 14, paddingVertical: 12, gap: 5, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border, ...theme.shadows.sm },
     typingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: accent, opacity: 0.78 },
     inputArea: { backgroundColor: theme.colors.elevated, paddingHorizontal: redesign.layout.horizontalPadding, paddingTop: 10, borderTopWidth: redesign.visual.cardBorderWidth, borderTopColor: theme.colors.border, gap: 8 },
     socialRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     socialButton: { flexGrow: 1, minWidth: 96, minHeight: redesign.control.compactHeight, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: radius.md, paddingHorizontal: 10, backgroundColor: theme.colors.surfaceAlt, borderWidth: redesign.visual.cardBorderWidth },
-    socialText: { fontSize: 12, fontWeight: "700" },
+    socialText: { ...theme.typography.label },
     inputRow: { minHeight: redesign.control.largeHeight, flexDirection: "row", gap: 8, borderRadius: radius.pill, borderWidth: redesign.visual.inputBorderWidth, borderColor: theme.colors.border, backgroundColor: theme.colors.input, paddingHorizontal: 4, paddingVertical: 4, alignItems: "center" },
-    inputRowFocused: { borderColor: accent },
-    input: { flex: 1, paddingHorizontal: 14, paddingVertical: 8, fontSize: 14, color: theme.colors.text },
+    inputRowFocused: { borderColor: accent, borderWidth: redesign.visual.focusedBorderWidth },
+    input: { flex: 1, paddingHorizontal: 14, paddingVertical: 8, ...theme.typography.body, color: theme.colors.text },
     sendButton: { width: redesign.control.iconButtonSize, height: redesign.control.iconButtonSize, borderRadius: radius.pill, backgroundColor: accent, alignItems: "center", justifyContent: "center" },
     sendButtonDisabled: { backgroundColor: theme.colors.textMuted, opacity: redesign.visual.disabledOpacity },
     pressed: { opacity: 0.82, transform: [{ scale: redesign.visual.pressedScale }] },

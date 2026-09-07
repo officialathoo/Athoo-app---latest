@@ -9,6 +9,8 @@ import {
 import { useColors } from "@/hooks/useColors";
 import { useOptionalLang } from "@/context/LanguageContext";
 import { appLogger } from "@/lib/logger";
+import { redesign } from "@/design/redesign";
+import { radius, typography } from "@/design/tokens";
 
 export type ErrorFallbackProps = {
   error: Error;
@@ -33,9 +35,10 @@ export function ErrorFallback({ resetError }: ErrorFallbackProps) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Customer/provider friendly fallback only. Technical details are hidden from app users. */}
-
+    <View
+      style={[styles.container, { backgroundColor: colors.background }]}
+      accessibilityRole="alert"
+    >
       <View style={styles.content}>
         <Text style={[styles.title, localizedText, { color: colors.text }]}>
           {tr("Something went wrong")}
@@ -47,12 +50,14 @@ export function ErrorFallback({ resetError }: ErrorFallbackProps) {
 
         <Pressable
           onPress={handleRestart}
+          accessibilityRole="button"
+          accessibilityLabel={tr("Try Again")}
           style={({ pressed }) => [
             styles.button,
             {
               backgroundColor: colors.primary,
               opacity: pressed ? 0.9 : 1,
-              transform: [{ scale: pressed ? 0.98 : 1 }],
+              transform: [{ scale: pressed ? redesign.visual.pressedScale : 1 }],
               shadowColor: colors.shadow,
             },
           ]}
@@ -60,6 +65,7 @@ export function ErrorFallback({ resetError }: ErrorFallbackProps) {
           <Text
             style={[
               styles.buttonText,
+              localizedText,
               { color: colors.white },
             ]}
           >
@@ -67,8 +73,6 @@ export function ErrorFallback({ resetError }: ErrorFallbackProps) {
           </Text>
         </Pressable>
       </View>
-
-
     </View>
   );
 }
@@ -80,31 +84,31 @@ const styles = StyleSheet.create({
     height: "100%",
     justifyContent: "center",
     alignItems: "center",
-    padding: 24,
+    padding: redesign.layout.sectionGap,
   },
   content: {
     alignItems: "center",
     justifyContent: "center",
-    gap: 16,
+    gap: redesign.layout.fieldGap,
     width: "100%",
-    maxWidth: 600,
+    maxWidth: redesign.layout.maxContentWidth,
   },
   title: {
-    fontSize: 28,
-    fontWeight: "700",
+    ...typography.h1,
     textAlign: "center",
-    lineHeight: 40,
   },
   message: {
-    fontSize: 16,
+    ...typography.bodyLg,
     textAlign: "center",
-    lineHeight: 24,
+    maxWidth: 520,
   },
   button: {
-    paddingVertical: 16,
-    borderRadius: 8,
+    minHeight: redesign.control.standardHeight,
+    borderRadius: radius.md,
     paddingHorizontal: 24,
     minWidth: 200,
+    alignItems: "center",
+    justifyContent: "center",
     shadowOffset: {
       width: 0,
       height: 2,
@@ -114,8 +118,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   buttonText: {
-    fontWeight: "600",
+    ...typography.label,
     textAlign: "center",
-    fontSize: 16,
   },
 });

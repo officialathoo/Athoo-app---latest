@@ -111,7 +111,7 @@ export function NotificationsScreen({ role }: { role: Role }) {
     return order
       .map(([key, label]) => ({ key, label, data: grouped[key] }))
       .filter((section) => section.data.length > 0);
-  }, [filter, roleNotifications]);
+  }, [filter, roleNotifications, tr]);
 
   const timeAgo = (timestamp: string) => {
     const parsed = new Date(timestamp).getTime();
@@ -194,209 +194,222 @@ export function NotificationsScreen({ role }: { role: Role }) {
         )}
         ListHeaderComponent={
           <View>
-        <AnimatedCard direction="fade" style={styles.summaryMotion}>
-          <LinearGradient colors={[accent, accentPressed]} style={styles.summaryCard}>
-            <View style={styles.summaryTop}>
-              <View style={styles.summaryIcon}>
-                <Icon name="bell" size={22} color={accentText} />
-              </View>
-              <View style={styles.summaryCopy}>
-                <Text style={[styles.summaryCount, { color: accentText }]}>
-                  {formatNumber(unreadCount)}
-                </Text>
-                <Text style={[styles.summaryLabel, { color: accentText }]}>
-                  {unreadCount === 1 ? tr("unread notification") : tr("unread notifications")}
-                </Text>
-              </View>
-              <View style={styles.summaryTotal}>
-                <Text style={[styles.summaryTotalValue, { color: accentText }]}>
-                  {formatNumber(roleNotifications.length)}
-                </Text>
-                <Text style={[styles.summaryTotalLabel, { color: accentText }]}>{tr("Inbox")}</Text>
-              </View>
-            </View>
-
-            <View style={styles.summaryActions}>
-              <Pressable
-                disabled={unreadCount === 0}
-                onPress={markAllRead}
-                style={({ pressed }) => [
-                  styles.summaryAction,
-                  unreadCount === 0 && styles.summaryActionDisabled,
-                  pressed && unreadCount > 0 && styles.summaryActionPressed,
-                ]}
-              >
-                <Icon name="check-circle" size={15} color={accentText} />
-                <Text style={[styles.summaryActionText, { color: accentText }]}>{tr("Mark all read")}</Text>
-              </Pressable>
-
-              <Pressable
-                disabled={roleNotifications.length === 0}
-                onPress={confirmClear}
-                style={({ pressed }) => [
-                  styles.summaryAction,
-                  roleNotifications.length === 0 && styles.summaryActionDisabled,
-                  pressed && roleNotifications.length > 0 && styles.summaryActionPressed,
-                ]}
-              >
-                <Icon name="trash-2" size={15} color={accentText} />
-                <Text style={[styles.summaryActionText, { color: accentText }]}>{tr("Clear inbox")}</Text>
-              </Pressable>
-            </View>
-          </LinearGradient>
-        </AnimatedCard>
-
-        <View style={styles.filterRow}>
-          {([
-            ["all", tr("All")],
-            ["unread", tr("Unread")],
-          ] as Array<[Filter, string]>).map(([value, label]) => {
-            const active = filter === value;
-            return (
-              <Pressable
-                key={value}
-                accessibilityRole="button"
-                onPress={() => setFilter(value)}
-                style={({ pressed }) => [
-                  styles.filterButton,
-                  {
-                    backgroundColor: active ? accent : theme.colors.surface,
-                    borderColor: active ? accent : theme.colors.border,
-                  },
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text style={[styles.filterText, { color: active ? accentText : theme.colors.textSecondary }]}>
-                  {label}
-                </Text>
-                {value === "unread" && unreadCount > 0 ? (
-                  <View
-                    style={[
-                      styles.filterCount,
-                      { backgroundColor: active ? "rgba(255,255,255,0.22)" : theme.colors.surfaceAlt },
-                    ]}
-                  >
-                    <Text style={[styles.filterCountText, { color: active ? accentText : accent }]}>
-                      {unreadCount > 99 ? "99+" : formatNumber(unreadCount)}
+            <AnimatedCard direction="fade" style={styles.summaryMotion}>
+              <LinearGradient colors={[accent, accentPressed]} style={styles.summaryCard}>
+                <View style={styles.summaryTop}>
+                  <View style={styles.summaryIcon}>
+                    <Icon name="bell" size={22} color={accentText} />
+                  </View>
+                  <View style={styles.summaryCopy}>
+                    <Text style={[styles.summaryCount, { color: accentText }]}>
+                      {formatNumber(unreadCount)}
+                    </Text>
+                    <Text style={[styles.summaryLabel, { color: accentText }]}>
+                      {unreadCount === 1 ? tr("unread notification") : tr("unread notifications")}
                     </Text>
                   </View>
-                ) : null}
-              </Pressable>
-            );
-          })}
-        </View>
+                  <View style={styles.summaryTotal}>
+                    <Text style={[styles.summaryTotalValue, { color: accentText }]}>
+                      {formatNumber(roleNotifications.length)}
+                    </Text>
+                    <Text style={[styles.summaryTotalLabel, { color: accentText }]}>{tr("Inbox")}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.summaryActions}>
+                  <Pressable
+                    disabled={unreadCount === 0}
+                    onPress={markAllRead}
+                    hitSlop={6}
+                    accessibilityRole="button"
+                    accessibilityLabel={tr("Mark all notifications as read")}
+                    accessibilityState={{ disabled: unreadCount === 0 }}
+                    style={({ pressed }) => [
+                      styles.summaryAction,
+                      unreadCount === 0 && styles.summaryActionDisabled,
+                      pressed && unreadCount > 0 && styles.summaryActionPressed,
+                    ]}
+                  >
+                    <Icon name="check-circle" size={15} color={accentText} />
+                    <Text style={[styles.summaryActionText, { color: accentText }]}>{tr("Mark all read")}</Text>
+                  </Pressable>
+
+                  <Pressable
+                    disabled={roleNotifications.length === 0}
+                    onPress={confirmClear}
+                    hitSlop={6}
+                    accessibilityRole="button"
+                    accessibilityLabel={tr("Clear notification inbox")}
+                    accessibilityState={{ disabled: roleNotifications.length === 0 }}
+                    style={({ pressed }) => [
+                      styles.summaryAction,
+                      roleNotifications.length === 0 && styles.summaryActionDisabled,
+                      pressed && roleNotifications.length > 0 && styles.summaryActionPressed,
+                    ]}
+                  >
+                    <Icon name="trash-2" size={15} color={accentText} />
+                    <Text style={[styles.summaryActionText, { color: accentText }]}>{tr("Clear inbox")}</Text>
+                  </Pressable>
+                </View>
+              </LinearGradient>
+            </AnimatedCard>
+
+            <View style={styles.filterRow}>
+              {([
+                ["all", tr("All")],
+                ["unread", tr("Unread")],
+              ] as Array<[Filter, string]>).map(([value, label]) => {
+                const active = filter === value;
+                return (
+                  <Pressable
+                    key={value}
+                    accessibilityRole="button"
+                    accessibilityLabel={label}
+                    accessibilityState={{ selected: active }}
+                    hitSlop={6}
+                    onPress={() => setFilter(value)}
+                    style={({ pressed }) => [
+                      styles.filterButton,
+                      {
+                        backgroundColor: active ? accent : theme.colors.surface,
+                        borderColor: active ? accent : theme.colors.border,
+                      },
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text style={[styles.filterText, { color: active ? accentText : theme.colors.textSecondary }]}>
+                      {label}
+                    </Text>
+                    {value === "unread" && unreadCount > 0 ? (
+                      <View
+                        style={[
+                          styles.filterCount,
+                          { backgroundColor: active ? "rgba(255,255,255,0.22)" : theme.colors.surfaceAlt },
+                        ]}
+                      >
+                        <Text style={[styles.filterCountText, { color: active ? accentText : accent }]}>
+                          {unreadCount > 99 ? "99+" : formatNumber(unreadCount)}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
         }
         ListEmptyComponent={
           sections.length === 0 ? (
-          <AnimatedCard direction="fade" style={styles.emptyMotion}>
-            <View style={styles.emptyCard}>
-              <View style={[styles.emptyIcon, { backgroundColor: theme.colors.surfaceAlt }]}>
-                <Icon
-                  name={filter === "unread" ? "check-circle" : "bell-off"}
-                  size={32}
-                  color={filter === "unread" ? theme.colors.success : theme.colors.textMuted}
-                />
+            <AnimatedCard direction="fade" style={styles.emptyMotion}>
+              <View style={styles.emptyCard}>
+                <View style={[styles.emptyIcon, { backgroundColor: theme.colors.surfaceAlt }]}>
+                  <Icon
+                    name={filter === "unread" ? "check-circle" : "bell-off"}
+                    size={32}
+                    color={filter === "unread" ? theme.colors.success : theme.colors.textMuted}
+                  />
+                </View>
+                <Text style={[styles.emptyTitle, localizedText]}>{emptyTitle}</Text>
+                <Text style={[styles.emptyCopy, localizedText]}>{emptyCopy}</Text>
+                {filter === "unread" && roleNotifications.length > 0 ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={tr("View all notifications")}
+                    onPress={() => setFilter("all")}
+                    style={({ pressed }) => [
+                      styles.emptyAction,
+                      { backgroundColor: accent },
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text style={[styles.emptyActionText, { color: accentText }]}>{tr("View all notifications")}</Text>
+                  </Pressable>
+                ) : null}
               </View>
-              <Text style={[styles.emptyTitle, localizedText]}>{emptyTitle}</Text>
-              <Text style={[styles.emptyCopy, localizedText]}>{emptyCopy}</Text>
-              {filter === "unread" && roleNotifications.length > 0 ? (
-                <Pressable
-                  onPress={() => setFilter("all")}
-                  style={({ pressed }) => [
-                    styles.emptyAction,
-                    { backgroundColor: accent },
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Text style={[styles.emptyActionText, { color: accentText }]}>{tr("View all notifications")}</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          </AnimatedCard>
+            </AnimatedCard>
           ) : null
         }
         renderItem={({ item: notification, index }) => {
-              const visual = notificationVisual(notification.type, theme);
-              const unread = !notification.read;
-              return (
-                <AnimatedCard
-                  key={notification.id}
-                  delay={Math.min(index * 38, 240)}
-                  style={styles.itemMotion}
-                >
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`${notification.title}. ${notification.message}`}
-                    accessibilityHint={tr("Opens the related Athoo screen")}
-                    onPress={() => handleNotificationPress(notification)}
-                    style={({ pressed }) => [
-                      styles.notificationCard,
-                      unread && {
-                        borderColor: accent,
-                        backgroundColor: theme.colors.elevated,
-                      },
-                      pressed && styles.cardPressed,
-                    ]}
-                  >
-                    <View style={[styles.iconWrap, { backgroundColor: visual.color + "18" }]}>
-                      <Icon name={visual.icon} size={17} color={visual.color} />
-                    </View>
+          const visual = notificationVisual(notification.type, theme);
+          const unread = !notification.read;
+          return (
+            <AnimatedCard
+              key={notification.id}
+              delay={Math.min(index * 38, 240)}
+              style={styles.itemMotion}
+            >
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${notification.title}. ${notification.message}`}
+                accessibilityHint={tr("Opens the related Athoo screen")}
+                onPress={() => handleNotificationPress(notification)}
+                style={({ pressed }) => [
+                  styles.notificationCard,
+                  unread && {
+                    borderColor: accent,
+                    backgroundColor: theme.colors.elevated,
+                  },
+                  pressed && styles.cardPressed,
+                ]}
+              >
+                <View style={[styles.iconWrap, { backgroundColor: visual.color + "18" }]}>
+                  <Icon name={visual.icon} size={17} color={visual.color} />
+                </View>
 
-                    <View style={styles.copy}>
-                      <View style={styles.metaRow}>
-                        <Text
-                          style={[
-                            styles.itemTitle,
-                            localizedText,
-                            unread && styles.itemTitleUnread,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {notification.title}
-                        </Text>
-                        <Text style={styles.timeText}>{timeAgo(notification.timestamp)}</Text>
-                      </View>
-
-                      <Text
-                        style={[styles.itemMessage, localizedText]}
-                        numberOfLines={2}
-                      >
-                        {notification.message}
-                      </Text>
-
-                      <View style={styles.itemFooter}>
-                        <View style={styles.openHint}>
-                          <Text style={[styles.openHintText, { color: accent }, localizedText]} numberOfLines={1}>
-                            {notification.actionLabel || tr("View details")}
-                          </Text>
-                          <Icon name="arrow-right" size={11} color={accent} />
-                        </View>
-                        {unread ? (
-                          <View style={[styles.unreadStatus, { backgroundColor: accent }]}>
-                            <Text style={[styles.unreadStatusText, { color: accentText }]}>
-                              {tr("New")}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </View>
-                    </View>
-
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={tr("Dismiss {{title}}", { title: notification.title })}
-                      hitSlop={8}
-                      onPress={(event) => {
-                        event.stopPropagation();
-                        dismiss(notification.id);
-                      }}
-                      style={({ pressed }) => [styles.dismissButton, pressed && styles.pressed]}
+                <View style={styles.copy}>
+                  <View style={styles.metaRow}>
+                    <Text
+                      style={[
+                        styles.itemTitle,
+                        localizedText,
+                        unread && styles.itemTitleUnread,
+                      ]}
+                      numberOfLines={1}
                     >
-                      <Icon name="x" size={13} color={theme.colors.textMuted} />
-                    </Pressable>
-                  </Pressable>
-                </AnimatedCard>
-              );
+                      {notification.title}
+                    </Text>
+                    <Text style={styles.timeText}>{timeAgo(notification.timestamp)}</Text>
+                  </View>
+
+                  <Text
+                    style={[styles.itemMessage, localizedText]}
+                    numberOfLines={2}
+                  >
+                    {notification.message}
+                  </Text>
+
+                  <View style={styles.itemFooter}>
+                    <View style={styles.openHint}>
+                      <Text style={[styles.openHintText, { color: accent }, localizedText]} numberOfLines={1}>
+                        {notification.actionLabel || tr("View details")}
+                      </Text>
+                      <Icon name="arrow-right" size={11} color={accent} />
+                    </View>
+                    {unread ? (
+                      <View style={[styles.unreadStatus, { backgroundColor: accent }]}>
+                        <Text style={[styles.unreadStatusText, { color: accentText }]}>
+                          {tr("New")}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={tr("Dismiss {{title}}", { title: notification.title })}
+                  hitSlop={9}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    dismiss(notification.id);
+                  }}
+                  style={({ pressed }) => [styles.dismissButton, pressed && styles.pressed]}
+                >
+                  <Icon name="x" size={13} color={theme.colors.textMuted} />
+                </Pressable>
+              </Pressable>
+            </AnimatedCard>
+          );
         }}
       />
     </View>
@@ -406,7 +419,6 @@ export function NotificationsScreen({ role }: { role: Role }) {
 function createStyles(theme: AthooTheme) {
   return StyleSheet.create({
     screen: { flex: 1 },
-    /* Header — compact, aligned to content margins */
     header: {
       minHeight: 62,
       flexDirection: "row",
@@ -432,11 +444,7 @@ function createStyles(theme: AthooTheme) {
     headerCopy: { flex: 1, minWidth: 0 },
     headerTitle: { ...theme.typography.h2, color: theme.colors.text, letterSpacing: -0.25 },
     headerSubtitle: { marginTop: 1, ...theme.typography.caption, color: theme.colors.textMuted },
-
-    /* Content rhythm — uniform 16px margins, 10px gaps */
     content: { padding: redesign.layout.compactHorizontalPadding, gap: 10 },
-
-    /* Summary box — compact */
     summaryMotion: { width: "100%" },
     summaryCard: {
       borderRadius: theme.radius.xl,
@@ -491,8 +499,6 @@ function createStyles(theme: AthooTheme) {
       fontFamily: theme.typography.label.fontFamily,
       fontWeight: "700",
     },
-
-    /* Filters — compact pills */
     filterRow: { flexDirection: "row", gap: 8, marginTop: 10 },
     filterButton: {
       minHeight: 32,
@@ -513,9 +519,7 @@ function createStyles(theme: AthooTheme) {
       alignItems: "center",
       justifyContent: "center",
     },
-    filterCountText: { fontSize: 9, fontWeight: "900" },
-
-    /* Section heading */
+    filterCountText: { ...theme.typography.caption, fontSize: 10, lineHeight: 13, fontFamily: theme.typography.label.fontFamily },
     sectionHeader: {
       flexDirection: "row",
       alignItems: "center",
@@ -526,13 +530,11 @@ function createStyles(theme: AthooTheme) {
     sectionLabel: {
       ...theme.typography.caption,
       color: theme.colors.textSecondary,
-      fontWeight: "800",
+      fontFamily: theme.typography.label.fontFamily,
       textTransform: "uppercase",
       letterSpacing: 0.5,
     },
-    sectionCount: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, fontWeight: "900" },
-
-    /* Notification card — compact, flat, uniform grid */
+    sectionCount: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily },
     itemMotion: { width: "100%" },
     notificationCard: {
       flexDirection: "row",
@@ -567,13 +569,12 @@ function createStyles(theme: AthooTheme) {
       ...theme.typography.label,
       color: theme.colors.text,
     },
-    itemTitleUnread: { fontWeight: "900" },
+    itemTitleUnread: { fontFamily: theme.typography.h3.fontFamily },
     timeText: { marginTop: 2, ...theme.typography.caption, color: theme.colors.textMuted, flexShrink: 0 },
     itemMessage: {
       marginTop: 2,
       ...theme.typography.body,
       color: theme.colors.textSecondary,
-      lineHeight: 16,
     },
     itemFooter: {
       marginTop: 4,
@@ -595,8 +596,8 @@ function createStyles(theme: AthooTheme) {
     unreadStatusText: {
       ...theme.typography.caption,
       fontFamily: theme.typography.label.fontFamily,
-      fontSize: 10.5,
-      fontWeight: "800",
+      fontSize: 10,
+      lineHeight: 14,
     },
     dismissButton: {
       width: 26,
@@ -609,8 +610,6 @@ function createStyles(theme: AthooTheme) {
       flexShrink: 0,
     },
     pressed: { opacity: 0.78, transform: [{ scale: redesign.visual.pressedScale }] },
-
-    /* Empty state */
     emptyMotion: { width: "100%" },
     emptyCard: {
       minHeight: 240,
@@ -648,6 +647,6 @@ function createStyles(theme: AthooTheme) {
       justifyContent: "center",
       ...theme.shadows.sm,
     },
-    emptyActionText: { ...theme.typography.label, fontSize: 13 },
+    emptyActionText: { ...theme.typography.label },
   });
 }

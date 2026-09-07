@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { useTheme } from "@/context/ThemeContext";
 import { useOptionalLang } from "@/context/LanguageContext";
+import { redesign } from "@/design/redesign";
 
 interface ButtonProps {
   title: string;
@@ -59,10 +60,22 @@ export function Button({
   const foregroundColor =
     variant === "outline" || variant === "ghost" ? theme.colors.primary : theme.colors.white;
 
-  const padding = {
-    sm: { paddingHorizontal: theme.spacing.lg, minHeight: 38 },
-    md: { paddingHorizontal: theme.spacing.xl, minHeight: 48 },
-    lg: { paddingHorizontal: theme.spacing.xl, minHeight: 56 },
+  const metrics = {
+    sm: {
+      paddingHorizontal: theme.spacing.lg,
+      minHeight: redesign.control.compactHeight,
+      typography: theme.typography.caption,
+    },
+    md: {
+      paddingHorizontal: theme.spacing.xl,
+      minHeight: redesign.control.standardHeight,
+      typography: theme.typography.label,
+    },
+    lg: {
+      paddingHorizontal: theme.spacing.xl,
+      minHeight: redesign.control.largeHeight,
+      typography: theme.typography.bodyStrong,
+    },
   }[size];
 
   return (
@@ -81,12 +94,13 @@ export function Button({
           borderRadius: theme.radius.md,
           gap: theme.spacing.sm,
           backgroundColor,
-          borderWidth: variant === "outline" ? 1.5 : 0,
+          borderWidth: variant === "outline" ? redesign.visual.focusedBorderWidth : 0,
           borderColor: theme.colors.primary,
           width: fullWidth ? "100%" : undefined,
-          opacity: isInactive ? 0.5 : pressed ? 0.88 : 1,
-          transform: [{ scale: pressed && !isInactive ? 0.985 : 1 }],
-          ...padding,
+          opacity: isInactive ? redesign.visual.disabledOpacity : pressed ? 0.88 : 1,
+          transform: [{ scale: pressed && !isInactive ? redesign.visual.pressedScale : 1 }],
+          paddingHorizontal: metrics.paddingHorizontal,
+          minHeight: metrics.minHeight,
         },
         variant === "primary" && theme.shadows.sm,
         style,
@@ -100,9 +114,8 @@ export function Button({
           ellipsizeMode="tail"
           style={{
             color: foregroundColor,
-            fontFamily: theme.typography.label.fontFamily,
-            fontSize: size === "sm" ? theme.typography.caption.fontSize : size === "lg" ? theme.typography.bodyLg.fontSize : 15,
-            lineHeight: size === "sm" ? theme.typography.caption.lineHeight : theme.typography.bodyStrong.lineHeight,
+            ...metrics.typography,
+            fontFamily: size === "sm" ? theme.typography.label.fontFamily : metrics.typography.fontFamily,
             writingDirection: language?.writingDirection ?? "ltr",
             textAlign: "center",
             flexShrink: 1,
