@@ -222,14 +222,14 @@ export function NotificationPreferencesScreen() {
   const permissionLabel = diagnostics?.expoGo
     ? tr("Expo Go - native push unavailable")
     : diagnostics?.permissionGranted
-    ? tr("Push access enabled")
-    : tr("Push access needs attention");
+      ? tr("Push access enabled")
+      : tr("Push access needs attention");
 
   const permissionColor = diagnostics?.permissionGranted
     ? theme.colors.success
     : diagnostics?.expoGo
-    ? theme.colors.warning
-    : theme.colors.danger;
+      ? theme.colors.warning
+      : theme.colors.danger;
 
   return (
     <ScrollView
@@ -282,7 +282,11 @@ export function NotificationPreferencesScreen() {
           <Pressable
             disabled={checking}
             onPress={() => void loadDiagnostics()}
-            style={({ pressed }) => [styles.refreshButton, pressed && styles.pressed]}
+            hitSlop={4}
+            accessibilityRole="button"
+            accessibilityLabel={tr("Refresh notification status")}
+            accessibilityState={{ disabled: checking, busy: checking }}
+            style={({ pressed }) => [styles.refreshButton, pressed && !checking && styles.pressed]}
           >
             <Icon name="refresh-cw" size={16} color={accent} />
           </Pressable>
@@ -291,6 +295,8 @@ export function NotificationPreferencesScreen() {
 
       <Pressable
         accessibilityRole="button"
+        accessibilityLabel={tr("Open Phone Notification Settings")}
+        accessibilityState={{ disabled: openingSettings, busy: openingSettings }}
         disabled={openingSettings}
         onPress={() => void openSystemNotificationSettings()}
         style={({ pressed }) => [
@@ -339,13 +345,13 @@ export function NotificationPreferencesScreen() {
           const rowColor = row.safety === "critical"
             ? theme.colors.danger
             : row.safety === "transactional"
-            ? accent
-            : theme.colors.premium;
+              ? accent
+              : theme.colors.premium;
           const statusText = row.safety === "critical"
             ? tr("Critical")
             : row.safety === "transactional"
-            ? tr("Transactional")
-            : tr("Optional");
+              ? tr("Transactional")
+              : tr("Optional");
           const enabled = row.prefKey && prefs
             ? Boolean(prefs[`${row.prefKey}Enabled` as keyof ServerNotificationPreferences])
             : undefined;
@@ -358,6 +364,8 @@ export function NotificationPreferencesScreen() {
             >
               <Pressable
                 accessibilityRole={row.action ? "button" : undefined}
+                accessibilityLabel={row.action ? row.title : undefined}
+                accessibilityHint={row.action ? tr("Opens email and communication preferences") : undefined}
                 disabled={!row.action}
                 onPress={() => {
                   if (row.action === "email") {
@@ -411,6 +419,13 @@ export function NotificationPreferencesScreen() {
                     value={enabled}
                     onValueChange={(value) => { if (row.prefKey) void togglePreference(row.prefKey, value); }}
                     disabled={prefsLoading || savingPrefKey === row.prefKey}
+                    accessibilityLabel={row.title}
+                    accessibilityHint={row.description}
+                    accessibilityState={{
+                      checked: enabled,
+                      disabled: prefsLoading || savingPrefKey === row.prefKey,
+                      busy: savingPrefKey === row.prefKey,
+                    }}
                     trackColor={{ false: theme.colors.border, true: accent + "55" }}
                     thumbColor={enabled ? accent : theme.colors.textMuted}
                   />
@@ -460,15 +475,12 @@ function createStyles(theme: AthooTheme) {
     },
     headerCopy: { flex: 1, minWidth: 0 },
     title: {
-      fontSize: 22,
-      lineHeight: 27,
-      fontWeight: "900",
+      ...theme.typography.h2,
       color: theme.colors.text,
     },
     subtitle: {
       marginTop: 3,
-      fontSize: 11.5,
-      lineHeight: 17,
+      ...theme.typography.caption,
       color: theme.colors.textSecondary,
     },
     statusMotion: { width: "100%" },
@@ -491,14 +503,12 @@ function createStyles(theme: AthooTheme) {
     },
     statusCopy: { flex: 1, minWidth: 0 },
     statusTitle: {
-      fontSize: 14,
-      fontWeight: "900",
+      ...theme.typography.bodyStrong,
       color: theme.colors.text,
     },
     statusText: {
       marginTop: 3,
-      fontSize: 10.5,
-      lineHeight: 15,
+      ...theme.typography.caption,
       color: theme.colors.textSecondary,
     },
     refreshButton: {
@@ -518,7 +528,7 @@ function createStyles(theme: AthooTheme) {
       gap: 8,
       paddingHorizontal: redesign.layout.fieldGap,
     },
-    systemButtonText: { fontSize: 13, fontWeight: "900" },
+    systemButtonText: { ...theme.typography.label },
     disabled: { opacity: redesign.visual.disabledOpacity },
     pressed: {
       opacity: 0.82,
@@ -536,8 +546,7 @@ function createStyles(theme: AthooTheme) {
     },
     explainerText: {
       flex: 1,
-      fontSize: 10.5,
-      lineHeight: 16,
+      ...theme.typography.caption,
       color: theme.colors.textSecondary,
     },
     sectionHeader: { marginTop: 2, gap: 3 },
@@ -548,13 +557,11 @@ function createStyles(theme: AthooTheme) {
       paddingVertical: 4,
     },
     sectionTitle: {
-      fontSize: 15,
-      fontWeight: "900",
+      ...theme.typography.bodyStrong,
       color: theme.colors.text,
     },
     sectionSubtitle: {
-      fontSize: 10.5,
-      lineHeight: 15,
+      ...theme.typography.caption,
       color: theme.colors.textMuted,
     },
     categoryList: { gap: redesign.layout.cardGap },
@@ -586,25 +593,22 @@ function createStyles(theme: AthooTheme) {
     },
     categoryTitle: {
       flex: 1,
-      fontSize: 13.5,
-      lineHeight: 18,
-      fontWeight: "800",
+      ...theme.typography.bodyStrong,
       color: theme.colors.text,
     },
     categoryStatus: {
-      minHeight: 22,
+      minHeight: 24,
       paddingHorizontal: 8,
       borderRadius: radius.pill,
       justifyContent: "center",
     },
     categoryStatusText: {
-      fontSize: 8.5,
-      fontWeight: "900",
+      ...theme.typography.caption,
+      fontFamily: theme.typography.label.fontFamily,
     },
     categoryDescription: {
       marginTop: 4,
-      fontSize: 10.5,
-      lineHeight: 15,
+      ...theme.typography.caption,
       color: theme.colors.textSecondary,
     },
     policyRow: {
@@ -622,9 +626,7 @@ function createStyles(theme: AthooTheme) {
     },
     policyText: {
       flexShrink: 1,
-      fontSize: 9,
-      lineHeight: 13,
-      fontWeight: "700",
+      ...theme.typography.caption,
       color: theme.colors.textMuted,
     },
     safetyCard: {
@@ -647,14 +649,12 @@ function createStyles(theme: AthooTheme) {
     },
     safetyCopy: { flex: 1, minWidth: 0 },
     safetyTitle: {
-      fontSize: 13,
-      fontWeight: "900",
+      ...theme.typography.bodyStrong,
       color: theme.colors.text,
     },
     safetyText: {
       marginTop: 4,
-      fontSize: 10.5,
-      lineHeight: 16,
+      ...theme.typography.caption,
       color: theme.colors.textSecondary,
     },
   });
