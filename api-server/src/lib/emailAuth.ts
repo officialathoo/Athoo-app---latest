@@ -54,6 +54,18 @@ export async function sendEmailChallenge(args: {
   code?: string;
   errorCode?: string;
 }> {
+  // Registration uses phone/WhatsApp verification as the account-creation
+  // trust gate. Do not automatically send a second email OTP during signup.
+  // Email-login and explicit email-change verification remain unchanged.
+  if (args.purpose === "verify_email" && String(process.env.EMAIL_REGISTRATION_VERIFICATION_ENABLED || "false").toLowerCase() !== "true") {
+    return {
+      success: false,
+      expiresInSeconds: 0,
+      resendAfterSeconds: 0,
+      errorCode: "EMAIL_REGISTRATION_VERIFICATION_DISABLED",
+    };
+  }
+
   const email = normalizeEmailAddress(args.email);
   if (!email) return { success: false, expiresInSeconds: 0, resendAfterSeconds: 0, errorCode: "INVALID_EMAIL" };
   const policy = getEmailOtpPolicy();
@@ -256,27 +268,18 @@ export async function queueNewDeviceEmail(user: { id: string; email?: string | n
     category: "security",
     dedupeKey: `new-device:${user.id}:${digest}`,
     variables: { name: user.name, timestamp: new Date().toISOString(), device, ip, category: "security" },
+    metadata: { reason: "new_device" },
   });
 }
 
-export async function hasSeenDevice(
-  userId: string,
-  deviceId: string | undefined,
-  userAgent: string | undefined,
-): Promise<boolean> {
+export async function hasSeenDevice(userId: string, deviceId: string | undefined, userAgent: string | undefined): Promise<boolean> {
   const cleanDeviceId = String(deviceId || "").trim().toLowerCase();
   const cleanUserAgent = String(userAgent || "").trim();
   if (!cleanDeviceId && !cleanUserAgent) return true;
   const user = await db.query.usersTable.findFirst({ where: eq(usersTable.id, userId) });
   if (!user) return true;
   const result = cleanDeviceId
-    ? await pool.query<{ exists: boolean }>(
-      "SELECT EXISTS(SELECT 1 FROM login_history WHERE user_id = $1 AND success = true AND device_id = $2) AS exists",
-      [userId, cleanDeviceId],
-    ).catch(() => null)
-    : await pool.query<{ exists: boolean }>(
-      "SELECT EXISTS(SELECT 1 FROM login_history WHERE user_id = $1 AND success = true AND user_agent = $2) AS exists",
-      [userId, cleanUserAgent],
-    ).catch(() => null);
+    ? await pool.query<{ exists: boolean }>("SELECT EXISTS(SELECT 1 FROM login_history WHERE user_id = $1 AND success = true AND device_id = $2) AS exists", [userId, cleanDeviceId]).catch(() => null)
+    : await pool.query<{ exists: boolean }>("SELECT EXISTS(SELECT 1 FROM login_history WHERE user_id = $1 AND success = true AND user_agent = $2) AS exists", [userId, cleanUserAgent]).catch(() => null);
   return Boolean(result?.rows?.[0]?.exists);
 }
