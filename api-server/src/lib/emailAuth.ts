@@ -54,6 +54,17 @@ export async function sendEmailChallenge(args: {
   code?: string;
   errorCode?: string;
 }> {
+  // Registration is verified through the phone/WhatsApp OTP trust gate.
+  // Keep email-login and explicit email-change challenges unchanged.
+  if (args.purpose === "verify_email" && String(process.env.EMAIL_REGISTRATION_VERIFICATION_ENABLED || "false").toLowerCase() !== "true") {
+    return {
+      success: false,
+      expiresInSeconds: 0,
+      resendAfterSeconds: 0,
+      errorCode: "EMAIL_REGISTRATION_VERIFICATION_DISABLED",
+    };
+  }
+
   const email = normalizeEmailAddress(args.email);
   if (!email) return { success: false, expiresInSeconds: 0, resendAfterSeconds: 0, errorCode: "INVALID_EMAIL" };
   const policy = getEmailOtpPolicy();

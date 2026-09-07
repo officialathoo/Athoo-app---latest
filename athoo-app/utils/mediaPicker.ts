@@ -47,14 +47,14 @@ function normalizeOptions(options: PickOptions): PickOptions {
   return {
     quality: 0.8,
     ...options,
-    // Mandatory Athoo rule: never crop documents, diplomas, CNICs, payment screenshots, or evidence media.
-    allowsEditing: false,
+    // Editing/cropping is controlled by each media flow. Document/evidence flows
+    // can keep allowsEditing=false, while profile/photo flows may enable the
+    // native manual editor without this shared utility overriding the choice.
     ...(Platform.OS === "ios" && (ImagePicker as any).UIImagePickerPreferredAssetRepresentationMode?.Compatible
       ? { preferredAssetRepresentationMode: (ImagePicker as any).UIImagePickerPreferredAssetRepresentationMode.Compatible }
       : {}),
   } as PickOptions;
 }
-
 
 function normalizeMediaTypesForPicker(options: PickOptions): PickOptions[] {
   const base = normalizeOptions(options) as any;
@@ -135,8 +135,8 @@ export type ImageSourceChoiceCopy = {
 };
 
 /**
- * Gives users both required Athoo media sources without forcing document crop.
- * The promise resolves once a source is selected, dismissed, or cancelled.
+ * Gives users both required Athoo media sources while preserving the crop/edit
+ * policy supplied by the calling flow.
  */
 export function pickImageWithSourceChoice(
   options: PickOptions,
