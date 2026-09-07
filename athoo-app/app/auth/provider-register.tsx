@@ -140,7 +140,6 @@ export default function ProviderRegisterScreen() {
   const [sendingOtp, setSendingOtp] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [emailVerificationParams, setEmailVerificationParams] = useState<Record<string, string> | null>(null);
   const [otpVerified, setOtpVerified] = useState(false);
   const [registrationToken, setRegistrationToken] = useState("");
   const [showCnicNotice, setShowCnicNotice] = useState(true);
@@ -234,7 +233,7 @@ export default function ProviderRegisterScreen() {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: isVideo ? ("videos" as const) : ("images" as const),
         quality: 0.85,
-        ...(isVideo ? { videoMaxDuration: 30 } : { allowsEditing: true, aspect: doc.id === "selfie" ? [1, 1] as [number, number] : [4, 3] as [number, number] }),
+        ...(isVideo ? { videoMaxDuration: 30 } : { allowsEditing: true }),
       });
       if (!result.canceled && result.assets?.[0]) {
         setDocFiles(prev => ({ ...prev, [doc.id]: result.assets[0].uri }));
@@ -260,7 +259,7 @@ export default function ProviderRegisterScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: isVideo ? ("videos" as const) : ("images" as const),
         quality: 0.85,
-        ...(isVideo ? { videoMaxDuration: 30 } : { allowsEditing: true, aspect: [4, 3] as [number, number] }),
+        ...(isVideo ? { videoMaxDuration: 30 } : { allowsEditing: true }),
       });
       if (!result.canceled && result.assets?.[0]) {
         setDocFiles(prev => ({ ...prev, [doc.id]: result.assets[0].uri }));
@@ -465,23 +464,12 @@ export default function ProviderRegisterScreen() {
         }
       }
 
-      if (form.email && ok.emailVerificationRequired) {
-        setEmailVerificationParams({
-          role: "provider",
-          sent: String(ok.emailVerificationSent === true),
-          expires: String(ok.emailVerificationExpiresInSeconds || 600),
-          resend: String(ok.emailVerificationResendAfterSeconds || 45),
-          ...(__DEV__ && ok.emailVerificationCode ? { code: ok.emailVerificationCode } : {}),
-        });
-      }
       setShowSuccess(true);
     } else {
       Alert.alert(tr("Registration Error"), tr(apiErrorToMessage(ok.error, "Could not create account. Please try again.")));
     }
     setLoading(false);
   };
-
- 
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
@@ -885,10 +873,8 @@ export default function ProviderRegisterScreen() {
         title={tr("Application Submitted!")}
         subtitle={tr("Your provider registration is under review. Our team will verify your documents and approve your account within 24-48 hours.")}
         primaryAction={{
-          label: emailVerificationParams ? tr("Verify Email") : tr("Go to Home"),
-          onPress: () => emailVerificationParams
-            ? router.replace({ pathname: "/auth/email-verification" as any, params: emailVerificationParams })
-            : router.replace("/(provider)/(tabs)/dashboard"),
+          label: tr("Go to Home"),
+          onPress: () => router.replace("/(provider)/(tabs)/dashboard"),
         }}
         secondaryAction={{ label: tr("Back to Login"), onPress: () => router.replace("/auth/welcome") }}
         onClose={() => router.replace("/auth/welcome")}
@@ -1170,4 +1156,3 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   modalOkText: { color: theme.colors.white, fontWeight: "700", fontSize: 15 },
 });
-

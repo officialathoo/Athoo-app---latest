@@ -133,19 +133,6 @@ export default function RegisterScreen() {
     }
     const registeredRole: AppRole = ok.user?.role === "provider" ? "provider" : "customer";
     await promptBiometricSetup(phone.trim(), registeredRole);
-    if (email.trim() && ok.emailVerificationRequired) {
-      router.replace({
-        pathname: "/auth/email-verification" as any,
-        params: {
-          role: registeredRole,
-          sent: String(ok.emailVerificationSent === true),
-          expires: String(ok.emailVerificationExpiresInSeconds || 600),
-          resend: String(ok.emailVerificationResendAfterSeconds || 45),
-          ...(__DEV__ && ok.emailVerificationCode ? { code: ok.emailVerificationCode } : {}),
-        },
-      });
-      return;
-    }
     const dest = registeredRole === "provider" ? "/(provider)/(tabs)/dashboard" : "/(customer)/(tabs)/home";
     router.replace(dest as any);
   };
