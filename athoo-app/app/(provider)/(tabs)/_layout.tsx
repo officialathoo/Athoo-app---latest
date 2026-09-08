@@ -119,7 +119,7 @@ export default function ProviderTabLayout() {
             paddingVertical: 2,
           },
           tabBarLabelStyle: {
-            fontSize: 10,
+            ...theme.typography.caption,
             fontFamily: theme.typography.label.fontFamily,
             marginTop: 2,
           },
