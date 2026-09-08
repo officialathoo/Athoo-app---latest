@@ -37,10 +37,11 @@ export default function WelcomeScreen() {
   const topPad = Platform.OS === "web" ? 34 : insets.top;
   const bottomPad = Platform.OS === "web" ? 24 : insets.bottom;
   const { requiresBiometric, completeBiometricLogin } = useAuth();
-  const { t } = useLang();
+  const { t, direction, textAlign, writingDirection } = useLang();
   const { theme } = useTheme();
   const auth = useMemo(() => createAuthPalette(theme), [theme]);
   const styles = useMemo(() => createStyles(theme, auth), [auth, theme]);
+  const localizedText = { textAlign, writingDirection } as const;
 
   const [biometricType, setBiometricType] = useState<
     "face" | "fingerprint" | "iris" | "biometric" | "none"
@@ -89,22 +90,20 @@ export default function WelcomeScreen() {
     () => [
       {
         icon: "shield-check",
-        title: "Secure & Trusted",
-        description:
-          "Verified providers, protected accounts and safer service records.",
+        title: t.security,
+        description: t.privacyHint,
         color: auth.cyan,
         background: auth.cyanSoft,
       },
       {
         icon: "map-pin",
-        title: "Built for Pakistan",
-        description:
-          "Find and manage home services across cities and service areas.",
+        title: t.pakistan,
+        description: t.findSkilledWorkers,
         color: auth.orange,
         background: auth.orangeSoft,
       },
     ],
-    [auth],
+    [auth, t],
   );
 
   const handleBiometricLogin = async () => {
@@ -137,7 +136,7 @@ export default function WelcomeScreen() {
         ? t.signInWithIris
         : biometricType === "fingerprint"
           ? t.signInWithFingerprint
-          : "Sign in with device biometrics";
+          : t.signIn;
 
   const biometricHint =
     biometricType === "face"
@@ -146,7 +145,7 @@ export default function WelcomeScreen() {
         ? t.biometricIrisHint
         : biometricType === "fingerprint"
           ? t.biometricFingerprintHint
-          : "Use the biometric method enrolled on this phone.";
+          : t.security;
 
   const introStyle = {
     opacity: intro,
@@ -217,7 +216,9 @@ export default function WelcomeScreen() {
               </View>
             </View>
 
-            <Text style={styles.welcomeLabel}>WELCOME TO</Text>
+            <Text style={styles.welcomeLabel}>
+              {direction === "rtl" ? t.welcome : "WELCOME TO"}
+            </Text>
             <Text style={styles.brandName}>
               {brandConfig.displayName}
             </Text>
@@ -229,12 +230,11 @@ export default function WelcomeScreen() {
           <View style={styles.devicePanel}>
             <View style={styles.deviceNotch} />
             <View style={styles.panelIntro}>
-              <Text style={styles.panelTitle}>
-                Home services, simplified.
+              <Text style={[styles.panelTitle, localizedText]}>
+                {t.welcomeTagline}
               </Text>
-              <Text style={styles.panelCopy}>
-                Book trusted professionals or grow your service
-                business from one secure Athoo account.
+              <Text style={[styles.panelCopy, localizedText]}>
+                {t.findSkilledWorkers} · {t.bookNowOrLater}
               </Text>
             </View>
 
@@ -242,7 +242,10 @@ export default function WelcomeScreen() {
               {features.map((feature) => (
                 <View
                   key={feature.title}
-                  style={styles.featureCard}
+                  style={[
+                    styles.featureCard,
+                    direction === "rtl" && styles.rowReverse,
+                  ]}
                 >
                   <View
                     style={[
@@ -261,10 +264,10 @@ export default function WelcomeScreen() {
                   </View>
 
                   <View style={styles.featureCopy}>
-                    <Text style={styles.featureTitle}>
+                    <Text style={[styles.featureTitle, localizedText]}>
                       {feature.title}
                     </Text>
-                    <Text style={styles.featureDescription}>
+                    <Text style={[styles.featureDescription, localizedText]}>
                       {feature.description}
                     </Text>
                   </View>
@@ -276,18 +279,24 @@ export default function WelcomeScreen() {
           {requiresBiometric ? (
             <View style={styles.secureReturnCard}>
               <View style={styles.secureReturnHeading}>
-                <View style={styles.secureReturnBadge}>
+                <View
+                  style={[
+                    styles.secureReturnBadge,
+                    direction === "rtl" && styles.rowReverse,
+                    direction === "rtl" && styles.alignSelfEnd,
+                  ]}
+                >
                   <Icon
                     name="shield-check"
                     size={13}
                     color={auth.success}
                   />
-                  <Text style={styles.secureReturnBadgeText}>
-                    SECURE RETURN
+                  <Text style={[styles.secureReturnBadgeText, localizedText]}>
+                    {t.security}
                   </Text>
                 </View>
-                <Text style={styles.secureReturnTitle}>
-                  Welcome back
+                <Text style={[styles.secureReturnTitle, localizedText]}>
+                  {t.welcome}
                 </Text>
               </View>
 
@@ -299,6 +308,7 @@ export default function WelcomeScreen() {
                 disabled={bioLoading}
                 style={({ pressed }) => [
                   styles.biometricButton,
+                  direction === "rtl" && styles.rowReverse,
                   pressed && styles.pressed,
                 ]}
               >
@@ -326,29 +336,34 @@ export default function WelcomeScreen() {
                 )}
 
                 <View style={styles.biometricCopy}>
-                  <Text style={styles.biometricTitle}>
+                  <Text style={[styles.biometricTitle, localizedText]}>
                     {biometricTitle}
                   </Text>
-                  <Text style={styles.biometricHint}>
+                  <Text style={[styles.biometricHint, localizedText]}>
                     {biometricHint}
                   </Text>
                 </View>
 
                 <Icon
-                  name="chevron-right"
+                  name={direction === "rtl" ? "chevron-left" : "chevron-right"}
                   size={18}
                   color={auth.muted}
                 />
               </Pressable>
 
               {bioError ? (
-                <View style={styles.errorBox}>
+                <View
+                  style={[
+                    styles.errorBox,
+                    direction === "rtl" && styles.rowReverse,
+                  ]}
+                >
                   <Icon
                     name="alert-circle"
                     size={15}
                     color={auth.danger}
                   />
-                  <Text style={styles.errorText}>
+                  <Text style={[styles.errorText, localizedText]}>
                     {bioError}
                   </Text>
                 </View>
@@ -356,6 +371,7 @@ export default function WelcomeScreen() {
 
               <Pressable
                 accessibilityRole="button"
+                accessibilityLabel={t.signInWithOtpInstead}
                 onPress={() =>
                   router.push(
                     `/auth/login?role=${bioRole}` as never,
@@ -363,6 +379,7 @@ export default function WelcomeScreen() {
                 }
                 style={({ pressed }) => [
                   styles.otpFallback,
+                  direction === "rtl" && styles.rowReverse,
                   pressed && styles.pressed,
                 ]}
               >
@@ -380,7 +397,7 @@ export default function WelcomeScreen() {
             <View style={styles.actions}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Sign in"
+                accessibilityLabel={t.signIn}
                 testID="welcome-sign-in"
                 onPress={() =>
                   router.push(
@@ -399,7 +416,10 @@ export default function WelcomeScreen() {
                   ]}
                   start={{ x: 0, y: 0.5 }}
                   end={{ x: 1, y: 0.5 }}
-                  style={styles.primaryAction}
+                  style={[
+                    styles.primaryAction,
+                    direction === "rtl" && styles.rowReverse,
+                  ]}
                 >
                   <Icon
                     name="log-in"
@@ -407,14 +427,14 @@ export default function WelcomeScreen() {
                     color={theme.colors.white}
                   />
                   <Text style={styles.primaryButtonText}>
-                    Log in
+                    {t.signIn}
                   </Text>
                 </LinearGradient>
               </Pressable>
 
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Create account"
+                accessibilityLabel={t.register}
                 testID="welcome-sign-up"
                 onPress={() =>
                   router.push(
@@ -423,6 +443,7 @@ export default function WelcomeScreen() {
                 }
                 style={({ pressed }) => [
                   styles.secondaryButton,
+                  direction === "rtl" && styles.rowReverse,
                   pressed && styles.pressed,
                 ]}
               >
@@ -432,7 +453,7 @@ export default function WelcomeScreen() {
                   color={auth.text}
                 />
                 <Text style={styles.secondaryButtonText}>
-                  Create Account
+                  {t.register}
                 </Text>
               </Pressable>
             </View>
@@ -440,7 +461,7 @@ export default function WelcomeScreen() {
 
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Change language"
+            accessibilityLabel={t.language}
             onPress={() =>
               router.push("/language" as never)
             }
@@ -469,6 +490,12 @@ function createStyles(theme: AthooTheme, auth: AuthPalette) {
     flex: 1,
     overflow: "hidden",
     backgroundColor: theme.colors.background,
+  },
+  rowReverse: {
+    flexDirection: "row-reverse",
+  },
+  alignSelfEnd: {
+    alignSelf: "flex-end",
   },
   topGlow: {
     position: "absolute",
@@ -628,7 +655,7 @@ function createStyles(theme: AthooTheme, auth: AuthPalette) {
     borderRadius: 14,
   },
   primaryAction: {
-    minHeight: 62,
+    minHeight: redesign.control.largeHeight,
     borderRadius: theme.radius.md,
     flexDirection: "row",
     alignItems: "center",
@@ -727,7 +754,7 @@ function createStyles(theme: AthooTheme, auth: AuthPalette) {
     lineHeight: 13.5,
   },
   errorBox: {
-    minHeight: 38,
+    minHeight: redesign.control.compactHeight,
     flexDirection: "row",
     alignItems: "center",
     gap: 7,
@@ -744,7 +771,7 @@ function createStyles(theme: AthooTheme, auth: AuthPalette) {
     lineHeight: 14,
   },
   otpFallback: {
-    minHeight: 39,
+    minHeight: redesign.control.compactHeight,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -757,7 +784,7 @@ function createStyles(theme: AthooTheme, auth: AuthPalette) {
   },
   languageRow: {
     alignSelf: "center",
-    minHeight: 34,
+    minHeight: redesign.control.compactHeight,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
