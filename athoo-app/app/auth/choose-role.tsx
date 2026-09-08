@@ -33,10 +33,17 @@ export default function ChooseRoleScreen() {
     params.mode === "signup"
       ? "signup"
       : "signin";
-  const { translate: tr } = useLang();
+  const {
+    translate: tr,
+    direction,
+    textAlign,
+    writingDirection,
+  } = useLang();
   const { theme } = useTheme();
   const auth = useMemo(() => createAuthPalette(theme), [theme]);
   const styles = useMemo(() => createStyles(theme, auth), [auth, theme]);
+  const localizedText = { textAlign, writingDirection } as const;
+  const isRtl = direction === "rtl";
 
   const intro =
     useRef(new Animated.Value(0)).current;
@@ -75,7 +82,7 @@ export default function ChooseRoleScreen() {
         background: auth.orangeSoft,
       },
     ],
-    [tr],
+    [auth, tr],
   );
 
   const continueAs = (
@@ -145,7 +152,12 @@ export default function ChooseRoleScreen() {
         <Animated.View
           style={[styles.inner, introStyle]}
         >
-          <View style={styles.topBar}>
+          <View
+            style={[
+              styles.topBar,
+              isRtl && styles.rowReverse,
+            ]}
+          >
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={tr("Back")}
@@ -156,13 +168,18 @@ export default function ChooseRoleScreen() {
               ]}
             >
               <Icon
-                name="arrow-left"
+                name={isRtl ? "arrow-right" : "arrow-left"}
                 size={18}
                 color={auth.text}
               />
             </Pressable>
 
-            <View style={styles.modeBadge}>
+            <View
+              style={[
+                styles.modeBadge,
+                isRtl && styles.rowReverse,
+              ]}
+            >
               <Icon
                 name={
                   mode === "signin"
@@ -176,7 +193,7 @@ export default function ChooseRoleScreen() {
                     : auth.orange
                 }
               />
-              <Text style={styles.modeBadgeText}>
+              <Text style={[styles.modeBadgeText, localizedText]}>
                 {mode === "signin"
                   ? tr("SIGN IN")
                   : tr("NEW ACCOUNT")}
@@ -202,13 +219,13 @@ export default function ChooseRoleScreen() {
               {brandConfig.displayName}
             </Text>
 
-            <Text style={styles.title}>
+            <Text style={[styles.title, localizedText]}>
               {mode === "signin"
                 ? tr("How do you use Athoo?")
                 : tr("Choose your account type")}
             </Text>
 
-            <Text style={styles.subtitle}>
+            <Text style={[styles.subtitle, localizedText]}>
               {mode === "signin"
                 ? tr(
                     "Select your role to open the correct secure sign-in flow.",
@@ -220,18 +237,28 @@ export default function ChooseRoleScreen() {
           </View>
 
           <View style={styles.rolePanel}>
-            <View style={styles.panelHeader}>
-              <Text style={styles.panelLabel}>
+            <View
+              style={[
+                styles.panelHeader,
+                isRtl && styles.rowReverse,
+              ]}
+            >
+              <Text style={[styles.panelLabel, localizedText]}>
                 {tr("SELECT ONE OPTION")}
               </Text>
-              <View style={styles.secureMini}>
+              <View
+                style={[
+                  styles.secureMini,
+                  isRtl && styles.rowReverse,
+                ]}
+              >
                 <Icon
                   name="shield-check"
                   size={12}
                   color={auth.success}
                 />
                 <Text
-                  style={styles.secureMiniText}
+                  style={[styles.secureMiniText, localizedText]}
                 >
                   {tr("Secure")}
                 </Text>
@@ -254,6 +281,7 @@ export default function ChooseRoleScreen() {
                   }
                   style={({ pressed }) => [
                     styles.roleCard,
+                    isRtl && styles.rowReverse,
                     pressed &&
                       styles.roleCardPressed,
                   ]}
@@ -280,16 +308,20 @@ export default function ChooseRoleScreen() {
                     <Text
                       style={[
                         styles.roleEyebrow,
+                        localizedText,
                         { color: item.color },
                       ]}
                     >
                       {item.eyebrow}
                     </Text>
-                    <Text numberOfLines={1} style={styles.roleTitle}>
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.roleTitle, localizedText]}
+                    >
                       {item.title}
                     </Text>
                     <Text
-                      style={styles.roleDescription}
+                      style={[styles.roleDescription, localizedText]}
                       numberOfLines={3}
                     >
                       {item.description}
@@ -306,7 +338,7 @@ export default function ChooseRoleScreen() {
                     ]}
                   >
                     <Icon
-                      name="chevron-right"
+                      name={isRtl ? "chevron-left" : "chevron-right"}
                       size={17}
                       color={item.color}
                     />
@@ -315,7 +347,12 @@ export default function ChooseRoleScreen() {
               ))}
             </View>
 
-            <View style={styles.securityNote}>
+            <View
+              style={[
+                styles.securityNote,
+                isRtl && styles.rowReverse,
+              ]}
+            >
               <View
                 style={styles.securityNoteIcon}
               >
@@ -325,7 +362,7 @@ export default function ChooseRoleScreen() {
                   color={auth.cyan}
                 />
               </View>
-              <Text style={styles.securityNoteText}>
+              <Text style={[styles.securityNoteText, localizedText]}>
                 {tr(
                   "Your role only selects the correct Athoo flow. Account security and verification rules stay unchanged.",
                 )}
@@ -346,21 +383,22 @@ export default function ChooseRoleScreen() {
             }
             style={({ pressed }) => [
               styles.switchMode,
+              isRtl && styles.rowReverse,
               pressed && styles.pressed,
             ]}
           >
-            <Text style={styles.switchModeMuted}>
+            <Text style={[styles.switchModeMuted, localizedText]}>
               {mode === "signin"
                 ? tr("New to Athoo?")
                 : tr("Already registered?")}
             </Text>
-            <Text style={styles.switchModeStrong}>
+            <Text style={[styles.switchModeStrong, localizedText]}>
               {mode === "signin"
                 ? tr("Create an account")
                 : tr("Sign in")}
             </Text>
             <Icon
-              name="arrow-right"
+              name={isRtl ? "arrow-left" : "arrow-right"}
               size={14}
               color={auth.cyan}
             />
@@ -377,6 +415,9 @@ function createStyles(theme: AthooTheme, auth: AuthPalette) {
     flex: 1,
     overflow: "hidden",
     backgroundColor: theme.colors.background,
+  },
+  rowReverse: {
+    flexDirection: "row-reverse",
   },
   topGlow: {
     position: "absolute",
