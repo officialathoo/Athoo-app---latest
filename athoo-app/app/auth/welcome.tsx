@@ -655,7 +655,7 @@ function createStyles(theme: AthooTheme, auth: AuthPalette) {
     borderRadius: 14,
   },
   primaryAction: {
-    minHeight: redesign.control.largeHeight,
+    minHeight: 62,
     borderRadius: theme.radius.md,
     flexDirection: "row",
     alignItems: "center",
@@ -674,7 +674,7 @@ function createStyles(theme: AthooTheme, auth: AuthPalette) {
     fontWeight: "900",
   },
   secondaryButton: {
-    minHeight: redesign.control.largeHeight,
+    minHeight: 62,
     borderRadius: theme.radius.md,
     flexDirection: "row",
     alignItems: "center",
