@@ -352,12 +352,11 @@ export function ChangePasswordScreen() {
                     textContentType="oneTimeCode"
                     style={[
                       styles.input,
-                      styles.otpInput,
                       {
                         color: theme.colors.text,
-                        textAlign,
                         writingDirection,
                       },
+                      styles.otpInput,
                     ]}
                   />
                 </View>
@@ -434,6 +433,7 @@ export function ChangePasswordScreen() {
             <Button
               title={otpResetStep === "idle" ? tr("Forgot password? Reset with OTP") : tr("Cancel OTP reset")}
               onPress={otpResetStep === "idle" ? () => void requestPasswordResetOtp() : resetOtpState}
+              accessibilityLabel={otpResetStep === "idle" ? tr("Reset password with OTP without leaving account security") : tr("Cancel OTP reset")}
               variant="ghost"
               fullWidth
             />
@@ -520,6 +520,7 @@ const styles = StyleSheet.create({
   otpInput: {
     letterSpacing: 6,
     fontWeight: "800",
+    textAlign: "center",
   },
   eyeButton: {
     width: redesign.control.compactHeight,
