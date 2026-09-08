@@ -65,6 +65,12 @@ export function Button({
     lg: { paddingHorizontal: theme.spacing.xl, minHeight: 56 },
   }[size];
 
+  const textStyle = {
+    sm: theme.typography.caption,
+    md: theme.typography.bodyStrong,
+    lg: { ...theme.typography.bodyLg, fontFamily: theme.typography.h3.fontFamily },
+  }[size];
+
   return (
     <Pressable
       testID={testID}
@@ -98,11 +104,10 @@ export function Button({
         <Text
           numberOfLines={2}
           ellipsizeMode="tail"
+          maxFontSizeMultiplier={1.35}
           style={{
             color: foregroundColor,
-            fontFamily: theme.typography.label.fontFamily,
-            fontSize: size === "sm" ? theme.typography.caption.fontSize : size === "lg" ? theme.typography.bodyLg.fontSize : 15,
-            lineHeight: size === "sm" ? theme.typography.caption.lineHeight : theme.typography.bodyStrong.lineHeight,
+            ...textStyle,
             writingDirection: language?.writingDirection ?? "ltr",
             textAlign: "center",
             flexShrink: 1,
