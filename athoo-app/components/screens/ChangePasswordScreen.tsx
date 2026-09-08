@@ -433,6 +433,7 @@ export function ChangePasswordScreen() {
             <Button
               title={otpResetStep === "idle" ? tr("Forgot password? Reset with OTP") : tr("Cancel OTP reset")}
               onPress={otpResetStep === "idle" ? () => void requestPasswordResetOtp() : resetOtpState}
+              accessibilityLabel={otpResetStep === "idle" ? tr("Reset password with OTP without leaving account security") : tr("Cancel OTP reset")}
               variant="ghost"
               fullWidth
             />
