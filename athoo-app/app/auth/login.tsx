@@ -252,6 +252,8 @@ export default function LoginScreen() {
           <Pressable
             style={styles.backBtn}
             onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel={tr("Back")}
           >
             <Icon name="arrow-left" size={20} color={theme.colors.white} />
           </Pressable>
@@ -273,7 +275,7 @@ export default function LoginScreen() {
               : tr("Sign in to book home services")}
           </Text>
 
-          <View style={[styles.roleBadge, localizedRow]}>
+          <View style={[styles.roleBadge, localizedRow, direction === "rtl" && styles.alignSelfEnd]}>
             <Icon name={isProvider ? "tool" : "user"} size={12} color={theme.colors.white} />
             <Text style={[styles.roleBadgeText, localizedText]}>
               {isProvider ? tr("Service Provider") : tr("Customer")}
@@ -354,7 +356,12 @@ export default function LoginScreen() {
                     secureTextEntry={!showPassword}
                     autoCapitalize="none"
                   />
-                  <Pressable onPress={() => setShowPassword(!showPassword)}>
+                  <Pressable
+                    style={styles.inputIconBtn}
+                    onPress={() => setShowPassword(!showPassword)}
+                    accessibilityRole="button"
+                    accessibilityLabel={showPassword ? tr("Hide password") : tr("Show password")}
+                  >
                     <Icon
                       name={showPassword ? "eye-off" : "eye"}
                       size={18}
@@ -401,13 +408,15 @@ export default function LoginScreen() {
               <View>
                 <View style={[styles.infoNote, localizedRow]}>
                   <Icon name="info" size={13} color={theme.colors.textMuted} />
-                  <Text style={styles.infoNoteText}>
+                  <Text style={[styles.infoNoteText, localizedText]}>
                     {tr("Forgot your password? Reset it securely before signing in.")}
                   </Text>
                 </View>
 
                 <Pressable
                   style={styles.forgotPasswordBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel={tr("Forgot Password?")}
                   onPress={() =>
                     router.push({
                       pathname: "/auth/forgot-password",
@@ -423,6 +432,7 @@ export default function LoginScreen() {
                   <Text
                     style={[
                       styles.forgotPasswordText,
+                      localizedText,
                       { color: isProvider ? theme.colors.secondary : theme.colors.primary },
                     ]}
                   >
@@ -439,6 +449,8 @@ export default function LoginScreen() {
                   style={[styles.otpChannelTab, otpChannel === "phone" && styles.otpChannelTabActive]}
                   testID="login-otp-channel-phone"
                   onPress={() => { setOtpChannel("phone"); setOtpStep("phone"); }}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: otpChannel === "phone" }}
                 >
                   <Icon name="smartphone" size={14} color={otpChannel === "phone" ? theme.colors.primary : theme.colors.textMuted} />
                   <Text style={[styles.otpChannelText, localizedText, otpChannel === "phone" && styles.otpChannelTextActive]}>
@@ -449,6 +461,8 @@ export default function LoginScreen() {
                   style={[styles.otpChannelTab, otpChannel === "email" && styles.otpChannelTabActive]}
                   testID="login-otp-channel-email"
                   onPress={() => { setOtpChannel("email"); setOtpStep("phone"); }}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: otpChannel === "email" }}
                 >
                   <Icon name="mail" size={14} color={otpChannel === "email" ? theme.colors.primary : theme.colors.textMuted} />
                   <Text style={[styles.otpChannelText, localizedText, otpChannel === "email" && styles.otpChannelTextActive]}>
@@ -463,7 +477,7 @@ export default function LoginScreen() {
                     <View style={styles.inputGroup}>
                       <Text style={[styles.label, localizedText]}>{tr("Phone Number")}</Text>
                       <View style={[styles.inputWrapper, localizedRow]}>
-                        <Text style={styles.countryCode}>+92</Text>
+                        <Text style={[styles.countryCode, styles.countryCodeText]}>+92</Text>
                         <TextInput
                           style={[styles.input, localizedText]}
                           testID="login-otp-phone"
@@ -530,13 +544,13 @@ export default function LoginScreen() {
                     <Text style={[styles.label, localizedText]}>
                       {otpChannel === "email" ? tr("6-digit code") : tr("4-digit code")}
                     </Text>
-                    <View style={[styles.otpWrapper, localizedRow]}>
+                    <View style={styles.otpWrapper}>
                       <TextInput
-                        style={[styles.otpInput, localizedText]}
+                        style={[styles.otpInput, localizedText, styles.centeredText]}
                         testID="login-otp-code"
                         value={otp}
                         onChangeText={(value) => setOtp(value.replace(/\D/g, "").slice(0, otpChannel === "email" ? 6 : 4))}
-                        placeholder="••••"
+                        placeholder={otpChannel === "email" ? "••••••" : "••••"}
                         placeholderTextColor={theme.colors.textMuted}
                         keyboardType="number-pad"
                         textContentType="oneTimeCode"
@@ -570,7 +584,7 @@ export default function LoginScreen() {
                   </Pressable>
 
                   <View style={[styles.rememberRow, localizedRow]}>
-                    <Text style={[styles.otpTimerText, localizedText, otpExpiresIn === 0 && styles.otpTimerExpired]}>
+                    <Text style={[styles.otpTimerText, localizedText, styles.centeredText, otpExpiresIn === 0 && styles.otpTimerExpired]}>
                       {otpExpiresIn > 0
                         ? tr("Code expires in {{minutes}}:{{seconds}}", {
                             minutes: String(Math.floor(otpExpiresIn / 60)).padStart(2, "0"),
@@ -585,6 +599,8 @@ export default function LoginScreen() {
                     testID="login-otp-resend"
                     onPress={handleSendOtp}
                     disabled={loading || otpResendIn > 0}
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: loading || otpResendIn > 0 }}
                   >
                     <Text style={[styles.resendOtpText, localizedText, otpResendIn > 0 && { color: theme.colors.textMuted }]}>
                       {otpResendIn > 0
@@ -596,6 +612,7 @@ export default function LoginScreen() {
                   <Pressable
                     style={styles.changePhoneBtn}
                     onPress={() => setOtpStep("phone")}
+                    accessibilityRole="button"
                   >
                     <Text style={[styles.changePhoneText, localizedText]}>
                       {otpChannel === "phone" ? tr("Use a different number") : tr("Use a different email")}
@@ -650,6 +667,7 @@ export default function LoginScreen() {
             <Text
               style={[
                 styles.registerBtnText,
+                localizedText,
                 { color: isProvider ? theme.colors.secondary : theme.colors.primary },
               ]}
             >
@@ -665,10 +683,12 @@ export default function LoginScreen() {
 const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   rowReverse: { flexDirection: "row-reverse" },
+  alignSelfEnd: { alignSelf: "flex-end" },
+  centeredText: { textAlign: "center" },
 
   hero: {
     paddingHorizontal: redesign.layout.horizontalPadding,
-    paddingBottom: 46,
+    paddingBottom: 40,
   },
   backBtn: {
     width: redesign.control.iconButtonSize,
@@ -679,18 +699,18 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderColor: "rgba(255,255,255,0.22)",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 18,
+    marginBottom: 16,
   },
   logoRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing.md,
-    marginBottom: 16,
+    marginBottom: 14,
   },
   brandIcon: {
-    width: 68,
-    height: 68,
-    borderRadius: 20,
+    width: 64,
+    height: 64,
+    borderRadius: 18,
     backgroundColor: theme.colors.white,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.42)",
@@ -704,7 +724,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   heroSub: {
     ...theme.typography.body,
     color: "rgba(255,255,255,0.82)",
-    marginBottom: 16,
+    marginBottom: 14,
     maxWidth: 520,
   },
   roleBadge: {
@@ -732,8 +752,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderTopRightRadius: 32,
     marginTop: -22,
     paddingHorizontal: redesign.layout.horizontalPadding,
-    paddingTop: 24,
-    paddingBottom: 44,
+    paddingTop: 20,
+    paddingBottom: 36,
     borderWidth: 1,
     borderColor: theme.colors.border,
     ...theme.shadows.md,
@@ -746,7 +766,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     backgroundColor: theme.colors.infoSoft,
     borderRadius: theme.radius.lg,
     padding: 14,
-    marginBottom: 18,
+    marginBottom: 16,
     borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.primary + "26",
   },
@@ -768,7 +788,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     backgroundColor: theme.colors.surfaceAlt,
     borderRadius: theme.radius.lg,
     padding: 4,
-    marginBottom: 18,
+    marginBottom: 16,
     gap: 4,
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -779,7 +799,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 7,
-    minHeight: 44,
+    minHeight: redesign.control.compactHeight,
     borderRadius: theme.radius.md,
   },
   tabActive: {
@@ -808,7 +828,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    minHeight: 40,
+    minHeight: redesign.control.compactHeight,
     borderRadius: theme.radius.sm,
   },
   otpChannelTabActive: {
@@ -844,8 +864,18 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderColor: theme.colors.border,
     gap: 10,
   },
-  otpWrapper: {
+  inputIconBtn: {
+    width: redesign.control.compactHeight,
+    height: redesign.control.compactHeight,
+    alignItems: "center",
     justifyContent: "center",
+    marginHorizontal: -8,
+  },
+  otpWrapper: {
+    minHeight: redesign.control.standardHeight,
+    justifyContent: "center",
+    borderRadius: theme.radius.md,
+    borderWidth: redesign.visual.inputBorderWidth,
     borderColor: theme.colors.primary + "66",
     backgroundColor: theme.colors.infoSoft,
   },
@@ -856,11 +886,14 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     paddingVertical: 0,
   },
   otpInput: {
+    width: "100%",
     textAlign: "center",
     fontSize: 28,
     lineHeight: 34,
     fontFamily: theme.typography.h1.fontFamily,
-    letterSpacing: 14,
+    letterSpacing: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 0,
   },
 
   countryCode: {
@@ -948,12 +981,18 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   btnDisabled: { opacity: redesign.visual.disabledOpacity },
 
   otpTimerText: {
+    flex: 1,
     ...theme.typography.caption,
     textAlign: "center",
     color: theme.colors.textSecondary,
   },
   otpTimerExpired: { color: theme.colors.danger, fontFamily: theme.typography.label.fontFamily },
-  resendOtpBtn: { alignSelf: "center", paddingVertical: 8, paddingHorizontal: 12 },
+  resendOtpBtn: {
+    alignSelf: "center",
+    minHeight: redesign.control.compactHeight,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
   resendOtpText: {
     ...theme.typography.body,
     color: theme.colors.primary,
@@ -962,9 +1001,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   changePhoneBtn: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 6,
     alignSelf: "center",
-    paddingVertical: 8,
+    minHeight: redesign.control.compactHeight,
+    paddingHorizontal: 12,
   },
   changePhoneText: {
     ...theme.typography.body,
@@ -992,7 +1033,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    marginTop: 24,
+    marginTop: 22,
     marginBottom: 14,
   },
   divider: { flex: 1, height: 1, backgroundColor: theme.colors.divider },
@@ -1022,7 +1063,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    paddingVertical: 8,
+    minHeight: redesign.control.compactHeight,
+    paddingHorizontal: 12,
   },
   forgotPasswordText: {
     ...theme.typography.body,
