@@ -352,12 +352,11 @@ export function ChangePasswordScreen() {
                     textContentType="oneTimeCode"
                     style={[
                       styles.input,
-                      styles.otpInput,
                       {
                         color: theme.colors.text,
-                        textAlign,
                         writingDirection,
                       },
+                      styles.otpInput,
                     ]}
                   />
                 </View>
@@ -520,6 +519,7 @@ const styles = StyleSheet.create({
   otpInput: {
     letterSpacing: 6,
     fontWeight: "800",
+    textAlign: "center",
   },
   eyeButton: {
     width: redesign.control.compactHeight,
