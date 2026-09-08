@@ -27,14 +27,14 @@ export function AppInput({ label, error, containerStyle, style, onFocus, onBlur,
         placeholderTextColor={theme.colors.textMuted}
         style={[
           {
-            minHeight: 50,
+            minHeight: 52,
             borderRadius: theme.radius.md,
             borderWidth: focused ? 2 : 1,
             borderColor: error ? theme.colors.danger : focused ? theme.colors.primary : theme.colors.border,
             backgroundColor: props.editable === false ? theme.colors.surfaceAlt : theme.colors.input,
             color: theme.colors.text,
             paddingHorizontal: theme.spacing.lg,
-            paddingVertical: theme.spacing.md,
+            paddingVertical: props.multiline ? theme.spacing.md : 0,
             fontFamily: theme.typography.bodyLg.fontFamily,
             fontSize: theme.typography.bodyLg.fontSize,
             lineHeight: theme.typography.bodyLg.lineHeight,
