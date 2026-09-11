@@ -9,6 +9,8 @@ interface AppCardProps {
   elevated?: boolean;
   style?: StyleProp<ViewStyle>;
   testID?: string;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 }
 
 export function AppCard({
@@ -18,6 +20,8 @@ export function AppCard({
   elevated = false,
   style,
   testID,
+  accessibilityLabel,
+  accessibilityHint,
 }: AppCardProps) {
   const { theme } = useTheme();
 
@@ -47,6 +51,8 @@ export function AppCard({
       <Pressable
         testID={testID}
         accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+        accessibilityHint={accessibilityHint}
         onPress={onPress}
         style={({ pressed }) => [
           cardStyle,
@@ -63,7 +69,12 @@ export function AppCard({
   }
 
   return (
-    <View testID={testID} style={cardStyle}>
+    <View
+      testID={testID}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
+      style={cardStyle}
+    >
       {children}
     </View>
   );
