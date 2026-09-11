@@ -151,8 +151,13 @@ export function OtpModal({
           style={[styles.card, { transform: [{ scale }] }]}
           accessible
           accessibilityLabel={`${title}. ${subtitle}`}
+          accessibilityHint={tr("Enter the 4-digit code and verify to continue.")}
         >
-          <View style={styles.iconCircle}>
+          <View
+            style={styles.iconCircle}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
             <Icon name="shield" size={30} color={theme.colors.primary} />
           </View>
           <Text accessibilityRole="header" style={styles.title}>{title}</Text>
@@ -168,7 +173,7 @@ export function OtpModal({
             </View>
           ) : null}
 
-          <View style={styles.otpRow}>
+          <View style={styles.otpRow} accessibilityLabel={tr("One-time verification code")}> 
             {code.map((digit, index) => (
               <TextInput
                 key={index}
@@ -184,6 +189,7 @@ export function OtpModal({
                 textContentType={index === 0 ? "oneTimeCode" : "none"}
                 autoComplete={index === 0 ? "one-time-code" : "off"}
                 accessibilityLabel={tr("OTP digit {{position}} of 4", { position: index + 1 })}
+                accessibilityHint={tr("Enter one digit of the OTP code")}
                 accessibilityValue={{ text: digit ? tr("Entered") : tr("Empty") }}
               />
             ))}
@@ -281,16 +287,16 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     otpRow: { flexDirection: "row", gap: 8, marginVertical: 7, direction: "ltr" },
     otpInput: { width: 56, height: 60, borderRadius: theme.radius.md, borderWidth: redesign.visual.focusedBorderWidth, borderColor: theme.colors.border, fontSize: 23, fontFamily: theme.typography.h2.fontFamily, color: theme.colors.text, backgroundColor: theme.colors.input },
     otpInputFilled: { borderColor: theme.colors.primary, backgroundColor: theme.colors.infoSoft },
-    expiryText: { marginTop: 10, fontSize: 12, color: theme.colors.textSecondary, textAlign: "center" },
+    expiryText: { marginTop: 10, fontSize: 12, color: theme.colors.textSecondary, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
     expiryExpired: { color: theme.colors.danger, fontWeight: "700" },
     error: { fontSize: 12, color: theme.colors.danger, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
     verifyBtn: { backgroundColor: theme.colors.primary, width: "100%", minHeight: redesign.control.largeHeight, borderRadius: theme.radius.md, paddingHorizontal: 16, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8, ...theme.shadows.sm },
-    verifyText: { color: theme.colors.white, fontWeight: "800", fontSize: 15, writingDirection: isUrdu ? "rtl" : "ltr" },
+    verifyText: { color: theme.colors.white, fontWeight: "800", fontSize: 15, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
     resendBtn: { minHeight: 44, paddingHorizontal: 12, flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "center", gap: 8 },
-    resendText: { fontSize: 13, fontWeight: "700", color: theme.colors.primary, writingDirection: isUrdu ? "rtl" : "ltr" },
+    resendText: { fontSize: 13, fontWeight: "700", color: theme.colors.primary, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
     resendTextDisabled: { color: theme.colors.textMuted },
     cancelBtn: { minHeight: 44, minWidth: 88, alignItems: "center", justifyContent: "center" },
-    cancelText: { fontSize: 13, color: theme.colors.textSecondary, writingDirection: isUrdu ? "rtl" : "ltr" },
+    cancelText: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
     disabled: { opacity: redesign.visual.disabledOpacity },
     pressed: { opacity: 0.86, transform: [{ scale: redesign.visual.pressedScale }] },
   });
