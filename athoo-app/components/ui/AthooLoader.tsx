@@ -7,11 +7,13 @@ import type { AthooTheme } from "@/design/theme";
 
 interface AthooLoaderProps {
   tagline?: string;
+  testID?: string;
+  accessibilityLabel?: string;
 }
 
 const splashSurface = "#061231";
 
-export function AthooLoader({ tagline }: AthooLoaderProps) {
+export function AthooLoader({ tagline, testID, accessibilityLabel }: AthooLoaderProps) {
   const { theme } = useTheme();
   const resolvedTagline = tagline || `${brandConfig.descriptor} Across Pakistan`;
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -61,7 +63,7 @@ export function AthooLoader({ tagline }: AthooLoaderProps) {
   const orbitTranslateY = orbitShift.interpolate({ inputRange: [0, 1], outputRange: [0, -16] });
 
   return (
-    <LinearGradient colors={[splashSurface, "#062B7E", "#04205E", splashSurface]} style={styles.container} start={{ x: 0.32, y: 0 }} end={{ x: 0.78, y: 1 }}>
+    <LinearGradient colors={[splashSurface, "#062B7E", "#04205E", splashSurface]} style={styles.container} start={{ x: 0.32, y: 0 }} end={{ x: 0.78, y: 1 }} testID={testID} accessibilityLabel={accessibilityLabel || `${brandConfig.displayName} loading`} accessibilityRole="progressbar">
       <StatusBar barStyle="light-content" backgroundColor={splashSurface} translucent={false} />
       <Animated.View style={[styles.blueAura, { opacity: haloOpacity }]} />
       <View style={styles.deepVignette} />
