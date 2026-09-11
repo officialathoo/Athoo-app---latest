@@ -9,7 +9,9 @@ type SurfaceCardProps = {
   elevated?: boolean;
   padding?: "none" | "sm" | "md" | "lg";
   style?: StyleProp<ViewStyle>;
+  testID?: string;
   accessibilityLabel?: string;
+  accessibilityHint?: string;
 };
 
 export function SurfaceCard({
@@ -18,7 +20,9 @@ export function SurfaceCard({
   elevated = false,
   padding = "md",
   style,
+  testID,
   accessibilityLabel,
+  accessibilityHint,
 }: SurfaceCardProps) {
   const { theme } = useTheme();
   const paddingValue = {
@@ -40,12 +44,20 @@ export function SurfaceCard({
     style,
   ];
 
-  if (!onPress) return <View style={baseStyle}>{children}</View>;
+  if (!onPress) {
+    return (
+      <View testID={testID} accessibilityLabel={accessibilityLabel} style={baseStyle}>
+        {children}
+      </View>
+    );
+  }
 
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
       onPress={onPress}
       style={({ pressed }) => [
         baseStyle,
