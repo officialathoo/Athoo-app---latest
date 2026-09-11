@@ -128,7 +128,8 @@ export default function ProviderRegisterScreen() {
   const { translate: tr, textAlign, writingDirection, direction } = useLang();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const localizedText = useMemo(() => ({ textAlign, writingDirection }), [textAlign, writingDirection]);
-  const localizedRow = direction === "rtl" ? styles.rowReverse : undefined;
+  const isRtl = direction === "rtl";
+  const localizedRow = isRtl ? styles.rowReverse : undefined;
   const steps = useMemo(() => STEPS.map((item) => ({ ...item, title: tr(item.title), desc: tr(item.desc) })), [tr]);
   const docItems = useMemo(() => DOC_ITEMS.map((item) => ({ ...item, label: tr(item.label), hint: tr(item.hint) })), [tr]);
   const { phone: phoneParam } = useLocalSearchParams<{ phone?: string }>();
@@ -484,14 +485,14 @@ export default function ProviderRegisterScreen() {
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         >
-          <Pressable style={styles.backBtn} onPress={() => step > 0 ? setStep(step - 1) : router.back()}>
-            <Icon name="arrow-left" size={20} color={theme.colors.white} />
+          <Pressable accessibilityRole="button" accessibilityLabel={tr("Back")} style={styles.backBtn} onPress={() => step > 0 ? setStep(step - 1) : router.back()}>
+            <Icon name={isRtl ? "arrow-right" : "arrow-left"} size={20} color={theme.colors.white} />
           </Pressable>
-          <View style={styles.providerBrandRow}>
+          <View style={[styles.providerBrandRow, localizedRow]}>
             <Image source={brandConfig.assets.appIcon} style={styles.providerBrandIcon} resizeMode="cover" />
             <View>
               <Text style={styles.providerBrandName}>{brandConfig.displayName}</Text>
-              <Text style={styles.providerBrandCaption}>{tr("Verified professional onboarding")}</Text>
+              <Text style={[styles.providerBrandCaption, localizedText]}>{tr("Verified professional onboarding")}</Text>
             </View>
           </View>
           <Text style={[styles.headerTitle, localizedText]}>{tr("Provider Registration")}</Text>
@@ -544,7 +545,7 @@ export default function ProviderRegisterScreen() {
                 <View style={[styles.checkbox, form.cnicLifetime && styles.checkboxChecked]}>
                   {form.cnicLifetime && <Icon name="check" size={14} color={theme.colors.white} />}
                 </View>
-                <Text style={styles.declarationText}>{tr("This CNIC has lifetime validity")}</Text>
+                <Text style={[styles.declarationText, localizedText]}>{tr("This CNIC has lifetime validity")}</Text>
               </Pressable>
               {!form.cnicLifetime && (
                 <InputField
