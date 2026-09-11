@@ -41,7 +41,6 @@ export function AppInput({
         {...props}
         accessibilityLabel={inputAccessibilityLabel}
         accessibilityHint={props.accessibilityHint ?? (error ? error : undefined)}
-        accessibilityInvalid={error ? true : undefined}
         maxFontSizeMultiplier={props.maxFontSizeMultiplier ?? 1.5}
         onFocus={(event) => { setFocused(true); onFocus?.(event); }}
         onBlur={(event) => { setFocused(false); onBlur?.(event); }}
