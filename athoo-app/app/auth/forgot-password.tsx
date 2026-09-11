@@ -58,7 +58,8 @@ export default function ForgotPasswordScreen() {
   const { translate: tr, textAlign, writingDirection, direction } = useLang();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const localizedText = useMemo(() => ({ textAlign, writingDirection }), [textAlign, writingDirection]);
-  const localizedRow = direction === "rtl" ? styles.rowReverse : undefined;
+  const isRtl = direction === "rtl";
+  const localizedRow = isRtl ? styles.rowReverse : undefined;
   const insets = useSafeAreaInsets();
 
   const safeRole: Role = useMemo(
@@ -231,8 +232,13 @@ export default function ForgotPasswordScreen() {
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         >
-          <Pressable style={styles.backBtn} onPress={handleBack}>
-            <Icon name="arrow-left" size={20} color={theme.colors.white} />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={tr("Back")}
+            style={styles.backBtn}
+            onPress={handleBack}
+          >
+            <Icon name={isRtl ? "arrow-right" : "arrow-left"} size={20} color={theme.colors.white} />
           </Pressable>
 
           <View style={[styles.logoRow, localizedRow]}>
@@ -336,7 +342,7 @@ export default function ForgotPasswordScreen() {
                 </View>
               </View>
 
-              <Text style={styles.otpTimer}>
+              <Text style={[styles.otpTimer, localizedText]}>
                 {otpExpiresIn > 0
                   ? tr("Code expires in {{time}}", {
                       time: Math.floor(otpExpiresIn / 60) + ":" + String(otpExpiresIn % 60).padStart(2, "0"),
@@ -363,11 +369,13 @@ export default function ForgotPasswordScreen() {
               </Pressable>
 
               <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={tr("Resend OTP")}
                 style={[styles.resendBtn, (loading || otpResendIn > 0) && styles.btnDisabled]}
                 onPress={handleSendOtp}
                 disabled={loading || otpResendIn > 0}
               >
-                <Text style={styles.resendText}>
+                <Text style={[styles.resendText, localizedText]}>
                   {otpResendIn > 0
                     ? tr("Resend in {{seconds}}s", { seconds: otpResendIn })
                     : tr("Resend OTP")}
@@ -392,7 +400,12 @@ export default function ForgotPasswordScreen() {
                     autoCapitalize="none"
                     autoFocus
                   />
-                  <Pressable onPress={() => setShowNewPassword(!showNewPassword)}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={tr(showNewPassword ? "Hide password" : "Show password")}
+                    style={styles.eyeButton}
+                    onPress={() => setShowNewPassword(!showNewPassword)}
+                  >
                     <Icon
                       name={showNewPassword ? "eye-off" : "eye"}
                       size={18}
@@ -415,7 +428,12 @@ export default function ForgotPasswordScreen() {
                     secureTextEntry={!showConfirmPassword}
                     autoCapitalize="none"
                   />
-                  <Pressable onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={tr(showConfirmPassword ? "Hide password" : "Show password")}
+                    style={styles.eyeButton}
+                    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  >
                     <Icon
                       name={showConfirmPassword ? "eye-off" : "eye"}
                       size={18}
@@ -614,6 +632,14 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     color: theme.colors.primary,
     fontSize: 14,
     fontWeight: "700",
+  },
+
+  eyeButton: {
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
   },
 
   primaryBtn: {
