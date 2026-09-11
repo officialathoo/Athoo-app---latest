@@ -11,9 +11,19 @@ interface ServiceCardProps {
   service: ServiceCategory;
   onPress: () => void;
   size?: "sm" | "md";
+  testID?: string;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 }
 
-export function ServiceCard({ service, onPress, size = "md" }: ServiceCardProps) {
+export function ServiceCard({
+  service,
+  onPress,
+  size = "md",
+  testID,
+  accessibilityLabel,
+  accessibilityHint,
+}: ServiceCardProps) {
   const { isUrdu } = useLang();
   const { theme } = useTheme();
   const isSmall = size === "sm";
@@ -22,10 +32,11 @@ export function ServiceCard({ service, onPress, size = "md" }: ServiceCardProps)
 
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${displayName} service`}
-      accessibilityHint="Opens available service providers"
+      accessibilityLabel={accessibilityLabel ?? `${displayName} service`}
+      accessibilityHint={accessibilityHint ?? "Opens available service providers"}
       style={({ pressed }) => [
         styles.card,
         {
