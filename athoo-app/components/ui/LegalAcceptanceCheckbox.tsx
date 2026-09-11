@@ -3,6 +3,7 @@ import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { router, type Href } from "expo-router";
 import { runtimeConfig } from "@/config/runtime";
+import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
 
@@ -27,7 +28,9 @@ async function openLegalRoute(route: Href, externalUrl?: string) {
 /** Required legal acceptance checkbox shown on registration screens. */
 export function LegalAcceptanceCheckbox({ value, onChange }: Props) {
   const { theme } = useTheme();
-  const styles = useMemo(() => createStyles(theme), [theme]);
+  const { direction, textAlign, translate: tr, writingDirection } = useLang();
+  const styles = useMemo(() => createStyles(theme, direction === "rtl"), [direction, theme]);
+  const localizedText = useMemo(() => ({ textAlign, writingDirection }), [textAlign, writingDirection]);
 
   return (
     <Pressable
@@ -35,25 +38,30 @@ export function LegalAcceptanceCheckbox({ value, onChange }: Props) {
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}
       accessibilityRole="checkbox"
       accessibilityState={{ checked: value }}
-      accessibilityLabel="I agree to the Terms of Service and Privacy Policy"
+      accessibilityLabel={tr("I agree to the Terms of Service and Privacy Policy")}
+      accessibilityHint={tr("Required before creating or continuing an Athoo account")}
     >
-      <View style={[styles.box, value && styles.boxChecked]}>
+      <View style={[styles.box, value && styles.boxChecked]} pointerEvents="none">
         {value ? <Feather name="check" size={14} color={theme.colors.white} /> : null}
       </View>
-      <Text style={styles.text}>
-        I agree to the{" "}
+      <Text style={[styles.text, localizedText]}>
+        {tr("I agree to the")} {" "}
         <Text
+          accessibilityRole="link"
+          accessibilityLabel={tr("Open Terms of Service")}
           style={styles.link}
           onPress={() => void openLegalRoute(TERMS_HREF, runtimeConfig.legal.termsUrl)}
         >
-          Terms of Service
+          {tr("Terms of Service")}
         </Text>
-        {" "}and{" "}
+        {" "}{tr("and")}{" "}
         <Text
+          accessibilityRole="link"
+          accessibilityLabel={tr("Open Privacy Policy")}
           style={styles.link}
           onPress={() => void openLegalRoute(PRIVACY_HREF, runtimeConfig.legal.privacyUrl)}
         >
-          Privacy Policy
+          {tr("Privacy Policy")}
         </Text>
         .
       </Text>
@@ -61,9 +69,15 @@ export function LegalAcceptanceCheckbox({ value, onChange }: Props) {
   );
 }
 
-function createStyles(theme: AthooTheme) {
+function createStyles(theme: AthooTheme, isRtl: boolean) {
   return StyleSheet.create({
-    row: { flexDirection: "row", alignItems: "flex-start", gap: 10, paddingVertical: 4 },
+    row: {
+      flexDirection: isRtl ? "row-reverse" : "row",
+      alignItems: "flex-start",
+      gap: 10,
+      minHeight: 44,
+      paddingVertical: 6,
+    },
     pressed: { opacity: 0.78 },
     box: {
       width: 20,
@@ -75,6 +89,7 @@ function createStyles(theme: AthooTheme) {
       alignItems: "center",
       justifyContent: "center",
       marginTop: 2,
+      flexShrink: 0,
     },
     boxChecked: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
     text: { flex: 1, fontSize: 13, color: theme.colors.textSecondary, lineHeight: 19 },
