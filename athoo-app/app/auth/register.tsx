@@ -39,7 +39,8 @@ export default function RegisterScreen() {
   const { translate: tr, textAlign, writingDirection, direction } = useLang();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const localizedText = useMemo(() => ({ textAlign, writingDirection }), [textAlign, writingDirection]);
-  const localizedRow = direction === "rtl" ? styles.rowReverse : undefined;
+  const isRtl = direction === "rtl";
+  const localizedRow = isRtl ? styles.rowReverse : undefined;
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
@@ -152,15 +153,15 @@ export default function RegisterScreen() {
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         >
-          <View style={styles.heroTop}>
-            <Pressable style={styles.backBtn} onPress={() => {
+          <View style={[styles.heroTop, localizedRow]}>
+            <Pressable accessibilityRole="button" accessibilityLabel={tr("Back")} style={styles.backBtn} onPress={() => {
               if (step === "otp") { setStep("phone"); setOtp(""); }
               else if (step === "details" && !phoneParam) { setStep("otp"); }
               else { router.back(); }
             }}>
-              <Icon name="arrow-left" size={22} color={theme.colors.white} />
+              <Icon name={isRtl ? "arrow-right" : "arrow-left"} size={22} color={theme.colors.white} />
             </Pressable>
-            <View style={styles.brandRow}>
+            <View style={[styles.brandRow, localizedRow]}>
               <Image source={brandConfig.assets.appIcon} style={styles.brandIcon} resizeMode="cover" />
               <Text style={styles.brandName}>{brandConfig.displayName}</Text>
             </View>
@@ -171,9 +172,9 @@ export default function RegisterScreen() {
             <Text style={[styles.subtitle, localizedText]}>{step === "phone" ? tr("Enter your phone number to get started") : step === "otp" ? tr("We sent a code to {{phone}}", { phone }) : tr("Almost done! Fill in your details")}</Text>
           </View>
 
-          <View style={styles.stepBadge}>
+          <View style={[styles.stepBadge, localizedRow]}>
             <Icon name={step === "phone" ? "phone" : step === "otp" ? "shield-check" : "user-check"} size={13} color={theme.colors.white} />
-            <Text style={styles.stepBadgeText}>
+            <Text style={[styles.stepBadgeText, localizedText]}>
               {step === "phone" ? tr("Step 1 - Mobile") : step === "otp" ? tr("Step 2 - Verification") : tr("Step 3 - Account Details")}
             </Text>
           </View>
@@ -183,18 +184,18 @@ export default function RegisterScreen() {
 
         {step === "otp" && (
           <View style={styles.form}>
-            {otpHint ? <View style={[styles.otpHintBox, localizedRow]}><Icon name="info" size={14} color={theme.colors.secondary} /><Text style={styles.otpHintText}>{tr("Your OTP: {{code}}", { code: otpHint })}</Text></View> : null}
+            {otpHint ? <View style={[styles.otpHintBox, localizedRow]}><Icon name="info" size={14} color={theme.colors.secondary} /><Text style={[styles.otpHintText, localizedText]}>{tr("Your OTP: {{code}}", { code: otpHint })}</Text></View> : null}
             <View style={styles.inputGroup}><Text style={[styles.label, localizedText]}>{tr("4-Digit OTP")}</Text><View style={[styles.inputWrapper, localizedRow]}><Icon name="lock" size={18} color={theme.colors.textMuted} /><TextInput style={[styles.input, styles.otpInput]} value={otp} onChangeText={(v) => setOtp(v.replace(/[^0-9]/g, "").slice(0, 4))} placeholder="----" placeholderTextColor={theme.colors.textMuted} keyboardType="number-pad" maxLength={4} autoFocus /></View></View>
-            <Text style={[styles.otpTimerText, otpExpiresIn === 0 && styles.otpTimerExpired]}>{otpExpiresIn > 0 ? tr("Code expires in {{time}}", { time: `${Math.floor(otpExpiresIn / 60)}:${String(otpExpiresIn % 60).padStart(2, "0")}` }) : tr("Code expired. Request a new OTP.")}</Text>
+            <Text style={[styles.otpTimerText, localizedText, otpExpiresIn === 0 && styles.otpTimerExpired]}>{otpExpiresIn > 0 ? tr("Code expires in {{time}}", { time: `${Math.floor(otpExpiresIn / 60)}:${String(otpExpiresIn % 60).padStart(2, "0")}` }) : tr("Code expired. Request a new OTP.")}</Text>
             <Button title={loading ? tr("Verifying...") : tr("Verify & Continue")} onPress={handleVerifyOtp} loading={loading} disabled={otpExpiresIn === 0} fullWidth style={{ marginTop: 8 }} />
-            <Pressable style={styles.resendBtn} disabled={loading || otpResendIn > 0} onPress={handleSendOtp}><Text style={[styles.resendText, localizedText, (loading || otpResendIn > 0) && { color: theme.colors.textMuted }]}>{otpResendIn > 0 ? tr("Resend in {{seconds}}s", { seconds: otpResendIn }) : tr("Resend OTP")}</Text></Pressable>
-            <Pressable style={styles.resendBtn} onPress={() => { setStep("phone"); setOtp(""); setOtpExpiresIn(0); setOtpResendIn(0); }}><Text style={[styles.resendText, localizedText]}>{tr("Change phone number")}</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel={tr("Resend OTP")} style={styles.resendBtn} disabled={loading || otpResendIn > 0} onPress={handleSendOtp}><Text style={[styles.resendText, localizedText, (loading || otpResendIn > 0) && { color: theme.colors.textMuted }]}>{otpResendIn > 0 ? tr("Resend in {{seconds}}s", { seconds: otpResendIn }) : tr("Resend OTP")}</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel={tr("Change phone number")} style={styles.resendBtn} onPress={() => { setStep("phone"); setOtp(""); setOtpExpiresIn(0); setOtpResendIn(0); }}><Text style={[styles.resendText, localizedText]}>{tr("Change phone number")}</Text></Pressable>
           </View>
         )}
 
-        {step === "details" && <View style={styles.form}><View style={styles.inputGroup}><Text style={[styles.label, localizedText]}>{tr("Full Name *")}</Text><View style={[styles.inputWrapper, localizedRow]}><Icon name="user" size={18} color={theme.colors.textMuted} /><TextInput style={[styles.input, localizedText]} value={name} onChangeText={setName} placeholder={tr("Your full name")} placeholderTextColor={theme.colors.textMuted} autoFocus /></View></View><View style={styles.inputGroup}><Text style={[styles.label, localizedText]}>{tr("Email (optional)")}</Text><View style={[styles.inputWrapper, localizedRow]}><Icon name="mail" size={18} color={theme.colors.textMuted} /><TextInput style={[styles.input, localizedText]} value={email} onChangeText={setEmail} placeholder="your@email.com" placeholderTextColor={theme.colors.textMuted} keyboardType="email-address" autoCapitalize="none" /></View></View><View style={styles.inputGroup}><Text style={[styles.label, localizedText]}>{tr("Password *")}</Text><View style={[styles.inputWrapper, localizedRow]}><Icon name="lock" size={18} color={theme.colors.textMuted} /><TextInput style={[styles.input, localizedText]} value={password} onChangeText={setPassword} placeholder={tr("Enter your password")} placeholderTextColor={theme.colors.textMuted} secureTextEntry={!showPassword} autoCapitalize="none" /><Pressable onPress={() => setShowPassword((prev) => !prev)}><Icon name={showPassword ? "eye-off" : "eye"} size={18} color={theme.colors.textMuted} /></Pressable></View></View><View style={[styles.phoneDisplay, localizedRow]}><Icon name="check-circle" size={16} color={theme.colors.success} /><Text style={[styles.phoneDisplayText, localizedText]}>{tr("Phone verified: {{phone}}", { phone })}</Text></View><LegalAcceptanceCheckbox value={legalAccepted} onChange={setLegalAccepted} /><Button title={loading ? tr("Creating Account...") : tr("Create Account")} onPress={handleRegister} loading={loading} disabled={!legalAccepted} fullWidth style={{ marginTop: 8 }} /></View>}
+        {step === "details" && <View style={styles.form}><View style={styles.inputGroup}><Text style={[styles.label, localizedText]}>{tr("Full Name *")}</Text><View style={[styles.inputWrapper, localizedRow]}><Icon name="user" size={18} color={theme.colors.textMuted} /><TextInput style={[styles.input, localizedText]} value={name} onChangeText={setName} placeholder={tr("Your full name")} placeholderTextColor={theme.colors.textMuted} autoFocus /></View></View><View style={styles.inputGroup}><Text style={[styles.label, localizedText]}>{tr("Email (optional)")}</Text><View style={[styles.inputWrapper, localizedRow]}><Icon name="mail" size={18} color={theme.colors.textMuted} /><TextInput style={[styles.input, localizedText]} value={email} onChangeText={setEmail} placeholder="your@email.com" placeholderTextColor={theme.colors.textMuted} keyboardType="email-address" autoCapitalize="none" /></View></View><View style={styles.inputGroup}><Text style={[styles.label, localizedText]}>{tr("Password *")}</Text><View style={[styles.inputWrapper, localizedRow]}><Icon name="lock" size={18} color={theme.colors.textMuted} /><TextInput style={[styles.input, localizedText]} value={password} onChangeText={setPassword} placeholder={tr("Enter your password")} placeholderTextColor={theme.colors.textMuted} secureTextEntry={!showPassword} autoCapitalize="none" /><Pressable accessibilityRole="button" accessibilityLabel={tr(showPassword ? "Hide password" : "Show password")} style={styles.eyeButton} onPress={() => setShowPassword((prev) => !prev)}><Icon name={showPassword ? "eye-off" : "eye"} size={18} color={theme.colors.textMuted} /></Pressable></View></View><View style={[styles.phoneDisplay, localizedRow]}><Icon name="check-circle" size={16} color={theme.colors.success} /><Text style={[styles.phoneDisplayText, localizedText]}>{tr("Phone verified: {{phone}}", { phone })}</Text></View><LegalAcceptanceCheckbox value={legalAccepted} onChange={setLegalAccepted} /><Button title={loading ? tr("Creating Account...") : tr("Create Account")} onPress={handleRegister} loading={loading} disabled={!legalAccepted} fullWidth style={{ marginTop: 8 }} /></View>}
 
-        <View style={[styles.loginRow, localizedRow]}><Text style={[styles.loginText, localizedText]}>{tr("Already have an account?")} </Text><Pressable onPress={() => router.replace({ pathname: "/auth/login", params: { role: selectedRole } })}><Text style={[styles.loginLink, localizedText]}>{tr("Sign In")}</Text></Pressable></View>
+        <View style={[styles.loginRow, localizedRow]}><Text style={[styles.loginText, localizedText]}>{tr("Already have an account?")} </Text><Pressable accessibilityRole="button" accessibilityLabel={tr("Sign In")} style={styles.loginAction} onPress={() => router.replace({ pathname: "/auth/login", params: { role: selectedRole } })}><Text style={[styles.loginLink, localizedText]}>{tr("Sign In")}</Text></Pressable></View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -345,13 +346,22 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   resendBtn: {
     alignSelf: "center",
+    minHeight: 44,
     paddingVertical: 8,
     paddingHorizontal: 12,
+    justifyContent: "center",
   },
   resendText: {
     ...theme.typography.body,
     color: theme.colors.primary,
     fontFamily: theme.typography.label.fontFamily,
+  },
+  eyeButton: {
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
   },
   phoneDisplay: {
     flexDirection: "row",
@@ -376,6 +386,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     marginTop: 22,
     marginHorizontal: redesign.layout.horizontalPadding,
     paddingVertical: 12,
+  },
+  loginAction: {
+    minHeight: 44,
+    paddingHorizontal: 6,
+    justifyContent: "center",
   },
   loginText: {
     ...theme.typography.body,
