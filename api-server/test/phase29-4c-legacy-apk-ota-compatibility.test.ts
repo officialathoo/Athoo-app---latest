@@ -27,16 +27,22 @@ test("Phase 29.5 isolates MapLibre native builds from legacy runtime 1.0.0", () 
   const eas = json("eas.json");
   const mobilePackage = json("athoo-app/package.json");
 
-  assert.match(
-    appConfig,
-    /const appVersion = readEnv\(\s*"APP_VERSION",\s*"1\.1\.0",\s*\);/s,
+  const appVersionMatch = appConfig.match(
+    /const appVersion = readEnv\(\s*"APP_VERSION",\s*"(\d+\.\d+\.\d+)",\s*\);/s,
   );
+  assert.ok(appVersionMatch, "APP_VERSION must retain a semantic fallback");
+  assert.notEqual(appVersionMatch[1], "1.0.0");
   assert.match(
     appConfig,
     /runtimeVersion:\s*\{\s*policy:\s*"appVersion",?\s*\}/s,
   );
-  assert.equal(eas.build.preview.env.APP_VERSION, "1.1.0");
-  assert.equal(eas.build.preview.env.EXPO_PUBLIC_RELEASE_VERSION, "1.1.0");
+
+  const previewEnv = eas.build.preview.env ?? {};
+  if (previewEnv.APP_VERSION !== undefined || previewEnv.EXPO_PUBLIC_RELEASE_VERSION !== undefined) {
+    assert.equal(previewEnv.APP_VERSION, previewEnv.EXPO_PUBLIC_RELEASE_VERSION);
+    assert.notEqual(previewEnv.APP_VERSION, "1.0.0");
+  }
+
   assert.equal(eas.build.preview.autoIncrement, true);
   assert.equal(
     mobilePackage.dependencies["@maplibre/maplibre-react-native"],

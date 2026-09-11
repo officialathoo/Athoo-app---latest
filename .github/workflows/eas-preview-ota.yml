@@ -1,0 +1,66 @@
+name: EAS Preview OTA Update
+
+on:
+  push:
+    branches:
+      - release/athoo-v2.2-production-certification
+    paths:
+      - "athoo-app/**"
+      - ".github/workflows/eas-preview-ota.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eas-preview-ota-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish-preview-ota:
+    name: Publish preview OTA
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN || secrets.EAS_TOKEN }}
+      EAS_PROJECT_ID: ${{ secrets.EAS_PROJECT_ID || vars.EAS_PROJECT_ID }}
+      APP_ENV: staging
+      APP_VERSION: "2.2.0"
+      EXPO_PUBLIC_RELEASE_VERSION: "2.2.0"
+      EXPO_PUBLIC_RELEASE_COMMIT_SHA: ${{ github.sha }}
+      EXPO_PUBLIC_API_BASE_URL: https://athoo-api.onrender.com
+      API_BASE_URL: https://athoo-api.onrender.com
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify OTA environment
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "EXPO_TOKEN or EAS_TOKEN GitHub secret is required for cloud EAS update."
+            exit 1
+          fi
+          if [ -z "$EAS_PROJECT_ID" ]; then
+            echo "EAS_PROJECT_ID GitHub secret or variable is required so the update targets the same Expo project as the installed APK."
+            exit 1
+          fi
+          node -e "const cfg = require('./athoo-app/app.config.js').expo; if (cfg.extra.API_BASE_URL !== 'https://athoo-api.onrender.com') throw new Error('API URL not embedded for OTA update'); if (!cfg.extra.eas || !cfg.extra.eas.projectId) throw new Error('EAS project id not embedded for OTA update'); console.log('OTA config OK:', cfg.extra.API_BASE_URL, cfg.extra.RELEASE_IDENTITY.commitSha);"
+
+      - name: Publish EAS preview OTA update
+        working-directory: athoo-app
+        run: npx eas-cli@latest update --channel preview --message "cloud ota api login otp hotfix $GITHUB_SHA" --non-interactive

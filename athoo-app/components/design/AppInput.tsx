@@ -8,35 +8,56 @@ interface AppInputProps extends TextInputProps {
   label?: string;
   error?: string;
   containerStyle?: StyleProp<ViewStyle>;
+  containerTestID?: string;
+  labelTestID?: string;
+  errorTestID?: string;
 }
 
-export function AppInput({ label, error, containerStyle, style, onFocus, onBlur, ...props }: AppInputProps) {
+export function AppInput({
+  label,
+  error,
+  containerStyle,
+  style,
+  onFocus,
+  onBlur,
+  containerTestID,
+  labelTestID,
+  errorTestID,
+  ...props
+}: AppInputProps) {
   const { theme } = useTheme();
   const language = useOptionalLang();
   const [focused, setFocused] = useState(false);
+  const inputAccessibilityLabel = props.accessibilityLabel ?? label ?? props.placeholder;
 
   return (
-    <View style={[{ gap: theme.spacing.sm }, containerStyle]}>
-      {label ? <AppText variant="label" tone={props.editable === false ? "muted" : "primary"}>{label}</AppText> : null}
+    <View testID={containerTestID} style={[{ gap: theme.spacing.sm }, containerStyle]}>
+      {label ? (
+        <AppText testID={labelTestID} variant="label" tone={props.editable === false ? "muted" : "primary"}>
+          {label}
+        </AppText>
+      ) : null}
       <TextInput
         {...props}
-        accessibilityLabel={props.accessibilityLabel ?? label ?? props.placeholder}
+        accessibilityLabel={inputAccessibilityLabel}
+        accessibilityHint={props.accessibilityHint ?? (error ? error : undefined)}
         maxFontSizeMultiplier={props.maxFontSizeMultiplier ?? 1.5}
         onFocus={(event) => { setFocused(true); onFocus?.(event); }}
         onBlur={(event) => { setFocused(false); onBlur?.(event); }}
         placeholderTextColor={theme.colors.textMuted}
         style={[
           {
-            minHeight: 50,
+            minHeight: 52,
             borderRadius: theme.radius.md,
             borderWidth: focused ? 2 : 1,
             borderColor: error ? theme.colors.danger : focused ? theme.colors.primary : theme.colors.border,
             backgroundColor: props.editable === false ? theme.colors.surfaceAlt : theme.colors.input,
             color: theme.colors.text,
             paddingHorizontal: theme.spacing.lg,
-            paddingVertical: theme.spacing.md,
-            fontFamily: "Inter_400Regular",
-            fontSize: 15,
+            paddingVertical: props.multiline ? theme.spacing.md : 0,
+            fontFamily: theme.typography.bodyLg.fontFamily,
+            fontSize: theme.typography.bodyLg.fontSize,
+            lineHeight: theme.typography.bodyLg.lineHeight,
             textAlign: language?.textAlign ?? "left",
             writingDirection: language?.writingDirection ?? "ltr",
             textAlignVertical: props.multiline ? "top" : "center",
@@ -45,7 +66,11 @@ export function AppInput({ label, error, containerStyle, style, onFocus, onBlur,
           style,
         ]}
       />
-      {error ? <AppText variant="caption" tone="danger">{error}</AppText> : null}
+      {error ? (
+        <AppText testID={errorTestID} accessibilityRole="alert" variant="caption" tone="danger">
+          {error}
+        </AppText>
+      ) : null}
     </View>
   );
 }

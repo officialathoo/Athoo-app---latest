@@ -2,8 +2,8 @@ import crypto from "crypto";
 import { logger } from "../lib/logger";
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
-import { bookingsTable, negotiationsTable, serviceCategoriesTable, usersTable, invoicesTable } from "@workspace/db/schema";
-import { and, eq, inArray, desc, not, gte, lt, sql, isNull } from "drizzle-orm";
+import { bookingsTable, negotiationsTable, serviceCategoriesTable, usersTable, invoicesTable, promotionsTable } from "@workspace/db/schema";
+import { and, eq, inArray, desc, not, gte, gt, lt, lte, or, sql, isNull } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { getPlatformSettings } from "../lib/admin";
 import { emitToUser, emitToRole, type EventName } from "../lib/eventBus";
@@ -11,25 +11,33 @@ import { notifyUser } from "../lib/notifications";
 import { activeWorkHttpPayload, getCustomerActiveWorkBlock, getProviderActiveWorkBlock } from "../lib/businessRules";
 import { canTransitionBookingStatus, isBookingStatus, type BookingStatus } from "../domain/booking-status";
 import { ReviewSubmissionError, submitBookingReview } from "../domain/reviews";
-import { providerScheduleAllows, providerWithinRadius } from "../lib/providerAvailability";
+import { distanceKm, providerScheduleAllows, providerWithinRadius } from "../lib/providerAvailability";
 import { restoreProviderAvailabilityIfCompliant } from "../lib/documentCompliance";
 import { calculateTimedInvoice } from "../domain/invoiceCalculation";
+import { parseScheduledDateTime } from "../domain/booking-schedule";
+import { normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { isCleanOwnedUploadObjectPath } from "../lib/verifiedUploads";
+import { assertLocationInActiveServiceArea, locationColumns, LocationIntegrityError, parseCanonicalLocation } from "../lib/locationIntegrity";
+import { recordUserEvent } from "../lib/userAudit";
 
 
-function parseScheduledDateTime(dateValue: unknown, timeValue: unknown): Date | null {
-  const date = String(dateValue || "").trim();
-  const time = String(timeValue || "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
-  const match = time.match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
-  if (!match) return null;
-  let hour = Number(match[1]);
-  const minute = Number(match[2]);
-  const ap = String(match[3] || "").toUpperCase();
-  if (ap === "PM" && hour < 12) hour += 12;
-  if (ap === "AM" && hour === 12) hour = 0;
-  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
-  const dt = new Date(`${date}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00`);
-  return Number.isFinite(dt.getTime()) ? dt : null;
+type BookingCursor = { updatedAt: string; id: string };
+
+function encodeBookingCursor(row: { updatedAt: Date | string | null; id: string }): string {
+  const updatedAt = row.updatedAt instanceof Date ? row.updatedAt.toISOString() : new Date(String(row.updatedAt || 0)).toISOString();
+  return Buffer.from(JSON.stringify({ updatedAt, id: row.id }), "utf8").toString("base64url");
+}
+
+function decodeBookingCursor(value: unknown): BookingCursor | null {
+  if (typeof value !== "string" || !value.trim() || value.length > 500) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as BookingCursor;
+    const date = new Date(parsed.updatedAt);
+    if (!parsed.id || parsed.id.length > 100 || Number.isNaN(date.getTime())) return null;
+    return { updatedAt: date.toISOString(), id: parsed.id };
+  } catch {
+    return null;
+  }
 }
 
 function validateFutureBookingDateTime(dateValue: unknown, timeValue: unknown, minMinutes = 20): string | null {
@@ -94,6 +102,40 @@ function toNumber(value: unknown): number | null {
   return null;
 }
 
+function normalizePromoCode(value: unknown): string {
+  const code = typeof value === "string" ? value.trim().toUpperCase() : "";
+  if (!code) return "";
+  if (code.length > 64 || !/^[A-Z0-9_-]+$/.test(code)) {
+    throw new PromoBookingError(400, "Invalid promo code format", "PROMO_CODE_INVALID");
+  }
+  return code;
+}
+
+function calculatePromoDiscount(
+  discountType: string | null | undefined,
+  discountValue: number | null | undefined,
+  grossAmount: number,
+): number {
+  const gross = Math.max(0, Math.round(Number(grossAmount || 0)));
+  const value = Math.max(0, Number(discountValue || 0));
+  if (!gross || !value) return 0;
+  if (discountType === "fixed") return Math.min(gross, Math.round(value));
+  if (discountType === "percentage") {
+    return Math.min(gross, Math.round((gross * Math.min(100, value)) / 100));
+  }
+  return 0;
+}
+
+class PromoBookingError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+    readonly code: string,
+  ) {
+    super(message);
+  }
+}
+
 const isAllowedStatus = isBookingStatus;
 
 async function getBookingOr404(id: string, res: Response) {
@@ -145,6 +187,7 @@ async function enrichBookings(bookings: any[], role: string, userId: string) {
       {
         ...b,
         customerProfileImage: profileMap[b.customerId]?.profileImage ?? null,
+        customerProfileColor: profileMap[b.customerId]?.profileColor ?? null,
         providerProfileImage: profileMap[b.providerId]?.profileImage ?? null,
         providerProfileColor: profileMap[b.providerId]?.profileColor ?? null,
       },
@@ -203,6 +246,12 @@ async function completeBookingWithInvoice(args: {
       commissionRate,
       commissionIncludesVisitCharge,
     });
+    const promoDiscountAmount = calculatePromoDiscount(
+      booking.promoDiscountType,
+      booking.promoDiscountValue,
+      calculation.totalAmount,
+    );
+    const customerTotalAmount = Math.max(0, calculation.totalAmount - promoDiscountAmount);
 
     await tx.execute(sql`SELECT id FROM users WHERE id = ${booking.providerId} FOR UPDATE`);
     const provider = await tx.query.usersTable.findFirst({
@@ -276,6 +325,9 @@ async function completeBookingWithInvoice(args: {
         providerName: booking.providerName,
         service: booking.service,
         address: booking.address,
+        locationCity: booking.locationCity || null,
+        locationArea: booking.locationArea || null,
+        locationCountryCode: booking.locationCountryCode || null,
         scheduledDate: booking.scheduledDate,
         scheduledTime: booking.scheduledTime,
         ratePerHour: calculation.ratePerHour,
@@ -285,8 +337,8 @@ async function completeBookingWithInvoice(args: {
         subtotal: calculation.serviceAmount,
         visitCharge: calculation.visitCharge,
         platformFee: 0,
-        discountAmount: 0,
-        totalAmount: calculation.totalAmount,
+        discountAmount: promoDiscountAmount,
+        totalAmount: customerTotalAmount,
         commissionAmount: calculation.commissionAmount,
         providerAmount: calculation.providerAmount,
         status: "issued",
@@ -336,17 +388,57 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
     const role = req.user!.role;
-    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 100));
-    const offset = Math.max(0, Number(req.query.offset) || 0);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+    const offset = Math.min(10_000, Math.max(0, Number(req.query.offset) || 0));
+    const rawCursor = typeof req.query.cursor === "string" ? req.query.cursor : "";
+    const cursor = rawCursor ? decodeBookingCursor(rawCursor) : null;
+    if (rawCursor && !cursor) {
+      res.status(400).json({ error: "Invalid booking cursor", code: "INVALID_CURSOR" });
+      return;
+    }
 
-    const bookings = role === "customer"
-      ? await db.select().from(bookingsTable).where(eq(bookingsTable.customerId, userId)).orderBy(desc(bookingsTable.createdAt)).limit(limit).offset(offset)
+    const rawUpdatedSince = typeof req.query.updatedSince === "string" ? req.query.updatedSince.trim() : "";
+    const updatedSince = rawUpdatedSince ? new Date(rawUpdatedSince) : null;
+    if (updatedSince && (Number.isNaN(updatedSince.getTime()) || updatedSince.getTime() > Date.now() + 5 * 60 * 1000)) {
+      res.status(400).json({ error: "Invalid updatedSince value", code: "INVALID_UPDATED_SINCE" });
+      return;
+    }
+
+    const ownerCondition = role === "customer"
+      ? eq(bookingsTable.customerId, userId)
       : role === "provider"
-      ? await db.select().from(bookingsTable).where(eq(bookingsTable.providerId, userId)).orderBy(desc(bookingsTable.createdAt)).limit(limit).offset(offset)
-      : await db.select().from(bookingsTable).orderBy(desc(bookingsTable.createdAt)).limit(limit).offset(offset);
-
+        ? eq(bookingsTable.providerId, userId)
+        : undefined;
+    const filters: any[] = [];
+    if (ownerCondition) filters.push(ownerCondition);
+    if (updatedSince) filters.push(gt(bookingsTable.updatedAt, updatedSince));
+    if (cursor) {
+      const cursorDate = new Date(cursor.updatedAt);
+      filters.push(or(
+        lt(bookingsTable.updatedAt, cursorDate),
+        and(eq(bookingsTable.updatedAt, cursorDate), lt(bookingsTable.id, cursor.id)),
+      )!);
+    }
+    const whereCondition = filters.length ? and(...filters) : undefined;
+    const query = db
+      .select()
+      .from(bookingsTable)
+      .where(whereCondition)
+      .orderBy(desc(bookingsTable.updatedAt), desc(bookingsTable.id))
+      .limit(limit + 1);
+    const rows = offset > 0 && !cursor && !updatedSince ? await query.offset(offset) : await query;
+    const hasMore = rows.length > limit;
+    const bookings = rows.slice(0, limit);
     const enriched = await enrichBookings(bookings, role, userId);
-    res.json({ bookings: enriched, limit, offset, hasMore: bookings.length === limit });
+    const last = bookings[bookings.length - 1];
+    res.json({
+      bookings: enriched,
+      limit,
+      offset: offset > 0 && !cursor && !updatedSince ? offset : 0,
+      hasMore,
+      nextCursor: hasMore && last ? encodeBookingCursor(last) : null,
+      serverTime: new Date().toISOString(),
+    });
   } catch (e) {
     logger.error({ err: e }, "bookings list error");
     res.status(500).json({ error: "Failed to load bookings" });
@@ -364,7 +456,16 @@ router.get("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    res.json({ booking: sanitizeBookingForViewer(booking as any, req.user!.role, userId) });
+    const [enrichedBooking] = await enrichBookings(
+      [booking],
+      req.user!.role,
+      userId,
+    );
+    res.json({
+      booking:
+        enrichedBooking ||
+        sanitizeBookingForViewer(booking as any, req.user!.role, userId),
+    });
   } catch (e) {
     logger.error({ err: e }, "booking get error");
     res.status(500).json({ error: "Failed to load booking" });
@@ -399,6 +500,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       latitude,
       longitude,
       clientRequestId,
+      promoCode,
     } = req.body;
 
     if (!providerId || !service || !address || !scheduledDate || !scheduledTime) {
@@ -431,6 +533,23 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       return;
     }
 
+    const normalizedAttachment = normalizeStoredObjectPath(attachment) || null;
+    const normalizedVideoUrl = normalizeStoredObjectPath(videoUrl) || null;
+    if (attachment && !normalizedAttachment) {
+      res.status(400).json({ error: "Invalid booking attachment" });
+      return;
+    }
+    if (videoUrl && !normalizedVideoUrl) {
+      res.status(400).json({ error: "Invalid booking video" });
+      return;
+    }
+    const bookingMedia = [normalizedAttachment, normalizedVideoUrl].filter((value): value is string => Boolean(value));
+    const bookingMediaClean = await Promise.all(bookingMedia.map((value) => isCleanOwnedUploadObjectPath(value, userId, ["shared"])));
+    if (bookingMediaClean.some((clean) => !clean)) {
+      res.status(400).json({ error: "Booking media must pass Athoo security scanning before use" });
+      return;
+    }
+
     const activeBlock = await getCustomerActiveWorkBlock(userId);
     if (activeBlock.blocked) {
       res.status(409).json(activeWorkHttpPayload(activeBlock));
@@ -440,13 +559,18 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
     // Load platform settings once for all policy enforcement below
     const settings = await getPlatformSettings();
 
-    // Require customer GPS coordinates — enforced server-side regardless of client
-    const parsedPickedLat = toNumber(pickedLat) ?? toNumber(customerLat) ?? toNumber(latitude);
-    const parsedPickedLng = toNumber(pickedLng) ?? toNumber(customerLng) ?? toNumber(longitude);
-    if (parsedPickedLat === null || parsedPickedLng === null) {
-      res.status(400).json({ error: "Your location is required to create a booking. Please enable location access in your app settings." });
-      return;
-    }
+    // V2 canonical location snapshot. Free-text addresses are not accepted by
+    // themselves because provider eligibility, maps and arrival checks depend
+    // on the confirmed city/area and exact pin.
+    const canonicalLocation = parseCanonicalLocation({
+      ...req.body,
+      address,
+      pickedLat: pickedLat ?? customerLat ?? latitude,
+      pickedLng: pickedLng ?? customerLng ?? longitude,
+    });
+    await assertLocationInActiveServiceArea(canonicalLocation);
+    const parsedPickedLat = canonicalLocation.latitude;
+    const parsedPickedLng = canonicalLocation.longitude;
 
     // Professional schedule validation: no past jobs and no immediate accidental bookings.
     // Server-side enforcement is mandatory because frontend date pickers can be bypassed.
@@ -545,6 +669,58 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
     const parsedCustomerLat = toNumber(customerLat) ?? parsedPickedLat;
     const parsedCustomerLng = toNumber(customerLng) ?? parsedPickedLng;
 
+    const normalizedPromoCode = normalizePromoCode(promoCode);
+    let promoSnapshot: {
+      id: string;
+      code: string;
+      discountType: string;
+      discountValue: number;
+    } | null = null;
+
+    if (normalizedPromoCode) {
+      const promo = await db.query.promotionsTable.findFirst({
+        where: eq(promotionsTable.code, normalizedPromoCode),
+      });
+      const now = new Date();
+      const estimatedBookingValue = Math.max(0, Number(parsedPrice || 0) + Number(visitCharge || 0));
+
+      if (!promo || !promo.isActive) {
+        throw new PromoBookingError(404, "Invalid or expired promo code", "PROMO_NOT_AVAILABLE");
+      }
+      if (promo.validFrom && promo.validFrom > now) {
+        throw new PromoBookingError(400, "This promo is not active yet", "PROMO_NOT_STARTED");
+      }
+      if (promo.validUntil && promo.validUntil < now) {
+        throw new PromoBookingError(400, "This promo has expired", "PROMO_EXPIRED");
+      }
+      if (promo.maxUses != null && Number(promo.usedCount || 0) >= promo.maxUses) {
+        throw new PromoBookingError(409, "This promo has reached its usage limit", "PROMO_USAGE_LIMIT");
+      }
+      if (promo.minBookingValue && estimatedBookingValue < promo.minBookingValue) {
+        throw new PromoBookingError(
+          400,
+          `Minimum booking value is Rs. ${promo.minBookingValue}`,
+          "PROMO_MIN_BOOKING_VALUE",
+        );
+      }
+      if (
+        !["fixed", "percentage"].includes(promo.discountType) ||
+        !Number.isFinite(Number(promo.discountValue)) ||
+        Number(promo.discountValue) <= 0 ||
+        (promo.discountType === "percentage" && Number(promo.discountValue) > 100)
+      ) {
+        throw new PromoBookingError(409, "This promo is misconfigured. Please choose another offer.", "PROMO_INVALID_CONFIGURATION");
+      }
+
+      promoSnapshot = {
+        id: promo.id,
+        code: promo.code,
+        discountType: promo.discountType,
+        discountValue: Number(promo.discountValue),
+      };
+    }
+
+    const bookingCreatedAt = new Date();
     const booking = {
       id: generateId(),
       publicId: generatePublicId(),
@@ -558,9 +734,9 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       service: String(service).trim(),
       serviceIcon: serviceIcon || "tool",
       description: description || null,
-      attachment: attachment || null,
-      videoUrl: typeof videoUrl === "string" && videoUrl.length > 0 ? videoUrl : null,
-      address: String(address).trim(),
+      attachment: normalizedAttachment,
+      videoUrl: normalizedVideoUrl,
+      ...locationColumns(canonicalLocation),
       scheduledDate: String(scheduledDate),
       scheduledTime: String(scheduledTime),
       status: "pending",
@@ -572,6 +748,12 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       // Snapshot the agreed hourly amount. Future provider profile changes must not alter this job.
       ratePerHour: parsedPrice,
       categorySlug: categorySlug || null,
+      promotionId: promoSnapshot?.id || null,
+      promoCode: promoSnapshot?.code || null,
+      promoDiscountType: promoSnapshot?.discountType || null,
+      promoDiscountValue: promoSnapshot?.discountValue || null,
+      promoUsageReservedAt: promoSnapshot ? bookingCreatedAt : null,
+      promoUsageReleasedAt: null,
       pickedLat: parsedPickedLat,
       pickedLng: parsedPickedLng,
       customerLat: parsedCustomerLat,
@@ -581,34 +763,71 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       providerAccuracy: null,
       providerUpdatedAt: null,
       providerArrivedAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: bookingCreatedAt,
+      updatedAt: bookingCreatedAt,
     };
 
-    const [insertedBooking] = await db.insert(bookingsTable)
-      .values(booking)
-      .onConflictDoNothing()
-      .returning();
+    const createResult = await db.transaction(async (tx) => {
+      const [insertedBooking] = await tx.insert(bookingsTable)
+        .values(booking)
+        .onConflictDoNothing()
+        .returning();
 
-    if (!insertedBooking) {
-      const duplicateBooking = await db.query.bookingsTable.findFirst({
-        where: and(
-          eq(bookingsTable.customerId, userId),
-          eq(bookingsTable.clientRequestId, normalizedClientRequestId),
-        ),
-      });
-      if (duplicateBooking) {
-        res.json({
-          booking: sanitizeBookingForViewer(duplicateBooking as any, role, userId),
-          duplicate: true,
+      if (!insertedBooking) {
+        const duplicateBooking = await tx.query.bookingsTable.findFirst({
+          where: and(
+            eq(bookingsTable.customerId, userId),
+            eq(bookingsTable.clientRequestId, normalizedClientRequestId),
+          ),
         });
-        return;
+        return duplicateBooking
+          ? { booking: duplicateBooking, duplicate: true as const }
+          : { booking: null, duplicate: false as const };
       }
+
+      if (promoSnapshot) {
+        const [reservedPromo] = await tx.update(promotionsTable)
+          .set({
+            usedCount: sql`${promotionsTable.usedCount} + 1`,
+            updatedAt: bookingCreatedAt,
+          })
+          .where(and(
+            eq(promotionsTable.id, promoSnapshot.id),
+            eq(promotionsTable.isActive, true),
+            or(isNull(promotionsTable.validFrom), lte(promotionsTable.validFrom, bookingCreatedAt)),
+            or(isNull(promotionsTable.validUntil), gte(promotionsTable.validUntil, bookingCreatedAt)),
+            or(
+              isNull(promotionsTable.maxUses),
+              sql`${promotionsTable.usedCount} < ${promotionsTable.maxUses}`,
+            ),
+          ))
+          .returning({ id: promotionsTable.id });
+
+        if (!reservedPromo) {
+          throw new PromoBookingError(
+            409,
+            "This promo became unavailable while the booking was being created. Please choose another offer.",
+            "PROMO_RESERVATION_CONFLICT",
+          );
+        }
+      }
+
+      return { booking: insertedBooking, duplicate: false as const };
+    });
+
+    if (!createResult.booking) {
       res.status(409).json({ error: "This booking request could not be created. Please refresh and try again." });
       return;
     }
+    if (createResult.duplicate) {
+      res.json({
+        booking: sanitizeBookingForViewer(createResult.booking as any, role, userId),
+        duplicate: true,
+      });
+      return;
+    }
 
-    const createdBooking = insertedBooking;
+    const createdBooking = createResult.booking;
 
     emitToUser(providerId, "booking:new", { booking: createdBooking });
     emitToUser(userId, "booking:updated", { booking: createdBooking });
@@ -625,8 +844,33 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       email: { category: "booking" },
     }).catch(() => undefined);
 
+    void recordUserEvent({
+      actorId: userId,
+      actorName: customer.name,
+      actorRole: role,
+      action: "booking.created",
+      target: "booking",
+      targetId: createdBooking.id,
+      details: {
+        providerId,
+        service: createdBooking.service,
+        price: createdBooking.price ?? null,
+        scheduledDate: createdBooking.scheduledDate ?? null,
+        scheduledTime: createdBooking.scheduledTime ?? null,
+      },
+      ip: req.ip ?? null,
+    });
+
     res.json({ booking: sanitizeBookingForViewer(createdBooking as any, role, userId), duplicate: false });
   } catch (e) {
+    if (e instanceof PromoBookingError) {
+      res.status(e.status).json({ error: e.message, code: e.code });
+      return;
+    }
+    if (e instanceof LocationIntegrityError) {
+      res.status(e.status).json({ error: e.message, code: e.code });
+      return;
+    }
     logger.error({ err: e }, "booking create error");
     res.status(500).json({ error: "Failed to create booking" });
   }
@@ -706,7 +950,8 @@ router.patch("/:id/status", requireAuth, async (req: AuthRequest, res: Response)
     // NOTE: `price` is intentionally NOT mutable on /:id/status. Price changes
     // belong in the negotiation/counter-offer flow; allowing arbitrary price
     // updates here let either party silently overwrite the agreed amount.
-    const updates: Record<string, unknown> = { status, updatedAt: new Date() };
+    const transitionAt = new Date();
+    const updates: Record<string, unknown> = { status, updatedAt: transitionAt };
     if (status === "accepted") {
       updates.startPin = existing.startPin || generatePin();
       if (!existing.startPinExpiresAt || isPinExpired(existing.startPinExpiresAt)) {
@@ -717,13 +962,44 @@ router.patch("/:id/status", requireAuth, async (req: AuthRequest, res: Response)
     // Optimistic concurrency guard: update only if the status still matches
     // the value we validated above. This prevents two simultaneous requests
     // from silently overwriting one another after both read the same booking.
-    const [updated] = await db.update(bookingsTable)
-      .set(updates)
-      .where(and(
-        eq(bookingsTable.id, req.params.id as string),
-        eq(bookingsTable.status, existing.status),
-      ))
-      .returning();
+    const updated = await db.transaction(async (tx) => {
+      const [row] = await tx.update(bookingsTable)
+        .set(updates)
+        .where(and(
+          eq(bookingsTable.id, req.params.id as string),
+          eq(bookingsTable.status, existing.status),
+        ))
+        .returning();
+
+      if (
+        row &&
+        status === "cancelled" &&
+        existing.status !== "completed" &&
+        row.promotionId &&
+        row.promoUsageReservedAt &&
+        !row.promoUsageReleasedAt
+      ) {
+        const [released] = await tx.update(bookingsTable)
+          .set({ promoUsageReleasedAt: transitionAt })
+          .where(and(
+            eq(bookingsTable.id, row.id),
+            isNull(bookingsTable.promoUsageReleasedAt),
+          ))
+          .returning({ promotionId: bookingsTable.promotionId });
+
+        if (released?.promotionId) {
+          await tx.update(promotionsTable)
+            .set({
+              usedCount: sql`greatest(coalesce(${promotionsTable.usedCount}, 0) - 1, 0)`,
+              updatedAt: transitionAt,
+            })
+            .where(eq(promotionsTable.id, released.promotionId));
+          return { ...row, promoUsageReleasedAt: transitionAt };
+        }
+      }
+
+      return row;
+    });
 
     if (!updated) {
       res.status(409).json({
@@ -748,6 +1024,17 @@ router.patch("/:id/status", requireAuth, async (req: AuthRequest, res: Response)
       const eventName: EventName =
         status === "cancelled" ? "booking:cancelled" : "booking:status";
       broadcastBookingUpdate(updated, eventName, { status });
+
+      void recordUserEvent({
+        actorId: userId,
+        actorName: role === "customer" ? updated.customerName : updated.providerName,
+        actorRole: role,
+        action: "booking.status_changed",
+        target: "booking",
+        targetId: updated.id,
+        details: { from: existing.status, to: status },
+        ip: req.ip ?? null,
+      });
 
       if (status === "accepted") {
         notifyUser({
@@ -918,8 +1205,45 @@ router.post("/:id/arrived", requireAuth, async (req: AuthRequest, res: Response)
       return;
     }
 
+    const providerLat = toNumber(req.body?.latitude ?? req.body?.providerLat);
+    const providerLng = toNumber(req.body?.longitude ?? req.body?.providerLng);
+    const providerAccuracy = toNumber(req.body?.accuracy ?? req.body?.providerAccuracy);
+    const jobLat = toNumber(booking.customerLat ?? booking.pickedLat);
+    const jobLng = toNumber(booking.customerLng ?? booking.pickedLng);
+    const arrivalRadiusKm = Math.max(0.1, Math.min(5, Number(process.env.BOOKING_ARRIVAL_RADIUS_KM || 1)));
+    const maxArrivalAccuracyMeters = Math.max(25, Math.min(1000, Number(process.env.BOOKING_ARRIVAL_MAX_ACCURACY_METERS || 250)));
+    if (providerLat == null || providerLng == null) {
+      res.status(400).json({ error: "A fresh provider GPS location is required to mark arrival", code: "ARRIVAL_LOCATION_REQUIRED" });
+      return;
+    }
+    if (providerAccuracy != null && providerAccuracy > maxArrivalAccuracyMeters) {
+      res.status(409).json({ error: "GPS accuracy is too low. Move outdoors, enable precise location, and try again.", code: "ARRIVAL_LOCATION_INACCURATE" });
+      return;
+    }
+    if (jobLat == null || jobLng == null) {
+      res.status(409).json({ error: "The customer job pin is missing. Ask the customer to update the job location before arrival.", code: "JOB_LOCATION_REQUIRED" });
+      return;
+    }
+    const arrivalDistanceKm = distanceKm(providerLat, providerLng, jobLat, jobLng);
+    if (arrivalDistanceKm > arrivalRadiusKm) {
+      res.status(409).json({
+        error: `You can mark arrival only within ${arrivalRadiusKm} km of the customer job pin. You are about ${arrivalDistanceKm.toFixed(1)} km away.`,
+        code: "OUTSIDE_ARRIVAL_RADIUS",
+        distanceKm: Math.round(arrivalDistanceKm * 10) / 10,
+        allowedRadiusKm: arrivalRadiusKm,
+      });
+      return;
+    }
+
     const [updated] = await db.update(bookingsTable)
-      .set({ providerArrivedAt: new Date(), updatedAt: new Date() })
+      .set({
+        providerArrivedAt: new Date(),
+        providerLat,
+        providerLng,
+        providerAccuracy,
+        providerUpdatedAt: new Date(),
+        updatedAt: new Date(),
+      })
       .where(and(
         eq(bookingsTable.id, req.params.id as string),
         isNull(bookingsTable.providerArrivedAt),
@@ -1061,6 +1385,17 @@ router.post("/:id/verify-start-pin", requireAuth, async (req: AuthRequest, res: 
       broadcastBookingUpdate(updated, "booking:started");
       // Tell the provider's app the availability flipped so the toggle re-renders.
       emitToUser(updated.providerId, "provider:availability", { isAvailable: false, reason: "in_progress" });
+
+      void recordUserEvent({
+        actorId: userId,
+        actorName: updated.providerName,
+        actorRole: req.user!.role,
+        action: "booking.job_started",
+        target: "booking",
+        targetId: updated.id,
+        details: { customerId: updated.customerId },
+        ip: req.ip ?? null,
+      });
       notifyUser({
         userId: updated.customerId,
         title: "Job started",
@@ -1163,6 +1498,17 @@ router.post("/:id/verify-complete-pin", requireAuth, async (req: AuthRequest, re
     if (updated) {
       await restoreProviderAvailabilityIfCompliant(updated.providerId, "completed");
       broadcastBookingUpdate(updated, "booking:completed");
+
+      void recordUserEvent({
+        actorId: userId,
+        actorName: updated.providerName,
+        actorRole: req.user!.role,
+        action: "booking.job_completed",
+        target: "booking",
+        targetId: updated.id,
+        details: { customerId: updated.customerId, price: updated.price ?? null },
+        ip: req.ip ?? null,
+      });
       notifyUser({
         userId: updated.customerId,
         title: "Job completed",
@@ -1225,6 +1571,17 @@ router.post("/:id/mark-paid", requireAuth, async (req: AuthRequest, res: Respons
         email: { category: "booking" },
       }).catch(() => undefined);
       broadcastBookingUpdate(updated, "booking:updated");
+
+      void recordUserEvent({
+        actorId: userId,
+        actorName: updated.customerName,
+        actorRole: req.user!.role,
+        action: "booking.marked_paid",
+        target: "booking",
+        targetId: updated.id,
+        details: { providerId: updated.providerId, amount: updated.price ?? null },
+        ip: req.ip ?? null,
+      });
     }
     res.json({ booking: sanitizeBookingForViewer(updated as any, req.user!.role, req.user!.userId), duplicate: false });
   } catch (e) {
@@ -1276,6 +1633,17 @@ router.post("/:id/mark-received", requireAuth, async (req: AuthRequest, res: Res
         email: { category: "booking" },
       }).catch(() => undefined);
       broadcastBookingUpdate(updated, "booking:updated");
+
+      void recordUserEvent({
+        actorId: userId,
+        actorName: updated.providerName,
+        actorRole: req.user!.role,
+        action: "booking.payment_received",
+        target: "booking",
+        targetId: updated.id,
+        details: { customerId: updated.customerId, amount: updated.price ?? null },
+        ip: req.ip ?? null,
+      });
     }
     res.json({ booking: sanitizeBookingForViewer(updated as any, req.user!.role, req.user!.userId), duplicate: false });
   } catch (e) {
@@ -1419,6 +1787,16 @@ router.post("/:id/counter", requireAuth, async (req: AuthRequest, res: Response)
       status: "provider_counter",
       bookingId: booking.id,
       address: booking.address,
+      latitude: booking.pickedLat ?? booking.customerLat,
+      longitude: booking.pickedLng ?? booking.customerLng,
+      locationCity: booking.locationCity,
+      locationArea: booking.locationArea,
+      locationProvince: booking.locationProvince,
+      locationCountryCode: booking.locationCountryCode,
+      locationSource: booking.locationSource,
+      locationAccuracy: booking.locationAccuracy,
+      locationConfirmedAt: booking.locationConfirmedAt,
+      locationVerifiedAt: booking.locationVerifiedAt,
       scheduledDate: booking.scheduledDate,
       scheduledTime: booking.scheduledTime,
       expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5-min window
@@ -1443,4 +1821,3 @@ router.post("/:id/counter", requireAuth, async (req: AuthRequest, res: Response)
 });
 
 export default router;
-

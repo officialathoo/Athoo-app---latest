@@ -19,7 +19,7 @@ test("migration runner uses checksum drift protection and advisory locking", () 
 });
 
 test("deployment starts by applying migrations", () => {
-  assert.match(read("render.yaml"), /startCommand: pnpm db:migrate &&/);
+  assert.match(read("render.yaml"), /startCommand: pnpm env:validate -- --process && pnpm db:migrate &&/);
   assert.match(read("Dockerfile.api"), /pnpm db:migrate && pnpm --filter @workspace\/api-server start/);
 });
 

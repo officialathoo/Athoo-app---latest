@@ -5,6 +5,7 @@ import { getMapConfigurationStatus } from "../lib/mapConfiguration";
 import { mapRuntimeOverridesFromSettings } from "../lib/mapRuntime";
 import healthRouter from "./health";
 import storageRouter from "./storage";
+import authSelectedRecoveryRouter from "./authSelectedRecovery";
 import authRouter from "./auth";
 import providersRouter, { ratingsRouter } from "./providers";
 import bookingsRouter from "./bookings";
@@ -42,6 +43,8 @@ const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(storageRouter);
+// Selected password-recovery delivery must win before the legacy auth router.
+router.use("/auth", authSelectedRecoveryRouter);
 router.use("/auth", authRouter);
 router.use("/email", emailPublicRouter);
 router.use("/me/email", emailUserRouter);

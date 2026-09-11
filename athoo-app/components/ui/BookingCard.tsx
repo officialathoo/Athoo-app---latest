@@ -24,6 +24,7 @@ const ACTIVE_STATUSES: BookingStatus[] = ["accepted", "in_progress", "pending"];
 interface BookingCardProps {
   booking: Booking & {
     customerProfileImage?: string | null;
+    customerProfileColor?: string | null;
     providerProfileImage?: string | null;
     providerProfileColor?: string | null;
   };
@@ -31,25 +32,27 @@ interface BookingCardProps {
   onPress: () => void;
   onContact?: () => void;
   compact?: boolean;
+  testID?: string;
 }
 
-export function BookingCard({ booking, role, onPress, onContact, compact = false }: BookingCardProps) {
+export function BookingCard({ booking, role, onPress, onContact, compact = false, testID }: BookingCardProps) {
   const { theme } = useTheme();
   const { isUrdu, formatCurrency, translate: tr } = useLang();
   const styles = useMemo(() => createStyles(theme, isUrdu), [theme, isUrdu]);
   const status = getStatusConfig(theme, tr)[booking.status];
   const person = role === "customer" ? booking.providerName : booking.customerName;
   const personImage = role === "customer" ? booking.providerProfileImage : booking.customerProfileImage;
-  const personColor = role === "customer" ? (booking.providerProfileColor || theme.colors.primary) : theme.colors.primary;
+  const personColor = role === "customer" ? (booking.providerProfileColor || theme.colors.primary) : (booking.customerProfileColor || theme.colors.primary);
   const initial = person?.charAt(0)?.toUpperCase() || "?";
   const isActive = ACTIVE_STATUSES.includes(booking.status);
   const contactRole = role === "customer" ? tr("Provider") : tr("Customer");
 
   const avatarSize = compact ? 30 : 36;
-  const avatarRadius = compact ? 8 : 10;
+  const avatarRadius = avatarSize / 2;
 
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`${booking.service}, ${person}, ${status.label}${booking.price != null ? `, ${formatCurrency(booking.price)}` : ""}`}
@@ -106,6 +109,7 @@ export function BookingCard({ booking, role, onPress, onContact, compact = false
           onPress={(event) => { event.stopPropagation(); onContact(); }}
           accessibilityRole="button"
           accessibilityLabel={tr("Contact {{role}}", { role: contactRole })}
+          accessibilityHint={tr("Opens chat or contact options")}
           hitSlop={6}
         >
           <Icon name="message-circle" size={13} color={theme.colors.primary} />
@@ -139,8 +143,20 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     pressed: { opacity: 0.84 },
     row: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 10 },
     rightColumn: { alignItems: isUrdu ? "flex-start" : "flex-end" },
-    avatar: { flexShrink: 0 },
-    avatarFallback: { alignItems: "center", justifyContent: "center", flexShrink: 0 },
+    avatar: {
+      flexShrink: 0,
+      borderWidth: 1.5,
+      borderColor: theme.colors.border,
+      overflow: "hidden",
+    },
+    avatarFallback: {
+      alignItems: "center",
+      justifyContent: "center",
+      flexShrink: 0,
+      borderWidth: 1.5,
+      borderColor: theme.colors.border,
+      overflow: "hidden",
+    },
     avatarInitial: { fontWeight: "700" },
     info: { flex: 1, gap: 2 },
     service: { fontSize: 14, fontWeight: "700", color: theme.colors.text, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },

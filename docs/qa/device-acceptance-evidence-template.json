@@ -1,7 +1,7 @@
 {
   "schemaVersion": 4,
-  "candidateArtifactName": "ATHOO_PHASE28_5_2_RELEASE_METADATA_FIXED.zip",
-  "releaseVersion": "phase24.8-candidate",
+  "candidateArtifactName": "ATHOO_V2_2_PRODUCTION_CERTIFICATION.zip",
+  "releaseVersion": "2.2.0",
   "releaseCommitSha": "0000000",
   "artifactSha256": "0000000000000000000000000000000000000000000000000000000000000000",
   "builds": {
@@ -352,6 +352,123 @@
         "osVersion": "",
         "evidence": "",
         "notes": ""
+      },
+      "account-delete-deactivate-step-up-verification": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "persistent-login-after-app-close-and-network-recovery": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "completion-otp-keyboard-remains-visible": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "map-pinch-zoom-and-place-labels": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "negotiation-media-location-and-price-breakdown": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "scheduled-jobs-separate-tab-and-reminders": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "booking-list-cache-and-silent-refresh": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "provider-job-filter-cards-compact": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "customer-booking-no-six-month-recommendation": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "invoice-signed-qr-opens-official-verification": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "canonical-location-city-area-confirmation": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "saved-address-canonical-location-reuse": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "booking-history-cursor-pagination-load-more": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
       }
     },
     "ios": {
@@ -680,6 +797,123 @@
         "notes": ""
       },
       "invoice-has-no-tax": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "account-delete-deactivate-step-up-verification": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "persistent-login-after-app-close-and-network-recovery": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "completion-otp-keyboard-remains-visible": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "map-pinch-zoom-and-place-labels": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "negotiation-media-location-and-price-breakdown": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "scheduled-jobs-separate-tab-and-reminders": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "booking-list-cache-and-silent-refresh": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "provider-job-filter-cards-compact": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "customer-booking-no-six-month-recommendation": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "invoice-signed-qr-opens-official-verification": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "canonical-location-city-area-confirmation": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "saved-address-canonical-location-reuse": {
+        "status": "pending",
+        "testedAt": "",
+        "buildId": "",
+        "device": "",
+        "osVersion": "",
+        "evidence": "",
+        "notes": ""
+      },
+      "booking-history-cursor-pagination-load-more": {
         "status": "pending",
         "testedAt": "",
         "buildId": "",
@@ -1106,6 +1340,240 @@
       }
     },
     "invoice-no-tax-customer-provider-admin-consistency": {
+      "status": "pending",
+      "testedAt": "",
+      "evidence": "",
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
+    },
+    "single-accept-broadcast-creates-booking": {
+      "status": "pending",
+      "testedAt": "",
+      "evidence": "",
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
+    },
+    "accepted-counteroffer-creates-booking-without-provider-reaccept": {
+      "status": "pending",
+      "testedAt": "",
+      "evidence": "",
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
+    },
+    "rejected-offer-allows-provider-recounter": {
+      "status": "pending",
+      "testedAt": "",
+      "evidence": "",
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
+    },
+    "accepted-job-disappears-from-other-providers": {
+      "status": "pending",
+      "testedAt": "",
+      "evidence": "",
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
+    },
+    "future-scheduled-job-does-not-expire-as-immediate": {
+      "status": "pending",
+      "testedAt": "",
+      "evidence": "",
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
+    },
+    "scheduled-job-day-and-five-hour-reminders-both-parties": {
+      "status": "pending",
+      "testedAt": "",
+      "evidence": "",
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
+    },
+    "geofenced-arrival-rejects-outside-configured-radius": {
+      "status": "pending",
+      "testedAt": "",
+      "evidence": "",
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
+    },
+    "negotiation-media-location-visible-to-both-participants": {
+      "status": "pending",
+      "testedAt": "",
+      "evidence": "",
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
+    },
+    "secure-upload-clean-promotion-and-malware-rejection": {
+      "status": "pending",
+      "testedAt": "",
+      "evidence": "",
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
+    },
+    "refund-request-private-evidence-and-reliable-status": {
+      "status": "pending",
+      "testedAt": "",
+      "evidence": "",
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
+    },
+    "signed-invoice-verification-is-tamper-resistant-and-non-pii": {
+      "status": "pending",
+      "testedAt": "",
+      "evidence": "",
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
+    },
+    "wrong-city-booking-rejected-by-active-service-area": {
+      "status": "pending",
+      "testedAt": "",
+      "evidence": "",
+      "notes": "",
+      "devices": {
+        "android": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        },
+        "ios": {
+          "buildId": "",
+          "device": "",
+          "osVersion": ""
+        }
+      }
+    },
+    "location-snapshot-consistent-booking-negotiation-invoice": {
       "status": "pending",
       "testedAt": "",
       "evidence": "",

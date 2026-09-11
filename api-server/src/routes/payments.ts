@@ -1,4 +1,5 @@
-import { isOwnedUploadObjectPath, normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { normalizeStoredObjectPath } from "../lib/storageSecurity";
+import { isCleanOwnedUploadObjectPath } from "../lib/verifiedUploads";
 import { Router } from "express";
 import { logger } from "../lib/logger";
 import crypto from "crypto";
@@ -78,7 +79,8 @@ router.post("/", async (req: AuthRequest, res) => {
     if (!accountId) return res.status(400).json({ error: "Payment account is required" });
     if (!reference || reference.length > 120) return res.status(400).json({ error: "Transaction reference is required" });
     if (!screenshotUrl) return res.status(400).json({ error: "Payment screenshot is required" });
-    if (!isOwnedUploadObjectPath(screenshotUrl, providerId, ["private"])) return res.status(400).json({ error: "Payment screenshot must be uploaded through your private Athoo storage" });
+    // Enforce both ownership and a completed clean malware scan before accepting evidence.
+    if (!(await isCleanOwnedUploadObjectPath(screenshotUrl, providerId, ["private"]))) return res.status(400).json({ error: "Payment screenshot must be uploaded through your private Athoo storage and pass security scanning before use" });
     if (note && note.length > 500) return res.status(400).json({ error: "Note must be 500 characters or fewer" });
 
     const account = await db.query.paymentAccountsTable.findFirst({ where: and(eq(paymentAccountsTable.id, accountId), eq(paymentAccountsTable.isActive, true)) });
@@ -142,7 +144,7 @@ adminRouter.post("/accounts", requirePermission("finance.write"), async (req: Au
       return res.status(400).json({ error: "label, accountTitle, accountNumber are required" });
     }
     const normalizedQrCodeUrl = normalizeStoredObjectPath(qrCodeUrl);
-    if (normalizedQrCodeUrl && !isOwnedUploadObjectPath(normalizedQrCodeUrl, req.user!.userId, ["shared"])) {
+    if (normalizedQrCodeUrl && !(await isCleanOwnedUploadObjectPath(normalizedQrCodeUrl, req.user!.userId, ["shared"]))) {
       return res.status(400).json({ error: "QR code must be uploaded through the admin Athoo storage uploader" });
     }
     const newId = id();
@@ -196,7 +198,7 @@ adminRouter.patch("/accounts/:id", requirePermission("finance.write"), async (re
     if (qrCodeUrl === null || qrCodeUrl === "") patch.qrCodeUrl = null;
     if (typeof qrCodeUrl === "string" && qrCodeUrl.trim()) {
       const normalizedQrCodeUrl = normalizeStoredObjectPath(qrCodeUrl);
-      if (!isOwnedUploadObjectPath(normalizedQrCodeUrl, req.user!.userId, ["shared"])) {
+      if (!(await isCleanOwnedUploadObjectPath(normalizedQrCodeUrl, req.user!.userId, ["shared"]))) {
         return res.status(400).json({ error: "QR code must be uploaded through the admin Athoo storage uploader" });
       }
       patch.qrCodeUrl = normalizedQrCodeUrl;
@@ -236,7 +238,7 @@ adminRouter.delete("/accounts/:id", requirePermission("finance.write"), async (r
   return res.json({ success: true, duplicate: false });
 });
 
-// Commission payments — list/approve/reject
+// Commission payments â€” list/approve/reject
 adminRouter.get("/commission", requirePermission("finance.read"), async (req, res) => {
   const status = String(req.query.status ?? "");
   const where = status ? eq(commissionPaymentsTable.status, status) : undefined;
@@ -330,7 +332,7 @@ adminRouter.post("/commission/:id/approve", requirePermission("finance.write"), 
     // Notify provider in real-time (DB insert + WS emit + push notification)
     await notifyUser({
       userId: provider.id,
-      title: "Payment approved ✅",
+      title: "Payment approved âœ…",
       body: `Your commission payment of Rs ${pay.amount} has been approved.${shouldUnblock ? " Your account has been unblocked." : ""}`,
       type: "commission_payment",
       link: "/provider/pay-commission",
@@ -372,7 +374,7 @@ adminRouter.post("/commission/:id/reject", requirePermission("finance.write"), a
     // Notify provider in real-time (DB insert + WS emit + push notification)
     await notifyUser({
       userId: pay.providerId,
-      title: "Payment rejected ❌",
+      title: "Payment rejected âŒ",
       body: reason || "Your commission payment was rejected. Please contact support.",
       type: "commission_payment",
       link: "/provider/pay-commission",
@@ -400,4 +402,3 @@ adminRouter.post("/commission/:id/reject", requirePermission("finance.write"), a
 
 export { adminRouter as paymentsAdminRouter };
 export default router;
-

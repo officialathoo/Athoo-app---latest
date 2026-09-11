@@ -22,6 +22,7 @@ interface ButtonProps {
   fullWidth?: boolean;
   testID?: string;
   accessibilityLabel?: string;
+  accessibilityHint?: string;
 }
 
 export function Button({
@@ -35,6 +36,7 @@ export function Button({
   fullWidth = false,
   testID,
   accessibilityLabel,
+  accessibilityHint,
 }: ButtonProps) {
   const { theme } = useTheme();
   const language = useOptionalLang();
@@ -70,6 +72,7 @@ export function Button({
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? title}
+      accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled: isInactive, busy: loading }}
       onPress={handlePress}
       disabled={isInactive}
@@ -96,6 +99,8 @@ export function Button({
         <ActivityIndicator color={foregroundColor} size="small" />
       ) : (
         <Text
+          numberOfLines={2}
+          ellipsizeMode="tail"
           style={{
             color: foregroundColor,
             fontFamily: theme.typography.label.fontFamily,
@@ -103,6 +108,8 @@ export function Button({
             lineHeight: size === "sm" ? theme.typography.caption.lineHeight : theme.typography.bodyStrong.lineHeight,
             writingDirection: language?.writingDirection ?? "ltr",
             textAlign: "center",
+            flexShrink: 1,
+            maxWidth: "100%",
           }}
         >
           {title}

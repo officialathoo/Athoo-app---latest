@@ -125,6 +125,7 @@ export default function ProviderLayout() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="job-detail" />
       <Stack.Screen name="chat-room" />
+      <Stack.Screen name="calls" />
       <Stack.Screen name="earnings" />
       <Stack.Screen name="invoices" />
       <Stack.Screen name="chatbot" />

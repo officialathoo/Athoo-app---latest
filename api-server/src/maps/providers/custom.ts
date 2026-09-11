@@ -67,7 +67,9 @@ function customSearchResult(item: unknown, index: number): GeoResult | null {
   const id = stringAt(item, String(process.env.MAP_CUSTOM_SEARCH_ID_PATH || "id"));
   const type = stringAt(item, String(process.env.MAP_CUSTOM_SEARCH_TYPE_PATH || "type"));
   const city = stringAt(item, String(process.env.MAP_CUSTOM_SEARCH_CITY_PATH || "city"));
+  const area = stringAt(item, String(process.env.MAP_CUSTOM_SEARCH_AREA_PATH || "area"));
   const province = stringAt(item, String(process.env.MAP_CUSTOM_SEARCH_PROVINCE_PATH || "province"));
+  const countryCode = stringAt(item, String(process.env.MAP_CUSTOM_SEARCH_COUNTRY_CODE_PATH || "countryCode")) || String(process.env.MAP_COUNTRY_CODE || "PK");
   const postcode = stringAt(item, String(process.env.MAP_CUSTOM_SEARCH_POSTCODE_PATH || "postcode"));
   return {
     placeId: `${providerId()}:${id || `${lat.toFixed(6)}:${lng.toFixed(6)}:${index}`}`,
@@ -77,7 +79,9 @@ function customSearchResult(item: unknown, index: number): GeoResult | null {
     lat,
     lng,
     ...(city ? { city } : {}),
+    ...(area ? { area } : {}),
     ...(province ? { province } : {}),
+    ...(countryCode ? { countryCode: countryCode.toUpperCase() } : {}),
     ...(postcode ? { postcode } : {}),
     precision: precisionFromText(type, precisionFromText(process.env.MAP_CUSTOM_SEARCH_DEFAULT_PRECISION, "area")),
     source: providerId(),

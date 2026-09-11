@@ -22,8 +22,31 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Verify code, tests, security, operations, and builds
-        run: pnpm release:verify:code
+      # release:verify:code is expanded below so each gate reports its exact failure.
+      - name: Project structure check
+        run: pnpm check:project
+      - name: Release policy check
+        run: pnpm release:check
+      - name: Operations readiness check
+        run: pnpm ops:validate
+      - name: Release blueprints check
+        run: pnpm release:blueprints:validate
+      - name: Launch 360 audit
+        run: pnpm launch:360-audit
+      - name: Security scan
+        run: pnpm security:scan
+      - name: Mobile workspace check
+        run: pnpm mobile:workspace:validate
+      - name: Mobile styles check
+        run: pnpm mobile:styles:validate
+      - name: Test suite
+        run: pnpm test
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Metro configuration check
+        run: pnpm mobile:metro:validate
+      - name: Build
+        run: pnpm build
       - name: Validate mobile release configuration
         run: pnpm mobile:validate
       - name: Validate beta and device acceptance preparation

@@ -3,11 +3,14 @@ import { useAuth } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import { useSettings } from "@/context/SettingsContext";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 import { AthooTheme } from "@/design/theme";
 import { api } from "@/services/api";
+import { apiErrorToMessage } from "@/lib/apiError";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -42,29 +45,64 @@ export default function WalletScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const loadRequestInFlightRef = useRef(false);
+  const walletLoadedRef = useRef(false);
+  const walletLastLoadedAtRef = useRef(0);
 
-  async function load() {
-    setError(null);
+  const load = useCallback(async (
+    mode: "initial" | "refresh" | "retry" | "background" = "initial"
+  ) => {
+    if (loadRequestInFlightRef.current) return;
+
+    loadRequestInFlightRef.current = true;
+    const showInitialLoader =
+      (mode === "initial" || mode === "retry") && !walletLoadedRef.current;
+
+    if (showInitialLoader) {
+      setLoading(true);
+    } else if (mode === "refresh") {
+      setRefreshing(true);
+    }
+
+    if (mode !== "background") {
+      setError(null);
+    }
+
     try {
       const [bookingResponse] = await Promise.all([
         api.getBookings(),
         refreshUser().catch(() => undefined),
       ]);
       setBookings((bookingResponse?.bookings || []) as Booking[]);
+      walletLoadedRef.current = true;
+      walletLastLoadedAtRef.current = Date.now();
     } catch (loadError: any) {
-      setError(loadError?.message || tr("Could not load wallet. Please try again."));
+      if (mode !== "background") {
+        setError(loadError?.message || apiErrorToMessage(loadError, tr("Could not load wallet. Please try again.")));
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      loadRequestInFlightRef.current = false;
+      if (showInitialLoader) setLoading(false);
+      if (mode === "refresh") setRefreshing(false);
     }
-  }
+  }, [refreshUser, tr]);
 
-  useFocusEffect(useCallback(() => { load(); }, []));
+  useFocusEffect(
+    useCallback(() => {
+      if (!walletLoadedRef.current) {
+        void load("initial");
+        return;
+      }
 
-  function onRefresh() {
-    setRefreshing(true);
-    load();
-  }
+      if (Date.now() - walletLastLoadedAtRef.current >= 30_000) {
+        void load("background");
+      }
+    }, [load])
+  );
+
+  const onRefresh = useCallback(() => {
+    void load("refresh");
+  }, [load]);
 
   const completed = bookings.filter((booking) => booking.status === "completed");
   const totalEarned = completed.reduce((sum, booking) => sum + Number(booking.providerAmount || 0), 0);
@@ -81,7 +119,7 @@ export default function WalletScreen() {
     return (
       <View style={styles.loading} accessibilityRole="progressbar" accessibilityLabel={tr("Loading wallet") }>
         <ActivityIndicator color={theme.colors.primary} size="large" />
-        <Text style={styles.loadingText}>{tr("Loading wallet…")}</Text>
+        <Text style={styles.loadingText}>{tr("Loading walletâ€¦")}</Text>
       </View>
     );
   }
@@ -152,7 +190,7 @@ export default function WalletScreen() {
               <Text style={styles.errorText}>{error}</Text>
             </View>
             <Pressable
-              onPress={load}
+              onPress={() => void load("retry")}
               style={({ pressed }) => [styles.retryBtn, pressed && styles.pressed]}
               accessibilityRole="button"
               accessibilityLabel={tr("Retry")}
@@ -192,7 +230,7 @@ export default function WalletScreen() {
               />
             </View>
             <Text style={styles.duesLimit}>
-              {tr("Limit: {{amount}} · {{percent}}% used", {
+              {tr("Limit: {{amount}} Â· {{percent}}% used", {
                 amount: formatCurrency(commissionLimit),
                 percent: Math.round(duesProgress * 100),
               })}
@@ -269,7 +307,7 @@ export default function WalletScreen() {
                     <Icon name="check-circle" size={16} color={theme.colors.success} />
                   </View>
                   <View style={styles.txCopy}>
-                    <Text style={styles.txTitle} numberOfLines={1}>{booking.service} · {booking.customerName}</Text>
+                    <Text style={styles.txTitle} numberOfLines={1}>{booking.service} Â· {booking.customerName}</Text>
                     <Text style={styles.txDate}>{formatDate(booking.createdAt)}</Text>
                   </View>
                   <View style={styles.txAmounts}>
@@ -318,15 +356,44 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     container: { flex: 1, backgroundColor: theme.colors.background },
     loading: { flex: 1, justifyContent: "center", alignItems: "center", gap: 12, backgroundColor: theme.colors.background },
     loadingText: { color: theme.colors.textSecondary, fontSize: 13, writingDirection: isUrdu ? "rtl" : "ltr" },
-    header: { paddingHorizontal: 20, paddingBottom: 24 },
-    headerRow: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
-    backBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center" },
-    headerTitle: { fontSize: 18, fontWeight: "700", color: theme.colors.white, flex: 1, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
-    headerSpacer: { width: 44 },
-    heroCard: { backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 20, padding: 20, borderWidth: 1, borderColor: "rgba(255,255,255,0.3)" },
+    header: {
+      paddingHorizontal: redesign.layout.horizontalPadding,
+      paddingBottom: redesign.layout.sectionGap,
+    },
+    headerRow: {
+      flexDirection: isUrdu ? "row-reverse" : "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: redesign.layout.cardGap,
+    },
+    backBtn: {
+      width: redesign.control.iconButtonSize,
+      height: redesign.control.iconButtonSize,
+      borderRadius: radius.pill,
+      backgroundColor: "rgba(255,255,255,0.18)",
+      justifyContent: "center",
+      alignItems: "center",
+      borderWidth: redesign.visual.cardBorderWidth,
+      borderColor: "rgba(255,255,255,0.22)",
+    },
+    headerTitle: {
+      ...theme.typography.h2,
+      color: theme.colors.white,
+      flex: 1,
+      textAlign: "center",
+      writingDirection: isUrdu ? "rtl" : "ltr",
+    },
+    headerSpacer: { width: redesign.control.iconButtonSize },
+    heroCard: {
+      backgroundColor: "rgba(255,255,255,0.14)",
+      borderRadius: radius.xl,
+      padding: redesign.layout.fieldGap,
+      borderWidth: redesign.visual.cardBorderWidth,
+      borderColor: "rgba(255,255,255,0.28)",
+    },
     heroLabel: { fontSize: 12, color: "rgba(255,255,255,0.78)", fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
-    heroValue: { fontSize: 34, fontWeight: "800", color: theme.colors.white, marginTop: 4, marginBottom: 2, textAlign: isUrdu ? "right" : "left" },
-    heroSub: { fontSize: 13, color: "rgba(255,255,255,0.78)", marginBottom: 16, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
+    heroValue: { fontSize: 30, fontWeight: "800", color: theme.colors.white, marginTop: 4, marginBottom: 2, textAlign: isUrdu ? "right" : "left" },
+    heroSub: { fontSize: 13, color: "rgba(255,255,255,0.78)", marginBottom: 12, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
     heroStats: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center" },
     heroStat: { flex: 1, alignItems: "center" },
     heroStatVal: { fontSize: 14, fontWeight: "700", color: theme.colors.white, marginBottom: 2, textAlign: "center" },
@@ -334,16 +401,58 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     heroStatLabel: { fontSize: 10, color: "rgba(255,255,255,0.72)", fontWeight: "500", textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
     heroStatDiv: { width: 1, height: 32, backgroundColor: "rgba(255,255,255,0.3)" },
     scroll: { flex: 1 },
-    content: { padding: 16, paddingBottom: 24 },
-    errorCard: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 10, backgroundColor: theme.colors.dangerSoft, borderRadius: 14, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: theme.colors.danger },
+    content: {
+      paddingHorizontal: redesign.layout.horizontalPadding,
+      paddingTop: redesign.layout.cardGap,
+      paddingBottom: redesign.layout.sectionGap,
+      width: "100%",
+      maxWidth: redesign.layout.maxContentWidth,
+      alignSelf: "center",
+    },
+    errorCard: {
+      flexDirection: isUrdu ? "row-reverse" : "row",
+      alignItems: "center",
+      gap: 10,
+      backgroundColor: theme.colors.dangerSoft,
+      borderRadius: radius.lg,
+      padding: redesign.layout.cardGap,
+      marginBottom: redesign.layout.cardGap,
+      borderWidth: redesign.visual.cardBorderWidth,
+      borderColor: theme.colors.danger + "40",
+      ...theme.shadows.sm,
+    },
     errorContent: { flex: 1 },
     errorTitle: { color: theme.colors.danger, fontWeight: "800", fontSize: 13, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
     errorText: { color: theme.colors.textSecondary, fontSize: 11, marginTop: 2, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
-    retryBtn: { minHeight: 44, paddingHorizontal: 12, alignItems: "center", justifyContent: "center", borderRadius: 10, backgroundColor: theme.colors.surface },
+    retryBtn: {
+      minHeight: redesign.control.standardHeight,
+      paddingHorizontal: 12,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: radius.md,
+      backgroundColor: theme.colors.surface,
+      borderWidth: redesign.visual.cardBorderWidth,
+      borderColor: theme.colors.border,
+    },
     retryText: { color: theme.colors.primary, fontWeight: "700", fontSize: 12 },
-    duesCard: { backgroundColor: theme.colors.warningSoft, borderRadius: 16, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: theme.colors.warning },
+    duesCard: {
+      backgroundColor: theme.colors.warningSoft,
+      borderRadius: radius.lg,
+      padding: redesign.layout.cardGap,
+      marginBottom: redesign.layout.cardGap,
+      borderWidth: redesign.visual.cardBorderWidth,
+      borderColor: theme.colors.warning + "45",
+      ...theme.shadows.sm,
+    },
     duesTop: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 10, marginBottom: 10 },
-    duesIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: theme.dark ? theme.colors.warningSoft : theme.colors.warningSoft, justifyContent: "center", alignItems: "center" },
+    duesIcon: {
+      width: redesign.control.compactHeight,
+      height: redesign.control.compactHeight,
+      borderRadius: radius.pill,
+      backgroundColor: theme.colors.warningSoft,
+      justifyContent: "center",
+      alignItems: "center",
+    },
     duesCopy: { flex: 1 },
     duesTitle: { fontSize: 14, fontWeight: "700", color: theme.colors.warning, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
     duesSub: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 1, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
@@ -351,30 +460,102 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     progressBg: { height: 8, backgroundColor: theme.colors.surface, borderRadius: 4, overflow: "hidden", marginBottom: 6 },
     progressFill: { height: "100%", borderRadius: 4 },
     duesLimit: { fontSize: 11, color: theme.colors.textSecondary, marginBottom: 10, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
-    payDuesBtn: { minHeight: 44, flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: theme.colors.warning, borderRadius: 10, paddingHorizontal: 14 },
+    payDuesBtn: {
+      minHeight: redesign.control.standardHeight,
+      flexDirection: isUrdu ? "row-reverse" : "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+      backgroundColor: theme.colors.warning,
+      borderRadius: radius.md,
+      paddingHorizontal: 14,
+      ...theme.shadows.sm,
+    },
     payDuesBtnText: { fontSize: 13, fontWeight: "700", color: theme.colors.white, writingDirection: isUrdu ? "rtl" : "ltr" },
-    actionsRow: { flexDirection: isUrdu ? "row-reverse" : "row", gap: 10, marginBottom: 14 },
-    actionBtn: { flex: 1, minHeight: 88, alignItems: "center", justifyContent: "flex-start", gap: 8, paddingVertical: 4 },
-    actionGrad: { width: 52, height: 52, borderRadius: 16, justifyContent: "center", alignItems: "center" },
+    actionsRow: {
+      flexDirection: isUrdu ? "row-reverse" : "row",
+      gap: redesign.layout.cardGap,
+      marginBottom: redesign.layout.cardGap,
+    },
+    actionBtn: { flex: 1, minHeight: 80, alignItems: "center", justifyContent: "flex-start", gap: 8, paddingVertical: 4 },
+    actionGrad: {
+      width: redesign.control.iconButtonSize,
+      height: redesign.control.iconButtonSize,
+      borderRadius: radius.md,
+      justifyContent: "center",
+      alignItems: "center",
+      ...theme.shadows.sm,
+    },
     actionLabel: { fontSize: 11, fontWeight: "600", color: theme.colors.text, textAlign: "center", lineHeight: 15, writingDirection: isUrdu ? "rtl" : "ltr" },
-    statsGrid: { flexDirection: isUrdu ? "row-reverse" : "row", gap: 10, marginBottom: 16 },
-    statCard: { flex: 1, minHeight: 104, backgroundColor: theme.colors.surface, borderRadius: 14, padding: 12, alignItems: "center", justifyContent: "center", gap: 4, borderWidth: 1, borderColor: theme.colors.border, ...theme.shadows.sm },
+    statsGrid: {
+      flexDirection: isUrdu ? "row-reverse" : "row",
+      gap: redesign.layout.cardGap,
+      marginBottom: redesign.layout.cardGap,
+    },
+    statCard: {
+      flex: 1,
+      minHeight: 92,
+      backgroundColor: theme.colors.surface,
+      borderRadius: radius.lg,
+      padding: redesign.layout.cardGap,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 4,
+      borderWidth: redesign.visual.cardBorderWidth,
+      borderColor: theme.colors.border,
+      ...theme.shadows.sm,
+    },
     statVal: { fontSize: 13, fontWeight: "800", color: theme.colors.primary, textAlign: "center" },
     statLabel: { fontSize: 10, color: theme.colors.textSecondary, textAlign: "center", fontWeight: "500", writingDirection: isUrdu ? "rtl" : "ltr" },
-    section: { marginBottom: 16 },
-    sectionTitle: { fontSize: 16, fontWeight: "700", color: theme.colors.text, marginBottom: 12, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
-    empty: { backgroundColor: theme.colors.surface, borderRadius: 16, padding: 32, alignItems: "center", gap: 12, borderWidth: 1, borderColor: theme.colors.border },
+    section: { marginBottom: redesign.layout.cardGap },
+    sectionTitle: { fontSize: 15, fontWeight: "700", color: theme.colors.text, marginBottom: 10, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
+    empty: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: radius.lg,
+      padding: redesign.layout.sectionGap,
+      alignItems: "center",
+      gap: redesign.layout.cardGap,
+      borderWidth: redesign.visual.cardBorderWidth,
+      borderColor: theme.colors.border,
+      ...theme.shadows.sm,
+    },
     emptyText: { fontSize: 14, color: theme.colors.textSecondary, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
-    txList: { backgroundColor: theme.colors.surface, borderRadius: 16, overflow: "hidden", borderWidth: 1, borderColor: theme.colors.border },
-    txRow: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 12, padding: 14 },
-    txBorder: { borderBottomWidth: 1, borderBottomColor: theme.colors.divider },
-    txIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: theme.colors.successSoft, justifyContent: "center", alignItems: "center" },
+    txList: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: radius.lg,
+      overflow: "hidden",
+      borderWidth: redesign.visual.cardBorderWidth,
+      borderColor: theme.colors.border,
+      ...theme.shadows.sm,
+    },
+    txRow: {
+      minHeight: redesign.control.largeHeight,
+      flexDirection: isUrdu ? "row-reverse" : "row",
+      alignItems: "center",
+      gap: 10,
+      padding: redesign.layout.cardGap,
+    },
+    txBorder: {
+      borderBottomWidth: redesign.visual.cardBorderWidth,
+      borderBottomColor: theme.colors.divider,
+    },
+    txIcon: {
+      width: 34,
+      height: 34,
+      borderRadius: radius.pill,
+      backgroundColor: theme.colors.successSoft,
+      justifyContent: "center",
+      alignItems: "center",
+    },
     txCopy: { flex: 1 },
     txTitle: { fontSize: 13, fontWeight: "600", color: theme.colors.text, marginBottom: 2, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
     txDate: { fontSize: 11, color: theme.colors.textSecondary, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
     txAmounts: { alignItems: isUrdu ? "flex-start" : "flex-end" },
     txAmt: { fontSize: 14, fontWeight: "700", color: theme.colors.success, marginBottom: 1 },
     txComm: { fontSize: 11, color: theme.colors.textSecondary, writingDirection: isUrdu ? "rtl" : "ltr" },
-    pressed: { opacity: 0.82 },
+    pressed: {
+      opacity: 0.82,
+      transform: [{ scale: redesign.visual.pressedScale }],
+    },
   });
 }

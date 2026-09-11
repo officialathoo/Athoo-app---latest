@@ -5,7 +5,8 @@ import { readRepo as read } from "./helpers/repo.ts";
 
 test("negotiation screen resolves address coordinates before submission", () => {
   const source = read("athoo-app/app/(customer)/negotiate.tsx");
-  assert.match(source, /searchAddress\(address\.trim\(\), null, 1\)/);
+  assert.match(source, /searchAddress\([\s\S]*address\.trim\(\)[\s\S]*3,/);
+  assert.match(source, /item\.city\?\.trim\(\) && item\.area\?\.trim\(\)/);
   assert.match(source, /latitude: latitude!/);
   assert.match(source, /longitude: longitude!/);
 });

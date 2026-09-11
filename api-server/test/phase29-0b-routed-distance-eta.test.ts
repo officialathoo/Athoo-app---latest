@@ -26,7 +26,7 @@ test("Phase 29.0B provides bounded authenticated road-route metrics without pres
   assert.match(maps, /\.slice\(0, 12\)/);
 
   assert.match(search, /straightLineDistanceKm/);
-  assert.match(search, /getRouteMetricsBatch\(userLat, userLng, candidates\)/);
+  assert.match(search, /getProviderRouteMetricsBatch\(userLat, userLng, candidates\)/);
   assert.match(search, /routeStatus: "routed"/);
   assert.match(search, /km by road/);
   assert.match(search, /Calculating road route/);

@@ -39,7 +39,7 @@ test("migration and schema implement provider document expiry, renewal requests,
   const migrations = readRepo("lib/db/src/migrations.ts");
   const schema = readRepo("lib/db/src/schema/index.ts");
 
-  assert.match(migrations, /20260720_release_phase28_professional_workflow_integrity\.sql/);
+  assert.match(migrations, /20260802_phase19_security_flow_performance\.sql/);
   assert.match(migration, /provider_document_update_requests/);
   assert.match(migration, /provider_document_updates_one_pending_uidx/);
   assert.match(migration, /document_compliance_status IN \('active','action_required','warning','grace','renewal_pending','suspended'\)/);
@@ -80,7 +80,7 @@ test("provider compliance uses configurable seven-day grace, reminders, restrict
   assert.match(lifecycle, /isNull\(usersTable\.documentSuspendedAt\)/);
   assert.match(lifecycle, /eq\(usersTable\.verificationStatus, "approved"\)/);
   assert.match(sweeper, /sweepProviderDocumentCompliance\(\)/);
-  assert.match(sweeper, /restoreProviderAvailabilityIfCompliant\(booking\.providerId, "auto_cancelled"\)/);
+  assert.match(sweeper, /await restoreProviderAvailabilityIfCompliant\(cancelled\.providerId, "auto_cancelled"\)/);
   const productionEnv = readRepo(".env.production.example");
   const renderBlueprint = readRepo("render.yaml");
   assert.match(productionEnv, /DOCUMENT_EXPIRY_GRACE_DAYS=7/);

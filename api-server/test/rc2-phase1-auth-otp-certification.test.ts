@@ -82,7 +82,7 @@ test("database migration adds purpose, attempts, and delivery audit fields", () 
   assert.match(schema, /purpose: text\("purpose"\)/);
   assert.match(schema, /maxAttempts: integer\("max_attempts"\)/);
   assert.match(migration, /20260715|purpose|delivery/);
-  assert.match(latest, /20260720_release_phase28_professional_workflow_integrity\.sql/);
+  assert.match(latest, /20260802_phase19_security_flow_performance\.sql/);
 });
 
 test("SMTP configuration is provider-agnostic and exposes safe health status", () => {

@@ -38,6 +38,7 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
   const mountedRef = useRef(true);
   const inFlightRef = useRef(false);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const lastRefreshAtRef = useRef(0);
 
   const refreshBroadcasts = useCallback(async () => {
     if (!user || user.role !== "provider") return;
@@ -49,6 +50,7 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
       const res = await api.getBroadcastRequests();
       if (!mountedRef.current) return;
       setOpenBroadcastCount(res.requests?.length ?? 0);
+      lastRefreshAtRef.current = Date.now();
     } catch {
       // silently fail
     } finally {
@@ -59,7 +61,10 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const sub = AppState.addEventListener("change", (nextState) => {
       appStateRef.current = nextState;
-      if (nextState === "active") {
+      if (
+        nextState === "active" &&
+        Date.now() - lastRefreshAtRef.current >= 60_000
+      ) {
         void refreshBroadcasts();
       }
     });
@@ -161,6 +166,20 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
         const message = `${customerName ?? "Customer"}'s ${serviceLabel ?? "request"} was filled by another provider`;
 
         push({ type: "system", title, message, role: "provider" });
+        refreshBroadcasts();
+      }
+
+      if (msg.type === "broadcast:response-rejected" && user.role === "provider") {
+        if (!mountedRef.current) return;
+        const canRevise = msg.payload?.canRevise !== false;
+        push({
+          type: "booking",
+          title: "Customer declined your counter",
+          message: canRevise
+            ? "You can open the broadcast and send a revised amount."
+            : "The response revision limit has been reached.",
+          role: "provider",
+        });
         refreshBroadcasts();
       }
 

@@ -32,7 +32,7 @@ test("database rehearsal validates restored and freshly migrated temporary datab
   assert.match(rehearsal, /db:migrate/);
   assert.match(rehearsal, /dropdb/);
   assert.match(rehearsal, /Migration mismatch after restore/);
-  assert.match(rehearsal, /Fresh migration mismatch/);
+  assert.match(rehearsal, /Migration convergence mismatch/);
 });
 
 test("root scripts expose backup restore rehearsal and toolchain preflight", () => {

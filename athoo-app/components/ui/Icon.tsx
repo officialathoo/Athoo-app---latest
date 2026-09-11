@@ -144,6 +144,7 @@ const ICON_MAP: Record<string, IconComponent> = {
   "bell-off": BellOff,
   briefcase: Briefcase,
   bookmark: Bookmark,
+  brush: Brush,
   calendar: Calendar,
   camera: Camera,
   check: Check,
@@ -154,6 +155,7 @@ const ICON_MAP: Record<string, IconComponent> = {
   "chevron-right": ChevronRight,
   "chevron-up": ChevronUp,
   circle: Circle,
+  "circle-dashed": CircleDashed,
   clock: Clock,
   "credit-card": CreditCard,
   crosshair: Crosshair,
@@ -179,6 +181,7 @@ const ICON_MAP: Record<string, IconComponent> = {
   fingerprint: Fingerprint,
   "fingerprint-pattern": Fingerprint,
   grid: Grid,
+  hammer: Hammer,
   "hard-drive": HardDrive,
   hash: Hash,
   headphones: Headphones,
@@ -237,6 +240,7 @@ const ICON_MAP: Record<string, IconComponent> = {
   tool: Wrench,
   "trending-down": TrendingDown,
   "trending-up": TrendingUp,
+  truck: Truck,
   user: User,
   "user-plus": UserPlus,
   users: Users,
@@ -253,7 +257,6 @@ const ICON_MAP: Record<string, IconComponent> = {
   zap: Zap,
   "zoom-in": ZoomIn,
 };
-
 
 function toPascalIconName(name: string): string {
   return String(name || "")
@@ -312,4 +315,3 @@ export function Icon({
 }
 
 export default Icon;
-

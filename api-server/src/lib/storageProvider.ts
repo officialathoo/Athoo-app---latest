@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
   DeleteObjectCommand,
+  CopyObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
@@ -18,6 +19,12 @@ export interface UploadFileInput {
   body: Buffer | Uint8Array | string | Readable;
   contentType?: string;
   size?: number;
+  metadata?: Record<string, string>;
+}
+
+export interface CopyObjectInput {
+  key: string;
+  contentType?: string;
   metadata?: Record<string, string>;
 }
 
@@ -57,6 +64,7 @@ export interface StorageProvider {
   uploadFile(input: UploadFileInput): Promise<{ key: string; objectPath: string }>;
   deleteObject(keyOrObjectPath: string): Promise<void>;
   replaceObject(input: UploadFileInput): Promise<{ key: string; objectPath: string }>;
+  copyObject(sourceKeyOrObjectPath: string, destination: CopyObjectInput): Promise<{ key: string; objectPath: string }>;
   getSignedReadUrl(keyOrObjectPath: string, ttlSeconds?: number): Promise<string>;
   getSignedUploadUrl(input: SignedUploadInput): Promise<SignedUploadResult>;
   statObject(keyOrObjectPath: string): Promise<StoredObjectMetadata>;
@@ -295,6 +303,22 @@ export class S3CompatibleStorageProvider implements StorageProvider {
     return this.uploadFile(input);
   }
 
+  async copyObject(sourceKeyOrObjectPath: string, destination: CopyObjectInput): Promise<{ key: string; objectPath: string }> {
+    const sourceKey = keyFromObjectPath(sourceKeyOrObjectPath);
+    const key = keyFromObjectPath(destination.key);
+    const encodedSource = `${this.bucket}/${sourceKey.split("/").map(encodeURIComponent).join("/")}`;
+    await this.client.send(new CopyObjectCommand({
+      Bucket: this.bucket,
+      CopySource: encodedSource,
+      Key: key,
+      MetadataDirective: "REPLACE",
+      ContentType: destination.contentType,
+      CacheControl: "private, no-store",
+      Metadata: destination.metadata,
+    }));
+    return { key, objectPath: objectPathFromKey(key) };
+  }
+
   async getSignedReadUrl(keyOrObjectPath: string, ttlSeconds = 900): Promise<string> {
     return getSignedUrl(
       this.client,
@@ -309,6 +333,7 @@ export class S3CompatibleStorageProvider implements StorageProvider {
       Bucket: this.bucket,
       Key: key,
       ContentType: input.contentType,
+      ContentLength: Number.isFinite(input.size) && Number(input.size) > 0 ? Number(input.size) : undefined,
       Metadata: input.metadata,
     });
     const uploadURL = await getSignedUrl(this.client, command, { expiresIn: input.ttlSeconds || 900 });
@@ -432,6 +457,19 @@ export class GcsStorageProvider implements StorageProvider {
     return this.uploadFile(input);
   }
 
+  async copyObject(sourceKeyOrObjectPath: string, destination: CopyObjectInput): Promise<{ key: string; objectPath: string }> {
+    const key = keyFromObjectPath(destination.key);
+    const source = this.file(sourceKeyOrObjectPath);
+    const target = this.file(key);
+    await source.copy(target);
+    await target.setMetadata({
+      ...(destination.contentType ? { contentType: destination.contentType } : {}),
+      cacheControl: "private, no-store",
+      metadata: destination.metadata || {},
+    });
+    return { key, objectPath: objectPathFromKey(key) };
+  }
+
   async getSignedReadUrl(keyOrObjectPath: string, ttlSeconds = 900): Promise<string> {
     const [url] = await this.file(keyOrObjectPath).getSignedUrl({
       version: "v4",
@@ -495,8 +533,8 @@ export class LocalStorageProvider implements StorageProvider {
   private readonly root: string;
 
   constructor() {
-    if (process.env.NODE_ENV === "production") {
-      throw new StorageNotConfiguredError("LocalStorageProvider is disabled in production.");
+    if (["production", "staging"].includes(String(process.env.NODE_ENV || "").trim().toLowerCase())) {
+      throw new StorageNotConfiguredError("LocalStorageProvider is disabled in deployed environments.");
     }
     this.root = process.env.LOCAL_STORAGE_DIR || path.resolve(process.cwd(), ".local-storage");
   }
@@ -505,7 +543,8 @@ export class LocalStorageProvider implements StorageProvider {
     const key = keyFromObjectPath(keyOrObjectPath);
     const root = path.resolve(this.root);
     const full = path.resolve(root, key);
-    if (full !== root && !full.startsWith(`${root}${path.sep}`)) throw new Error("Invalid storage path");
+    const relative = path.relative(root, full);
+    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Invalid storage path");
     return full;
   }
 
@@ -522,12 +561,27 @@ export class LocalStorageProvider implements StorageProvider {
 
   async deleteObject(keyOrObjectPath: string): Promise<void> {
     const full = this.fullPath(keyOrObjectPath);
-    await Promise.all([fs.rm(full, { force: true }), fs.rm(`${full}.meta.json`, { force: true })]);
+    await Promise.all([
+      fs.rm(full, { force: true }),
+      fs.rm(`${full}.meta.json`, { force: true }),
+    ]);
   }
 
   async replaceObject(input: UploadFileInput): Promise<{ key: string; objectPath: string }> {
     await this.deleteObject(input.key).catch(() => undefined);
     return this.uploadFile(input);
+  }
+
+  async copyObject(sourceKeyOrObjectPath: string, destination: CopyObjectInput): Promise<{ key: string; objectPath: string }> {
+    const source = this.fullPath(sourceKeyOrObjectPath);
+    const key = keyFromObjectPath(destination.key);
+    const target = this.fullPath(key);
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.copyFile(source, target);
+    if (destination.contentType) {
+      await fs.writeFile(`${target}.meta.json`, JSON.stringify({ contentType: destination.contentType }));
+    }
+    return { key, objectPath: objectPathFromKey(key) };
   }
 
   async getSignedReadUrl(keyOrObjectPath: string, ttlSeconds = 900): Promise<string> {
@@ -584,11 +638,14 @@ export function resetConfiguredStorageProvider(): void {
 export function getConfiguredStorageProvider(): StorageProvider {
   const provider = normalizeStorageProvider();
   if (cachedProvider && cachedProviderName === provider) return cachedProvider;
-  if (provider === "local") cachedProvider = new LocalStorageProvider();
-  else if (provider === "gcs") cachedProvider = new GcsStorageProvider();
-  else cachedProvider = new S3CompatibleStorageProvider(provider);
+  const nextProvider: StorageProvider = provider === "local"
+    ? new LocalStorageProvider()
+    : provider === "gcs"
+      ? new GcsStorageProvider()
+      : new S3CompatibleStorageProvider(provider);
+  cachedProvider = nextProvider;
   cachedProviderName = provider;
-  return cachedProvider;
+  return nextProvider;
 }
 
 export interface StorageConfigurationStatus {

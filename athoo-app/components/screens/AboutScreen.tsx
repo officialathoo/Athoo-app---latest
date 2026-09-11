@@ -1,14 +1,17 @@
-import Constants from "expo-constants";
 import React, { useMemo } from "react";
 import { Alert, Image, Linking, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Constants from "expo-constants";
 import { AppCard, AppText, ScreenHeader, responsiveContent } from "@/components/design";
 import { Icon } from "@/components/ui/Icon";
 import { useLang } from "@/context/LanguageContext";
 import { useSettings } from "@/context/SettingsContext";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 import { runtimeConfig } from "@/config/runtime";
 import { brandConfig } from "@/config/brand";
+import { appIdentity } from "@/config/appIdentity";
 
 type Role = "customer" | "provider";
 
@@ -23,7 +26,7 @@ export function AboutScreen({ role }: { role: Role }) {
   const { translate: tr } = useLang();
   const { settings } = useSettings();
   const insets = useSafeAreaInsets();
-  const version = Constants.expoConfig?.version || "1.0.0";
+  const version = Constants.expoConfig?.version || appIdentity.version;
   const accent = role === "provider" ? theme.colors.secondary : theme.colors.primary;
 
   const features = useMemo<Feature[]>(() => role === "provider" ? [
@@ -156,7 +159,7 @@ function ContactRow({ icon, iconColor, label, value, onPress }: { icon: string; 
       style={({ pressed }) => [
         styles.contactRow,
         { borderBottomColor: theme.colors.divider },
-        pressed && { opacity: 0.68 },
+        pressed && styles.pressed,
       ]}
     >
       <View style={[styles.contactIcon, { backgroundColor: theme.colors.surfaceAlt }]}>
@@ -174,19 +177,91 @@ function ContactRow({ icon, iconColor, label, value, onPress }: { icon: string; 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   flex: { flex: 1 },
-  content: { paddingHorizontal: 16, paddingTop: 18, gap: 12 },
-  hero: { borderWidth: 1, borderRadius: 24, alignItems: "center", paddingHorizontal: 24, paddingVertical: 28, gap: 8 },
-  logoWrap: { width: 116, height: 116, borderRadius: 28, alignItems: "center", justifyContent: "center", marginBottom: 4, overflow: "hidden" },
-  logo: { width: 96, height: 96 },
-  tagline: { maxWidth: 540, lineHeight: 21 },
-  versionPill: { minHeight: 30, borderRadius: 15, paddingHorizontal: 12, alignItems: "center", justifyContent: "center", marginTop: 4 },
-  missionCopy: { lineHeight: 22, marginTop: 8 },
-  sectionHeader: { marginTop: 5, paddingHorizontal: 2 },
-  featureRow: { flexDirection: "row", alignItems: "flex-start", gap: 13 },
-  featureIcon: { width: 46, height: 46, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  featureCopy: { lineHeight: 19, marginTop: 4 },
-  contactList: { marginTop: 8 },
-  contactRow: { minHeight: 62, flexDirection: "row", alignItems: "center", gap: 11, borderBottomWidth: StyleSheet.hairlineWidth },
-  contactIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  legal: { lineHeight: 18, marginVertical: 6 },
+  pressed: {
+    opacity: 0.82,
+    transform: [{ scale: redesign.visual.pressedScale }],
+  },
+  content: {
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: redesign.layout.fieldGap,
+    gap: redesign.layout.cardGap,
+  },
+  hero: {
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderRadius: radius.lg,
+    alignItems: "center",
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingVertical: redesign.layout.sectionGap,
+    gap: 8,
+  },
+  logoWrap: {
+    width: 96,
+    height: 96,
+    borderRadius: radius.xl,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
+    overflow: "hidden",
+  },
+  logo: {
+    width: 80,
+    height: 80,
+  },
+  tagline: {
+    maxWidth: 540,
+    lineHeight: 21,
+  },
+  versionPill: {
+    minHeight: 28,
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+  },
+  missionCopy: {
+    lineHeight: 22,
+    marginTop: 8,
+  },
+  sectionHeader: {
+    marginTop: 6,
+    paddingHorizontal: 2,
+  },
+  featureRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: redesign.layout.cardGap,
+  },
+  featureIcon: {
+    width: redesign.control.compactHeight,
+    height: redesign.control.compactHeight,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  featureCopy: {
+    lineHeight: 19,
+    marginTop: 4,
+  },
+  contactList: {
+    marginTop: 8,
+  },
+  contactRow: {
+    minHeight: redesign.control.largeHeight,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: redesign.layout.cardGap,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  contactIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  legal: {
+    lineHeight: 18,
+    marginVertical: 8,
+  },
 });

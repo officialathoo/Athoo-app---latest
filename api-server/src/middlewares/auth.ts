@@ -23,7 +23,7 @@ export interface JwtPayload {
   deviceId?: string;
 }
 export interface AuthRequest extends Omit<Request, "params"> {
-  user?: JwtPayload;
+  user?: JwtPayload & { phone?: string };
   params: { [key: string]: string };
 }
 

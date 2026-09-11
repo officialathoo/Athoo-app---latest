@@ -6,6 +6,8 @@ import { AppCard, AppText, ScreenHeader, responsiveContent } from "@/components/
 import { Icon } from "@/components/ui/Icon";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 import { api, type PublicPolicyDocument } from "@/services/api";
 
 function cacheKey(slug: string): string {
@@ -138,14 +140,51 @@ export function DynamicPolicyDocumentScreen({ slug, fallback }: { slug: string; 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   flex: { flex: 1 },
-  content: { paddingHorizontal: 16, paddingTop: 18, gap: 12 },
-  noticeRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  loading: { minHeight: 260, alignItems: "center", justifyContent: "center", gap: 12 },
-  empty: { minHeight: 220, alignItems: "center", justifyContent: "center", gap: 10 },
-  headerRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
-  icon: { width: 50, height: 50, borderRadius: 16, alignItems: "center", justifyContent: "center" },
-  summary: { lineHeight: 19, marginTop: 5 },
-  version: { marginTop: 8 },
-  paragraph: { lineHeight: 23 },
-  footer: { marginVertical: 8 },
+  content: {
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: redesign.layout.fieldGap,
+    gap: redesign.layout.cardGap,
+  },
+  noticeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  loading: {
+    minHeight: 260,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: redesign.layout.cardGap,
+  },
+  empty: {
+    minHeight: 220,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: redesign.layout.cardGap,
+  },
+  icon: {
+    width: redesign.control.standardHeight,
+    height: redesign.control.standardHeight,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  summary: {
+    lineHeight: 19,
+    marginTop: 5,
+  },
+  version: {
+    marginTop: 8,
+  },
+  paragraph: {
+    lineHeight: 23,
+  },
+  footer: {
+    marginVertical: 8,
+  },
 });

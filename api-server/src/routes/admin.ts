@@ -49,7 +49,7 @@ import {
   getPlatformSettings,
   savePlatformSettings,
   PlatformSettingsValidationError,
-  toSafeUser,
+  safeUserAllowlist,
 } from "../lib/admin";
 import { notifyUser, notifyUsers } from "../lib/notifications";
 import { restoreProviderAvailabilityIfCompliant } from "../lib/documentCompliance";
@@ -71,6 +71,8 @@ import { getOtpDeliveryConfigurationStatus } from "../lib/otpDelivery";
 import { getStorageConfigurationStatus, testConfiguredStorageProvider } from "../lib/storageProvider";
 import { getInfrastructureProviderStatus } from "../lib/infrastructureConfiguration";
 import { queueStats } from "../lib/queue";
+import { getUploadScannerStatus, testConfiguredUploadScanner } from "../lib/uploadScanner";
+import { uploadSecurityMaintenanceStats } from "../lib/uploadSecurityMaintenance";
 import { publicUserId } from "../lib/publicIds";
 
 
@@ -117,7 +119,7 @@ router.get("/me", async (req: AuthRequest, res) => {
       return res.status(404).json({ error: "Admin not found" });
     }
 
-    return res.json({ admin: toSafeUser(admin) });
+    return res.json({ admin: safeUserAllowlist(admin) });
   } catch (error) {
     logger.error({ err: error }, "admin me error");
     return res.status(500).json({ error: "Failed to load admin profile" });
@@ -636,7 +638,7 @@ router.get("/customers", requirePermission("users.read"), async (req: AuthReques
       db.select().from(usersTable).where(where).orderBy(direction === "asc" ? sql`${orderColumn} asc` : sql`${orderColumn} desc`).limit(limit).offset(offset),
       db.select({ total: sql<number>`count(*)::int` }).from(usersTable).where(where),
     ]);
-    return res.json({ customers: rows.map(toSafeUser), total: Number(countRow?.total || 0), page, limit });
+    return res.json({ customers: rows.map(safeUserAllowlist), total: Number(countRow?.total || 0), page, limit });
   } catch (error) { logger.error({ err: error }, "admin customer list error"); return res.status(500).json({ error: "Failed to load customers" }); }
 });
 
@@ -716,7 +718,7 @@ router.get("/customers/:id/activity", requirePermission("users.read"), async (re
       db.select().from(broadcastRequestsTable).where(eq(broadcastRequestsTable.customerId, userId)).orderBy(desc(broadcastRequestsTable.createdAt)).limit(100),
     ]);
     const completed = bookings.filter((b: any) => b.status === "completed");
-    return res.json({ user: toSafeUser(customer), capabilities: { bookings: canBookings, finance: canFinance, support: canSupport, audit: canAudit }, stats: { totalBookings: bookings.length, active: bookings.filter((b: any) => ["pending", "accepted", "in_progress"].includes(b.status)).length, completed: completed.length, cancelled: bookings.filter((b: any) => b.status === "cancelled").length, totalAmount: completed.reduce((sum: number, b: any) => sum + Number(b.price || 0), 0), offersSubmitted: negotiations.length, offersAccepted: negotiations.filter((n: any) => n.status === "accepted").length, offersRejected: negotiations.filter((n: any) => n.status === "rejected").length, notifications: notifications.length, complaints: tickets.length }, bookings, negotiations, notifications, complaints: tickets, reviewsGiven, reviewsReceived: [], invoices, commissions: [], withdrawals: [], refunds, loginHistory: logins, broadcasts, documents: [] });
+    return res.json({ user: safeUserAllowlist(customer), capabilities: { bookings: canBookings, finance: canFinance, support: canSupport, audit: canAudit }, stats: { totalBookings: bookings.length, active: bookings.filter((b: any) => ["pending", "accepted", "in_progress"].includes(b.status)).length, completed: completed.length, cancelled: bookings.filter((b: any) => b.status === "cancelled").length, totalAmount: completed.reduce((sum: number, b: any) => sum + Number(b.price || 0), 0), offersSubmitted: negotiations.length, offersAccepted: negotiations.filter((n: any) => n.status === "accepted").length, offersRejected: negotiations.filter((n: any) => n.status === "rejected").length, notifications: notifications.length, complaints: tickets.length }, bookings, negotiations, notifications, complaints: tickets, reviewsGiven, reviewsReceived: [], invoices, commissions: [], withdrawals: [], refunds, loginHistory: logins, broadcasts, documents: [] });
   } catch (error) { logger.error({ err: error }, "admin customer activity error"); return res.status(500).json({ error: "Failed to load customer activity" }); }
 });
 
@@ -756,7 +758,7 @@ router.get("/users", requirePermission("users.read"), async (req, res) => {
       .limit(limit)
       .offset(offset);
 
-    return res.json({ users: users.map((user) => toSafeUser(user)), page, limit });
+    return res.json({ users: users.map((user) => safeUserAllowlist(user)), page, limit });
   } catch (error) {
     logger.error({ err: error }, "admin users error");
     return res.status(500).json({ error: "Failed to load users" });
@@ -773,7 +775,7 @@ router.get("/users/:id", requirePermission("users.read"), async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    return res.json({ user: toSafeUser(user) });
+    return res.json({ user: safeUserAllowlist(user) });
   } catch (error) {
     logger.error({ err: error }, "admin user detail error");
     return res.status(500).json({ error: "Failed to load user details" });
@@ -817,7 +819,7 @@ router.get("/providers", requirePermission("users.read"), async (req, res) => {
       db.select().from(usersTable).where(where).orderBy(desc(usersTable.updatedAt)).limit(limit).offset(offset),
       db.select({ total: sql<number>`count(*)::int` }).from(usersTable).where(where),
     ]);
-    return res.json({ providers: providers.map((provider) => toSafeUser(provider)), page, limit, total: Number(summary?.total || 0) });
+    return res.json({ providers: providers.map((provider) => safeUserAllowlist(provider)), page, limit, total: Number(summary?.total || 0) });
   } catch (error) {
     logger.error({ err: error }, "admin providers error");
     return res.status(500).json({ error: "Failed to load providers" });
@@ -855,7 +857,7 @@ router.patch("/providers/:id/commission-limit", requirePermission("finance.write
       where: eq(usersTable.id, String(req.params.id)),
     });
     await logAdminAction(req, "provider_commission_limit_updated", "user", req.params.id, { commissionLimit: limit });
-    return res.json({ provider: toSafeUser(updated) });
+    return res.json({ provider: safeUserAllowlist(updated) });
   } catch (error) {
     logger.error({ err: error }, "admin commission limit error");
     return res.status(500).json({ error: "Failed to update commission limit" });
@@ -898,7 +900,7 @@ router.post("/providers/:id/commission-payment", requirePermission("finance.writ
       where: eq(usersTable.id, String(req.params.id)),
     });
     await logAdminAction(req, "provider_commission_payment_recorded", "user", req.params.id, { amount });
-    return res.json({ provider: toSafeUser(updated) });
+    return res.json({ provider: safeUserAllowlist(updated) });
   } catch (error) {
     logger.error({ err: error }, "admin commission payment error");
     return res.status(500).json({ error: "Failed to record commission payment" });
@@ -1144,6 +1146,8 @@ router.get("/settings/integrations/status", requirePermission("settings.read"), 
     const maps = getMapConfigurationStatus(runtimeMapOverrides);
     const queue = queueStats();
     const cache = infrastructure.cache;
+    const uploadScanner = getUploadScannerStatus();
+    const uploadMaintenance = uploadSecurityMaintenanceStats();
 
     return res.json({
       runtimeConfigurationEnabled: communicationOverrides.enabled === true,
@@ -1207,6 +1211,26 @@ router.get("/settings/integrations/status", requirePermission("settings.read"), 
           },
           error: storage.error,
         },
+        uploadScanner: {
+          provider: "external_https",
+          mode: uploadScanner.mode,
+          configured: uploadScanner.configured,
+          productionSafe: uploadScanner.productionSafe,
+          runtimeSwitchable: false,
+          restartRequired: true,
+        },
+        uploadSecurityMaintenance: {
+          provider: "built_in",
+          configured: true,
+          productionSafe: uploadMaintenance.lastError === null,
+          runtimeSwitchable: false,
+          restartRequired: true,
+          running: uploadMaintenance.running,
+          lastRunAt: uploadMaintenance.lastRunAt,
+          lastExpiredCount: uploadMaintenance.lastExpiredCount,
+          lastCleanupCount: uploadMaintenance.lastCleanupCount,
+          error: uploadMaintenance.lastError,
+        },
         calls: {
           provider: calls.provider,
           configured: calls.productionReady,
@@ -1243,6 +1267,7 @@ router.get("/settings/integrations/status", requirePermission("settings.read"), 
         email: ["smtp", "http_json", "disabled"],
         push: ["expo", "http_json", "disabled"],
         storage: ["r2", "s3", "minio", "wasabi", "backblaze_b2", "digitalocean_spaces", "custom_s3", "gcs", "local-development"],
+        uploadScanner: ["external_https"],
         otp: ["whatsapp_cloud", "email", "http_sms"],
         calls: ["webrtc", "webrtc-turn", "webrtc-stun", "audio-fallback"],
         queue: ["postgres"],
@@ -1251,7 +1276,7 @@ router.get("/settings/integrations/status", requirePermission("settings.read"), 
       },
       notes: {
         runtimeSwitching: "Email and push may be switched at runtime after their credentials are configured in the deployment secret manager.",
-        restartRequired: "Storage, queue, cache, OTP channel order, and call infrastructure remain deployment settings because changing them can affect durable state or active sessions. Storage changes use standard adapters and require a restart plus migration verification, not source-code changes.",
+        restartRequired: "Storage, upload scanning, queue, cache, OTP channel order, and call infrastructure remain deployment settings because changing them can affect durable state or active sessions. Storage changes use standard adapters and require a restart plus migration verification, not source-code changes.",
         cacheScaling: "Memory cache is supported for one API instance. Redis is reserved but intentionally fails closed until a shared adapter is implemented and every cache consumer is migrated.",
       },
     });
@@ -1276,6 +1301,27 @@ router.post("/settings/integrations/storage/test", requirePermission("settings.w
     return res.status(502).json({
       ok: false,
       error: error instanceof Error ? error.message : "Storage provider test failed",
+    });
+  }
+});
+
+router.post("/settings/integrations/upload-scanner/test", requirePermission("settings.write"), async (req: AuthRequest, res) => {
+  try {
+    const result = await testConfiguredUploadScanner();
+    await logAdminAction(req, "upload_scanner_connectivity_tested", "settings", undefined, {
+      ok: result.ok,
+      configured: result.configured,
+      productionSafe: result.productionSafe,
+      scanner: result.scanner,
+      latencyMs: result.latencyMs,
+      error: result.error,
+    });
+    return res.status(result.ok ? 200 : 502).json(result);
+  } catch (error) {
+    logger.warn({ err: error }, "admin upload scanner connectivity test failed");
+    return res.status(502).json({
+      ok: false,
+      error: "Upload scanner connectivity test failed",
     });
   }
 });
@@ -1533,7 +1579,7 @@ router.patch("/users/:id/availability", requirePermission("users.write"), async 
       data: { isAvailable, source: "admin" },
     }).catch(() => undefined);
     await logAdminAction(req, "provider_availability_overridden", "user", providerId, { isAvailable, reason, providerName: provider.name });
-    return res.json({ user: toSafeUser(updated) });
+    return res.json({ user: safeUserAllowlist(updated) });
   } catch (error) {
     logger.error({ err: error }, "provider availability override error");
     return res.status(500).json({ error: "Failed to update provider availability" });
@@ -1585,7 +1631,7 @@ router.patch("/users/:id/block", requirePermission("users.write"), async (req: A
     await notifyUser({ userId: providerId, title: "Provider account blocked", body: reason, type: "system", link: "/provider/profile", data: { source: "admin" }, email: { category: "security", templateKey: "account_status", variables: { status: "blocked", reason } } }).catch(() => undefined);
     const updated = await db.query.usersTable.findFirst({ where: eq(usersTable.id, providerId) });
     await logAdminAction(req, "provider_blocked", "user", providerId, { reason, providerName: provider.name });
-    return res.json({ user: toSafeUser(updated) });
+    return res.json({ user: safeUserAllowlist(updated) });
   } catch (e) {
     logger.error({ err: e }, "provider block error");
     return res.status(500).json({ error: "Failed to block provider" });
@@ -1603,10 +1649,67 @@ router.patch("/users/:id/unblock", requirePermission("users.write"), async (req:
     await notifyUser({ userId: providerId, title: "Provider account unblocked", body: reason, type: "system", link: "/provider/profile", data: { source: "admin" }, email: { category: "security", templateKey: "account_status", variables: { status: "active", reason } } }).catch(() => undefined);
     const updated = await db.query.usersTable.findFirst({ where: eq(usersTable.id, providerId) });
     await logAdminAction(req, "provider_unblocked", "user", providerId, { reason, providerName: provider.name });
-    return res.json({ user: toSafeUser(updated) });
+    return res.json({ user: safeUserAllowlist(updated) });
   } catch (e) {
     logger.error({ err: e }, "provider unblock error");
     return res.status(500).json({ error: "Failed to unblock provider" });
+  }
+});
+
+router.get("/verification/providers", requirePermission("verification.read"), async (req, res) => {
+  try {
+    const validStatuses = ["pending", "in_process", "approved", "rejected"] as const;
+    const requestedStatus = typeof req.query.status === "string" ? req.query.status : "pending";
+    const status = validStatuses.includes(requestedStatus as (typeof validStatuses)[number])
+      ? requestedStatus
+      : "pending";
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const offset = (page - 1) * limit;
+
+    const baseWhere = and(
+      eq(usersTable.role, "provider"),
+      eq(usersTable.isDeactivated, false),
+    );
+    const pageWhere = and(
+      baseWhere,
+      eq(usersTable.verificationStatus, status),
+    );
+
+    const [rows, total, statsRows] = await Promise.all([
+      db.select()
+        .from(usersTable)
+        .where(pageWhere)
+        .orderBy(desc(usersTable.joinedAt))
+        .limit(limit)
+        .offset(offset),
+      db.$count(usersTable, pageWhere),
+      db.select({
+        pending: sql<number>`count(*) filter (where ${usersTable.verificationStatus} = 'pending')::int`,
+        inProcess: sql<number>`count(*) filter (where ${usersTable.verificationStatus} = 'in_process')::int`,
+        approved: sql<number>`count(*) filter (where ${usersTable.verificationStatus} = 'approved')::int`,
+        rejected: sql<number>`count(*) filter (where ${usersTable.verificationStatus} = 'rejected')::int`,
+      })
+        .from(usersTable)
+        .where(baseWhere),
+    ]);
+
+    const stats = statsRows[0] || { pending: 0, inProcess: 0, approved: 0, rejected: 0 };
+    return res.json({
+      users: rows.map(safeUserAllowlist),
+      total: Number(total || 0),
+      page,
+      limit,
+      stats: {
+        pending: Number(stats.pending || 0),
+        in_process: Number(stats.inProcess || 0),
+        approved: Number(stats.approved || 0),
+        rejected: Number(stats.rejected || 0),
+      },
+    });
+  } catch (error) {
+    logger.error({ err: error }, "admin verification providers error");
+    return res.status(500).json({ error: "Failed to load provider verification queue" });
   }
 });
 
@@ -1657,7 +1760,7 @@ router.patch("/users/:id/verification-status", requirePermission("verification.w
       sendEmail({ to: updated.email, subject: emailBody.subject, html: emailBody.html, text: emailBody.text }).catch(() => undefined);
     }
     await logAdminAction(req, "provider_verification_status_updated", "user", target.id, { status, note: note?.trim(), providerName: target.name });
-    return res.json({ user: toSafeUser(updated) });
+    return res.json({ user: safeUserAllowlist(updated) });
   } catch (e) {
     logger.error({ err: e }, "verification status error");
     return res.status(500).json({ error: "Failed to update verification status" });
@@ -1715,7 +1818,7 @@ router.patch("/users/:id/deactivate", requirePermission("users.write"), async (r
     await notifyUser({ userId: providerId, title: "Provider account deactivated", body: reason, type: "system", link: "/provider/profile", data: { source: "admin" }, email: { category: "security", templateKey: "account_status", variables: { status: "deactivated", reason } } }).catch(() => undefined);
     const updated = await db.query.usersTable.findFirst({ where: eq(usersTable.id, providerId) });
     await logAdminAction(req, "provider_deactivated", "user", providerId, { reason, providerName: provider.name });
-    return res.json({ user: toSafeUser(updated) });
+    return res.json({ user: safeUserAllowlist(updated) });
   } catch (e) {
     return res.status(500).json({ error: "Failed to deactivate provider" });
   }
@@ -1732,7 +1835,7 @@ router.patch("/users/:id/reactivate", requirePermission("users.write"), async (r
     await notifyUser({ userId: providerId, title: "Provider account reactivated", body: reason, type: "system", link: "/provider/profile", data: { source: "admin" }, email: { category: "security", templateKey: "account_status", variables: { status: "active", reason } } }).catch(() => undefined);
     const updated = await db.query.usersTable.findFirst({ where: eq(usersTable.id, providerId) });
     await logAdminAction(req, "provider_reactivated", "user", providerId, { reason, providerName: provider.name });
-    return res.json({ user: toSafeUser(updated) });
+    return res.json({ user: safeUserAllowlist(updated) });
   } catch (e) {
     return res.status(500).json({ error: "Failed to reactivate provider" });
   }
@@ -1767,7 +1870,7 @@ router.patch("/users/:id/profile", requirePermission("users.write"), async (req:
     if (updated) await propagateChatProfileIdentity(providerId, updated.name);
     await notifyUser({ userId: providerId, title: "Provider profile updated", body: reason, type: "system", link: "/provider/profile", data: { source: "admin" } }).catch(() => undefined);
     await logAdminAction(req, "provider_profile_updated", "user", providerId, { fields: ["name", "location", "bio"], reason, providerName: updated?.name });
-    return res.json({ user: toSafeUser(updated) });
+    return res.json({ user: safeUserAllowlist(updated) });
   } catch (e) {
     logger.error({ err: e }, "admin provider profile update error");
     return res.status(500).json({ error: "Failed to update provider profile" });
@@ -1783,9 +1886,60 @@ router.patch("/users/:id/notes", requirePermission("users.write"), async (req: A
     }).where(eq(usersTable.id, String(req.params.id)));
     const updated = await db.query.usersTable.findFirst({ where: eq(usersTable.id, String(req.params.id)) });
     await logAdminAction(req, "user_notes_updated", "user", req.params.id, { userName: updated?.name });
-    return res.json({ user: toSafeUser(updated) });
+    return res.json({ user: safeUserAllowlist(updated) });
   } catch (e) {
     return res.status(500).json({ error: "Failed to update notes" });
+  }
+});
+
+// ─── Warn / Notice ─────────────────────────────────────────────────────────────
+const WARN_KINDS = new Set(["warning", "notice"]);
+router.post("/users/:id/warn", requirePermission("users.write"), async (req: AuthRequest, res) => {
+  try {
+    const kind = String((req.body as any).kind || "warning").trim();
+    const message = String((req.body as any).message || "").trim();
+    if (!WARN_KINDS.has(kind)) {
+      return res.status(400).json({ error: "kind must be 'warning' or 'notice'" });
+    }
+    if (!message || message.length > 1000) {
+      return res.status(400).json({ error: "message required (max 1000 chars)" });
+    }
+    const user = await db.query.usersTable.findFirst({ where: eq(usersTable.id, String(req.params.id)) });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const title = kind === "warning" ? "Official Warning from Athoo" : "Notice from Athoo Admin";
+    await notifyUser({
+      userId: user.id,
+      title,
+      body: message.slice(0, 500),
+      type: "account",
+      link: "/account",
+      data: {
+        kind,
+        issuedByAdminId: req.user!.userId,
+        issuedByAdminName: (req.user as any).name || null,
+      },
+    });
+    try {
+      await createAdminNotification({
+        title: `${kind === "warning" ? "Warning" : "Notice"} issued to ${user.name}${user.publicId ? ` [${user.publicId}]` : ` [ID ${user.id}]`}`,
+        message: `${(req.user as any).name || "An admin"} issued a ${kind} to ${user.name} (${user.role})${user.publicId ? ` [${user.publicId}]` : ` [ID ${user.id}]`}: ${message.slice(0, 300)}`,
+        type: "users",
+        link: `/users/${user.id}/activity`,
+      });
+    } catch (adminNotificationError) {
+      logger.error({ err: adminNotificationError }, "warn admin notification error");
+    }
+    await logAdminAction(req, kind === "warning" ? "user_warned" : "user_notice_issued", "user", user.id, {
+      userName: user.name,
+      userPublicId: user.publicId,
+      role: user.role,
+      message: message.slice(0, 200),
+    });
+    return res.json({ ok: true, kind, deliveredTo: { userId: user.id, name: user.name, publicId: user.publicId } });
+  } catch (e) {
+    logger.error({ err: e }, "admin warn error");
+    return res.status(500).json({ error: "Failed to deliver warning/notice" });
   }
 });
 
@@ -1806,7 +1960,7 @@ router.patch("/users/:id/commission-limit", requirePermission("finance.write"), 
     }).where(eq(usersTable.id, String(req.params.id)));
     const updated = await db.query.usersTable.findFirst({ where: eq(usersTable.id, String(req.params.id)) });
     await logAdminAction(req, "user_commission_limit_updated", "user", req.params.id, { commissionLimit: limit, userName: user.name });
-    return res.json({ user: toSafeUser(updated) });
+    return res.json({ user: safeUserAllowlist(updated) });
   } catch (e) {
     return res.status(500).json({ error: "Failed to update commission limit" });
   }
@@ -1822,6 +1976,9 @@ router.get("/support", requirePermission("complaints.read"), async (req, res) =>
     const status = String(req.query.status || "all");
     const priority = String(req.query.priority || "all");
     const focus = String(req.query.focus || "").trim();
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const offset = (page - 1) * limit;
     const from = typeof req.query.from === "string" && req.query.from ? new Date(`${req.query.from}T00:00:00.000Z`) : null;
     const to = typeof req.query.to === "string" && req.query.to ? new Date(`${req.query.to}T23:59:59.999Z`) : null;
     const validStatuses = new Set(["all", "open", "in_progress", "resolved", "closed"]);
@@ -1855,12 +2012,23 @@ router.get("/support", requirePermission("complaints.read"), async (req, res) =>
       }
     }
 
-    const tickets = await db
-      .select()
-      .from(supportTicketsTable)
-      .where(conditions.length ? and(...conditions) : undefined)
-      .orderBy(desc(supportTicketsTable.createdAt))
-      .limit(focus ? 1 : 200);
+    const whereClause = conditions.length ? and(...conditions) : undefined;
+    const [tickets, total, statsRows] = await Promise.all([
+      db
+        .select()
+        .from(supportTicketsTable)
+        .where(whereClause)
+        .orderBy(desc(supportTicketsTable.createdAt))
+        .limit(focus ? 1 : limit)
+        .offset(focus ? 0 : offset),
+      db.$count(supportTicketsTable, whereClause),
+      db.select({
+        open: sql<number>`count(*) filter (where ${supportTicketsTable.status} = 'open')::int`,
+        inProgress: sql<number>`count(*) filter (where ${supportTicketsTable.status} = 'in_progress')::int`,
+        urgent: sql<number>`count(*) filter (where ${supportTicketsTable.priority} = 'urgent' and ${supportTicketsTable.status} not in ('resolved','closed'))::int`,
+        resolved: sql<number>`count(*) filter (where ${supportTicketsTable.status} in ('resolved','closed'))::int`,
+      }).from(supportTicketsTable),
+    ]);
 
     const assignedIds = [...new Set(tickets.map((ticket) => ticket.assignedTo).filter((id): id is string => Boolean(id)))];
     const ticketUserIds = [...new Set(tickets.map((ticket) => ticket.userId).filter(Boolean))];
@@ -1870,12 +2038,22 @@ router.get("/support", requirePermission("complaints.read"), async (req, res) =>
       : [];
     const peopleMap = new Map(people.map((person) => [person.id, person]));
 
+    const stats = statsRows[0] || { open: 0, inProgress: 0, urgent: 0, resolved: 0 };
     return res.json({
       tickets: tickets.map((ticket) => ({
         ...ticket,
         userPublicId: peopleMap.get(ticket.userId)?.publicId || null,
         assignedToName: ticket.assignedTo ? peopleMap.get(ticket.assignedTo)?.name || null : null,
       })),
+      total: Number(total || 0),
+      page,
+      limit,
+      stats: {
+        open: Number(stats.open || 0),
+        inProgress: Number(stats.inProgress || 0),
+        urgent: Number(stats.urgent || 0),
+        resolved: Number(stats.resolved || 0),
+      },
     });
   } catch (e) {
     logger.error({ err: e }, "admin support tickets error");
@@ -1946,6 +2124,34 @@ router.patch("/support/:id/status", requirePermission("complaints.write"), async
 
 // ─── Ticket Notes ──────────────────────────────────────────────────────────
 
+// Complaint assignee directory. Only admins who can actually work complaint
+// mutations are returned; this avoids assigning tickets to read-only operators.
+router.get("/support/assignees", requirePermission("complaints.write"), async (_req, res) => {
+  try {
+    const admins = await db
+      .select()
+      .from(usersTable)
+      .where(and(
+        eq(usersTable.role, "admin"),
+        eq(usersTable.isDeactivated, false),
+      ))
+      .orderBy(usersTable.name);
+
+    const assignees = admins
+      .filter((admin) => hasAdminPermission(admin as any, "complaints.write"))
+      .map((admin) => ({
+        id: admin.id,
+        name: admin.name,
+        adminRole: admin.adminRole,
+      }));
+
+    return res.json({ assignees });
+  } catch (e) {
+    logger.error({ err: e }, "support assignee directory error");
+    return res.status(500).json({ error: "Failed to load complaint assignees" });
+  }
+});
+
 router.get("/support/:id/notes", requirePermission("complaints.read"), async (req, res) => {
   try {
     const ticket = await db.query.supportTicketsTable.findFirst({ where: eq(supportTicketsTable.id, String(req.params.id)) });
@@ -2009,16 +2215,39 @@ router.patch("/support/:id/assign", requirePermission("complaints.write"), async
 
     const { assignedTo } = req.body as { assignedTo?: string | null };
     const targetAdminId = assignedTo ? String(assignedTo) : null;
+    let targetAdminName: string | null = null;
+
     if (targetAdminId) {
-      const target = await db.query.usersTable.findFirst({ where: and(eq(usersTable.id, targetAdminId), eq(usersTable.role, "admin"), eq(usersTable.isDeactivated, false)) });
+      const target = await db.query.usersTable.findFirst({
+        where: and(
+          eq(usersTable.id, targetAdminId),
+          eq(usersTable.role, "admin"),
+          eq(usersTable.isDeactivated, false),
+        ),
+      });
       if (!target) return res.status(400).json({ error: "Assigned administrator is not active" });
+      if (!hasAdminPermission(target as any, "complaints.write")) {
+        return res.status(400).json({ error: "Assigned administrator does not have complaint write access" });
+      }
+      targetAdminName = target.name;
     }
 
-    await db.update(supportTicketsTable).set({ assignedTo: targetAdminId, updatedAt: new Date() }).where(eq(supportTicketsTable.id, ticketId));
+    await db.update(supportTicketsTable)
+      .set({ assignedTo: targetAdminId, updatedAt: new Date() })
+      .where(eq(supportTicketsTable.id, ticketId));
+
     const updated = await db.query.supportTicketsTable.findFirst({ where: eq(supportTicketsTable.id, ticketId) });
-    await logAdminAction(req, "support_ticket_assigned", "support_ticket", ticketId, { assignedTo: targetAdminId, subject: ticket.subject });
-    return res.json({ ticket: updated });
+    await logAdminAction(req, "support_ticket_assigned", "support_ticket", ticketId, {
+      assignedTo: targetAdminId,
+      assignedToName: targetAdminName,
+      subject: ticket.subject,
+    });
+
+    return res.json({
+      ticket: updated ? { ...updated, assignedToName: targetAdminName } : updated,
+    });
   } catch (e) {
+    logger.error({ err: e }, "support ticket assignment error");
     return res.status(500).json({ error: "Failed to assign ticket" });
   }
 });
@@ -2188,17 +2417,57 @@ async function logAdminAction(
 
 router.get("/audit-log", requirePermission("audit.read"), async (req, res) => {
   try {
-    const limit = Math.min(Number(req.query.limit) || 100, 500);
-    const offset = Number(req.query.offset) || 0;
-    const logs = await db
-      .select()
-      .from(auditLogTable)
-      .orderBy(desc(auditLogTable.createdAt))
-      .limit(limit)
-      .offset(offset);
-    const total = await db.$count(auditLogTable);
-    return res.json({ logs, total });
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(Math.max(1, Number(req.query.limit) || 100), 500);
+    const explicitOffset = Number(req.query.offset);
+    const offset = Number.isFinite(explicitOffset) && explicitOffset >= 0
+      ? explicitOffset
+      : (page - 1) * limit;
+    const search = String(req.query.search || "").trim();
+    const action = String(req.query.action || "").trim();
+
+    const conditions = [];
+    if (search) {
+      const like = `%${search}%`;
+      conditions.push(or(
+        ilike(auditLogTable.adminName, like),
+        ilike(auditLogTable.adminRole, like),
+        ilike(auditLogTable.action, like),
+        ilike(auditLogTable.target, like),
+        ilike(auditLogTable.targetId, like),
+      ));
+    }
+    if (action) {
+      conditions.push(ilike(auditLogTable.action, `%${action}%`));
+    }
+
+    const whereClause =
+      conditions.length === 0
+        ? undefined
+        : conditions.length === 1
+          ? conditions[0]
+          : and(...conditions);
+
+    let logsQuery = db.select().from(auditLogTable).$dynamic();
+    if (whereClause) logsQuery = logsQuery.where(whereClause);
+
+    const [rows, total] = await Promise.all([
+      logsQuery
+        .orderBy(desc(auditLogTable.createdAt))
+        .limit(limit)
+        .offset(offset),
+      whereClause ? db.$count(auditLogTable, whereClause) : db.$count(auditLogTable),
+    ]);
+
+    const logs = rows.map((row) => ({
+      ...row,
+      targetType: row.target,
+      ipAddress: row.ip,
+    }));
+
+    return res.json({ logs, entries: logs, total: Number(total), page, limit, offset });
   } catch (e) {
+    logger.error({ err: e }, "audit log fetch error");
     return res.status(500).json({ error: "Failed to load audit log" });
   }
 });
@@ -2334,7 +2603,7 @@ router.get("/admin-users", requireSuperAdmin, async (_req, res) => {
       .from(usersTable)
       .where(eq(usersTable.role, "admin"))
       .orderBy(desc(usersTable.joinedAt));
-    return res.json({ admins: admins.map((a) => toSafeUser(a)) });
+    return res.json({ admins: admins.map((a) => safeUserAllowlist(a)) });
   } catch (e) {
     return res.status(500).json({ error: "Failed to load admin users" });
   }
@@ -2376,7 +2645,7 @@ router.post("/admin-users", requireSuperAdmin, async (req: AuthRequest, res) => 
 
     await db.insert(usersTable).values(newAdmin);
     await logAdminAction(req, "admin_user_created", "admin_user", newAdmin.id, { name: newAdmin.name, adminRole: newAdmin.adminRole });
-    return res.json({ admin: toSafeUser(newAdmin as any) });
+    return res.json({ admin: safeUserAllowlist(newAdmin as any) });
   } catch (e) {
     return res.status(500).json({ error: "Failed to create admin user" });
   }
@@ -2421,7 +2690,7 @@ router.patch("/admin-users/:id", requireSuperAdmin, async (req: AuthRequest, res
       await revokeAllUserSessions(req.params.id, "admin_security_profile_changed");
     }
     await logAdminAction(req, "admin_user_updated", "admin_user", req.params.id, { adminRole: updateData.adminRole, permissionsChanged: adminPermissions !== undefined, passwordChanged: Boolean(password?.trim()) });
-    return res.json({ admin: toSafeUser(updated) });
+    return res.json({ admin: safeUserAllowlist(updated) });
   } catch (e) {
     return res.status(500).json({ error: "Failed to update admin user" });
   }
@@ -2851,9 +3120,48 @@ router.get("/broadcast-push/history", requirePermission("notifications.read"), a
   }
 });
 
+// ─── Inactive Account Review Queue ───────────────────────────────────────────
+
+router.get("/inactive-accounts", requirePermission("users.read"), async (req: AuthRequest, res) => {
+  try {
+    const startedAt = Date.now();
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    const where = and(
+      eq(usersTable.inactivityState, "review"),
+      eq(usersTable.accountStatus, "active"),
+      eq(usersTable.isDeactivated, false),
+      eq(usersTable.isBlocked, false),
+    );
+    const [rows, [countRow]] = await Promise.all([
+      db
+        .select()
+        .from(usersTable)
+        .where(where)
+        .orderBy(usersTable.lastActiveAt)
+        .limit(limit)
+        .offset(offset),
+      db.select({ total: sql<number>`count(*)::int` }).from(usersTable).where(where),
+    ]);
+    const total = Number(countRow?.total || 0);
+    res.setHeader("Server-Timing", `inactive-accounts;dur=${Date.now() - startedAt}`);
+    return res.json({
+      items: rows.map(safeUserAllowlist),
+      total,
+      limit,
+      offset,
+      summary: { reviewQueue: total },
+      durationMs: Date.now() - startedAt,
+    });
+  } catch (e) {
+    logger.error({ err: e }, "inactive accounts error");
+    return res.status(500).json({ error: "Failed to load inactive accounts" });
+  }
+});
+
 // ─── Sidebar Counts ──────────────────────────────────────────────────────────
 
-router.get("/sidebar-counts", async (req: AuthRequest, res) => {
+router.get("/sidebar-counts", requirePermission("dashboard.read"), async (req: AuthRequest, res) => {
   try {
     const startedAt = Date.now();
     const adminId = req.user!.userId;
@@ -3194,6 +3502,11 @@ router.get("/users/:id/activity", requirePermission("users.read"), async (req: A
       logins,
       broadcastsCreated,
       documents,
+      reportsFiled,
+      reportsAgainst,
+      auditTrail,
+      rateRequests,
+      chats,
     ] = await Promise.all([
       db.select().from(bookingsTable).where(eq(bookingsTable.customerId, userId)).orderBy(desc(bookingsTable.createdAt)).limit(200),
       db.select().from(bookingsTable).where(eq(bookingsTable.providerId, userId)).orderBy(desc(bookingsTable.createdAt)).limit(200),
@@ -3210,6 +3523,21 @@ router.get("/users/:id/activity", requirePermission("users.read"), async (req: A
       db.select().from(loginHistoryTable).where(eq(loginHistoryTable.userId, userId)).orderBy(desc(loginHistoryTable.createdAt)).limit(50).catch(() => []),
       !isProvider ? db.select().from(broadcastRequestsTable).where(eq(broadcastRequestsTable.customerId, userId)).orderBy(desc(broadcastRequestsTable.createdAt)).limit(100) : Promise.resolve([]),
       isProvider ? db.select().from(providerDocumentsTable).where(eq(providerDocumentsTable.providerId, userId)) : Promise.resolve([]),
+      db.select().from(reportIssuesTable).where(eq(reportIssuesTable.reporterId, userId)).orderBy(desc(reportIssuesTable.createdAt)).limit(50).catch(() => []),
+      db.select().from(reportIssuesTable).where(eq(reportIssuesTable.reportedId, userId)).orderBy(desc(reportIssuesTable.createdAt)).limit(50).catch(() => []),
+      db.select().from(auditLogTable).where(or(eq(auditLogTable.adminId, userId), eq(auditLogTable.targetId, userId))).orderBy(desc(auditLogTable.createdAt)).limit(100).catch(() => []),
+      isProvider ? db.select().from(hourlyRateRequestsTable).where(eq(hourlyRateRequestsTable.providerId, userId)).orderBy(desc(hourlyRateRequestsTable.createdAt)).limit(50).catch(() => []) : Promise.resolve([]),
+      db.select({
+        id: chatsTable.id,
+        participant1Id: chatsTable.participant1Id,
+        participant1Name: chatsTable.participant1Name,
+        participant2Id: chatsTable.participant2Id,
+        participant2Name: chatsTable.participant2Name,
+        bookingId: chatsTable.bookingId,
+        service: chatsTable.service,
+        isLocked: chatsTable.isLocked,
+        createdAt: chatsTable.createdAt,
+      }).from(chatsTable).where(or(eq(chatsTable.participant1Id, userId), eq(chatsTable.participant2Id, userId))).orderBy(desc(chatsTable.createdAt)).limit(50).catch(() => []),
     ]);
 
     const bookings = isProvider ? bookingsAsProvider : bookingsAsCustomer;
@@ -3220,21 +3548,32 @@ router.get("/users/:id/activity", requirePermission("users.read"), async (req: A
     const completed = bookings.filter((b: any) => b.status === "completed").length;
     const cancelled = bookings.filter((b: any) => b.status === "cancelled").length;
     const active = bookings.filter((b: any) => ["pending", "accepted", "in_progress", "on_the_way", "arrived", "started"].includes(b.status)).length;
-    const totalSpent = bookings.filter((b: any) => b.status === "completed").reduce((s: number, b: any) => s + Number(b.price ?? 0), 0);
+    const completedBookings = bookings.filter((b: any) => b.status === "completed");
+    const grossVolume = completedBookings.reduce((s: number, b: any) => s + Number(b.price ?? 0), 0);
+    const commissionPaidTotal = (commissions as any[]).filter((c) => c.status === "paid").reduce((s: number, c: any) => s + Number(c.amount ?? 0), 0);
 
     return res.json({
-      user: toSafeUser(user),
+      user: safeUserAllowlist(user),
       stats: {
         totalBookings: total,
         active,
         completed,
         cancelled,
-        totalAmount: totalSpent,
+        totalAmount: grossVolume,
         offersSubmitted: negotiations.length,
         offersAccepted: negotiations.filter((n: any) => n.status === "accepted").length,
         offersRejected: negotiations.filter((n: any) => n.status === "rejected").length,
         notifications: notifications.length,
         complaints: tickets.length,
+        reportsFiled: (reportsFiled as any[]).length,
+        reportsAgainst: (reportsAgainst as any[]).length,
+        openReportsAgainst: (reportsAgainst as any[]).filter((r) => r.status === "open" || r.status === "under_review").length,
+        documentsCount: (documents as any[]).length,
+        expiredDocuments: (documents as any[]).filter((d) => d.expiresAt && !d.expiryNotApplicable && new Date(d.expiresAt).getTime() < Date.now()).length,
+        pendingDocuments: (documents as any[]).filter((d) => d.status === "pending").length,
+        grossEarnings: isProvider ? grossVolume : 0,
+        spending: !isProvider ? grossVolume : 0,
+        commissionPaidTotal,
       },
       bookings,
       negotiations,
@@ -3249,6 +3588,11 @@ router.get("/users/:id/activity", requirePermission("users.read"), async (req: A
       loginHistory: logins,
       broadcasts: broadcastsCreated,
       documents,
+      reportsFiled,
+      reportsAgainst,
+      auditTrail,
+      rateRequests,
+      chats,
     });
   } catch (error) {
     logger.error({ err: error }, "admin user activity error");
@@ -3259,16 +3603,56 @@ router.get("/users/:id/activity", requirePermission("users.read"), async (req: A
 // ─── Invoices list ───────────────────────────────────────────────────────────
 router.get("/invoices", requirePermission("finance.read"), async (req: AuthRequest, res) => {
   try {
-    const status = req.query.status as string | undefined;
-    const query = db
-      .select()
-      .from(invoicesTable)
-      .orderBy(desc(invoicesTable.createdAt));
-    const rows = await query.limit(1000);
-    const invoices = status && status !== "all"
-      ? rows.filter((i: any) => i.status === status)
-      : rows;
-    return res.json({ invoices });
+    const status = typeof req.query.status === "string" ? req.query.status.trim() : "all";
+    const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 120) : "";
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const offset = (page - 1) * limit;
+    const validStatuses = ["all", "issued", "paid", "disputed", "cancelled"];
+    if (!validStatuses.includes(status)) return res.status(400).json({ error: "Invalid invoice status filter" });
+
+    const like = `%${search}%`;
+    const whereClause = and(
+      status !== "all" ? eq(invoicesTable.status, status) : undefined,
+      search ? or(
+        ilike(invoicesTable.invoiceNumber, like),
+        ilike(invoicesTable.customerName, like),
+        ilike(invoicesTable.providerName, like),
+        ilike(invoicesTable.service, like),
+        ilike(invoicesTable.address, like),
+        ilike(invoicesTable.bookingPublicId, like),
+      ) : undefined,
+    );
+
+    const [invoices, total, statsRows] = await Promise.all([
+      db.select()
+        .from(invoicesTable)
+        .where(whereClause)
+        .orderBy(desc(invoicesTable.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db.$count(invoicesTable, whereClause),
+      db.select({
+        totalInvoices: sql<number>`count(*)::int`,
+        issued: sql<number>`count(*) filter (where ${invoicesTable.status} = 'issued')::int`,
+        totalRevenue: sql<number>`coalesce(sum(${invoicesTable.totalAmount}),0)::int`,
+        totalCommission: sql<number>`coalesce(sum(${invoicesTable.commissionAmount}),0)::int`,
+      }).from(invoicesTable).where(whereClause),
+    ]);
+
+    const stats = statsRows[0] || { totalInvoices: 0, issued: 0, totalRevenue: 0, totalCommission: 0 };
+    return res.json({
+      invoices,
+      total: Number(total || 0),
+      page,
+      limit,
+      stats: {
+        totalInvoices: Number(stats.totalInvoices || 0),
+        issued: Number(stats.issued || 0),
+        totalRevenue: Number(stats.totalRevenue || 0),
+        totalCommission: Number(stats.totalCommission || 0),
+      },
+    });
   } catch (err) {
     logger.error({ err }, "admin invoices list error");
     return res.status(500).json({ error: "Failed to load invoices" });
@@ -3428,6 +3812,38 @@ router.patch("/invoices/:id/status", requirePermission("finance.write"), async (
     await logAdminAction(req, "invoice_status_updated", "invoice", invoice.id, {
       bookingId: invoice.bookingId, from: current, to: status, reason,
     });
+
+    const invoiceAudience = [booking.customerId, booking.providerId].filter(
+      (value): value is string => Boolean(value),
+    );
+    const invoiceMessages: Record<string, { title: string; body: string }> = {
+      paid: {
+        title: `Invoice ${invoice.invoiceNumber} marked paid`,
+        body: reason || "The invoice for your booking was confirmed as paid by Athoo support.",
+      },
+      disputed: {
+        title: `Invoice ${invoice.invoiceNumber} disputed`,
+        body: reason || "A dispute was opened on this invoice. Athoo support will review it.",
+      },
+      cancelled: {
+        title: `Invoice ${invoice.invoiceNumber} cancelled`,
+        body: reason || "This invoice was cancelled; no payment is due.",
+      },
+      issued: {
+        title: `Invoice ${invoice.invoiceNumber} reopened`,
+        body: reason || "A previously disputed invoice was reopened and is awaiting payment.",
+      },
+    };
+    const invoiceMessage = invoiceMessages[status];
+    if (invoiceMessage) {
+      void notifyUsers(invoiceAudience, {
+        ...invoiceMessage,
+        type: "system",
+        link: `/bookings/${booking.id}`,
+        data: { invoiceId: invoice.id, bookingId: booking.id, status, source: "admin" },
+      }).catch(() => undefined);
+    }
+
     return res.json({ invoice: changed[0], duplicate: false });
   } catch (err) {
     logger.error({ err }, "admin invoice status update error");

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, currency, formatDate } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { RotateCcw, RefreshCw, Check, X, Loader2, Search } from "lucide-react";
+import { RotateCcw, RefreshCw, Check, X, Loader2, Search, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface Refund {
   id: string;
@@ -40,6 +40,8 @@ export function RefundsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [page, setPage] = useState(1);
+  const limit = 25;
   const [selected, setSelected] = useState<Refund | null>(null);
   const [resolutionNote, setResolutionNote] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
@@ -50,12 +52,29 @@ export function RefundsPage() {
     return () => window.clearTimeout(timer);
   }, [search]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, statusFilter, from, to]);
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ["admin", "refunds", focusId, debouncedSearch, statusFilter, from, to],
-    queryFn: () => api<{ refunds: Refund[] }>("/api/admin/refunds", {
+    queryKey: ["admin", "refunds", focusId, debouncedSearch, statusFilter, from, to, page],
+    queryFn: () => api<{
+      refunds: Refund[];
+      total: number;
+      page: number;
+      limit: number;
+      stats: { totalRequests: number; pending: number; totalPaid: number };
+    }>("/api/admin/refunds", {
       params: focusId
         ? { focus: focusId }
-        : { search: debouncedSearch || undefined, status: statusFilter, from: from || undefined, to: to || undefined },
+        : {
+            search: debouncedSearch || undefined,
+            status: statusFilter,
+            from: from || undefined,
+            to: to || undefined,
+            page,
+            limit,
+          },
     }),
     refetchInterval: 180000,
   });
@@ -88,9 +107,13 @@ export function RefundsPage() {
     setFocusOpened(true);
   }, [focusId, focusOpened, refunds]);
   const filtered = refunds;
-
-  const pending = refunds.filter((r) => r.status === "pending").length;
-  const totalPaid = refunds.filter((r) => r.status === "paid").reduce((sum, r) => sum + r.amountRequested, 0);
+  const total = data?.total ?? 0;
+  const pending = data?.stats?.pending ?? 0;
+  const totalPaid = data?.stats?.totalPaid ?? 0;
+  const totalRequests = data?.stats?.totalRequests ?? 0;
+  const pages = Math.max(1, Math.ceil(total / limit));
+  const rangeFrom = total ? (page - 1) * limit + 1 : 0;
+  const rangeTo = Math.min(page * limit, total);
 
   return (
     <div className="space-y-6">
@@ -110,7 +133,7 @@ export function RefundsPage() {
         </div>
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Requests</p>
-          <p className="text-2xl font-bold text-slate-700 mt-1">{refunds.length}</p>
+          <p className="text-2xl font-bold text-slate-700 mt-1">{totalRequests}</p>
         </div>
       </div>
 
@@ -207,6 +230,31 @@ export function RefundsPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {!focusId && (
+          <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between gap-3 text-xs text-slate-500">
+            <span>Showing {rangeFrom}-{rangeTo} of {total} matching refunds</span>
+            <div className="flex items-center gap-2">
+              <button
+                disabled={page <= 1 || isLoading}
+                onClick={() => setPage((value) => Math.max(1, value - 1))}
+                className="p-1.5 rounded border border-slate-200 disabled:opacity-40"
+                aria-label="Previous refunds page"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span>Page {page} of {pages}</span>
+              <button
+                disabled={page >= pages || isLoading}
+                onClick={() => setPage((value) => Math.min(pages, value + 1))}
+                className="p-1.5 rounded border border-slate-200 disabled:opacity-40"
+                aria-label="Next refunds page"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
           </div>
         )}
       </div>

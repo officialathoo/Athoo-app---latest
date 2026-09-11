@@ -35,6 +35,10 @@ export interface Booking {
   attachment?: string | null;
   videoUrl?: string | null;
   address: string;
+  locationCity?: string | null;
+  locationArea?: string | null;
+  locationProvince?: string | null;
+  locationCountryCode?: string | null;
   scheduledDate: string;
   scheduledTime: string;
   status: BookingStatus;
@@ -52,9 +56,16 @@ export interface Booking {
   providerAmount?: number | null;
   ratePerHour?: number | null;
   visitCharge?: number | null;
+  promotionId?: string | null;
+  promoCode?: string | null;
+  promoDiscountType?: "fixed" | "percentage" | null;
+  promoDiscountValue?: number | null;
+  promoUsageReservedAt?: string | null;
+  promoUsageReleasedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   customerProfileImage?: string | null;
+  customerProfileColor?: string | null;
   providerProfileImage?: string | null;
   providerProfileColor?: string | null;
   providerArrivedAt?: string;
@@ -76,6 +87,8 @@ export interface BookingAlert {
 interface BookingContextType {
   bookings: Booking[];
   isLoading: boolean;
+  hasMore: boolean;
+  isLoadingMore: boolean;
   pendingAlerts: BookingAlert[];
   consumeAlerts: () => BookingAlert[];
   pendingRatingBooking: Booking | null;
@@ -92,16 +105,25 @@ interface BookingContextType {
     scheduledTime: string;
     price?: number;
     visitCharge?: number;
+    promoCode?: string;
     pickedLat?: number;
     pickedLng?: number;
     customerLat?: number;
     customerLng?: number;
+    locationCity: string;
+    locationArea: string;
+    locationProvince?: string;
+    locationCountryCode: string;
+    locationSource: string;
+    locationAccuracy?: number | null;
+    locationConfirmedAt: string;
     addressMode?: string;
   }) => Promise<Booking>;
   updateBookingStatus: (id: string, status: BookingStatus, price?: number) => Promise<void>;
   rateBooking: (id: string, rating: number, review: string) => Promise<void>;
   getMyBookings: (userId: string, role: "customer" | "provider") => Booking[];
-  loadBookings: () => Promise<void>;
+  loadBookings: (opts?: { silent?: boolean }) => Promise<void>;
+  loadMoreBookings: () => Promise<void>;
 }
 
 const BookingContext = createContext<BookingContextType | null>(null);
@@ -110,6 +132,73 @@ const SEEN_BOOKINGS_KEY = "athoo_seen_booking_ids";
 const SEEN_STATUSES_KEY = "athoo_seen_booking_statuses";
 const SEEN_ARRIVED_KEY = "athoo_seen_booking_arrivals";
 const BOOKING_POLL_INTERVAL_MS = 120_000;
+const BOOKING_FOREGROUND_REFRESH_COOLDOWN_MS = 60_000;
+const BOOKING_CACHE_VERSION = 1;
+const BOOKING_CACHE_MAX_ROWS = 250;
+const BOOKING_PAGE_SIZE = 60;
+const BOOKING_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+interface BookingCacheEnvelope {
+  version: number;
+  savedAt: number;
+  bookings: Booking[];
+}
+
+function bookingCacheKey(userId: string): string {
+  return `athoo:bookings:${BOOKING_CACHE_VERSION}:${userId}`;
+}
+
+function safeBookingForCache(booking: Booking): Booking {
+  return {
+    ...booking,
+    customerPhone: "",
+    providerPhone: "",
+    startPin: undefined,
+    completePin: undefined,
+  };
+}
+
+function bookingTimestamp(booking: Booking): number {
+  const updated = Date.parse(String(booking.updatedAt || booking.createdAt || ""));
+  return Number.isFinite(updated) ? updated : 0;
+}
+
+function mergeBookings(...groups: Booking[][]): Booking[] {
+  const byId = new Map<string, Booking>();
+  for (const group of groups) {
+    for (const booking of group) {
+      if (!booking?.id) continue;
+      byId.set(booking.id, { ...(byId.get(booking.id) || {}), ...booking });
+    }
+  }
+  return [...byId.values()].sort((a, b) => bookingTimestamp(b) - bookingTimestamp(a) || b.id.localeCompare(a.id));
+}
+
+async function readBookingCache(userId: string): Promise<Booking[]> {
+  try {
+    const raw = await AsyncStorage.getItem(bookingCacheKey(userId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as BookingCacheEnvelope;
+    if (parsed.version !== BOOKING_CACHE_VERSION || !Array.isArray(parsed.bookings)) return [];
+    if (Date.now() - Number(parsed.savedAt || 0) > BOOKING_CACHE_MAX_AGE_MS) return [];
+    return parsed.bookings;
+  } catch {
+    return [];
+  }
+}
+
+async function writeBookingCache(userId: string, rows: Booking[]): Promise<void> {
+  try {
+    const envelope: BookingCacheEnvelope = {
+      version: BOOKING_CACHE_VERSION,
+      savedAt: Date.now(),
+      bookings: rows.slice(0, BOOKING_CACHE_MAX_ROWS).map(safeBookingForCache),
+    };
+    await AsyncStorage.setItem(bookingCacheKey(userId), JSON.stringify(envelope));
+  } catch {
+    // Cache failures must never block live booking data.
+  }
+}
 
 async function getSeenIds(): Promise<Set<string>> {
   try {
@@ -164,6 +253,8 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [pendingAlerts, setPendingAlerts] = useState<BookingAlert[]>([]);
   const [pendingRatingBooking, setPendingRatingBooking] = useState<Booking | null>(null);
 
@@ -176,6 +267,14 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
   const loadInFlightRef = useRef(false);
   const pollInFlightRef = useRef(false);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const bookingsRef = useRef<Booking[]>([]);
+  const nextCursorRef = useRef<string | null>(null);
+  const loadMoreInFlightRef = useRef(false);
+  const lastFullLoadAtRef = useRef(0);
+
+  useEffect(() => {
+    bookingsRef.current = bookings;
+  }, [bookings]);
 
   const consumeAlerts = useCallback((): BookingAlert[] => {
     const copy: BookingAlert[] = [];
@@ -186,8 +285,9 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
     return copy;
   }, []);
 
-  const loadBookings = useCallback(async () => {
-    if (!user) {
+  const loadBookings = useCallback(async (opts?: { silent?: boolean }) => {
+    const currentUser = user;
+    if (!currentUser) {
       setBookings([]);
       setPendingAlerts([]);
       setPendingRatingBooking(null);
@@ -196,10 +296,18 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
     if (loadInFlightRef.current) return;
 
     loadInFlightRef.current = true;
-    setIsLoading(true);
+    const showLoader = opts?.silent !== true && bookingsRef.current.length === 0;
+    if (showLoader) setIsLoading(true);
     try {
-      const res = await api.getBookings();
-      setBookings(res.bookings as Booking[]);
+      const res = await api.getBookings({ limit: BOOKING_PAGE_SIZE });
+      const fresh = Array.isArray(res?.bookings) ? (res.bookings as Booking[]) : [];
+      const merged = mergeBookings(bookingsRef.current, fresh);
+      setBookings(merged);
+      bookingsRef.current = merged;
+      nextCursorRef.current = res.nextCursor || null;
+      setHasMore(Boolean(res.hasMore && res.nextCursor));
+      lastFullLoadAtRef.current = Date.now();
+      void writeBookingCache(currentUser.id, merged);
     } catch (e: any) {
       const msg = String(e?.message || e || "");
       if (!msg.includes("401") && !msg.includes("Unauthorized") && !msg.toLowerCase().includes("timeout")) {
@@ -207,19 +315,74 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
       }
     } finally {
       loadInFlightRef.current = false;
-      setIsLoading(false);
+      if (showLoader) setIsLoading(false);
     }
-  }, [user]);
+  }, [user?.id]);
+
+  const loadMoreBookings = useCallback(async () => {
+    const currentUser = user;
+    const cursor = nextCursorRef.current;
+    if (!currentUser || !cursor || loadMoreInFlightRef.current) return;
+    loadMoreInFlightRef.current = true;
+    setIsLoadingMore(true);
+    try {
+      const res = await api.getBookings({ limit: BOOKING_PAGE_SIZE, cursor });
+      const page = Array.isArray(res?.bookings) ? (res.bookings as Booking[]) : [];
+      const merged = mergeBookings(bookingsRef.current, page);
+      setBookings(merged);
+      bookingsRef.current = merged;
+      nextCursorRef.current = res.nextCursor || null;
+      setHasMore(Boolean(res.hasMore && res.nextCursor));
+      lastFullLoadAtRef.current = Date.now();
+      void writeBookingCache(currentUser.id, merged);
+    } catch (error) {
+      appLogger.warn("bookings", "Failed to load older bookings:", error);
+    } finally {
+      loadMoreInFlightRef.current = false;
+      setIsLoadingMore(false);
+    }
+  }, [user?.id]);
 
   useEffect(() => {
-    loadBookings();
-  }, [loadBookings]);
+    let cancelled = false;
+    initializedRef.current = false;
+    if (!user) {
+      setBookings([]);
+      bookingsRef.current = [];
+      nextCursorRef.current = null;
+      setHasMore(false);
+      return;
+    }
+
+    setBookings([]);
+    bookingsRef.current = [];
+    nextCursorRef.current = null;
+    setHasMore(false);
+    void (async () => {
+      const cached = await readBookingCache(user.id);
+      if (cancelled) return;
+      if (cached.length > 0) {
+        setBookings(cached);
+        bookingsRef.current = cached;
+      }
+      await loadBookings({ silent: cached.length > 0 });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, loadBookings]);
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (nextState) => {
       appStateRef.current = nextState;
-      if (nextState === "active" && user) {
-        void loadBookings();
+      if (
+        nextState === "active" &&
+        user &&
+        Date.now() - lastFullLoadAtRef.current >=
+          BOOKING_FOREGROUND_REFRESH_COOLDOWN_MS
+      ) {
+        void loadBookings({ silent: true });
       }
     });
     return () => sub.remove();
@@ -244,8 +407,22 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
 
     pollInFlightRef.current = true;
     try {
-      const res = await api.getBookings();
-      const fresh: Booking[] = res.bookings as Booking[];
+      const latestTimestamp = bookingsRef.current.reduce((max, booking) => Math.max(max, bookingTimestamp(booking)), 0);
+      const updatedSince = latestTimestamp > 0 ? new Date(Math.max(0, latestTimestamp - 1000)).toISOString() : null;
+      const fresh: Booking[] = [];
+      let deltaCursor: string | null = null;
+      let deltaPages = 0;
+      do {
+        const res = await api.getBookings({ limit: 100, updatedSince, cursor: deltaCursor });
+        if (Array.isArray(res.bookings)) fresh.push(...(res.bookings as Booking[]));
+        deltaCursor = res.hasMore ? res.nextCursor || null : null;
+        deltaPages += 1;
+      } while (deltaCursor && deltaPages < 10);
+
+      // A single poll is bounded to 1,000 changed records. If an installation
+      // exceeds that during one interval, the next foreground/full refresh
+      // reconciles the first page without blocking the UI.
+      const merged = mergeBookings(bookingsRef.current, fresh);
 
       if (user.role === "provider") {
         const seenIds = await getSeenIds();
@@ -338,13 +515,37 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      setBookings(fresh);
+      setBookings(merged);
+      bookingsRef.current = merged;
+      void writeBookingCache(user.id, merged);
     } catch {
       // Silent: polling must never destabilize auth/session state.
     } finally {
       pollInFlightRef.current = false;
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!user || initializedRef.current || bookings.length === 0) return;
+    initializedRef.current = true;
+    void (async () => {
+      if (user.role === "provider") {
+        const pending = bookings.filter((b) => b.providerId === user.id && b.status === "pending");
+        await markIdsSeen(pending.map((b) => b.id));
+      } else {
+        const statuses: Record<string, string> = {};
+        const arrivals: Record<string, string> = {};
+        bookings
+          .filter((b) => b.customerId === user.id)
+          .forEach((b) => {
+            statuses[b.id] = b.status;
+            if (b.providerArrivedAt) arrivals[b.id] = String(b.providerArrivedAt);
+          });
+        await saveSeenStatuses(statuses);
+        await saveSeenArrivals(arrivals);
+      }
+    })();
+  }, [user?.id, user?.role, bookings]);
 
   useEffect(() => {
     if (!user) {
@@ -355,38 +556,6 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
     }
 
     notificationService.init();
-
-    if (!initializedRef.current) {
-      initializedRef.current = true;
-      (async () => {
-        const res = await api.getBookings().catch(() => null);
-        if (!res) return;
-
-        const fresh: Booking[] = res.bookings;
-
-        if (user.role === "provider") {
-          const pending = fresh.filter(
-            (b) => b.providerId === user.id && b.status === "pending"
-          );
-          await markIdsSeen(pending.map((b) => b.id));
-        }
-
-        if (user.role === "customer") {
-          const map: Record<string, string> = {};
-          const arrivals: Record<string, string> = {};
-          fresh
-            .filter((b) => b.customerId === user.id)
-            .forEach((b: any) => {
-              map[b.id] = b.status;
-              if (b.providerArrivedAt) {
-                arrivals[b.id] = String(b.providerArrivedAt);
-              }
-            });
-          await saveSeenStatuses(map);
-          await saveSeenArrivals(arrivals);
-        }
-      })();
-    }
 
     if (pollRef.current) {
       clearInterval(pollRef.current);
@@ -404,23 +573,31 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const off = realtime.on((msg) => {
-      // Live provider location — update coords without a full reload.
+      // Live provider location — update coordinates without a full reload.
       if (msg.type === "booking:location") {
         const { bookingId, providerLat, providerLng, providerAccuracy, providerUpdatedAt } = msg.payload || {};
         if (!bookingId) return;
-        setBookings((prev) =>
-          prev.map((b) =>
+        setBookings((prev) => {
+          const next = prev.map((b) =>
             b.id === bookingId
-              ? { ...b, providerLat: providerLat ?? b.providerLat, providerLng: providerLng ?? b.providerLng, providerAccuracy: providerAccuracy ?? b.providerAccuracy, providerUpdatedAt: providerUpdatedAt ?? b.providerUpdatedAt }
+              ? {
+                  ...b,
+                  providerLat: providerLat ?? b.providerLat,
+                  providerLng: providerLng ?? b.providerLng,
+                  providerAccuracy: providerAccuracy ?? b.providerAccuracy,
+                  providerUpdatedAt: providerUpdatedAt ?? b.providerUpdatedAt,
+                }
               : b
-          )
-        );
+          );
+          bookingsRef.current = next;
+          if (user?.id) void writeBookingCache(user.id, next);
+          return next;
+        });
         return;
       }
 
-      // Any booking mutation — merge the fresh booking into state immediately so
-      // the customer sees the OTP, status change, arrival flag, etc. without
-      // waiting for the next 20-second poll cycle.
+      // Merge booking mutations immediately so status, OTP, arrival and other
+      // server-authoritative fields appear without a manual refresh.
       const BOOKING_EVENTS = new Set([
         "booking:updated",
         "booking:accepted",
@@ -436,8 +613,12 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
         if (!fresh?.id) return;
         setBookings((prev) => {
           const exists = prev.some((b) => b.id === fresh.id);
-          if (exists) return prev.map((b) => (b.id === fresh.id ? { ...b, ...fresh } : b));
-          return [fresh, ...prev];
+          const next = exists
+            ? prev.map((b) => (b.id === fresh.id ? { ...b, ...fresh } : b))
+            : [fresh, ...prev];
+          bookingsRef.current = next;
+          if (user?.id) void writeBookingCache(user.id, next);
+          return next;
         });
         if (msg.type === "booking:new" && user?.role === "provider") {
           notificationService.playRealtimeFallback("booking").catch(() => {});
@@ -445,7 +626,7 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
       }
     });
     return off;
-  }, []);
+  }, [user?.id, user?.role]);
 
   const createBooking = useCallback(
     async (data: {
@@ -460,10 +641,18 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
       scheduledTime: string;
       price?: number;
       visitCharge?: number;
+      promoCode?: string;
       pickedLat?: number;
       pickedLng?: number;
       customerLat?: number;
       customerLng?: number;
+      locationCity: string;
+      locationArea: string;
+      locationProvince?: string;
+      locationCountryCode: string;
+      locationSource: string;
+      locationAccuracy?: number | null;
+      locationConfirmedAt: string;
       addressMode?: string;
     }): Promise<Booking> => {
       const res = await api.createBooking({
@@ -478,36 +667,59 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
         scheduledTime: data.scheduledTime,
         price: data.price,
         visitCharge: data.visitCharge,
+        promoCode: data.promoCode,
         pickedLat: data.pickedLat,
         pickedLng: data.pickedLng,
         customerLat: data.customerLat,
         customerLng: data.customerLng,
+        locationCity: data.locationCity,
+        locationArea: data.locationArea,
+        locationProvince: data.locationProvince,
+        locationCountryCode: data.locationCountryCode,
+        locationSource: data.locationSource,
+        locationAccuracy: data.locationAccuracy,
+        locationConfirmedAt: data.locationConfirmedAt,
         addressMode: data.addressMode,
       });
 
       const booking = res.booking as Booking;
-      setBookings((prev) => [booking, ...prev]);
+      setBookings((prev) => {
+        const next = [booking, ...prev.filter((item) => item.id !== booking.id)];
+        bookingsRef.current = next;
+        if (user?.id) void writeBookingCache(user.id, next);
+        return next;
+      });
       return booking;
     },
-    []
+    [user?.id]
   );
 
   const updateBookingStatus = useCallback(
     async (id: string, status: BookingStatus, price?: number) => {
       const res = await api.updateBookingStatus(id, status, price);
       const updated = res.booking as Booking;
-      setBookings((prev) => prev.map((b) => (b.id === id ? updated : b)));
+      setBookings((prev) => {
+        const next = prev.map((b) => (b.id === id ? updated : b));
+        bookingsRef.current = next;
+        if (user?.id) void writeBookingCache(user.id, next);
+        return next;
+      });
     },
-    []
+    [user?.id]
   );
 
   const rateBooking = useCallback(
     async (id: string, rating: number, review: string) => {
       const res = await api.rateBooking(id, rating, review);
       const updated = res.booking as Booking;
-      setBookings((prev) => prev.map((b) => (b.id === id ? updated : b)));
+      setBookings((prev) => {
+        const next = prev.map((b) => (b.id === id ? updated : b));
+        bookingsRef.current = next;
+        if (user?.id) void writeBookingCache(user.id, next);
+        return next;
+      });
     },
-    []
+    [user?.id]
   );
 
   const getMyBookings = useCallback(
@@ -524,6 +736,8 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
       value={{
         bookings,
         isLoading,
+        hasMore,
+        isLoadingMore,
         pendingAlerts,
         consumeAlerts,
         pendingRatingBooking,
@@ -533,6 +747,7 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
         rateBooking,
         getMyBookings,
         loadBookings,
+        loadMoreBookings,
       }}
     >
       {children}

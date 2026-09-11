@@ -9,9 +9,12 @@ const lifecycle = fs.readFileSync(new URL("../src/lib/mediaLifecycle.ts", import
 
 test("direct uploads are verified in storage before persistence", () => {
   assert.match(routes, /storage\/uploads\/complete/);
-  assert.match(routes, /statObject\(objectPath\)/);
+  assert.match(routes, /copyObject\(record\.quarantinePath/);
+  assert.match(routes, /statObject\(record\.scanPath\)/);
+  assert.match(routes, /copyObject\(record\.scanPath/);
   assert.match(provider, /statObject\(keyOrObjectPath/);
   assert.match(mobile, /confirmUploadedObject\(uploadInstructions\.objectPath, size, metadata\.contentType\)/);
+  assert.match(mobile, /return confirmed\.objectPath/);
 });
 
 test("mobile retries only transient upload failures and preserves professional errors", () => {

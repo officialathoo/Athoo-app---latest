@@ -1,9 +1,10 @@
-import { AthooMapFallback } from "@/components/maps/AthooMapFallback";
+import { OpenStreetMapPreview } from "@/components/maps/OpenStreetMapPreview";
 import { BookingTrustPanel, PostServiceCare } from "@/components/design";
 import { Icon } from "@/components/ui/Icon";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   AppState,
@@ -21,6 +22,7 @@ import { brandConfig } from "@/config/brand";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/context/AuthContext";
 import { useBookings, Booking } from "@/context/BookingContext";
@@ -28,6 +30,7 @@ import { useChat } from "@/context/ChatContext";
 import { useCall } from "@/context/CallContext";
 import { getDistanceKm } from "@/utils/distance";
 import { api, realtime, getToken } from "@/services/api";
+import { PrivateImage } from "@/services/storage";
 import { shareBookingInvoice } from "@/utils/bookingInvoicePdf";
 import { buildRepeatBookingParams } from "@/utils/repeatBooking";
 import { apiErrorToMessage } from "@/lib/apiError";
@@ -145,8 +148,7 @@ function getProviderCoords(booking: any) {
 async function openMapsAt(latitude: number, longitude: number, label?: string) {
   return openExternalMap({ latitude, longitude, label });
 }
-
-// ── Custom map markers ────────────────────────────────────────────────────────
+// Custom map markers
 
 function AthooMarker() {
   const { theme } = useTheme();
@@ -205,7 +207,7 @@ export default function BookingDetailScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
   const { user } = useAuth();
-  const { bookings, updateBookingStatus, rateBooking, loadBookings } = useBookings();
+  const { bookings, isLoading: bookingsLoading, updateBookingStatus, rateBooking, loadBookings } = useBookings();
   const { getOrCreateChat } = useChat();
   const { startOutgoingCall } = useCall();
   const insets = useSafeAreaInsets();
@@ -227,6 +229,10 @@ export default function BookingDetailScreen() {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [realtimeProviderCoords, setRealtimeProviderCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [isUpdatingJobLocation, setIsUpdatingJobLocation] = useState(false);
+  const [bookingLoadAttempted, setBookingLoadAttempted] = useState(false);
+  const [bookingRetrying, setBookingRetrying] = useState(false);
+  const [openingChat, setOpeningChat] = useState(false);
+  const chatOpenRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const providerAnimCoords = useRef({
@@ -238,17 +244,34 @@ export default function BookingDetailScreen() {
 
   const booking = bookings.find((b) => b.id === bookingId) as Booking | undefined;
 
+  const refreshBooking = useCallback(async (mode: "background" | "retry" = "background") => {
+    if (!bookingId) return;
+
+    if (mode === "retry") {
+      setBookingRetrying(true);
+    }
+
+    try {
+      await loadBookings();
+    } finally {
+      setBookingLoadAttempted(true);
+      if (mode === "retry") {
+        setBookingRetrying(false);
+      }
+    }
+  }, [bookingId, loadBookings]);
+
   useEffect(() => {
     if (!bookingId) return;
 
     const tick = () => {
       if (AppState.currentState === "active") {
-        loadBookings().catch(() => undefined);
+        void refreshBooking("background");
       }
     };
 
-    // Realtime booking events are the primary update path. Refresh once on
-    // entry and keep a conservative fallback poll for missed connections.
+    // Realtime booking events remain the primary update path. The detail
+    // screen keeps a conservative fallback poll for missed connections.
     tick();
     const shouldPoll = !booking || !["completed", "cancelled"].includes(booking.status);
     if (shouldPoll) {
@@ -266,7 +289,7 @@ export default function BookingDetailScreen() {
         pollRef.current = null;
       }
     };
-  }, [bookingId, booking?.status, loadBookings]);
+  }, [bookingId, booking?.status, refreshBooking]);
 
   useEffect(() => {
     if (!bookingId) return;
@@ -348,8 +371,8 @@ export default function BookingDetailScreen() {
     try {
       const res = await api.markBookingPaid(booking.id);
       const updated = res.booking as Booking;
-      await loadBookings();
       showToast(`Cash payment confirmed for ${updated.service}.`);
+      void loadBookings({ silent: true });
     } catch (e: any) {
       showToast(apiErrorToMessage(e, "We couldn't mark this booking as paid. Please try again."));
     } finally {
@@ -374,8 +397,8 @@ export default function BookingDetailScreen() {
         return;
       }
       await api.updateCustomerLocation(bookingId, result.location.latitude, result.location.longitude);
-      await loadBookings();
       showToast("Job location updated to your current position.");
+      void loadBookings({ silent: true });
     } catch {
       showToast("Could not update location. Try again.");
     } finally {
@@ -391,7 +414,7 @@ export default function BookingDetailScreen() {
   const isProviderStale = useMemo(() => {
     if (realtimeProviderCoords) return false;
     const updatedAt = (booking as any)?.providerUpdatedAt;
-    if (!updatedAt) return !!dbProviderCoords; // has coords but no timestamp → treat as stale
+    if (!updatedAt) return !!dbProviderCoords; // has coords but no timestamp -> treat as stale
     return Date.now() - new Date(updatedAt).getTime() > 5 * 60 * 1000;
   }, [realtimeProviderCoords, dbProviderCoords, booking]);
 
@@ -449,27 +472,62 @@ export default function BookingDetailScreen() {
   }, [customerCoords, providerCoords]);
 
   if (!booking) {
+    const stillLoading = bookingsLoading || !bookingLoadAttempted;
+
     return (
       <View style={styles.notFound}>
-        <Text>Loading...</Text>
+        {stillLoading ? (
+          <>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
+            <Text style={{ color: theme.colors.textSecondary, marginTop: 12 }}>
+              Loading booking...
+            </Text>
+          </>
+        ) : (
+          <>
+            <Icon name="alert-circle" size={42} color={theme.colors.danger} />
+            <Text style={{ color: theme.colors.text, fontSize: 18, fontWeight: "800", marginTop: 12 }}>
+              Booking unavailable
+            </Text>
+            <Text style={{ color: theme.colors.textSecondary, marginTop: 8, textAlign: "center", paddingHorizontal: 28 }}>
+              This booking could not be found or loaded. Check your connection and try again.
+            </Text>
+            <Pressable
+              onPress={() => void refreshBooking("retry")}
+              disabled={bookingRetrying}
+              accessibilityRole="button"
+              testID="customer-booking-detail-retry"
+              style={{ marginTop: 16, paddingVertical: 10, paddingHorizontal: 20 }}
+            >
+              {bookingRetrying ? (
+                <ActivityIndicator size="small" color={theme.colors.primary} />
+              ) : (
+                <Text style={{ color: theme.colors.primary, fontWeight: "800" }}>Retry</Text>
+              )}
+            </Pressable>
+            <Pressable
+              onPress={() => router.back()}
+              accessibilityRole="button"
+              style={{ marginTop: 8, paddingVertical: 8, paddingHorizontal: 16 }}
+            >
+              <Text style={{ color: theme.colors.textSecondary, fontWeight: "700" }}>Go Back</Text>
+            </Pressable>
+          </>
+        )}
       </View>
     );
   }
 
   const status = getStatusConfig(theme)[booking.status];
   const providerName = booking.providerName || "Provider";
-  // For scheduled jobs, only show the map once the provider has started sharing
-  // their location (i.e. dbProviderCoords is set). For instant/in-progress
-  // jobs show it as soon as the status allows.
-  const isScheduledBooking = !!(booking.scheduledDate || booking.scheduledTime);
-  const providerHasSharedLocation = !!dbProviderCoords || !!realtimeProviderCoords;
+  // Show the route immediately after acceptance, including scheduled jobs.
+  // Once the provider has arrived / the job starts, location has served its
+  // purpose and the screen returns focus to work controls instead of a map.
   const showTrackingMap =
-    booking.status === "in_progress"
-      ? !!customerCoords && isValidCoordPair(customerCoords?.latitude, customerCoords?.longitude)
-      : booking.status === "accepted" &&
-        !!customerCoords &&
-        isValidCoordPair(customerCoords?.latitude, customerCoords?.longitude) &&
-        (!isScheduledBooking || providerHasSharedLocation);
+    booking.status === "accepted" &&
+    !(booking as any).providerArrivedAt &&
+    !!customerCoords &&
+    isValidCoordPair(customerCoords?.latitude, customerCoords?.longitude);
 
   const TIMELINE = [
     { label: "Booking Placed", done: true },
@@ -502,9 +560,19 @@ export default function BookingDetailScreen() {
   };
 
   const handleChat = async () => {
-    if (!user) return;
+    if (!user || chatOpenRef.current) return;
+
+    chatOpenRef.current = true;
+    setOpeningChat(true);
     try {
-      const chat = await getOrCreateChat(user.id, user.name, booking.providerId, providerName, booking.id, booking.service);
+      const chat = await getOrCreateChat(
+        user.id,
+        user.name,
+        booking.providerId,
+        providerName,
+        booking.id,
+        booking.service,
+      );
       router.push({
         pathname: "/(customer)/chat-room",
         params: {
@@ -516,13 +584,22 @@ export default function BookingDetailScreen() {
         },
       });
     } catch (error) {
-      Alert.alert("Chat unavailable", apiErrorToMessage(error, "We couldn't open this conversation. Please try again."));
+      Alert.alert(
+        "Chat unavailable",
+        apiErrorToMessage(
+          error,
+          "We couldn't open this conversation. Please try again.",
+        ),
+      );
+    } finally {
+      chatOpenRef.current = false;
+      setOpeningChat(false);
     }
   };
 
   const handleCall = async () => {
     if (!user) return;
-    startOutgoingCall(booking.providerId, providerName, booking.service, theme.colors.primary).catch(() => {});
+    startOutgoingCall(booking.providerId, providerName, booking.service, theme.colors.primary, booking.providerProfileImage || undefined).catch(() => {});
   };
 
   const showToast = (msg: string) => {
@@ -605,23 +682,58 @@ export default function BookingDetailScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Service Provider</Text>
           <View style={styles.providerRow}>
-            <View style={styles.provAvatar}>
-              <Text style={styles.provAvatarTxt}>
-                {booking.providerName
-                  .split(" ")
-                  .map((n) => n[0])
-                  .join("")
-                  .toUpperCase()
-                  .slice(0, 2)}
-              </Text>
-            </View>
+            {booking.providerProfileImage ? (
+              <PrivateImage
+                objectPath={booking.providerProfileImage}
+                style={styles.provAvatar}
+                resizeMode="cover"
+                accessibilityLabel={`${providerName} profile photo`}
+              />
+            ) : (
+              <View
+                style={[
+                  styles.provAvatar,
+                  {
+                    backgroundColor:
+                      (booking.providerProfileColor || theme.colors.primary) + "18",
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.provAvatarTxt,
+                    {
+                      color:
+                        booking.providerProfileColor || theme.colors.primary,
+                    },
+                  ]}
+                >
+                  {providerName
+                    .split(" ")
+                    .map((n) => n[0])
+                    .join("")
+                    .toUpperCase()
+                    .slice(0, 2)}
+                </Text>
+              </View>
+            )}
             <View style={{ flex: 1 }}>
               <Text style={styles.provName}>{booking.providerName}</Text>
               <Text style={styles.provPhone}>{booking.providerPhone}</Text>
             </View>
             <View style={{ flexDirection: "row", gap: 8 }}>
-              <Pressable style={styles.chatBtn} onPress={handleChat}>
-                <Icon name="message-circle" size={18} color={theme.colors.primary} />
+              <Pressable
+                style={[styles.chatBtn, openingChat && { opacity: 0.65 }]}
+                onPress={handleChat}
+                disabled={openingChat}
+                accessibilityRole="button"
+                accessibilityLabel="Message service provider"
+              >
+                {openingChat ? (
+                  <ActivityIndicator size="small" color={theme.colors.primary} />
+                ) : (
+                  <Icon name="message-circle" size={18} color={theme.colors.primary} />
+                )}
               </Pressable>
               {(booking.status === "accepted" || booking.status === "in_progress") && (
                 <Pressable
@@ -655,7 +767,17 @@ export default function BookingDetailScreen() {
               </View>
             </View>
 
-            <AthooMapFallback />
+            <OpenStreetMapPreview
+              latitude={customerCoords?.latitude}
+              longitude={customerCoords?.longitude}
+              height={250}
+              markers={[
+                ...(customerCoords ? [{ id: "job-site", kind: "job" as const, label: booking.address || "Job site", ...customerCoords }] : []),
+                ...(providerCoords ? [{ id: "provider", kind: "provider" as const, label: providerName, ...providerCoords }] : []),
+              ]}
+              polyline={routeCoords}
+              gesturesEnabled
+            />
 
             {/* Map legend */}
             <View style={styles.mapLegend}>
@@ -689,11 +811,11 @@ export default function BookingDetailScreen() {
                 <Text style={styles.trackInfoLabel}>Provider</Text>
                 <Text style={[styles.trackInfoValue, isProviderStale && { color: theme.colors.warning }]}>
                   {realtimeProviderCoords
-                    ? "● Live"
+                    ? "Live"
                     : isProviderStale
-                    ? "Updating…"
+                    ? "Updating..."
                     : providerCoords
-                    ? "● Recent"
+                    ? "Recent"
                     : "Not shared"}
                 </Text>
               </View>
@@ -753,7 +875,7 @@ export default function BookingDetailScreen() {
                 >
                   <Icon name="crosshair" size={15} color={theme.colors.primary} />
                   <Text style={styles.trackActionText}>
-                    {isUpdatingJobLocation ? "Updating…" : "My Location"}
+                    {isUpdatingJobLocation ? "Updating..." : "My Location"}
                   </Text>
                 </Pressable>
               )}
@@ -1144,49 +1266,50 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 16,
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: 12,
+    paddingBottom: 12,
     backgroundColor: theme.colors.surface,
-    borderBottomWidth: 1,
+    borderBottomWidth: redesign.visual.cardBorderWidth,
     borderBottomColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
   backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: theme.colors.background,
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
   },
-  title: { fontSize: 18, fontWeight: "800", color: theme.colors.text, flex: 1 },
-  statusBadge: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20 },
-  statusText: { fontSize: 11, fontWeight: "700" },
+  title: { ...theme.typography.h2, color: theme.colors.text, flex: 1, letterSpacing: -0.3 },
+  statusBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: theme.radius.pill },
+  statusText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily },
   scroll: { flex: 1 },
-  content: { padding: 20, gap: 16, paddingBottom: 60 },
+  content: { padding: redesign.layout.horizontalPadding, gap: 12, paddingBottom: 60 },
   card: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 18,
-    padding: 16,
-    shadowColor: theme.colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 2,
+    borderRadius: theme.radius.lg,
+    padding: 14,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
     gap: 12,
   },
   serviceHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
   serviceIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 14,
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
     backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
   },
-  serviceName: { fontSize: 18, fontWeight: "800", color: theme.colors.text },
-  bookingId: { fontSize: 12, color: theme.colors.textSecondary },
-  cardTitle: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
+  serviceName: { ...theme.typography.h2, color: theme.colors.text },
+  bookingId: { ...theme.typography.caption, color: theme.colors.textSecondary },
+  cardTitle: { ...theme.typography.h3, color: theme.colors.text },
   providerRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   provAvatar: {
     width: 44,
@@ -1197,18 +1320,19 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     justifyContent: "center",
     borderWidth: 2,
     borderColor: theme.colors.border,
+    overflow: "hidden",
   },
   provAvatarTxt: { fontSize: 14, fontWeight: "700", color: theme.colors.primary },
   provName: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
   provPhone: { fontSize: 12, color: theme.colors.textSecondary },
   chatBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
     backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.primary + "30",
   },
   trackHeader: {
@@ -1238,9 +1362,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   trackingMap: {
     width: "100%",
-    height: 240,
-    borderRadius: 16,
+    height: 210,
+    borderRadius: theme.radius.lg,
     overflow: "hidden",
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
   },
   mapLegend: {
     flexDirection: "row",
@@ -1261,10 +1387,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   trackInfoBox: {
     flex: 1,
     backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 12,
-    padding: 10,
+    borderRadius: theme.radius.md,
+    padding: 9,
     alignItems: "center",
     gap: 4,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
   },
   trackInfoLabel: {
     fontSize: 10,
@@ -1283,11 +1411,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   trackActionBtn: {
     flex: 1,
-    backgroundColor: theme.colors.primary + "10",
-    borderRadius: 12,
-    borderWidth: 1,
+    backgroundColor: theme.colors.infoSoft,
+    borderRadius: theme.radius.md,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.primary + "30",
-    paddingVertical: 12,
+    minHeight: redesign.control.compactHeight,
+    paddingHorizontal: 12,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
@@ -1332,12 +1461,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   timelineLabelDone: { color: theme.colors.text, fontWeight: "700" },
   starsRow: { flexDirection: "row", gap: 8 },
   reviewInput: {
-    backgroundColor: theme.colors.background,
-    borderRadius: 12,
+    backgroundColor: theme.colors.input,
+    borderRadius: theme.radius.md,
     padding: 12,
-    fontSize: 14,
+    ...theme.typography.body,
     color: theme.colors.text,
-    borderWidth: 1,
+    borderWidth: redesign.visual.inputBorderWidth,
     borderColor: theme.colors.border,
     textAlignVertical: "top",
     minHeight: 80,
@@ -1345,30 +1474,26 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   existingReview: { fontSize: 14, color: theme.colors.textSecondary, lineHeight: 20 },
   pinDisplayCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 18,
-    padding: 18,
+    borderRadius: theme.radius.lg,
+    padding: 14,
     gap: 12,
-    borderWidth: 2,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.primary + "40",
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 4,
+    ...theme.shadows.sm,
   },
   pinDisplayHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   pinDisplayTitle: { fontSize: 16, fontWeight: "800", color: theme.colors.primary },
   pinDisplayDesc: { fontSize: 13, color: theme.colors.textSecondary, lineHeight: 20 },
   pinValueBox: {
     backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 16,
-    paddingVertical: 20,
+    borderRadius: theme.radius.lg,
+    paddingVertical: 16,
     paddingHorizontal: 16,
     alignItems: "center",
-    borderWidth: 1,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.primary + "30",
   },
-  pinValue: { fontSize: 38, fontWeight: "900", color: theme.colors.text, letterSpacing: 8 },
+  pinValue: { fontSize: 32, fontWeight: "900", color: theme.colors.text, letterSpacing: 7},
   pinHint: {
     fontSize: 11,
     color: theme.colors.textSecondary,
@@ -1377,14 +1502,10 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   timerCard: {
     backgroundColor: theme.dark ? theme.colors.accentSoft : theme.colors.primaryPressed,
-    borderRadius: 18,
-    padding: 20,
+    borderRadius: theme.radius.lg,
+    padding: 16,
     gap: 10,
-    shadowColor: theme.colors.accent,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
+    ...theme.shadows.md,
   },
   timerHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
   timerLiveDot: {
@@ -1400,7 +1521,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     letterSpacing: 2,
   },
   timerDisplay: {
-    fontSize: 48,
+    fontSize: 40,
     fontWeight: "800",
     color: theme.colors.onBrand,
     textAlign: "center",
@@ -1411,70 +1532,70 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
+    minHeight: redesign.control.standardHeight,
+    paddingHorizontal: 16,
+    borderRadius: theme.radius.md,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.danger + "40",
-    backgroundColor: theme.colors.danger + "08",
+    backgroundColor: theme.colors.dangerSoft,
   },
   reportBtnText: { fontSize: 13, fontWeight: "600", color: theme.colors.danger },
 
   toastBanner: {
     position: "absolute",
     bottom: 28,
-    left: 20,
-    right: 20,
-    backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 14,
+    left: redesign.layout.horizontalPadding,
+    right: redesign.layout.horizontalPadding,
+    backgroundColor: theme.colors.elevated,
+    borderRadius: theme.radius.md,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    shadowColor: theme.colors.text,
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 10,
-    borderWidth: 1,
+    ...theme.shadows.md,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.border,
   },
   toastBannerText: { fontSize: 13, color: theme.colors.text, fontWeight: "600", flex: 1 },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
+    backgroundColor: theme.colors.overlay,
     justifyContent: "flex-end",
   },
   modalCard: {
-    backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
+    backgroundColor: theme.colors.elevated,
+    borderTopLeftRadius: theme.radius.xl,
+    borderTopRightRadius: theme.radius.xl,
+    padding: 20,
     paddingBottom: 36,
     gap: 8,
+    borderTopWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
   },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
   modalTitle: { fontSize: 17, fontWeight: "800", color: theme.colors.text },
   modalLabel: { fontSize: 13, fontWeight: "700", color: theme.colors.textSecondary, marginBottom: 4 },
   catOption: {
-    paddingVertical: 10,
+    minHeight: redesign.control.compactHeight,
     paddingHorizontal: 14,
-    borderRadius: 10,
-    borderWidth: 1,
+    borderRadius: theme.radius.md,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.border,
     backgroundColor: theme.colors.surfaceAlt,
     marginBottom: 4,
+    justifyContent: "center",
   },
   catOptionSelected: { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary + "10" },
   catOptionText: { fontSize: 13, color: theme.colors.text },
   catOptionTextSelected: { color: theme.colors.primary, fontWeight: "700" },
   reportInput: {
-    backgroundColor: theme.colors.background,
-    borderRadius: 12,
+    backgroundColor: theme.colors.input,
+    borderRadius: theme.radius.md,
     padding: 12,
-    fontSize: 14,
+    ...theme.typography.body,
     color: theme.colors.text,
-    borderWidth: 1,
+    borderWidth: redesign.visual.inputBorderWidth,
     borderColor: theme.colors.border,
     textAlignVertical: "top",
     minHeight: 90,

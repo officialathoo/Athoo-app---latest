@@ -9,6 +9,7 @@ import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  FlatList,
   Image,
   Platform,
   Pressable,
@@ -20,7 +21,7 @@ import {
   AppState,
 } from "react-native";
 import { PrivateImage } from "@/services/storage";
-import { getDirections, getRouteMetricsBatch, reverseGeocode } from "@/services/maps";
+import { getDirections, getProviderRouteMetricsBatch, reverseGeocode } from "@/services/maps";
 import { getFastForegroundLocation } from "@/services/location";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnimatedCard } from "@/components/ui/AnimatedCard";
@@ -35,12 +36,15 @@ import { matchingCategories, normalizeDiscoveryText, providerRecommendationScore
 import { useTheme } from "@/context/ThemeContext";
 import { useToast } from "@/context/ToastContext";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { getCategoryAppearance } from "@/utils/categoryAppearance";
+import { apiErrorToMessage } from "@/lib/apiError";
 
 // Only the "All Areas" sentinel is hardcoded here — actual city names are
 // loaded live from /api/service-areas below so this list always matches the
 // admin-managed, Pakistan-wide service_areas reference table.
 const DEFAULT_CITIES = ["All Areas"];
+const SEARCH_PROVIDERS_BACKGROUND_REFRESH_MS = 60_000;
 
 type ExtendedProvider = Provider & {
   latitude?: number;
@@ -85,6 +89,10 @@ export default function SearchScreen() {
   const [selectedService, setSelectedService] = useState<string | null>(null);
   const [showMap, setShowMap] = useState(false);
   const [sortBy, setSortBy] = useState<"recommended" | "nearby" | "rating" | "jobs">("recommended");
+  const hasActiveFilters =
+    selectedCity !== "All Areas" ||
+    selectedService !== null ||
+    sortBy !== "recommended";
 
   const [allProviders, setAllProviders] = useState<ExtendedProvider[]>([]);
   const [userLat, setUserLat] = useState<number | undefined>(undefined);
@@ -94,6 +102,10 @@ export default function SearchScreen() {
   const [locationAccuracyMeters, setLocationAccuracyMeters] = useState<number | null>(null);
   const [locationError, setLocationError] = useState("");
   const [loadingProviders, setLoadingProviders] = useState(false);
+  const [providerLoadError, setProviderLoadError] = useState("");
+  const providerLoadRequestInFlightRef = useRef(false);
+  const providersLoadedRef = useRef(false);
+  const providersLastLoadedAtRef = useRef(0);
   const [selectedProvider, setSelectedProvider] = useState<ExtendedProvider | null>(null);
   const [selectedRoute, setSelectedRoute] = useState<AthooMapCoordinate[]>([]);
 
@@ -232,65 +244,96 @@ export default function SearchScreen() {
     }, [userLat, userLng])
   );
 
+  const loadProviders = useCallback(async (
+    mode: "initial" | "refresh" | "background" = "initial"
+  ) => {
+    if (providerLoadRequestInFlightRef.current) return;
+
+    providerLoadRequestInFlightRef.current = true;
+    if (mode === "initial" && !providersLoadedRef.current) {
+      setLoadingProviders(true);
+    }
+
+    if (mode !== "background") {
+      setProviderLoadError("");
+    }
+
+    try {
+      const res = await api.getProviders();
+      const raw = (res.providers as Provider[]) || [];
+
+      const mapped: ExtendedProvider[] = raw.map((p) => {
+        const rawLat = (p as any).latitude ?? (p as any).lat;
+        const rawLng = (p as any).longitude ?? (p as any).lng;
+        const parsedLat = typeof rawLat === "number" ? rawLat : typeof rawLat === "string" ? Number(rawLat) : NaN;
+        const parsedLng = typeof rawLng === "number" ? rawLng : typeof rawLng === "string" ? Number(rawLng) : NaN;
+        const hasRealCoords = isValidMapCoord(parsedLat, parsedLng);
+
+        return {
+          ...(p as ExtendedProvider),
+          latitude: hasRealCoords ? parsedLat : undefined,
+          longitude: hasRealCoords ? parsedLng : undefined,
+          distanceKm: undefined,
+          routeDurationMin: null,
+          routeSource: undefined,
+          routeStatus: hasRealCoords ? "unavailable" : undefined,
+          straightLineDistanceKm: undefined,
+        };
+      });
+
+      setAllProviders(mapped);
+      providersLoadedRef.current = true;
+      providersLastLoadedAtRef.current = Date.now();
+      setProviderLoadError("");
+    } catch (error) {
+      setProviderLoadError(
+        apiErrorToMessage(
+          error,
+          "We couldn't load providers. Please try again."
+        )
+      );
+    } finally {
+      providerLoadRequestInFlightRef.current = false;
+      setLoadingProviders(false);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      let alive = true;
+      if (!providersLoadedRef.current) {
+        void loadProviders("initial");
+        return;
+      }
 
-      const load = async () => {
-        setLoadingProviders(true);
-        try {
-          const res = await api.getProviders();
-          const raw = (res.providers as Provider[]) || [];
-
-          const mapped: ExtendedProvider[] = raw.map((p) => {
-            const locationText =
-              ((p as any).location as string) ||
-              ((p as any).address as string) ||
-              ((p as any).city as string) ||
-              "";
-
-            const rawLat = (p as any).latitude ?? (p as any).lat;
-            const rawLng = (p as any).longitude ?? (p as any).lng;
-            const parsedLat = typeof rawLat === "number" ? rawLat : typeof rawLat === "string" ? Number(rawLat) : NaN;
-            const parsedLng = typeof rawLng === "number" ? rawLng : typeof rawLng === "string" ? Number(rawLng) : NaN;
-            const hasRealCoords = isValidMapCoord(parsedLat, parsedLng);
-            const latitude = hasRealCoords ? parsedLat : undefined;
-            const longitude = hasRealCoords ? parsedLng : undefined;
-
-            const straightLineDistanceKm =
-              hasRealCoords && userLat !== undefined && userLng !== undefined
-                ? getDistanceKm(userLat, userLng, parsedLat, parsedLng)
-                : undefined;
-
-            return {
-              ...(p as ExtendedProvider),
-              latitude,
-              longitude,
-              distanceKm: undefined,
-              routeDurationMin: null,
-              routeSource: undefined,
-              // A provider is pending only while an actual batch request includes
-              // that provider. Everyone else must remain honestly unavailable.
-              routeStatus: hasRealCoords ? "unavailable" : undefined,
-              straightLineDistanceKm,
-            };
-          });
-
-          if (alive) setAllProviders(mapped);
-        } catch {
-          if (alive) setAllProviders([]);
-        } finally {
-          if (alive) setLoadingProviders(false);
-        }
-      };
-
-      load();
-
-      return () => {
-        alive = false;
-      };
-    }, [userLat, userLng])
+      if (
+        Date.now() - providersLastLoadedAtRef.current >=
+        SEARCH_PROVIDERS_BACKGROUND_REFRESH_MS
+      ) {
+        void loadProviders("background");
+      }
+    }, [loadProviders])
   );
+
+  useEffect(() => {
+    setAllProviders((current) =>
+      current.map((provider) => {
+        const hasProviderCoords = isValidMapCoord(provider.latitude, provider.longitude);
+        const straightLineDistanceKm =
+          hasProviderCoords && userLat !== undefined && userLng !== undefined
+            ? getDistanceKm(userLat, userLng, provider.latitude!, provider.longitude!)
+            : undefined;
+
+        if (provider.straightLineDistanceKm === straightLineDistanceKm) {
+          return provider;
+        }
+
+        return {
+          ...provider,
+          straightLineDistanceKm,
+        };
+      })
+    );
+  }, [userLat, userLng]);
 
   const categoryMatches = useMemo(() => matchingCategories(query, categories), [query, categories]);
   const inferredServiceSlugs = useMemo(() => new Set(categoryMatches.map((category) => category.slug)), [categoryMatches]);
@@ -324,9 +367,7 @@ export default function SearchScreen() {
         (b.straightLineDistanceKm ?? Number.POSITIVE_INFINITY),
       )
       .slice(0, 12)
-      .map((provider) =>
-        `${provider.id}:${provider.latitude!.toFixed(5)},${provider.longitude!.toFixed(5)}`,
-      )
+      .map((provider) => provider.id)
       .join("|");
   }, [filtered, userLat, userLng]);
 
@@ -350,17 +391,8 @@ export default function SearchScreen() {
     }
 
     let active = true;
-    const candidateIds = new Set(routeCandidateKey.split("|").map((entry) => entry.split(":")[0]));
-    const candidates = allProviders
-      .filter((provider) =>
-        candidateIds.has(provider.id) &&
-        isValidMapCoord(provider.latitude, provider.longitude),
-      )
-      .map((provider) => ({
-        id: provider.id,
-        lat: provider.latitude!,
-        lng: provider.longitude!,
-      }));
+    const candidateIds = new Set(routeCandidateKey.split("|").filter(Boolean));
+    const candidates = Array.from(candidateIds);
 
     setAllProviders((current) => current.map((provider) => {
       if (candidateIds.has(provider.id)) {
@@ -386,7 +418,7 @@ export default function SearchScreen() {
       return provider;
     }));
 
-    void getRouteMetricsBatch(userLat, userLng, candidates).then((metrics) => {
+    void getProviderRouteMetricsBatch(userLat, userLng, candidates).then((metrics) => {
       if (!active) return;
       const byId = new Map(metrics.map((metric) => [metric.id, metric]));
 
@@ -662,18 +694,28 @@ export default function SearchScreen() {
           <Pressable
             style={[styles.mapToggle, showMap && styles.mapToggleActive]}
             onPress={() => setShowMap(!showMap)}
+            accessibilityRole="button"
+            accessibilityLabel={showMap ? tr("Show provider list") : tr("Show provider map")}
+            accessibilityState={{ selected: showMap }}
           >
             <Icon name="map" size={20} color={showMap ? theme.colors.onBrand : theme.colors.primary} />
           </Pressable>
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterScrollContent}
+        >
           <View style={styles.cityRow}>
             {cities.map((c) => (
               <Pressable
                 key={c === "All Areas" ? t.allAreas : c}
                 onPress={() => setSelectedCity(c)}
                 style={[styles.cityChip, selectedCity === c && styles.cityChipActive]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: selectedCity === c }}
+                accessibilityLabel={c === "All Areas" ? tr("All Areas") : c}
               >
                 <Text style={[styles.cityText, selectedCity === c && styles.cityTextActive]}>
                   {c}
@@ -683,7 +725,11 @@ export default function SearchScreen() {
           </View>
         </ScrollView>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterScrollContent}
+        >
           <View style={styles.sortRow}>
             {[
               { label: tr("Recommended"), value: "recommended" as const },
@@ -698,6 +744,9 @@ export default function SearchScreen() {
                   styles.sortChip,
                   sortBy === item.value && styles.sortChipActive,
                 ]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: sortBy === item.value }}
+                accessibilityLabel={item.label}
               >
                 <Text
                   style={[
@@ -711,6 +760,28 @@ export default function SearchScreen() {
             ))}
           </View>
         </ScrollView>
+
+        {hasActiveFilters ? (
+          <View style={styles.filterSummaryRow}>
+            <View style={styles.filterSummaryLabel}>
+              <Icon name="sliders" size={14} color={theme.colors.primary} />
+              <Text style={styles.filterSummaryText}>{tr("Filters applied")}</Text>
+            </View>
+            <Pressable
+              onPress={() => {
+                setSelectedCity("All Areas");
+                setSelectedService(null);
+                setSortBy("recommended");
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={tr("Reset filters")}
+              style={({ pressed }) => [styles.resetFiltersButton, pressed && { opacity: 0.72 }]}
+            >
+              <Icon name="rotate-ccw" size={13} color={theme.colors.primary} />
+              <Text style={styles.resetFiltersText}>{tr("Reset")}</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
 
       {showMap ? (
@@ -728,7 +799,7 @@ export default function SearchScreen() {
               </Text>
               <Text style={[styles.mapLocationSearchHint, localizedText, { color: theme.colors.textSecondary }]}>
                 {locationAccuracyMeters != null
-                  ? `${tr("GPS accuracy")} Â±${Math.round(locationAccuracyMeters)} m`
+                  ? `${tr("GPS accuracy")} ±${Math.round(locationAccuracyMeters)} m`
                   : tr("GPS, saved places and map pin")}
               </Text>
             </View>
@@ -761,6 +832,21 @@ export default function SearchScreen() {
             <View style={[styles.mapBg, styles.mapLoader]}>
               <ActivityIndicator size="large" color={theme.colors.primary} />
               <Text style={styles.mapLoaderText}>Loading nearby workers...</Text>
+            </View>
+          ) : providerLoadError && !providersLoadedRef.current ? (
+            <View style={[styles.mapBg, styles.mapLoader, { paddingHorizontal: 24 }]}>
+              <Icon name="alert-circle" size={36} color={theme.colors.danger} />
+              <Text style={[styles.mapLoaderText, { color: theme.colors.danger, textAlign: "center" }]}>
+                {providerLoadError}
+              </Text>
+              <Pressable
+                onPress={() => void loadProviders("refresh")}
+                accessibilityRole="button"
+                testID="search-provider-load-retry-map"
+                style={{ marginTop: 12, paddingVertical: 10, paddingHorizontal: 18 }}
+              >
+                <Text style={{ color: theme.colors.primary, fontWeight: "800" }}>Retry</Text>
+              </Pressable>
             </View>
           ) : (
             <View style={{ flex: 1 }}>
@@ -821,11 +907,11 @@ export default function SearchScreen() {
                   <Text style={styles.selectedProviderName}>{selectedProvider.name}</Text>
                   <Text style={styles.selectedProviderMeta}>
                     {selectedProvider.routeStatus === "pending"
-                      ? "Calculating road routeâ€¦"
+                      ? "Calculating road route…"
                       : typeof selectedProvider.distanceKm === "number"
                         ? `${selectedProvider.distanceKm.toFixed(1)} km by road${
                             selectedProvider.routeDurationMin != null
-                              ? ` â€¢ ${Math.round(selectedProvider.routeDurationMin)} min`
+                              ? ` • ${Math.round(selectedProvider.routeDurationMin)} min`
                               : ""
                           }`
                         : "Road route unavailable"}
@@ -893,11 +979,11 @@ export default function SearchScreen() {
                         <Text style={styles.mapProviderPrice}>{rateLabel}</Text>
 
                         {p.routeStatus === "pending" ? (
-                          <Text style={styles.mapProviderDistance}>Routeâ€¦</Text>
+                          <Text style={styles.mapProviderDistance}>Route…</Text>
                         ) : typeof p.distanceKm === "number" ? (
                           <Text style={styles.mapProviderDistance}>
                             {p.distanceKm.toFixed(1)} km road
-                            {p.routeDurationMin != null ? ` â€¢ ${Math.round(p.routeDurationMin)} min` : ""}
+                            {p.routeDurationMin != null ? ` • ${Math.round(p.routeDurationMin)} min` : ""}
                           </Text>
                         ) : null}
                       </Pressable>
@@ -913,125 +999,164 @@ export default function SearchScreen() {
           </View>
         </View>
       ) : (
-        <ScrollView
+        <FlatList
           style={styles.scroll}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 80 }]}
           showsVerticalScrollIndicator={false}
-        >
-          {query.trim().length > 0 && categoryMatches.length > 0 && (
-            <View style={styles.matchHint} accessibilityRole="summary">
-              <Icon name="sparkles" size={15} color={theme.colors.primary} />
-              <Text style={styles.matchHintText}>Matching {categoryMatches.slice(0, 3).map((category) => category.name).join(", ")}</Text>
-            </View>
-          )}
-
-          {!query && (
-            <AnimatedCard delay={60}>
-              <View style={styles.servicesSection}>
-                <Text style={styles.sectionLabel}>Browse by Service</Text>
-                <View style={styles.servicesGrid}>
-                  {categories.map((s) => {
-                    const appearance = getCategoryAppearance(s, theme);
-                    const selected = selectedService === s.slug;
-                    return (
-                      <Pressable
-                        key={s.id}
-                        onPress={() => setSelectedService(selected ? null : s.slug)}
-                        style={[
-                          styles.serviceGridItem,
-                          selected && {
-                            backgroundColor: appearance.selectedBackground,
-                            borderColor: appearance.accent,
-                          },
-                        ]}
-                      >
-                        <Icon
-                          name={s.icon as any}
-                          size={18}
-                          color={selected ? appearance.accent : theme.colors.textSecondary}
-                        />
-                        <Text
-                          style={[
-                            styles.serviceGridText,
-                            selected && { color: appearance.accent },
-                          ]}
-                        >
-                          {s.name}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+          data={loadingProviders || (providerLoadError && !providersLoadedRef.current) || sorted.length === 0 ? [] : sorted}
+          keyExtractor={(p) => p.id}
+          removeClippedSubviews
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          windowSize={7}
+          ListHeaderComponent={
+            <>
+              {query.trim().length > 0 && categoryMatches.length > 0 && (
+                <View style={styles.matchHint} accessibilityRole="summary">
+                  <Icon name="sparkles" size={15} color={theme.colors.primary} />
+                  <Text style={styles.matchHintText}>Matching {categoryMatches.slice(0, 3).map((category) => category.name).join(", ")}</Text>
                 </View>
+              )}
+
+              {!query && (
+                <AnimatedCard delay={60}>
+                  <View style={styles.servicesSection}>
+                    <Text style={styles.sectionLabel}>Browse by Service</Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.servicesGrid}
+                    >
+                      {categories.map((s) => {
+                        const appearance = getCategoryAppearance(s, theme);
+                        const selected = selectedService === s.slug;
+                        return (
+                          <Pressable
+                            key={s.id}
+                            onPress={() => setSelectedService(selected ? null : s.slug)}
+                            style={[
+                              styles.serviceGridItem,
+                              selected && {
+                                backgroundColor: appearance.selectedBackground,
+                                borderColor: appearance.accent,
+                              },
+                            ]}
+                          >
+                            <Icon
+                              name={s.icon as any}
+                              size={18}
+                              color={selected ? appearance.accent : theme.colors.textSecondary}
+                            />
+                            <Text
+                              style={[
+                                styles.serviceGridText,
+                                selected && { color: appearance.accent },
+                              ]}
+                            >
+                              {s.name}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                </AnimatedCard>
+              )}
+
+              {providerLoadError && providersLoadedRef.current ? (
+                <View style={{ marginBottom: 10, borderWidth: 1, borderColor: theme.colors.danger, backgroundColor: theme.colors.dangerSoft, borderRadius: 12, padding: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Icon name="alert-circle" size={16} color={theme.colors.danger} />
+                  <Text style={{ color: theme.colors.danger, fontSize: 12, fontWeight: "700", flex: 1 }}>
+                    Provider refresh failed. Showing the last loaded results.
+                  </Text>
+                  <Pressable onPress={() => void loadProviders("refresh")} accessibilityRole="button">
+                    <Text style={{ color: theme.colors.primary, fontSize: 12, fontWeight: "800" }}>Retry</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+
+              <View style={styles.resultsHeader}>
+                            <Text style={[styles.sectionLabel, styles.resultsTitle]}>
+                  {selectedService
+                    ? `${getCategoryBySlug(selectedService || "")?.name} Workers`
+                    : query
+                    ? `Results for "${query}"`
+                    : "All Workers"}
+                </Text>
+                <Text style={styles.resultCount}>
+                  {sorted.length} found •{" "}
+                  {sortBy === "recommended"
+                    ? "Recommended"
+                    : sortBy === "nearby"
+                    ? "Nearest first"
+                    : sortBy === "rating"
+                    ? "Top rated"
+                    : "Most jobs"}
+                </Text>
               </View>
-            </AnimatedCard>
-          )}
-
-          <View style={styles.resultsHeader}>
-            <Text style={styles.sectionLabel}>
-              {selectedService
-                ? `${getCategoryBySlug(selectedService || "")?.name} Workers`
-                : query
-                ? `Results for "${query}"`
-                : "All Workers"}
-            </Text>
-            <Text style={styles.resultCount}>
-              {sorted.length} found •{" "}
-              {sortBy === "recommended"
-                ? "Recommended"
-                : sortBy === "nearby"
-                ? "Nearest first"
-                : sortBy === "rating"
-                ? "Top rated"
-                : "Most jobs"}
-            </Text>
-          </View>
-
-          {loadingProviders ? (
-            <View style={styles.loadingListWrap}>
-              <ActivityIndicator size="large" color={theme.colors.primary} />
-              <Text style={styles.loadingListText}>Loading workers...</Text>
-            </View>
-          ) : sorted.length === 0 ? (
-            <AnimatedCard>
-              <View style={styles.emptyState}>
-                <Icon name="search" size={36} color={theme.colors.textMuted} />
-                <Text style={styles.emptyTitle}>{isUrdu ? "کوئی ملازم نہیں ملا" : "No workers found"}</Text>
-                <Text style={styles.emptySubtitle}>{isUrdu ? "مختلف تلاش یا خدمت آزمائیں" : "Try a different search or service"}</Text>
+            </>
+          }
+          ListEmptyComponent={
+            loadingProviders ? (
+              <View style={styles.loadingListWrap}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+                <Text style={styles.loadingListText}>Loading workers...</Text>
               </View>
-            </AnimatedCard>
-          ) : (
-            sorted.map((p, i) => (
-              <AnimatedCard key={p.id} delay={80 + i * 50}>
-                <View style={styles.listCardWrap}>
-                  {p.routeStatus === "pending" ? (
-                    <View style={styles.distanceBadge}>
-                      <ActivityIndicator size="small" color={theme.colors.primary} />
-                      <Text style={styles.distanceBadgeText}>Calculating routeâ€¦</Text>
-                    </View>
-                  ) : typeof p.distanceKm === "number" ? (
-                    <View style={styles.distanceBadge}>
-                      <Icon name="navigation" size={11} color={theme.colors.primary} />
-                      <Text style={styles.distanceBadgeText}>
-                        {p.distanceKm.toFixed(1)} km by road
-                        {p.routeDurationMin != null ? ` â€¢ ${Math.round(p.routeDurationMin)} min` : ""}
-                      </Text>
-                    </View>
-                  ) : null}
-
-                  <ProviderCard
-                    provider={p}
-                    onPress={() =>
-                      router.push({
-                        pathname: "/(customer)/provider-detail",
-                        params: { providerId: p.id, serviceId: selectedService || undefined },
-                      })
-                    }
-                  />
+            ) : providerLoadError && !providersLoadedRef.current ? (
+              <AnimatedCard>
+                <View style={styles.emptyState}>
+                  <Icon name="alert-circle" size={36} color={theme.colors.danger} />
+                  <Text style={[styles.emptyTitle, { color: theme.colors.danger }]}>Unable to load workers</Text>
+                  <Text style={styles.emptySubtitle}>{providerLoadError}</Text>
+                  <Pressable
+                    onPress={() => void loadProviders("refresh")}
+                    accessibilityRole="button"
+                    testID="search-provider-load-retry-list"
+                    style={{ marginTop: 10, paddingVertical: 10, paddingHorizontal: 18 }}
+                  >
+                    <Text style={{ color: theme.colors.primary, fontWeight: "800" }}>Retry</Text>
+                  </Pressable>
                 </View>
               </AnimatedCard>
-            ))
+            ) : (
+              <AnimatedCard>
+                <View style={styles.emptyState}>
+                  <Icon name="search" size={36} color={theme.colors.textMuted} />
+                  <Text style={styles.emptyTitle}>{tr("No workers found")}</Text>
+                  <Text style={styles.emptySubtitle}>{tr("Try a different search or service")}</Text>
+                </View>
+              </AnimatedCard>
+            )
+          }
+          renderItem={({ item: p }) => (
+              <View key={p.id} style={styles.listCardWrap}>
+                {p.routeStatus === "pending" ? (
+                  <View style={styles.distanceBadge}>
+                    <ActivityIndicator size="small" color={theme.colors.primary} />
+                    <Text style={styles.distanceBadgeText}>Calculating route…</Text>
+                  </View>
+                ) : typeof p.distanceKm === "number" ? (
+                  <View style={styles.distanceBadge}>
+                    <Icon name="navigation" size={11} color={theme.colors.primary} />
+                    <Text style={styles.distanceBadgeText}>
+                      {p.distanceKm.toFixed(1)} km by road
+                      {p.routeDurationMin != null ? ` • ${Math.round(p.routeDurationMin)} min` : ""}
+                    </Text>
+                  </View>
+                ) : null}
+
+                <ProviderCard
+                  provider={p}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/(customer)/provider-detail",
+                      params: { providerId: p.id, serviceId: selectedService || undefined },
+                    })
+                  }
+                />
+              </View>
           )}
-        </ScrollView>
+        />
       )}
     </View>
   );
@@ -1042,39 +1167,37 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   header: {
     backgroundColor: theme.colors.surface,
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 3,
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingBottom: 14,
+    borderBottomWidth: redesign.visual.cardBorderWidth,
+    borderBottomColor: theme.colors.border,
+    ...theme.shadows.sm,
     zIndex: 10,
-    paddingTop: 16,
+    paddingTop: 12,
     gap: 10,
   },
 
-  searchRow: { flexDirection: "row", gap: 10 },
+  searchRow: { flexDirection: "row", gap: 8 },
 
   searchBar: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: theme.colors.background,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    gap: 10,
-    borderWidth: 1,
+    backgroundColor: theme.colors.input,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: 12,
+    minHeight: redesign.control.standardHeight,
+    gap: 8,
+    borderWidth: redesign.visual.inputBorderWidth,
     borderColor: theme.colors.border,
   },
 
-  searchInput: { flex: 1, fontSize: 14, color: theme.colors.text },
+  searchInput: { flex: 1, ...theme.typography.body, color: theme.colors.text, paddingVertical: 0 },
 
   mapToggle: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
     backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
@@ -1084,12 +1207,16 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   mapToggleActive: { backgroundColor: theme.colors.primary },
 
-  cityRow: { flexDirection: "row", gap: 8 },
+  filterScrollContent: { paddingRight: 8 },
+  cityRow: { flexDirection: "row", gap: 6, alignItems: "center" },
 
   cityChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 7,
-    borderRadius: 20,
+    minHeight: 32,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: theme.radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: theme.colors.background,
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -1103,12 +1230,15 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   cityText: { fontSize: 12, fontWeight: "600", color: theme.colors.textSecondary },
   cityTextActive: { color: theme.colors.onBrand },
 
-  sortRow: { flexDirection: "row", gap: 8, paddingTop: 2 },
+  sortRow: { flexDirection: "row", gap: 6, paddingTop: 1, alignItems: "center" },
 
   sortChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
+    minHeight: 32,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: theme.radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: theme.colors.surfaceAlt,
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -1129,8 +1259,45 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     color: theme.colors.onBrand,
   },
 
+  filterSummaryRow: {
+    minHeight: 32,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    paddingTop: 2,
+  },
+  filterSummaryLabel: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flex: 1,
+  },
+  filterSummaryText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: theme.colors.textSecondary,
+  },
+  resetFiltersButton: {
+    minHeight: 30,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.infoSoft,
+    borderWidth: 1,
+    borderColor: theme.colors.primary + "2A",
+  },
+  resetFiltersText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: theme.colors.primary,
+  },
+
   mapContainer: { flex: 1 },
-  mapLocationSearch: { position: "absolute", top: 12, left: 14, right: 14, zIndex: 20, minHeight: 58, borderRadius: 16, borderWidth: 1, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 13, shadowColor: theme.colors.text, shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 5 },
+  mapLocationSearch: { position: "absolute", top: 10, left: redesign.layout.horizontalPadding, right: redesign.layout.horizontalPadding, zIndex: 20, minHeight: redesign.control.standardHeight, borderRadius: theme.radius.md, borderWidth: redesign.visual.inputBorderWidth, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, backgroundColor: theme.colors.surface, borderColor: theme.colors.border, ...theme.shadows.sm },
   mapLocationSearchText: { fontSize: 14, fontWeight: "800" },
   mapLocationSearchHint: { marginTop: 2, fontSize: 10 },
   mapBg: { flex: 1 },
@@ -1149,18 +1316,14 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   locateMeBtn: {
     position: "absolute",
     top: 12,
-    right: 12,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    right: redesign.layout.horizontalPadding,
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.surface,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 6,
+    ...theme.shadows.sm,
   },
 
   pickedAddressBar: {
@@ -1168,7 +1331,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignItems: "center",
     gap: 12,
     backgroundColor: theme.colors.surface,
-    paddingHorizontal: 16,
+    paddingHorizontal: redesign.layout.horizontalPadding,
     paddingVertical: 12,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
@@ -1189,9 +1352,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   useAddressBtn: {
     backgroundColor: theme.colors.secondary,
-    borderRadius: 10,
+    borderRadius: theme.radius.md,
+    minHeight: redesign.control.compactHeight,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   useAddressBtnText: {
@@ -1202,8 +1367,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   mapBottomSheet: {
     backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     padding: 16,
     paddingBottom: 8,
     gap: 12,
@@ -1211,7 +1376,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.08,
     shadowRadius: 16,
-    elevation: 12,
+    elevation: 6,
   },
 
   mapHandle: {
@@ -1278,13 +1443,13 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     fontSize: 13,
   },
 
-  mapProviderRow: { flexDirection: "row", gap: 12 },
+  mapProviderRow: { flexDirection: "row", gap: 8 },
 
   mapProviderCard: {
-    width: 108,
+    width: 102,
     backgroundColor: theme.colors.background,
-    borderRadius: 16,
-    padding: 12,
+    borderRadius: 14,
+    padding: 10,
     alignItems: "center",
     gap: 4,
     borderWidth: 1,
@@ -1297,9 +1462,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   mapProviderAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
@@ -1362,30 +1527,31 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   scroll: { flex: 1 },
-  matchHint: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 20, marginTop: 14, padding: 12, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.primary + "33" },
+  matchHint: { flexDirection: "row", alignItems: "center", gap: 7, marginHorizontal: 16, marginTop: 10, padding: 10, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.primary + "33" },
   matchHintText: { flex: 1, color: theme.colors.primaryPressed, fontSize: 13, fontWeight: "700" },
 
-  scrollContent: { padding: 20, paddingBottom: 100 },
+  scrollContent: { padding: 16, paddingBottom: 100 },
 
-  servicesSection: { marginBottom: 20 },
+  servicesSection: { marginBottom: 14 },
   sectionLabel: {
     fontSize: 15,
     fontWeight: "700",
     color: theme.colors.text,
-    marginBottom: 12,
+    marginBottom: 10,
   },
 
-  servicesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  servicesGrid: { flexDirection: "row", gap: 8, paddingRight: 12 },
 
   serviceGridItem: {
     flexDirection: "row",
     alignItems: "center",
+    flexShrink: 0,
     gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.surface,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: theme.colors.border,
   },
 
@@ -1398,19 +1564,27 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   resultsHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
+    gap: 10,
     marginBottom: 12,
+  },
+  resultsTitle: {
+    flex: 1,
+    marginBottom: 0,
   },
 
   resultCount: {
+    maxWidth: "46%",
     fontSize: 12,
+    lineHeight: 17,
     color: theme.colors.textSecondary,
+    textAlign: "right",
   },
 
   loadingListWrap: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 50,
+    paddingVertical: 36,
   },
 
   loadingListText: {
@@ -1421,7 +1595,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   emptyState: {
     alignItems: "center",
     gap: 8,
-    paddingVertical: 60,
+    paddingVertical: 42,
   },
 
   emptyTitle: {

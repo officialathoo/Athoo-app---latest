@@ -18,8 +18,9 @@ test("service history provides explainable repeat booking actions", () => {
   assert.match(component, /onBookAgain\(insight\.latestBooking\)/);
 });
 
-test("customer booking history wires service insights without changing booking APIs", () => {
-  assert.match(screen, /ServiceHistoryInsights/);
-  assert.match(screen, /buildRepeatBookingParams\(booking\)/);
+test("customer booking history removes the six-month recommendation panel while preserving booking actions", () => {
+  assert.doesNotMatch(screen, /ServiceHistoryInsights/);
+  assert.doesNotMatch(screen, /Recommended in|six months|6 months/i);
+  assert.match(screen, /buildRepeatBookingParams\(b\)/);
   assert.match(screen, /book-service/);
 });

@@ -65,5 +65,6 @@ export const brandConfig = Object.freeze({
   }),
   assets: Object.freeze({
     mark: require("../assets/images/app-icon-approved.png") as ImageSourcePropType,
+    appIcon: require("../assets/images/app-icon-professional.png") as ImageSourcePropType,
   }),
 });

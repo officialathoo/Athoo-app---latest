@@ -13,7 +13,7 @@ test("Phase 28 adds stable public account IDs and a professional indexed operati
   const seed = readRepo("scripts/src/seed.ts");
   const integrity = readRepo("scripts/src/db-integrity.ts");
 
-  assert.match(migrations, new RegExp(migrationName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(migrations, /20260802_phase19_security_flow_performance\.sql/);
   assert.match(migration, /ALTER TABLE users ADD COLUMN IF NOT EXISTS public_id text/);
   assert.match(migration, /upper\(substr\(md5\(COALESCE\(role, 'customer'\) \|\| ':' \|\| id\), 1, 16\)\)/);
   assert.match(migration, /users_public_id_uidx/);
@@ -21,14 +21,15 @@ test("Phase 28 adds stable public account IDs and a professional indexed operati
   assert.match(migration, /support_tickets_status_priority_created_idx/);
   assert.match(migration, /negotiations_status_expires_idx/);
   assert.match(migration, /admin_notifications_target_created_idx/);
-  assert.match(schema, /publicId: text\("public_id"\)\.notNull\(\)\.unique\(\)/);
+    assert.match(schema, /publicId: text\("public_id"\)\.notNull\(\)/);
+  assert.match(schema, /uniqueIndex\("users_public_id_uidx"\)\.on\(t\.publicId\)/);
   assert.match(publicIds, /createHash\("sha256"\)/);
   assert.match(publicIds, /publicUserId/);
   assert.match(bootstrap, /id, public_id, name, phone, email/);
   assert.match(bootstrap, /createHash\("sha256"\)/);
-  assert.match(seed, /publicId: publicUserId\("admin", "user-admin-001"\)/);
-  assert.match(seed, /publicId: publicUserId\("customer", "user-customer-001"\)/);
-  assert.match(seed, /publicId: publicUserId\("provider", "user-provider-001"\)/);
+  assert.match(seed, /publicId:\s*"USR-ADMIN-001"/);
+  assert.match(seed, /publicId:\s*"USR-CUSTOMER-001"/);
+  assert.match(seed, /publicId:\s*"USR-PROVIDER-001"/);
   assert.match(integrity, /missing_user_public_ids/);
   assert.match(integrity, /duplicate_user_public_ids/);
 });
@@ -45,12 +46,13 @@ test("Phase 28 guarantees one canonical chat per participant pair", () => {
   assert.match(migration, /phase28_chat_merge_map/);
   assert.match(migration, /UPDATE messages AS message[\s\S]*SET chat_id = mapping\.canonical_id/);
   assert.match(migration, /chats_pair_key_uidx/);
-  assert.match(schema, /pairKey: text\("pair_key"\)\.notNull\(\)\.unique\(\)/);
+    assert.match(schema, /pairKey: text\("pair_key"\)\.notNull\(\)/);
+  assert.match(schema, /uniqueIndex\("chats_pair_key_uidx"\)\.on\(t\.pairKey\)/);
   assert.match(route, /const pairKey = chatPairKey\(userId, otherUserId\)/);
   assert.match(route, /onConflictDoNothing\(\{ target: chatsTable\.pairKey \}\)/);
   assert.match(context, /withoutDuplicatePair/);
   assert.match(detail, /import \{[\s\S]*Alert,[\s\S]*\} from "react-native"/);
-  assert.match(detail, /Alert\.alert\("Chat unavailable"/);
+  assert.match(detail, /Alert\.alert\(\s*\r?\n?\s*"Chat unavailable"/);
   assert.match(detail, /chatId: chat\.id/);
   assert.match(integrity, /duplicate_chat_pairs/);
   assert.match(integrity, /noncanonical_chat_pair_keys/);
@@ -62,11 +64,11 @@ test("Phase 28 repairs refund submission with private evidence and server-side e
   const service = readRepo("athoo-app/services/api.ts");
 
   assert.match(mobile, /base64: false/);
-  assert.match(mobile, /uploadPickedImage\([\s\S]*"private"\)/);
-  assert.match(mobile, /\["completed", "cancelled"\]/);
-  assert.match(mobile, /\["paid", "received"\]/);
+  assert.match(mobile, /uploadPickedImage\([\s\S]*"private",?\s*\)/);
+  assert.match(mobile, /api\.getRefundEligibleBookings\(50\)/);
+  assert.match(mobile, /remainingRefundable/);
   assert.match(service, /clientRequestId: string/);
-  assert.match(api, /isOwnedUploadObjectPath\(evidenceUrl, userId, \["private"\]\)/);
+  assert.match(api, /await isCleanOwnedUploadObjectPath\(evidenceUrl, userId, \["private"\]\)/);
   assert.match(api, /Refunds can only be requested on completed or cancelled bookings/);
   assert.match(api, /payment has been recorded/);
   assert.match(api, /clientRequestId/);

@@ -19,9 +19,9 @@ test("provider registration uses the searchable city picker", async () => {
 });
 
 test("map fallback remains backward compatible and supports retry", async () => {
-  const source = await read("athoo-app/app/components/maps/AthooMapFallback.tsx");
-  assert.match(source, /export function AthooMapFallback/);
-  assert.match(source, /export default AthooMapFallback/);
+  const source = await read("athoo-app/components/maps/AthooMapErrorFallback.tsx");
+  assert.match(source, /export function AthooMapErrorFallback/);
+  assert.match(source, /export default AthooMapErrorFallback/);
   assert.match(source, /onRetry/);
   assert.match(source, /entering the address manually/);
 });

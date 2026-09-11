@@ -50,7 +50,9 @@ test("provider edit screen submits approval requests instead of mutating protect
 
 test("provider deletion UI describes the seven-day grace period", () => {
   const profile = read("athoo-app/app/(provider)/(tabs)/profile.tsx");
-  assert.match(profile, /scheduled for deletion after 7 days/);
-  assert.match(profile, /requestAccountDeletion/);
+  assert.match(profile, /\(provider\)\/privacy/);
   assert.match(profile, /Schedule Account Deletion/);
+  const privacy = read("athoo-app/components/screens/PrivacySecurityScreen.tsx");
+  assert.match(privacy, /grace period/);
+  assert.match(privacy, /AccountActionVerificationModal/);
 });

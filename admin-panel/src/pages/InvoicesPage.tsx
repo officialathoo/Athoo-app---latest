@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { api, currency, formatDate } from "@/lib/api";
 import { Search, RefreshCw, Download, ChevronLeft, ChevronRight, X, FileText, Printer, CheckCircle } from "lucide-react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -61,8 +61,11 @@ export function InvoicesPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [stats, setStats] = useState({ totalInvoices: 0, issued: 0, totalRevenue: 0, totalCommission: 0 });
   const [selected, setSelected] = useState<Invoice | null>(null);
   const [adjusting, setAdjusting] = useState(false);
   const [adjustStatus, setAdjustStatus] = useState("");
@@ -76,8 +79,8 @@ export function InvoicesPage() {
         method: "PATCH",
         body: { status: adjustStatus, reason: adjustReason },
       });
-      setInvoices(prev => prev.map(i => i.id === res.invoice.id ? res.invoice : i));
       setSelected(res.invoice);
+      await load();
       setAdjustStatus("");
       setAdjustReason("");
     } catch (e: any) {
@@ -91,8 +94,21 @@ export function InvoicesPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await api<{ invoices: Invoice[] }>("/api/admin/invoices");
+      const res = await api<{
+        invoices: Invoice[];
+        total: number;
+        stats: { totalInvoices: number; issued: number; totalRevenue: number; totalCommission: number };
+      }>("/api/admin/invoices", {
+        params: {
+          page,
+          limit: PAGE_SIZE,
+          status: statusFilter,
+          search: debouncedSearch || undefined,
+        },
+      });
       setInvoices(res.invoices || []);
+      setTotal(Number(res.total || 0));
+      setStats(res.stats || { totalInvoices: 0, issued: 0, totalRevenue: 0, totalCommission: 0 });
     } catch (e) {
       setLoadError((e as Error).message || "Failed to load invoices");
     } finally {
@@ -100,32 +116,16 @@ export function InvoicesPage() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
-  const filtered = useMemo(() => {
-    return invoices.filter((inv) => {
-      const q = search.toLowerCase();
-      const matchSearch = !q ||
-        inv.invoiceNumber.toLowerCase().includes(q) ||
-        inv.customerName.toLowerCase().includes(q) ||
-        inv.providerName.toLowerCase().includes(q) ||
-        inv.service.toLowerCase().includes(q) ||
-        inv.address?.toLowerCase().includes(q);
-      const matchStatus = statusFilter === "all" || inv.status === statusFilter;
-      return matchSearch && matchStatus;
-    });
-  }, [invoices, search, statusFilter]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, statusFilter]);
+  useEffect(() => { load(); }, [page, statusFilter, debouncedSearch]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
-  const totalRevenue = useMemo(() =>
-    filtered.reduce((s, inv) => s + (inv.totalAmount || 0), 0),
-    [filtered]);
-
-  const totalCommission = useMemo(() =>
-    filtered.reduce((s, inv) => s + (inv.commissionAmount || 0), 0),
-    [filtered]);
+  const paged = invoices;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   function buildInvoiceHtml(inv: Invoice) {
     const serviceAmount = Number(inv.subtotal || 0);
@@ -174,7 +174,7 @@ ${inv.discountAmount > 0 ? `<tr><td>Discount</td><td class="amount">−Rs. ${inv
   function exportCSV() {
     const rows = [
       ["Invoice No", "Customer", "Provider", "Service", "Date", "Total", "Commission", "Provider Amount", "Status", "Created"],
-      ...filtered.map(inv => [
+      ...invoices.map(inv => [
         inv.invoiceNumber, inv.customerName, inv.providerName, inv.service,
         inv.scheduledDate, inv.totalAmount, inv.commissionAmount, inv.providerAmount,
         inv.status, inv.createdAt,
@@ -193,10 +193,10 @@ ${inv.discountAmount > 0 ? `<tr><td>Discount</td><td class="amount">−Rs. ${inv
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: "Total Invoices", value: invoices.length, color: "text-slate-700", bg: "bg-slate-100" },
-          { label: "Issued", value: invoices.filter(i => i.status === "issued").length, color: "text-amber-700", bg: "bg-amber-100" },
-          { label: "Total Revenue", value: currency(totalRevenue), color: "text-emerald-700", bg: "bg-emerald-100" },
-          { label: "Platform Commission", value: currency(totalCommission), color: "text-blue-700", bg: "bg-blue-100" },
+          { label: "Total Invoices", value: stats.totalInvoices, color: "text-slate-700", bg: "bg-slate-100" },
+          { label: "Issued", value: stats.issued, color: "text-amber-700", bg: "bg-amber-100" },
+          { label: "Total Revenue", value: currency(stats.totalRevenue), color: "text-emerald-700", bg: "bg-emerald-100" },
+          { label: "Platform Commission", value: currency(stats.totalCommission), color: "text-blue-700", bg: "bg-blue-100" },
         ].map(s => (
           <div key={s.label} className={`${s.bg} rounded-xl px-4 py-3`}>
             <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
@@ -229,7 +229,7 @@ ${inv.discountAmount > 0 ? `<tr><td>Discount</td><td class="amount">−Rs. ${inv
               <RefreshCw size={16} />
             </button>
             <button onClick={exportCSV} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium">
-              <Download size={15} /> Export CSV
+              <Download size={15} /> Export Current Page CSV
             </button>
           </div>
           {(search || statusFilter !== "all") && (
@@ -237,7 +237,7 @@ ${inv.discountAmount > 0 ? `<tr><td>Discount</td><td class="amount">−Rs. ${inv
               <button onClick={() => { setSearch(""); setStatusFilter("all"); setPage(1); }} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700">
                 <X size={12} /> Clear filters
               </button>
-              <span className="text-xs text-slate-400 ml-auto">{filtered.length} result{filtered.length !== 1 ? "s" : ""}</span>
+              <span className="text-xs text-slate-400 ml-auto">{total} result{total !== 1 ? "s" : ""}</span>
             </div>
           )}
         </div>
@@ -282,13 +282,13 @@ ${inv.discountAmount > 0 ? `<tr><td>Discount</td><td class="amount">−Rs. ${inv
                     </td>
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-800 capitalize">{inv.service.replace(/_/g, " ")}</p>
-                      <p className="text-xs text-slate-400 truncate max-w-[160px]">{inv.scheduledDate}</p>
+                      <p className="text-xs text-slate-400 break-words">{inv.scheduledDate}</p>
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-700">{inv.customerName}</td>
                     <td className="px-4 py-3 text-sm text-slate-700">{inv.providerName}</td>
                     <td className="px-4 py-3 text-right font-semibold text-slate-800">{currency(inv.totalAmount)}</td>
                     <td className="px-4 py-3 text-right text-xs text-slate-500">{currency(inv.commissionAmount)}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{formatDate(inv.createdAt)}</td>
+                      <td className="px-4 py-3 text-xs text-slate-500 whitespace-normal break-words">{formatDate(inv.createdAt)}</td>
                     <td className="px-4 py-3"><StatusBadge status={inv.status} /></td>
                     <td className="px-4 py-3 text-right">
                       <button className="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-50" onClick={() => setSelected(inv)}>
@@ -305,7 +305,7 @@ ${inv.discountAmount > 0 ? `<tr><td>Discount</td><td class="amount">−Rs. ${inv
         {/* Pagination */}
         <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between">
           <p className="text-xs text-slate-400">
-            {filtered.length === 0 ? "0 invoices" : `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, filtered.length)} of ${filtered.length} invoices`}
+            {total === 0 ? "0 invoices" : `${(page - 1) * PAGE_SIZE + 1}-${Math.min(page * PAGE_SIZE, total)} of ${total} invoices`}
           </p>
           {totalPages > 1 && (
             <div className="flex items-center gap-2">

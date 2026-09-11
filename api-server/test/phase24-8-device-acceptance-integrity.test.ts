@@ -21,19 +21,19 @@ function runScript(relativePath: string, args: string[]) {
 
 function completeDeviceEvidence() {
   const evidence = json("docs/qa/device-acceptance-evidence-template.json");
-  evidence.releaseVersion = "28.5.0-test";
+  evidence.releaseVersion = "2.2.0-test";
   evidence.releaseCommitSha = "a".repeat(40);
   evidence.artifactSha256 = "b".repeat(64);
   evidence.builds.android = {
-    buildId: "android-build-28-5",
+    buildId: "android-build-v2-2",
     sourceCommitSha: evidence.releaseCommitSha,
-    artifactUrl: "https://example.invalid/builds/android-28-5",
+    artifactUrl: "https://example.invalid/builds/android-v2-2",
     createdAt: "2026-01-01T00:00:00.000Z",
   };
   evidence.builds.ios = {
-    buildId: "ios-build-28-5",
+    buildId: "ios-build-v2-2",
     sourceCommitSha: evidence.releaseCommitSha,
-    artifactUrl: "https://example.invalid/builds/ios-28-5",
+    artifactUrl: "https://example.invalid/builds/ios-v2-2",
     createdAt: "2026-01-01T00:00:00.000Z",
   };
   for (const platform of ["android", "ios"] as const) {
@@ -72,7 +72,7 @@ function completeDeviceEvidence() {
   return evidence;
 }
 
-test("Phase 28.5 checklist explicitly covers every reported release blocker", () => {
+test("Athoo V2.2 checklist explicitly covers every reported release blocker", () => {
   const checklist = json("docs/qa/device-acceptance-checklist.json");
   const template = json("docs/qa/device-acceptance-evidence-template.json");
   const platformCases = [
@@ -113,17 +113,17 @@ test("device evidence initialization binds the exact candidate and computes its 
   try {
     const artifact = path.join(temp, candidate);
     const output = path.join(temp, "device-evidence.json");
-    fs.writeFileSync(artifact, "phase-28.5-test-artifact");
+    fs.writeFileSync(artifact, "athoo-v2.2-test-artifact");
     const result = runScript("scripts/tools/init-device-evidence.mjs", [
       "--artifact", artifact,
-      "--release-version", "28.5.0-test",
+      "--release-version", "2.2.0-test",
       "--commit", "c".repeat(40),
       "--output", output,
     ]);
     assert.equal(result.status, 0, result.stderr);
     const generated = JSON.parse(fs.readFileSync(output, "utf8"));
     assert.equal(generated.candidateArtifactName, candidate);
-    assert.equal(generated.artifactSha256, crypto.createHash("sha256").update("phase-28.5-test-artifact").digest("hex"));
+    assert.equal(generated.artifactSha256, crypto.createHash("sha256").update("athoo-v2.2-test-artifact").digest("hex"));
     assert.deepEqual(Object.keys(generated.platforms.android), json("docs/qa/device-acceptance-checklist.json").platforms.android);
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
@@ -134,9 +134,9 @@ test("strict device evidence accepts complete exact-build proof and rejects buil
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "athoo-device-validate-"));
   const evidencePath = path.join(temp, "device-evidence.json");
   const artifactPath = path.join(temp, candidate);
-  const summaryPath = path.join(root, "release-evidence/device-28.5.0-test-summary.json");
+  const summaryPath = path.join(root, "release-evidence/device-2.2.0-test-summary.json");
   try {
-    const artifactBytes = "phase-28.5-validation-artifact";
+    const artifactBytes = "athoo-v2.2-validation-artifact";
     fs.writeFileSync(artifactPath, artifactBytes);
     const evidence = completeDeviceEvidence();
     evidence.artifactSha256 = crypto.createHash("sha256").update(artifactBytes).digest("hex");
@@ -165,14 +165,14 @@ test("strict device evidence accepts complete exact-build proof and rejects buil
   }
 });
 
-test("final RC2 GO is bound to a passed matching Phase 28.5 device summary", () => {
+test("final RC2 GO is bound to a passed matching Athoo V2.2 device summary", () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "athoo-rc2-decision-"));
   const evidencePath = path.join(temp, "rc2-evidence.json");
   const summaryPath = path.join(temp, "device-summary.json");
-  const decisionPath = path.join(root, "release-evidence/rc2-28.5.0-test-decision.json");
+  const decisionPath = path.join(root, "release-evidence/rc2-2.2.0-test-decision.json");
   try {
     const evidence = json("docs/qa/rc2-evidence-template.json");
-    evidence.releaseVersion = "28.5.0-test";
+    evidence.releaseVersion = "2.2.0-test";
     evidence.releaseCommitSha = "d".repeat(40);
     evidence.artifactSha256 = "e".repeat(64);
     evidence.deviceEvidenceSummary = "device-summary.json";

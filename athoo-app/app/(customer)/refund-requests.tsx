@@ -1,15 +1,16 @@
 import { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import { Icon } from "@/components/ui/Icon";
 import { api } from "@/services/api";
 import { useToast } from "@/context/ToastContext";
 import { apiErrorToMessage } from "@/lib/apiError";
+import { uploadPickedImage } from "@/services/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import { pickImageWithSourceChoice } from "@/utils/mediaPicker";
-import { uploadPickedImage } from "@/services/storage";
-import React, { useCallback, useEffect, useState, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -37,6 +38,9 @@ interface Refund {
   createdAt: string;
 }
 
+type RefundEligibleBooking = Awaited<ReturnType<typeof api.getRefundEligibleBookings>>["eligibleBookings"][number];
+type RefundEvidencePhoto = { uri: string; fileName: string; contentType: string };
+
 function getStatusConfig(theme: AthooTheme): Record<string, { label: string; color: string; bg: string; icon: string }> {
   return {
     pending: { label: "Pending Review", color: theme.colors.warning, bg: theme.colors.warningSoft, icon: "clock" },
@@ -59,56 +63,81 @@ export default function RefundRequestsScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [refundRequestId, setRefundRequestId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const loadRequestInFlightRef = useRef(false);
+  const refundsLoadedRef = useRef(false);
+  const refundsLastLoadedAtRef = useRef(0);
 
   const [bookingId, setBookingId] = useState("");
   const [reason, setReason] = useState("");
   const [amount, setAmount] = useState("");
 
-  const [evidencePhoto, setEvidencePhoto] = useState<string | null>(null);
-  const [evidenceMimeType, setEvidenceMimeType] = useState("image/jpeg");
-  const [evidenceFileName, setEvidenceFileName] = useState("refund-evidence.jpg");
+  const [evidencePhoto, setEvidencePhoto] = useState<RefundEvidencePhoto | null>(null);
+  const [uploadedEvidencePath, setUploadedEvidencePath] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
-  const [bookings, setBookings] = useState<any[]>([]);
+  const [bookings, setBookings] = useState<RefundEligibleBooking[]>([]);
   const [loadingBookings, setLoadingBookings] = useState(false);
   const [bookingSearch, setBookingSearch] = useState("");
   const [showBookingPicker, setShowBookingPicker] = useState(false);
-  const [selectedBooking, setSelectedBooking] = useState<any | null>(null);
+  const [selectedBooking, setSelectedBooking] = useState<RefundEligibleBooking | null>(null);
 
-  async function load() {
-    setError(null);
+  const load = useCallback(async (
+    mode: "initial" | "refresh" | "retry" | "background" | "mutation" = "initial"
+  ) => {
+    if (loadRequestInFlightRef.current) return;
+    loadRequestInFlightRef.current = true;
+
+    const showInitialLoader =
+      (mode === "initial" || mode === "retry") && !refundsLoadedRef.current;
+
+    if (showInitialLoader) setLoading(true);
+    if (mode === "refresh") setRefreshing(true);
+    if (mode !== "background") setError(null);
+
     try {
       const res = await api.getMyRefunds();
       setRefunds(res.refunds || []);
+      refundsLoadedRef.current = true;
+      refundsLastLoadedAtRef.current = Date.now();
     } catch (e: any) {
-      setError(apiErrorToMessage(e, tr("We couldn't load your refund requests. Please try again.")));
+      if (mode !== "background") {
+        setError(apiErrorToMessage(e, tr("We couldn't load your refund requests. Please try again.")));
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      loadRequestInFlightRef.current = false;
+      if (showInitialLoader) setLoading(false);
+      if (mode === "refresh") setRefreshing(false);
     }
-  }
+  }, [tr]);
 
   async function loadBookings() {
     setLoadingBookings(true);
     try {
-      const res = await api.getBookings();
-      const eligible = (res.bookings || []).filter(
-        (b: any) => ["completed", "cancelled"].includes(b.status)
-          && ["paid", "received"].includes(b.paymentStatus)
-          && Number(b.price || 0) + Number(b.visitCharge || 0) > 0
-      );
-      setBookings(eligible);
-    } catch {
-      // ignore
+      const res = await api.getRefundEligibleBookings(50);
+      setBookings(res.eligibleBookings || []);
+    } catch (caught) {
+      showError(tr("Unable to load eligible bookings"), apiErrorToMessage(caught, tr("We couldn't load bookings that are eligible for a refund.")));
     } finally {
       setLoadingBookings(false);
     }
   }
 
-  useFocusEffect(useCallback(() => { load(); }, []));
+  useFocusEffect(
+    useCallback(() => {
+      if (!refundsLoadedRef.current) {
+        void load("initial");
+        return;
+      }
+      if (Date.now() - refundsLastLoadedAtRef.current >= 30_000) {
+        void load("background");
+      }
+    }, [load])
+  );
 
   useEffect(() => {
     setRefundRequestId(null);
-  }, [bookingId, reason, amount, evidencePhoto]);
+    setUploadedEvidencePath(null);
+  }, [bookingId, reason, amount, evidencePhoto?.uri]);
 
   function openForm() {
     setShowForm(true);
@@ -124,9 +153,11 @@ export default function RefundRequestsScreen() {
     const asset = result.assets[0];
     const mimeType = asset.mimeType || "image/jpeg";
     const extension = mimeType === "image/png" ? "png" : mimeType === "image/webp" ? "webp" : "jpg";
-    setEvidencePhoto(asset.uri);
-    setEvidenceMimeType(mimeType);
-    setEvidenceFileName(asset.fileName || `refund-evidence-${Date.now()}.${extension}`);
+    setEvidencePhoto({
+      uri: asset.uri,
+      contentType: mimeType,
+      fileName: asset.fileName || `refund-evidence.${extension}`,
+    });
   }
 
   async function handleSubmit() {
@@ -138,32 +169,39 @@ export default function RefundRequestsScreen() {
       showError(tr("Reason Required"), tr("Please describe the reason (at least 10 characters)."));
       return;
     }
-    const amt = parseFloat(amount);
-    if (!amount || isNaN(amt) || amt <= 0) {
-      showError(tr("Invalid Amount"), tr("Please enter a valid refund amount."));
+    const amt = Number(amount);
+    if (!/^\d{1,9}$/.test(amount) || !Number.isSafeInteger(amt) || amt <= 0) {
+      showError(tr("Invalid Amount"), tr("Refund amount must be a positive whole rupee amount."));
+      return;
+    }
+    if (!selectedBooking || amt > selectedBooking.remainingRefundable) {
+      showError(tr("Invalid Amount"), tr("Refund amount cannot exceed the available refundable total."));
       return;
     }
     setSubmitting(true);
     try {
       const requestId = refundRequestId || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       if (!refundRequestId) setRefundRequestId(requestId);
-      const refundableTotal = Number(selectedBooking?.price || 0) + Number(selectedBooking?.visitCharge || 0);
-      if (refundableTotal > 0 && amt > refundableTotal) {
-        showError(tr("Invalid Amount"), tr(`The refund amount cannot exceed ${formatCurrency(refundableTotal)}.`));
-        return;
+      let evidencePath = uploadedEvidencePath;
+      if (evidencePhoto && !evidencePath) {
+        evidencePath = await uploadPickedImage(
+          evidencePhoto.uri,
+          evidencePhoto.fileName,
+          evidencePhoto.contentType,
+          (progress) => setUploadProgress(progress.percent ?? null),
+          "private",
+        );
+        setUploadedEvidencePath(evidencePath);
       }
-      const evidenceUrl = evidencePhoto
-        ? await uploadPickedImage(evidencePhoto, evidenceFileName, evidenceMimeType, undefined, "private")
-        : undefined;
-      await api.requestRefund({ bookingId, reason: reason.trim(), amountRequested: amt, evidenceUrl, clientRequestId: requestId });
+      await api.requestRefund({ bookingId, reason: reason.trim(), amountRequested: amt, evidenceUrl: evidencePath || undefined, clientRequestId: requestId });
       showSuccess(tr("Refund Submitted"), tr("Our team will review your request within 24-48 hours."));
       setShowForm(false);
       setBookingId("");
       setReason("");
       setAmount("");
       setEvidencePhoto(null);
-      setEvidenceMimeType("image/jpeg");
-      setEvidenceFileName("refund-evidence.jpg");
+      setUploadedEvidencePath(null);
+      setUploadProgress(null);
       setSelectedBooking(null);
       setRefundRequestId(null);
       load();
@@ -171,12 +209,13 @@ export default function RefundRequestsScreen() {
       showError(tr("Unable to submit refund"), apiErrorToMessage(e, tr("We couldn't submit your refund request. Please try again.")));
     } finally {
       setSubmitting(false);
+      setUploadProgress(null);
     }
   }
 
   const filteredBookings = bookings.filter((b) => {
     const q = bookingSearch.toLowerCase();
-    return !q || (b.service || "").toLowerCase().includes(q) || b.id.includes(q);
+    return !q || (b.service || "").toLowerCase().includes(q) || b.id.includes(q) || String(b.publicId || "").toLowerCase().includes(q);
   });
 
   return (
@@ -195,7 +234,7 @@ export default function RefundRequestsScreen() {
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 24 }]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={[theme.colors.primary]} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load("refresh")} colors={[theme.colors.primary]} />}
           keyboardShouldPersistTaps="handled"
         >
           {!showForm ? (
@@ -222,7 +261,7 @@ export default function RefundRequestsScreen() {
                   onPress={() => setShowBookingPicker(!showBookingPicker)}
                 >
                   <Text style={selectedBooking ? styles.inputText : styles.inputPlaceholder}>
-                    {selectedBooking ? `${selectedBooking.service} — ${formatCurrency(Number(selectedBooking.price || 0) + Number(selectedBooking.visitCharge || 0))}` : tr("Tap to select booking")}
+                    {selectedBooking ? `${selectedBooking.service} — ${formatCurrency(selectedBooking.remainingRefundable)}` : tr("Tap to select booking")}
                   </Text>
                   <Icon name={showBookingPicker ? "chevron-up" : "chevron-down"} size={16} color={theme.colors.textSecondary} />
                 </Pressable>
@@ -237,7 +276,7 @@ export default function RefundRequestsScreen() {
                     {loadingBookings ? (
                       <ActivityIndicator color={theme.colors.primary} style={{ padding: 16 }} />
                     ) : filteredBookings.length === 0 ? (
-                      <Text style={styles.pickerEmpty}>{tr("No eligible bookings. Only completed or cancelled bookings can be refunded.")}</Text>
+                      <Text style={styles.pickerEmpty}>{tr("No eligible paid bookings are available. A booking with an open or fully paid refund is not shown here.")}</Text>
                     ) : (
                       filteredBookings.map((b) => (
                         <Pressable
@@ -246,18 +285,41 @@ export default function RefundRequestsScreen() {
                           onPress={() => {
                             setBookingId(b.id);
                             setSelectedBooking(b);
-                            setAmount(String(Number(b.price || 0) + Number(b.visitCharge || 0) || ""));
+                            setAmount(String(b.remainingRefundable));
                             setShowBookingPicker(false);
                           }}
                         >
                           <Text style={styles.pickerItemTitle}>{b.service}</Text>
-                          <Text style={styles.pickerItemSub}>{formatCurrency(Number(b.price || 0) + Number(b.visitCharge || 0))} · {b.status} · {formatLocalizedDate(b.createdAt || b.scheduledAt)}</Text>
+                          <Text style={styles.pickerItemSub}>{formatCurrency(b.remainingRefundable)} {tr("available")} · {tr(b.status)} · {formatLocalizedDate(b.scheduledDate || b.createdAt)}</Text>
                         </Pressable>
                       ))
                     )}
                   </View>
                 )}
               </View>
+
+              {selectedBooking ? (
+                <View style={styles.amountBreakdown}>
+                  <View style={styles.breakdownRow}>
+                    <Text style={styles.breakdownLabel}>{tr("Service charge")}</Text>
+                    <Text style={styles.breakdownValue}>{formatCurrency(selectedBooking.price || 0)}</Text>
+                  </View>
+                  <View style={styles.breakdownRow}>
+                    <Text style={styles.breakdownLabel}>{tr("Travel / visit charge")}</Text>
+                    <Text style={styles.breakdownValue}>{formatCurrency(selectedBooking.visitCharge || 0)}</Text>
+                  </View>
+                  {selectedBooking.paidRefundTotal > 0 ? (
+                    <View style={styles.breakdownRow}>
+                      <Text style={styles.breakdownLabel}>{tr("Already refunded")}</Text>
+                      <Text style={styles.breakdownValue}>− {formatCurrency(selectedBooking.paidRefundTotal)}</Text>
+                    </View>
+                  ) : null}
+                  <View style={[styles.breakdownRow, styles.breakdownTotal]}>
+                    <Text style={styles.breakdownTotalLabel}>{tr("Maximum refundable now")}</Text>
+                    <Text style={styles.breakdownTotalValue}>{formatCurrency(selectedBooking.remainingRefundable)}</Text>
+                  </View>
+                </View>
+              ) : null}
 
               <View style={styles.field}>
                 <Text style={styles.label}>{tr("Refund Amount (Rs.) *")}</Text>
@@ -266,7 +328,8 @@ export default function RefundRequestsScreen() {
                   placeholder={tr("Enter amount to refund")}
                   keyboardType="numeric"
                   value={amount}
-                  onChangeText={setAmount}
+                  onChangeText={(value) => setAmount(value.replace(/\D/g, "").slice(0, 9))}
+                  maxLength={9}
                 />
               </View>
 
@@ -293,7 +356,7 @@ export default function RefundRequestsScreen() {
                 >
                   {evidencePhoto ? (
                     <View style={styles.photoPreviewRow}>
-                      <Image source={{ uri: evidencePhoto }} style={styles.photoPreview} />
+                      <Image source={{ uri: evidencePhoto.uri }} style={styles.photoPreview} />
                       <Pressable onPress={() => setEvidencePhoto(null)} style={styles.photoRemove}>
                         <Icon name="x" size={14} color={theme.colors.danger} />
                         <Text style={styles.photoRemoveText}>{tr("Remove")}</Text>
@@ -323,7 +386,7 @@ export default function RefundRequestsScreen() {
                 ) : (
                   <>
                     <Icon name="send" size={16} color={theme.colors.onBrand} />
-                    <Text style={styles.submitBtnText}>{tr("Submit Refund Request")}</Text>
+                    <Text style={styles.submitBtnText}>{uploadProgress !== null ? tr("Uploading evidence… {{percent}}%").replace("{{percent}}", String(uploadProgress)) : tr("Submit Refund Request")}</Text>
                   </>
                 )}
               </Pressable>
@@ -342,7 +405,7 @@ export default function RefundRequestsScreen() {
               </View>
               <Text style={[styles.emptyTitle, { color: theme.colors.danger }]}>{tr("Unable to load refunds")}</Text>
               <Text style={styles.emptySub}>{error}</Text>
-              <Pressable onPress={load} style={{ marginTop: 14, paddingVertical: 10, paddingHorizontal: 28, backgroundColor: theme.colors.primary, borderRadius: 12 }}>
+              <Pressable onPress={() => void load("retry")} style={{ marginTop: 14, paddingVertical: 10, paddingHorizontal: 28, backgroundColor: theme.colors.primary, borderRadius: 12 }}>
                 <Text style={{ color: theme.colors.white, fontWeight: "600", fontSize: 14 }}>{tr("Retry")}</Text>
               </Pressable>
             </View>
@@ -400,79 +463,82 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "center",
     gap: 14,
-    paddingHorizontal: 20,
+    paddingHorizontal: redesign.layout.horizontalPadding,
     paddingBottom: 20,
     paddingTop: 16,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
+    backgroundColor: "rgba(255,255,255,0.18)",
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: "rgba(255,255,255,0.22)",
   },
-  headerTitle: { fontSize: 18, fontWeight: "700", color: theme.colors.onBrand },
-  headerSub: { fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 2 },
+  headerTitle: { ...theme.typography.h2, color: theme.colors.onBrand, letterSpacing: -0.25 },
+  headerSub: { ...theme.typography.caption, color: "rgba(255,255,255,0.75)", marginTop: 2 },
   scroll: { width: "100%", maxWidth: 760, alignSelf: "center", flex: 1 },
-  scrollContent: { width: "100%", maxWidth: 760, alignSelf: "center", padding: 16, gap: 16 },
+  scrollContent: { width: "100%", maxWidth: 760, alignSelf: "center", padding: redesign.layout.horizontalPadding, gap: 16 },
   newBtn: {
     flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     backgroundColor: theme.colors.primary,
-    borderRadius: 14,
-    paddingVertical: 14,
+    borderRadius: theme.radius.md,
+    minHeight: redesign.control.standardHeight,
+    paddingHorizontal: 16,
+    ...theme.shadows.sm,
   },
-  newBtnText: { fontSize: 15, fontWeight: "700", color: theme.colors.onBrand },
+  newBtnText: { ...theme.typography.label, color: theme.colors.onBrand },
   form: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 16,
+    borderRadius: theme.radius.xl,
     padding: 18,
     gap: 14,
-    shadowColor: theme.colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
   formHeader: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between" },
-  formTitle: { fontSize: 16, fontWeight: "700", color: theme.colors.text },
+  formTitle: { ...theme.typography.h3, color: theme.colors.text },
   field: { gap: 6 },
-  label: { fontSize: 12, fontWeight: "600", color: theme.colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
+  label: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
   input: {
-    borderWidth: 1.5,
+    borderWidth: redesign.visual.inputBorderWidth,
     borderColor: theme.colors.border,
-    borderRadius: 10,
+    borderRadius: theme.radius.md,
     paddingHorizontal: 14,
-    paddingVertical: 11,
+    minHeight: redesign.control.standardHeight,
     flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "center",
     justifyContent: "space-between",
     backgroundColor: theme.colors.input,
   },
-  inputText: { fontSize: 14, color: theme.colors.text, flex: 1 },
+  inputText: { ...theme.typography.body, color: theme.colors.text, flex: 1 },
   inputText2: {
-    borderWidth: 1.5,
+    borderWidth: redesign.visual.inputBorderWidth,
     borderColor: theme.colors.border,
-    borderRadius: 10,
+    borderRadius: theme.radius.md,
     paddingHorizontal: 14,
-    paddingVertical: 11,
-    fontSize: 14,
+    minHeight: redesign.control.standardHeight,
+    ...theme.typography.body,
     color: theme.colors.text,
     backgroundColor: theme.colors.input,
   },
-  inputPlaceholder: { fontSize: 14, color: theme.colors.textSecondary, flex: 1 },
+  inputPlaceholder: { ...theme.typography.body, color: theme.colors.textSecondary, flex: 1 },
   textarea: { height: 100, paddingTop: 11 },
   bookingPicker: {
-    borderWidth: 1.5,
+    borderWidth: redesign.visual.inputBorderWidth,
     borderColor: theme.colors.border,
-    borderRadius: 12,
-    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    backgroundColor: theme.colors.elevated,
     overflow: "hidden",
     marginTop: 4,
     maxHeight: 240,
+    ...theme.shadows.sm,
   },
   pickerSearch: {
     paddingHorizontal: 14,
@@ -487,31 +553,57 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
   pickerItemSelected: { backgroundColor: theme.colors.infoSoft },
   pickerItemTitle: { fontSize: 14, fontWeight: "600", color: theme.colors.text },
   pickerItemSub: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 },
+  amountBreakdown: {
+    gap: 8,
+    padding: 12,
+    borderRadius: theme.radius.md,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceAlt,
+  },
+  breakdownRow: {
+    flexDirection: isUrdu ? "row-reverse" : "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  breakdownLabel: { flex: 1, ...theme.typography.caption, color: theme.colors.textSecondary },
+  breakdownValue: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.text },
+  breakdownTotal: {
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    paddingTop: 9,
+    marginTop: 2,
+  },
+  breakdownTotalLabel: { flex: 1, ...theme.typography.label, color: theme.colors.text },
+  breakdownTotalValue: { ...theme.typography.h3, color: theme.colors.primary },
   infoBox: {
     flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "flex-start",
     gap: 8,
     backgroundColor: theme.colors.infoSoft,
-    borderRadius: 10,
+    borderRadius: theme.radius.md,
     padding: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.infoSoft,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.info + "30",
   },
-  infoText: { fontSize: 12, color: theme.colors.info, flex: 1, lineHeight: 18 },
+  infoText: { ...theme.typography.caption, color: theme.colors.info, flex: 1 },
   submitBtn: {
     flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     backgroundColor: theme.colors.primary,
-    borderRadius: 12,
-    paddingVertical: 14,
+    borderRadius: theme.radius.md,
+    minHeight: redesign.control.standardHeight,
+    paddingHorizontal: 16,
     marginTop: 4,
+    ...theme.shadows.sm,
   },
-  submitBtnText: { fontSize: 15, fontWeight: "700", color: theme.colors.onBrand },
+  submitBtnText: { ...theme.typography.label, color: theme.colors.onBrand },
   loadingBox: { alignItems: "center", paddingVertical: 48, gap: 12 },
-  loadingText: { fontSize: 14, color: theme.colors.textSecondary },
-  emptyBox: { alignItems: "center", paddingVertical: 48, gap: 10 },
+  loadingText: { ...theme.typography.body, color: theme.colors.textSecondary },
+  emptyBox: { alignItems: "center", paddingVertical: 48, gap: 10, backgroundColor: theme.colors.surface, borderRadius: theme.radius.xl, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border, ...theme.shadows.sm },
   emptyIcon: {
     width: 72,
     height: 72,
@@ -522,58 +614,56 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     borderWidth: 1.5,
     borderColor: theme.colors.border,
   },
-  emptyTitle: { fontSize: 16, fontWeight: "700", color: theme.colors.text },
-  emptySub: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center", paddingHorizontal: 32 },
+  emptyTitle: { ...theme.typography.h3, color: theme.colors.text },
+  emptySub: { ...theme.typography.body, color: theme.colors.textSecondary, textAlign: "center", paddingHorizontal: 32 },
   list: { gap: 12 },
-  sectionLabel: { fontSize: 12, fontWeight: "700", color: theme.colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
+  sectionLabel: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
   card: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 14,
+    borderRadius: theme.radius.lg,
     padding: 16,
     gap: 8,
-    shadowColor: theme.colors.shadow,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
   cardTop: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between" },
-  cardAmount: { fontSize: 20, fontWeight: "800", color: theme.colors.text },
-  cardDate: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 },
+  cardAmount: { ...theme.typography.h2, color: theme.colors.text },
+  cardDate: { ...theme.typography.caption, color: theme.colors.textSecondary, marginTop: 2 },
   statusBadge: {
     flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "center",
     gap: 5,
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
+    minHeight: 28,
+    justifyContent: "center",
+    borderRadius: theme.radius.pill,
   },
-  statusText: { fontSize: 12, fontWeight: "600" },
+  statusText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily },
   cardDetails: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "flex-start", gap: 6 },
-  cardDetailText: { fontSize: 13, color: theme.colors.textSecondary, flex: 1 },
+  cardDetailText: { ...theme.typography.body, color: theme.colors.textSecondary, flex: 1 },
   noteBox: {
     flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "flex-start",
     gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: theme.radius.md,
   },
-  noteText: { fontSize: 12, flex: 1, lineHeight: 17 },
+  noteText: { ...theme.typography.caption, flex: 1 },
   photoBtn: {
-    borderWidth: 1.5,
+    borderWidth: redesign.visual.inputBorderWidth,
     borderColor: theme.colors.border,
-    borderRadius: 12,
+    borderRadius: theme.radius.md,
     borderStyle: "dashed",
     padding: 14,
     backgroundColor: theme.colors.surfaceAlt,
   },
   photoBtnInner: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "center", gap: 10 },
-  photoBtnText: { fontSize: 14, fontWeight: "600", color: theme.colors.primary },
+  photoBtnText: { ...theme.typography.label, color: theme.colors.primary },
   photoPreviewRow: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 12 },
   photoPreview: { width: 80, height: 60, borderRadius: 8, backgroundColor: theme.colors.border },
   photoRemove: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 4 },
   photoRemoveText: { fontSize: 13, color: theme.colors.danger, fontWeight: "600" },
   });
 }
-

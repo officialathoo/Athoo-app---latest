@@ -10,6 +10,7 @@
  *   - Legacy Cloudinary https URLs (pre-migration) are still rendered directly
  */
 import { createPurposeToken, getAdminDeviceId, getApiBase, getToken } from "@/lib/api";
+import { validatedCleanUploadObjectPath } from "./cleanUploadResult";
 
 export type UploadUrlResult = {
   uploadURL: string;
@@ -103,6 +104,47 @@ export async function uploadFile(file: File, scope: "private" | "shared" = "shar
     },
     body: JSON.stringify({ objectPath, size: file.size, contentType: mime }),
   });
-  if (!completed.ok) throw new Error("Uploaded file could not be verified");
-  return objectPath;
+  const completionText =
+    await completed.text();
+
+  let completionPayload: unknown = {};
+
+  try {
+    completionPayload =
+      completionText
+        ? JSON.parse(completionText)
+        : {};
+  }
+  catch {
+    completionPayload = {};
+  }
+
+  if (!completed.ok) {
+    const serverMessage =
+      completionPayload &&
+      typeof completionPayload === "object" &&
+      !Array.isArray(completionPayload) &&
+      typeof (
+        completionPayload as {
+          error?: unknown;
+        }
+      ).error === "string"
+        ? String(
+            (
+              completionPayload as {
+                error: string;
+              }
+            ).error,
+          ).trim()
+        : "";
+
+    throw new Error(
+      serverMessage ||
+      "Uploaded file could not be verified",
+    );
+  }
+
+  return validatedCleanUploadObjectPath(
+    completionPayload,
+  );
 }

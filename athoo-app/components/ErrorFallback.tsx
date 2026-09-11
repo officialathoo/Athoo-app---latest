@@ -33,7 +33,11 @@ export function ErrorFallback({ resetError }: ErrorFallbackProps) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View
+      style={[styles.container, { backgroundColor: colors.background }]}
+      accessibilityRole="alert"
+      accessibilityLabel={tr("Something went wrong")}
+    >
       {/* Customer/provider friendly fallback only. Technical details are hidden from app users. */}
 
       <View style={styles.content}>
@@ -46,6 +50,9 @@ export function ErrorFallback({ resetError }: ErrorFallbackProps) {
         </Text>
 
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={tr("Try Again")}
+          accessibilityHint={tr("Restart the app and try loading this screen again")}
           onPress={handleRestart}
           style={({ pressed }) => [
             styles.button,
@@ -60,6 +67,7 @@ export function ErrorFallback({ resetError }: ErrorFallbackProps) {
           <Text
             style={[
               styles.buttonText,
+              localizedText,
               { color: colors.white },
             ]}
           >
@@ -67,8 +75,6 @@ export function ErrorFallback({ resetError }: ErrorFallbackProps) {
           </Text>
         </Pressable>
       </View>
-
-
     </View>
   );
 }

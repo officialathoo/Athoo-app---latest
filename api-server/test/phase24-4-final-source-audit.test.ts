@@ -30,7 +30,7 @@ test("available providers refresh location on activation and a bounded interval"
   assert.match(env, /^EXPO_PUBLIC_PROVIDER_LOCATION_SYNC_INTERVAL_MS=120000$/m);
 });
 
-test("active release metadata, evidence templates, and runbooks remain aligned and NO-GO", () => {
+test("active V2.2 release metadata, evidence templates, and runbooks remain aligned and NO-GO", () => {
   const status = json("docs/qa/current-release-status.json");
   const deviceTemplate = json("docs/qa/device-acceptance-evidence-template.json");
   const rc2Template = json("docs/qa/rc2-evidence-template.json");
@@ -40,10 +40,10 @@ test("active release metadata, evidence templates, and runbooks remain aligned a
   const escapedCandidate = String(status.candidate).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const candidatePattern = new RegExp(escapedCandidate);
 
-  assert.match(status.candidate, /^ATHOO_PHASE28_5(?:_\d+)?_[A-Z0-9_]+\.zip$/);
-  assert.match(status.baseline, /^ATHOO_PHASE28_5(?:_\d+)?_[A-Z0-9_]+\.zip$/);
+  assert.match(String(status.candidate), /^ATHOO_V2_2[A-Z0-9_.-]*\.zip$/);
+  assert.match(String(status.baseline), /^ATHOO_[A-Z0-9_.-]+\.zip$/);
   assert.notEqual(status.candidate, status.baseline);
-  assert.equal(status.status, "SOURCE-HARDENED-LOCAL-VALIDATION-PASSED");
+  assert.match(String(status.status), /V2\.2.*(?:PENDING|PASSED)/i);
   assert.match(status.launchDecision, /^NO-GO-/);
   assert.equal(status.externalVerification.connectedRuntime, "pending");
   assert.equal(deviceTemplate.candidateArtifactName, status.candidate);

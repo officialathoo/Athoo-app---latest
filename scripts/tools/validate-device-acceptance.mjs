@@ -111,5 +111,5 @@ if (errors.length) {
   console.error(`Device acceptance validation failed:\n${errors.map((error) => `- ${error}`).join("\n")}`);
   process.exit(1);
 }
-console.log("Device acceptance preparation validated with strict Phase 24.8 evidence coverage.");
+console.log("Device acceptance preparation validated with strict Athoo App V2 evidence coverage.");
 for (const warning of warnings) console.warn(`Warning: ${warning}`);

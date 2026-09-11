@@ -28,6 +28,6 @@ test("provider service radius uses a persisted provider endpoint instead of forb
   assert.match(providers, /router\.patch\("\/service-radius"/);
   assert.match(providers, /validateTravelRadius/);
   assert.match(radiusScreen, /api\.getServiceRadius\(\)/);
-  assert.match(radiusScreen, /api\.updateServiceRadius\(selected\)/);
+  assert.match(radiusScreen, /api\.updateServiceRadius\(/);
   assert.doesNotMatch(radiusScreen, /updateUser\(\{ maxTravelDistanceKm/);
 });

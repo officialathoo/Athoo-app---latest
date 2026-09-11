@@ -2,19 +2,20 @@ import { deliverEmailNow } from "./emailDelivery";
 import { getRuntimeEmailConfigurationStatus } from "./email";
 import { logger } from "./logger";
 
-export type OtpDeliveryChannel = "whatsapp_cloud" | "email" | "http_sms";
+export type OtpDeliveryChannel = "evolution_whatsapp" | "whatsapp_cloud" | "email" | "http_sms";
 export type OtpDeliveryMode = "all" | "first_success";
 
 export interface AuthenticationOtpDeliveryArgs {
   otpId: string;
   phone: string;
   code: string;
-  purpose: "login" | "registration" | "password_reset";
+  purpose: "login" | "registration" | "password_reset" | "account_deactivate" | "account_delete";
   role: "customer" | "provider";
   expiresMinutes: number;
   email?: string | null;
   userId?: string | null;
   userName?: string | null;
+  deliveryChannels?: OtpDeliveryChannel[];
 }
 
 export interface OtpChannelResult {
@@ -43,6 +44,14 @@ export interface OtpDeliveryConfigurationStatus {
   mode: OtpDeliveryMode;
   requestedChannels: OtpDeliveryChannel[];
   configuredChannels: OtpDeliveryChannel[];
+  evolutionWhatsapp: {
+    configured: boolean;
+    provider: "evolution_whatsapp";
+    baseUrlConfigured: boolean;
+    apiKeyConfigured: boolean;
+    instanceConfigured: boolean;
+    instance: string;
+  };
   whatsapp: {
     configured: boolean;
     provider: "whatsapp_cloud";
@@ -75,22 +84,25 @@ function envInt(name: string, fallback: number, min: number, max: number): numbe
 
 function normalizeChannel(value: string): OtpDeliveryChannel | null {
   const normalized = value.trim().toLowerCase().replaceAll("-", "_");
+  if (["evolution", "evolution_whatsapp", "baileys", "baileys_whatsapp"].includes(normalized)) return "evolution_whatsapp";
   if (["whatsapp", "whatsapp_cloud", "meta_whatsapp"].includes(normalized)) return "whatsapp_cloud";
   if (["email", "smtp"].includes(normalized)) return "email";
   if (["sms", "http_sms", "custom_sms"].includes(normalized)) return "http_sms";
   return null;
 }
 
-export function getOtpDeliveryChannels(): OtpDeliveryChannel[] {
-  const configured = env("OTP_DELIVERY_CHANNELS", "whatsapp_cloud,email")
-    .split(",")
-    .map(normalizeChannel)
-    .filter((channel): channel is OtpDeliveryChannel => Boolean(channel));
-  return [...new Set(configured)];
-}
-
-export function getOtpDeliveryMode(): OtpDeliveryMode {
-  return env("OTP_DELIVERY_MODE", "first_success").toLowerCase() === "all" ? "all" : "first_success";
+function evolutionWhatsAppConfiguration() {
+  return {
+    baseUrl: env("EVOLUTION_API_BASE_URL", env("EVOLUTION_API_URL")).replace(/\/+$/, ""),
+    apiKey: env("EVOLUTION_API_KEY"),
+    instance: env("EVOLUTION_INSTANCE", "Athoo"),
+    timeoutMs: envInt("EVOLUTION_TIMEOUT_MS", 10_000, 1_000, 60_000),
+    messageTemplate: env(
+      "EVOLUTION_OTP_MESSAGE_TEMPLATE",
+      "Your {brand} verification code is {code}. It expires in {minutes} minutes. Do not share this code.",
+    ),
+    brandName: env("APP_NAME", env("EMAIL_BRAND_NAME", "Athoo")),
+  };
 }
 
 function whatsappConfiguration() {
@@ -129,6 +141,11 @@ function smsConfiguration() {
   };
 }
 
+function evolutionWhatsAppConfigured(): boolean {
+  const config = evolutionWhatsAppConfiguration();
+  return Boolean(config.baseUrl && config.apiKey && config.instance);
+}
+
 function whatsappConfigured(): boolean {
   const config = whatsappConfiguration();
   return Boolean(config.baseUrl && config.token && config.phoneNumberId && config.templateName && config.language);
@@ -139,18 +156,51 @@ function smsConfigured(): boolean {
   return config.provider === "http_json" && Boolean(config.endpoint);
 }
 
+function requestedOtpChannelNames(): string[] {
+  const explicit = env("OTP_DELIVERY_CHANNELS");
+  if (explicit) return explicit.split(",");
+  return evolutionWhatsAppConfigured() ? ["evolution_whatsapp", "email"] : ["whatsapp_cloud", "email"];
+}
+
+function preferConfiguredEvolutionWhatsApp(channels: OtpDeliveryChannel[]): OtpDeliveryChannel[] {
+  if (!evolutionWhatsAppConfigured()) return channels;
+
+  const withoutEvolution: OtpDeliveryChannel[] = channels.filter((channel) => channel !== "evolution_whatsapp");
+  const whatsappCloudIndex = withoutEvolution.indexOf("whatsapp_cloud");
+
+  if (whatsappCloudIndex >= 0 && !whatsappConfigured()) {
+    withoutEvolution.splice(whatsappCloudIndex, 1, "evolution_whatsapp");
+    return [...new Set(withoutEvolution)];
+  }
+
+  return ["evolution_whatsapp", ...withoutEvolution];
+}
+
+export function getOtpDeliveryChannels(): OtpDeliveryChannel[] {
+  const configured = requestedOtpChannelNames()
+    .map(normalizeChannel)
+    .filter((channel): channel is OtpDeliveryChannel => Boolean(channel));
+  return preferConfiguredEvolutionWhatsApp([...new Set(configured)]);
+}
+
+export function getOtpDeliveryMode(): OtpDeliveryMode {
+  return env("OTP_DELIVERY_MODE", "first_success").toLowerCase() === "all" ? "all" : "first_success";
+}
+
 export async function getOtpDeliveryConfigurationStatus(): Promise<OtpDeliveryConfigurationStatus> {
+  const evolutionWhatsapp = evolutionWhatsAppConfiguration();
   const whatsapp = whatsappConfiguration();
   const sms = smsConfiguration();
   const email = await getRuntimeEmailConfigurationStatus();
   const requestedChannels = getOtpDeliveryChannels();
   const configuredChannels = requestedChannels.filter((channel) => {
+    if (channel === "evolution_whatsapp") return evolutionWhatsAppConfigured();
     if (channel === "whatsapp_cloud") return whatsappConfigured();
     if (channel === "email") return email.configured;
     return smsConfigured();
   });
   const phoneRegistrationConfigured = configuredChannels.some((channel) =>
-    channel === "whatsapp_cloud" || channel === "http_sms",
+    channel === "evolution_whatsapp" || channel === "whatsapp_cloud" || channel === "http_sms",
   );
   return {
     configured: configuredChannels.length > 0,
@@ -159,6 +209,14 @@ export async function getOtpDeliveryConfigurationStatus(): Promise<OtpDeliveryCo
     mode: getOtpDeliveryMode(),
     requestedChannels,
     configuredChannels,
+    evolutionWhatsapp: {
+      configured: evolutionWhatsAppConfigured(),
+      provider: "evolution_whatsapp",
+      baseUrlConfigured: Boolean(evolutionWhatsapp.baseUrl),
+      apiKeyConfigured: Boolean(evolutionWhatsapp.apiKey),
+      instanceConfigured: Boolean(evolutionWhatsapp.instance),
+      instance: evolutionWhatsapp.instance,
+    },
     whatsapp: {
       configured: whatsappConfigured(),
       provider: "whatsapp_cloud",
@@ -187,6 +245,77 @@ function normalizePakistanPhone(phone: string): string {
   if (digits.startsWith("0") && digits.length === 11) return `92${digits.slice(1)}`;
   if (digits.startsWith("3") && digits.length === 10) return `92${digits}`;
   return digits;
+}
+
+function renderEvolutionWhatsAppMessage(args: AuthenticationOtpDeliveryArgs): string {
+  const config = evolutionWhatsAppConfiguration();
+  return config.messageTemplate
+    .replaceAll("{brand}", config.brandName)
+    .replaceAll("{code}", args.code)
+    .replaceAll("{minutes}", String(args.expiresMinutes))
+    .replaceAll("{purpose}", args.purpose);
+}
+
+async function sendEvolutionWhatsApp(args: AuthenticationOtpDeliveryArgs): Promise<OtpChannelResult> {
+  const config = evolutionWhatsAppConfiguration();
+  const configured = evolutionWhatsAppConfigured();
+  if (!configured) {
+    return {
+      channel: "evolution_whatsapp",
+      configured: false,
+      attempted: false,
+      ok: false,
+      errorCode: "EVOLUTION_WHATSAPP_NOT_CONFIGURED",
+    };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), config.timeoutMs);
+  try {
+    const response = await fetch(
+      `${config.baseUrl}/message/sendText/${encodeURIComponent(config.instance)}`,
+      {
+        method: "POST",
+        headers: {
+          apikey: config.apiKey,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          number: normalizePakistanPhone(args.phone),
+          text: renderEvolutionWhatsAppMessage(args),
+        }),
+        signal: controller.signal,
+      },
+    );
+    if (!response.ok) {
+      logger.warn(
+        { status: response.status, otpId: args.otpId },
+        "Evolution WhatsApp OTP provider rejected delivery",
+      );
+      return {
+        channel: "evolution_whatsapp",
+        configured: true,
+        attempted: true,
+        ok: false,
+        errorCode: `EVOLUTION_WHATSAPP_HTTP_${response.status}`,
+      };
+    }
+    return { channel: "evolution_whatsapp", configured: true, attempted: true, ok: true };
+  } catch (error) {
+    logger.warn(
+      { err: error, otpId: args.otpId },
+      "Evolution WhatsApp OTP delivery failed",
+    );
+    return {
+      channel: "evolution_whatsapp",
+      configured: true,
+      attempted: true,
+      ok: false,
+      errorCode: "EVOLUTION_WHATSAPP_DELIVERY_FAILED",
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function sendWhatsApp(args: AuthenticationOtpDeliveryArgs): Promise<OtpChannelResult> {
@@ -304,55 +433,67 @@ async function sendHttpSms(args: AuthenticationOtpDeliveryArgs): Promise<OtpChan
       signal: controller.signal,
     });
     if (!response.ok) {
-      logger.warn({ status: response.status, provider: config.provider, otpId: args.otpId }, "SMS OTP provider rejected delivery");
+      logger.warn({ status: response.status, otpId: args.otpId }, "SMS OTP provider rejected delivery");
       return { channel: "http_sms", configured: true, attempted: true, ok: false, errorCode: `SMS_HTTP_${response.status}` };
     }
     return { channel: "http_sms", configured: true, attempted: true, ok: true };
   } catch (error) {
-    logger.warn({ err: error, provider: config.provider, otpId: args.otpId }, "SMS OTP delivery failed");
+    logger.warn({ err: error, otpId: args.otpId }, "SMS OTP delivery failed");
     return { channel: "http_sms", configured: true, attempted: true, ok: false, errorCode: "SMS_DELIVERY_FAILED" };
   } finally {
     clearTimeout(timer);
   }
 }
 
-function deliveryMessage(channels: OtpDeliveryChannel[]): string {
-  const labels = channels.map((channel) => {
-    if (channel === "whatsapp_cloud") return "WhatsApp";
-    if (channel === "http_sms") return "SMS";
-    return "email";
+function deliveryMessage(deliveredChannels: OtpDeliveryChannel[]): string {
+  const labels = deliveredChannels.map((channel) => {
+    if (channel === "evolution_whatsapp" || channel === "whatsapp_cloud") return "WhatsApp";
+    if (channel === "email") return "email";
+    return "SMS";
   });
-  if (labels.length === 0) return "Verification code delivery is temporarily unavailable.";
-  if (labels.length === 1) return `Verification code sent by ${labels[0]}.`;
-  return `Verification code sent by ${labels.slice(0, -1).join(", ")} and ${labels.at(-1)}.`;
+  const unique = [...new Set(labels)];
+  if (unique.length === 0) return "Verification code could not be delivered.";
+  if (unique.length === 1) return `Verification code sent via ${unique[0]}.`;
+  if (unique.length === 2) return `Verification code sent via ${unique[0]} and ${unique[1]}.`;
+  return `Verification code sent via ${unique.slice(0, -1).join(", ")}, and ${unique.at(-1)}.`;
 }
 
-export async function deliverAuthenticationOtp(args: AuthenticationOtpDeliveryArgs): Promise<AuthenticationOtpDeliveryResult> {
-  // A registration challenge proves possession of the phone number, so it may
-  // only use phone-bound channels. Email verification remains a separate,
-  // explicit post-registration security control.
-  const channels = getOtpDeliveryChannels().filter((channel) =>
-    args.purpose === "registration" ? channel !== "email" : true,
-  );
+export async function deliverAuthenticationOtp(
+  args: AuthenticationOtpDeliveryArgs,
+): Promise<AuthenticationOtpDeliveryResult> {
   const mode = getOtpDeliveryMode();
+  const hasExplicitChannels = Array.isArray(args.deliveryChannels) && args.deliveryChannels.length > 0;
+  const requested = hasExplicitChannels ? args.deliveryChannels! : getOtpDeliveryChannels();
+  // Registration must prove phone possession. Login through the mobile/phone OTP route
+  // must also stay on the selected mobile channel; email login uses /auth/email/send-otp.
+  const channelAllowedForPurpose = (channel: OtpDeliveryChannel) => {
+    if (args.purpose === "registration") return channel !== "email";
+    if (!hasExplicitChannels && args.purpose === "login") return channel !== "email";
+    return true;
+  };
+  const channels = requested.filter(channelAllowedForPurpose);
   const results: OtpChannelResult[] = [];
 
   for (const channel of channels) {
-    let result: OtpChannelResult;
-    if (channel === "whatsapp_cloud") result = await sendWhatsApp(args);
-    else if (channel === "email") result = await sendEmailOtp(args);
-    else result = await sendHttpSms(args);
+    const result = channel === "evolution_whatsapp"
+      ? await sendEvolutionWhatsApp(args)
+      : channel === "whatsapp_cloud"
+        ? await sendWhatsApp(args)
+        : channel === "email"
+          ? await sendEmailOtp(args)
+          : await sendHttpSms(args);
     results.push(result);
     if (mode === "first_success" && result.ok) break;
   }
 
   const deliveredChannels = results.filter((result) => result.ok).map((result) => result.channel);
+  const delivered = deliveredChannels.length > 0;
   return {
-    delivered: deliveredChannels.length > 0,
-    deliveryChannel: deliveredChannels.length ? deliveredChannels.join("+") : null,
+    delivered,
+    deliveryChannel: deliveredChannels[0] || null,
     deliveredChannels,
     results,
-    whatsappSent: deliveredChannels.includes("whatsapp_cloud"),
+    whatsappSent: deliveredChannels.includes("evolution_whatsapp") || deliveredChannels.includes("whatsapp_cloud"),
     emailSent: deliveredChannels.includes("email"),
     smsSent: deliveredChannels.includes("http_sms"),
     message: deliveryMessage(deliveredChannels),

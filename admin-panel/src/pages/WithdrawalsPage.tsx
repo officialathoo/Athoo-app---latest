@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, currency, formatDate } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { Wallet, RefreshCw, Check, X, Loader2, Search, CreditCard } from "lucide-react";
+import { Wallet, RefreshCw, Check, X, Loader2, Search, CreditCard, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface Withdrawal {
   id: string;
@@ -36,15 +36,42 @@ export function WithdrawalsPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const limit = 25;
   const [selected, setSelected] = useState<Withdrawal | null>(null);
   const [actionNote, setActionNote] = useState("");
   const [payRef, setPayRef] = useState("");
   const [focusOpened, setFocusOpened] = useState(false);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, statusFilter]);
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ["admin", "withdrawals"],
-    queryFn: () => api<{ withdrawals: Withdrawal[] }>("/api/admin/withdrawals"),
+    queryKey: ["admin", "withdrawals", focusId, debouncedSearch, statusFilter, page],
+    queryFn: () => api<{
+      withdrawals: Withdrawal[];
+      total: number;
+      page: number;
+      limit: number;
+      stats: { pending: number; approved: number; totalPaid: number };
+    }>("/api/admin/withdrawals", {
+      params: focusId
+        ? { focus: focusId }
+        : {
+            search: debouncedSearch || undefined,
+            status: statusFilter,
+            page,
+            limit,
+          },
+    }),
     refetchInterval: 180000,
   });
 
@@ -75,21 +102,14 @@ export function WithdrawalsPage() {
     setPayRef(focused.paymentReference || "");
     setFocusOpened(true);
   }, [focusId, focusOpened, withdrawals]);
-  const filtered = withdrawals.filter((w) => {
-    const q = search.toLowerCase();
-    const matchSearch =
-      !q ||
-      (w.provider?.name || "").toLowerCase().includes(q) ||
-      (w.provider?.phone || "").includes(q) ||
-      w.accountTitle.toLowerCase().includes(q) ||
-      w.accountNumber.includes(q);
-    const matchStatus = statusFilter === "all" || w.status === statusFilter;
-    return matchSearch && matchStatus;
-  });
-
-  const pending = withdrawals.filter((w) => w.status === "pending").length;
-  const approved = withdrawals.filter((w) => w.status === "approved").length;
-  const totalPaid = withdrawals.filter((w) => w.status === "paid").reduce((s, w) => s + w.amount, 0);
+  const filtered = withdrawals;
+  const total = data?.total ?? 0;
+  const pending = data?.stats?.pending ?? 0;
+  const approved = data?.stats?.approved ?? 0;
+  const totalPaid = data?.stats?.totalPaid ?? 0;
+  const pages = Math.max(1, Math.ceil(total / limit));
+  const rangeFrom = total ? (page - 1) * limit + 1 : 0;
+  const rangeTo = Math.min(page * limit, total);
 
   return (
     <div className="space-y-6">
@@ -198,6 +218,31 @@ export function WithdrawalsPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {!focusId && (
+          <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between gap-3 text-xs text-slate-500">
+            <span>Showing {rangeFrom}-{rangeTo} of {total} matching withdrawals</span>
+            <div className="flex items-center gap-2">
+              <button
+                disabled={page <= 1 || isLoading}
+                onClick={() => setPage((value) => Math.max(1, value - 1))}
+                className="p-1.5 rounded border border-slate-200 disabled:opacity-40"
+                aria-label="Previous withdrawals page"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span>Page {page} of {pages}</span>
+              <button
+                disabled={page >= pages || isLoading}
+                onClick={() => setPage((value) => Math.min(pages, value + 1))}
+                className="p-1.5 rounded border border-slate-200 disabled:opacity-40"
+                aria-label="Next withdrawals page"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
           </div>
         )}
       </div>

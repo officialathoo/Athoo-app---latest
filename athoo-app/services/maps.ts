@@ -20,7 +20,9 @@ export interface PlaceSuggestion {
   lat: number;
   lng: number;
   city?: string;
+  area?: string;
   province?: string;
+  countryCode?: string;
   postcode?: string;
   precision: AddressPrecision;
   source: string;
@@ -202,6 +204,68 @@ export async function getRouteMetricsBatch(
   }
 }
 
+export async function getProviderRouteMetricsBatch(
+  originLat: number,
+  originLng: number,
+  providerIds: string[],
+): Promise<RouteMetric[]> {
+  const normalizedProviderIds = Array.from(
+    new Set(
+      providerIds
+        .map((providerId) => String(providerId || "").trim())
+        .filter(Boolean),
+    ),
+  ).slice(0, 12);
+
+  if (
+    !Number.isFinite(originLat) ||
+    !Number.isFinite(originLng) ||
+    Math.abs(originLat) > 90 ||
+    Math.abs(originLng) > 180 ||
+    !normalizedProviderIds.length
+  ) {
+    return [];
+  }
+
+  try {
+    const data = await api.request<{ routes?: Partial<RouteMetric>[] }>(
+      "/api/geo/provider-route-metrics",
+      {
+        method: "POST",
+        auth: true,
+        body: {
+          originLat,
+          originLng,
+          providerIds: normalizedProviderIds,
+        },
+        timeoutMs: 15_000,
+      },
+    );
+
+    return Array.isArray(data.routes)
+      ? data.routes
+          .filter((route) => typeof route?.id === "string")
+          .map((route) => ({
+            id: String(route.id),
+            distanceKm:
+              route.distanceKm == null || !Number.isFinite(Number(route.distanceKm))
+                ? null
+                : Number(route.distanceKm),
+            durationMin:
+              route.durationMin == null || !Number.isFinite(Number(route.durationMin))
+                ? null
+                : Number(route.durationMin),
+            source:
+              typeof route.source === "string" && route.source.trim()
+                ? route.source.replace(/-cache$/, "")
+                : "unavailable",
+            routed: route.routed === true,
+          }))
+      : [];
+  } catch {
+    return [];
+  }
+}
 export interface DirectionsResult {
   polyline: { latitude: number; longitude: number }[];
   distanceKm: number | null;

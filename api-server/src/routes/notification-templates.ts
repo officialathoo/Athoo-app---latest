@@ -4,6 +4,7 @@ import { db } from "@workspace/db";
 import { auditLogTable, notificationTemplatesTable, usersTable } from "@workspace/db/schema";
 import { asc, eq } from "drizzle-orm";
 import { requireAuth, requireAdmin, requirePermission, type AuthRequest } from "../middlewares/auth";
+import { invalidateNotificationTemplateCache } from "../lib/notificationTemplateRenderer";
 
 const router = Router();
 const CHANNELS = new Set(["push", "sms", "email"]);
@@ -60,6 +61,7 @@ router.post("/", requirePermission("settings.write"), async (req: AuthRequest, r
       body: String(body.body).trim(), isActive: body.isActive !== false,
     };
     await db.insert(notificationTemplatesTable).values(template);
+    invalidateNotificationTemplateCache();
     await audit(req, "notification_template.create", template.id, { key, channel: template.channel });
     return res.status(201).json({ template });
   } catch { return res.status(500).json({ error: "Failed to create template" }); }
@@ -76,6 +78,7 @@ router.patch("/:id", requirePermission("settings.write"), async (req: AuthReques
     if (typeof req.body?.isActive === "boolean") update.isActive = req.body.isActive;
     if (req.body?.targetAudience !== undefined) update.targetAudience = String(req.body.targetAudience);
     const [updated] = await db.update(notificationTemplatesTable).set(update).where(eq(notificationTemplatesTable.id, current.id)).returning();
+    invalidateNotificationTemplateCache();
     await audit(req, "notification_template.update", current.id, { before: current, after: updated });
     return res.json({ template: updated });
   } catch { return res.status(500).json({ error: "Failed to update template" }); }
@@ -86,6 +89,7 @@ router.delete("/:id", requirePermission("settings.write"), async (req: AuthReque
     const [updated] = await db.update(notificationTemplatesTable).set({ isActive: false, updatedAt: new Date() })
       .where(eq(notificationTemplatesTable.id, req.params.id as string)).returning();
     if (!updated) return res.status(404).json({ error: "Template not found" });
+    invalidateNotificationTemplateCache();
     await audit(req, "notification_template.deactivate", updated.id, { key: updated.key });
     return res.json({ success: true, template: updated });
   } catch { return res.status(500).json({ error: "Failed to deactivate template" }); }

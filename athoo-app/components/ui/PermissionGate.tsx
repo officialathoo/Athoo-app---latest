@@ -28,6 +28,10 @@ interface Props {
   denied?: boolean;
   onAllow?: () => void;
   onDismiss?: () => void;
+  testID?: string;
+  accessibilityLabel?: string;
+  allowTestID?: string;
+  dismissTestID?: string;
 }
 
 export function openAppSettings(): Promise<void> {
@@ -35,14 +39,15 @@ export function openAppSettings(): Promise<void> {
   return Linking.openSettings();
 }
 
-export function PermissionGate({ kind, denied, onAllow, onDismiss }: Props) {
+export function PermissionGate({ kind, denied, onAllow, onDismiss, testID, accessibilityLabel, allowTestID, dismissTestID }: Props) {
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const copy = COPY[kind];
   const isDenied = denied || kind === "gps-disabled";
+  const actionLabel = isDenied ? "Open Settings" : copy.cta;
 
   return (
-    <View style={styles.card}>
+    <View testID={testID} accessibilityLabel={accessibilityLabel ?? copy.title} style={styles.card}>
       <View style={styles.iconBox}>
         <Feather name={copy.icon} size={24} color={theme.colors.primary} />
       </View>
@@ -53,17 +58,23 @@ export function PermissionGate({ kind, denied, onAllow, onDismiss }: Props) {
         </Text>
         <View style={styles.row}>
           <Pressable
+            testID={allowTestID}
             onPress={isDenied ? () => void openAppSettings().catch(() => undefined) : onAllow}
             style={({ pressed }) => [styles.allowButton, pressed && styles.pressed]}
             accessibilityRole="button"
+            accessibilityLabel={actionLabel}
+            accessibilityHint={isDenied ? "Opens device settings" : "Requests permission access"}
           >
-            <Text style={styles.allowButtonText}>{isDenied ? "Open Settings" : copy.cta}</Text>
+            <Text style={styles.allowButtonText}>{actionLabel}</Text>
           </Pressable>
           {onDismiss ? (
             <Pressable
+              testID={dismissTestID}
               onPress={onDismiss}
               style={({ pressed }) => [styles.dismissButton, pressed && styles.pressed]}
               accessibilityRole="button"
+              accessibilityLabel="Not now"
+              accessibilityHint="Dismisses this permission prompt"
             >
               <Text style={styles.dismissButtonText}>Not now</Text>
             </Pressable>

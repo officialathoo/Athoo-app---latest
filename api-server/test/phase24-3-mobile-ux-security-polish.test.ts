@@ -27,7 +27,7 @@ test("customer and provider security settings always expose the biometric contro
   assert.match(provider, /<BiometricLoginSetting \/>/);
   assert.doesNotMatch(customer, /biometricAvail\s*&&/);
   assert.doesNotMatch(provider, /biometricAvail\s*&&/);
-  assert.match(setting, /Open Settings/);
+  assert.match(setting, /Open (Phone )?Settings/);
   assert.match(setting, /Current password/);
 });
 
@@ -58,7 +58,7 @@ test("bottom tabs reserve content height in addition to the device safe area", (
     assert.match(layout, /Math\.max\(insets\.bottom/);
     assert.match(layout, /64 \+ safeBottom/);
     assert.match(layout, /tabBarItemStyle/);
-    assert.match(layout, /minHeight: 54/);
+    assert.match(layout, /minHeight: redesign\.control\.standardHeight/);
   }
 });
 

@@ -16,6 +16,7 @@ import { getRuntimeMapOverrides } from "./lib/mapRuntime";
 import { getRuntimePushConfigurationStatus } from "./lib/push";
 import { getOtpDeliveryConfigurationStatus } from "./lib/otpDelivery";
 import { getStorageConfigurationStatus } from "./lib/storageProvider";
+import { getUploadScannerStatus } from "./lib/uploadScanner";
 import { getReleaseIdentity } from "./lib/releaseIdentity";
 import { isInProcessCacheEnabled } from "./lib/infrastructureConfiguration";
 import { getCallConfigurationStatus } from "./lib/callConfiguration";
@@ -26,6 +27,21 @@ app.disable("etag");
 
 const trustProxyRaw = String(process.env.TRUST_PROXY || "false").trim();
 app.set("trust proxy", trustProxyRaw === "true" ? 1 : trustProxyRaw === "false" ? false : trustProxyRaw);
+
+// Production API traffic must arrive over HTTPS. Reverse proxies such as Render
+// communicate the original scheme through X-Forwarded-Proto. Health probes and
+// the root status endpoint remain available to the hosting platform.
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (process.env.NODE_ENV !== "production") return next();
+  const path = req.path || "";
+  if (path === "/" || path.startsWith("/api/health") || path.startsWith("/api/healthz")) return next();
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase();
+  if (req.secure || forwardedProto === "https") return next();
+  return res.status(426).json({ error: "HTTPS is required", code: "HTTPS_REQUIRED" });
+});
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   const startedAt = performance.now();
@@ -178,13 +194,25 @@ for (const [path, configuredMax] of [
 }
 
 app.use(
-  "/api/storage/uploads/request-url",
+  "/api/invoices/verify",
+  rateLimit({
+    windowMs: 60_000,
+    max: boundedRuntimeInt(process.env.INVOICE_VERIFY_RATE_LIMIT_MAX, 30, 1, 1_000),
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many invoice verification attempts. Please try again later.", code: "RATE_LIMITED" },
+  }),
+);
+
+app.use(
+  ["/api/storage/uploads/request-url", "/api/storage/uploads/complete"],
   rateLimit({
     windowMs: 60 * 60 * 1000,
     max: Number(process.env.UPLOAD_URL_RATE_LIMIT_MAX || 120),
     standardHeaders: true,
     legacyHeaders: false,
-    message: { error: "Too many upload requests. Please try again later." },
+    keyGenerator: (req) => sensitiveAccountKey("upload-security", req),
+    message: { error: "Too many upload requests. Please try again later.", code: "RATE_LIMITED" },
   }),
 );
 
@@ -223,6 +251,58 @@ function authKey(prefix: string, identity: string, req: Request): string {
   if (cleanIdentity) return `${prefix}:${cleanIdentity}`;
   return `${prefix}:ip:${requestIp(req)}`;
 }
+
+function sensitiveAccountKey(prefix: string, req: Request): string {
+  const authorization = safeString(req.headers.authorization);
+  const deviceId = safeString(req.headers["x-athoo-device-id"]);
+  const material = `${authorization}|${deviceId}|${requestIp(req)}`;
+  const digest = crypto.createHash("sha256").update(material).digest("base64url").slice(0, 32);
+  return `${prefix}:${digest}`;
+}
+
+// A second general quota is keyed by the bearer credential rather than IP.
+// The IP limiter above still catches attackers rotating random/invalid tokens;
+// this layer prevents one valid token from overwhelming the API through many IPs.
+const AUTH_TOKEN_RATE_LIMIT_WINDOW_MS = boundedRuntimeInt(
+  process.env.AUTH_TOKEN_RATE_LIMIT_WINDOW_MS,
+  60_000,
+  1_000,
+  3_600_000,
+);
+const AUTH_TOKEN_RATE_LIMIT_MAX = boundedRuntimeInt(
+  process.env.AUTH_TOKEN_RATE_LIMIT_MAX,
+  360,
+  10,
+  100_000,
+);
+app.use(
+  "/api",
+  rateLimit({
+    windowMs: AUTH_TOKEN_RATE_LIMIT_WINDOW_MS,
+    max: AUTH_TOKEN_RATE_LIMIT_MAX,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req: Request) => {
+      if (req.method === "OPTIONS" || req.path.startsWith("/health") || req.path.startsWith("/healthz")) return true;
+      return !/^Bearer\s+\S+$/i.test(safeString(req.headers.authorization));
+    },
+    keyGenerator: (req: Request) => {
+      const authorization = safeString(req.headers.authorization);
+      const digest = crypto.createHash("sha256").update(authorization).digest("base64url").slice(0, 32);
+      return `auth-token:${digest}`;
+    },
+    handler: (req: Request, res: Response) => {
+      logger.warn(
+        { path: req.path, method: req.method, ip: requestIp(req), requestId: req.id },
+        "authenticated token rate limit exceeded",
+      );
+      res.status(429).json({
+        error: "Too many requests. Please slow down and try again.",
+        code: "RATE_LIMITED",
+      });
+    },
+  }),
+);
 
 const rateLimitConfig = (keyFn: (req: Request) => string) => ({
   windowMs: 15 * 60 * 1000,
@@ -270,6 +350,34 @@ app.use(
 );
 
 app.use(
+  "/api/auth/email/verification/send",
+  rateLimit({
+    ...rateLimitConfig((req) =>
+      authKey("public-email-verification-send", normalizeEmail(req.body?.email), req),
+    ),
+    max: Number(process.env.EMAIL_PUBLIC_VERIFICATION_RATE_LIMIT_MAX || 10),
+    message: {
+      error: "Too many email verification requests. Please try again in 15 minutes.",
+      code: "RATE_LIMITED",
+    },
+  }),
+);
+
+app.use(
+  "/api/auth/email/verification/verify",
+  rateLimit({
+    ...rateLimitConfig((req) =>
+      authKey("public-email-verification-verify", normalizeEmail(req.body?.email), req),
+    ),
+    max: Number(process.env.EMAIL_PUBLIC_VERIFICATION_VERIFY_RATE_LIMIT_MAX || 20),
+    message: {
+      error: "Too many email verification attempts. Please try again in 15 minutes.",
+      code: "RATE_LIMITED",
+    },
+  }),
+);
+
+app.use(
   "/api/me/email/verification/send",
   rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -306,6 +414,61 @@ app.use(
     ...rateLimitConfig((req) => authKey("email-change-verify", normalizeEmail(req.body?.newEmail), req)),
     max: Number(process.env.EMAIL_CHANGE_VERIFY_RATE_LIMIT_MAX || 20),
     message: { error: "Too many email change verification attempts. Please try again in 15 minutes." },
+  }),
+);
+
+app.use(
+  "/api/me/account/step-up/request",
+  rateLimit({
+    ...rateLimitConfig((req) => sensitiveAccountKey("account-step-up-request", req)),
+    max: Number(process.env.ACCOUNT_STEP_UP_REQUEST_RATE_LIMIT_MAX || 5),
+    message: { error: "Too many verification-code requests. Please try again in 15 minutes.", code: "RATE_LIMITED" },
+  }),
+);
+
+app.use(
+  "/api/me/account/step-up/verify",
+  rateLimit({
+    ...rateLimitConfig((req) => sensitiveAccountKey("account-step-up-verify", req)),
+    max: Number(process.env.ACCOUNT_STEP_UP_VERIFY_RATE_LIMIT_MAX || 10),
+    message: { error: "Too many verification attempts. Please try again in 15 minutes.", code: "RATE_LIMITED" },
+  }),
+);
+
+for (const accountActionPath of ["/api/me/account/deactivate", "/api/me/account/delete-request"]) {
+  app.use(
+    accountActionPath,
+    rateLimit({
+      ...rateLimitConfig((req) => sensitiveAccountKey("account-action", req)),
+      max: Number(process.env.ACCOUNT_ACTION_RATE_LIMIT_MAX || 10),
+      message: { error: "Too many account-action attempts. Please try again in 15 minutes.", code: "RATE_LIMITED" },
+    }),
+  );
+}
+
+app.use(
+  "/api/refunds",
+  rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: Number(process.env.REFUND_REQUEST_RATE_LIMIT_MAX || 10),
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => req.method === "GET",
+    keyGenerator: (req) => sensitiveAccountKey("refund-request", req),
+    message: { error: "Too many refund requests. Please try again later.", code: "RATE_LIMITED" },
+  }),
+);
+
+app.use(
+  "/api/broadcast",
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: boundedRuntimeInt(process.env.BROADCAST_ACTION_RATE_LIMIT_MAX, 40, 1, 500),
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => req.method === "GET" || req.method === "OPTIONS",
+    keyGenerator: (req) => sensitiveAccountKey("broadcast-action", req),
+    message: { error: "Too many broadcast actions. Please wait and try again.", code: "RATE_LIMITED" },
   }),
 );
 
@@ -468,6 +631,7 @@ app.get("/api/health", async (_req, res) => {
       email: emailStatus,
       maps: getMapConfigurationStatus(runtimeMapOverrides),
       storage: getStorageConfigurationStatus(),
+      uploadScanner: getUploadScannerStatus(),
       otpDelivery: {
         ...otpDeliveryStatus,
         developmentResponseEnabled: process.env.NODE_ENV === "development" && process.env.ALLOW_DEV_OTP_RESPONSE === "true",

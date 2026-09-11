@@ -50,11 +50,6 @@ const db = drizzle(pool, { schema });
 
 const id = () => crypto.randomUUID();
 const hash = (pw: string) => bcrypt.hashSync(pw, 12);
-const publicUserId = (role: "customer" | "provider" | "admin", rawId: string) => {
-  const prefix = role === "provider" ? "PRO" : role === "admin" ? "ADM" : "CUS";
-  const digest = crypto.createHash("sha256").update(`${role}:${rawId}`).digest("hex").slice(0, 16).toUpperCase();
-  return `${prefix}-${digest}`;
-};
 
 async function seed() {
   console.log("🌱 Starting ATHOO seed...\n");
@@ -74,7 +69,7 @@ async function seed() {
         maintenanceMode: false,
         defaultVisitCharge: 200,
         maxBookingsPerDay: 10,
-        appVersion: "1.0.0",
+        appVersion: "2.0.0",
         minBookingNoticeHours: 1,
         allowGuestBrowsing: true,
         providerAutoApprove: false,
@@ -83,13 +78,13 @@ async function seed() {
         broadcastInitialRadiusKm: 30,
         broadcastExpansionRadiusKm: 50,
         broadcastExpandAfterMinutes: 5,
-        defaultServiceRadiusKm: 25,
+        defaultServiceRadiusKm: 15,
         maxNegotiationRounds: 3,
         premiumProfileBadgeEnabled: true,
         premiumPriorityBoost: true,
         customerCancellationFee: 0,
         providerCancellationPenalty: 0,
-        premiumCommissionDiscountPercent: 0,
+        premiumCommissionDiscountPercent: 10,
         inactivityLifecycleEnabled: true,
         inactivityWarningDays: 60,
         inactivityRestrictionDays: 90,
@@ -115,18 +110,18 @@ async function seed() {
   // ─── SERVICE CATEGORIES ───────────────────────────────────────────────────
   console.log("📂 Service categories...");
   const categories = [
-    { id: "cat-electrician", name: "Electrician",      nameUr: "الیکٹریشن",  slug: "electrician",  icon: "zap",          color: "#F59E0B", visitCharge: 200, commissionPct: 10, minHourlyRate: 500,  maxHourlyRate: 2000, sortOrder: 1  },
-    { id: "cat-plumber",     name: "Plumber",          nameUr: "پلمبر",       slug: "plumber",      icon: "droplets",     color: "#3B82F6", visitCharge: 200, commissionPct: 10, minHourlyRate: 500,  maxHourlyRate: 2000, sortOrder: 2  },
-    { id: "cat-carpenter",   name: "Carpenter",        nameUr: "ترکھان",      slug: "carpenter",    icon: "hammer",       color: "#92400E", visitCharge: 200, commissionPct: 10, minHourlyRate: 600,  maxHourlyRate: 2500, sortOrder: 3  },
-    { id: "cat-painter",     name: "Painter",          nameUr: "رنگ ساز",     slug: "painter",      icon: "paint-bucket", color: "#EF4444", visitCharge: 150, commissionPct: 10, minHourlyRate: 400,  maxHourlyRate: 1500, sortOrder: 4  },
-    { id: "cat-ac-repair",   name: "AC Repair",        nameUr: "اے سی مرمت", slug: "ac-repair",    icon: "wind",         color: "#06B6D4", visitCharge: 300, commissionPct: 12, minHourlyRate: 800,  maxHourlyRate: 3000, sortOrder: 5  },
-    { id: "cat-cleaning",    name: "Cleaning",         nameUr: "صفائی",       slug: "cleaning",     icon: "sparkles",     color: "#10B981", visitCharge: 150, commissionPct: 10, minHourlyRate: 300,  maxHourlyRate: 1200, sortOrder: 6  },
-    { id: "cat-pest",        name: "Pest Control",     nameUr: "کیڑے مار",    slug: "pest-control", icon: "bug",          color: "#84CC16", visitCharge: 200, commissionPct: 12, minHourlyRate: 600,  maxHourlyRate: 2000, sortOrder: 7  },
-    { id: "cat-gas",         name: "Gas Repair",       nameUr: "گیس مرمت",    slug: "gas-repair",   icon: "flame",        color: "#F97316", visitCharge: 200, commissionPct: 10, minHourlyRate: 500,  maxHourlyRate: 2000, sortOrder: 8  },
-    { id: "cat-cctv",        name: "CCTV & Security",  nameUr: "سیکیورٹی",    slug: "cctv",         icon: "camera",       color: "#6366F1", visitCharge: 300, commissionPct: 12, minHourlyRate: 800,  maxHourlyRate: 3000, sortOrder: 9  },
-    { id: "cat-appliance",   name: "Appliance Repair", nameUr: "آلات مرمت",   slug: "appliance",    icon: "tv",           color: "#8B5CF6", visitCharge: 200, commissionPct: 10, minHourlyRate: 500,  maxHourlyRate: 2000, sortOrder: 10 },
-    { id: "cat-shifting",    name: "House Shifting",   nameUr: "گھر شفٹنگ",   slug: "shifting",     icon: "truck",        color: "#64748B", visitCharge: 500, commissionPct: 10, minHourlyRate: 1000, maxHourlyRate: 5000, sortOrder: 11 },
-    { id: "cat-gardening",   name: "Gardening",        nameUr: "باغبانی",      slug: "gardening",    icon: "leaf",         color: "#22C55E", visitCharge: 150, commissionPct: 10, minHourlyRate: 400,  maxHourlyRate: 1500, sortOrder: 12 },
+    { id: "cat-electrician", name: "Electrician",      nameUr: "الیکٹریشن",  slug: "electrician",  icon: "zap",          color: "#F59E0B", visitCharge: 200, commissionPct: 10, minHourlyRate: 500,  maxHourlyRate: 2000, sortOrder: 101 },
+    { id: "cat-plumber",     name: "Plumber",          nameUr: "پلمبر",       slug: "plumber",      icon: "droplets",     color: "#3B82F6", visitCharge: 200, commissionPct: 10, minHourlyRate: 500,  maxHourlyRate: 2000, sortOrder: 102 },
+    { id: "cat-carpenter",   name: "Carpenter",        nameUr: "ترکھان",      slug: "carpenter",    icon: "hammer",       color: "#92400E", visitCharge: 200, commissionPct: 10, minHourlyRate: 600,  maxHourlyRate: 2500, sortOrder: 103 },
+    { id: "cat-painter",     name: "Painter",          nameUr: "رنگ ساز",     slug: "painter",      icon: "paint-bucket", color: "#EF4444", visitCharge: 150, commissionPct: 10, minHourlyRate: 400,  maxHourlyRate: 1500, sortOrder: 104 },
+    { id: "cat-ac-repair",   name: "AC Repair",        nameUr: "اے سی مرمت", slug: "ac-repair",    icon: "wind",         color: "#06B6D4", visitCharge: 300, commissionPct: 12, minHourlyRate: 800,  maxHourlyRate: 3000, sortOrder: 105 },
+    { id: "cat-cleaning",    name: "Cleaning",         nameUr: "صفائی",       slug: "cleaning",     icon: "sparkles",     color: "#10B981", visitCharge: 150, commissionPct: 10, minHourlyRate: 300,  maxHourlyRate: 1200, sortOrder: 106 },
+    { id: "cat-pest",        name: "Pest Control",     nameUr: "کیڑے مار",    slug: "pest-control", icon: "bug",          color: "#84CC16", visitCharge: 200, commissionPct: 12, minHourlyRate: 600,  maxHourlyRate: 2000, sortOrder: 107 },
+    { id: "cat-gas",         name: "Gas Repair",       nameUr: "گیس مرمت",    slug: "gas-repair",   icon: "flame",        color: "#F97316", visitCharge: 200, commissionPct: 10, minHourlyRate: 500,  maxHourlyRate: 2000, sortOrder: 108 },
+    { id: "cat-cctv",        name: "CCTV & Security",  nameUr: "سیکیورٹی",    slug: "cctv",         icon: "camera",       color: "#6366F1", visitCharge: 300, commissionPct: 12, minHourlyRate: 800,  maxHourlyRate: 3000, sortOrder: 109 },
+    { id: "cat-appliance",   name: "Appliance Repair", nameUr: "آلات مرمت",   slug: "appliance",    icon: "tv",           color: "#8B5CF6", visitCharge: 200, commissionPct: 10, minHourlyRate: 500,  maxHourlyRate: 2000, sortOrder: 110 },
+    { id: "cat-shifting",    name: "House Shifting",   nameUr: "گھر شفٹنگ",   slug: "shifting",     icon: "truck",        color: "#64748B", visitCharge: 500, commissionPct: 10, minHourlyRate: 1000, maxHourlyRate: 5000, sortOrder: 111 },
+    { id: "cat-gardening",   name: "Gardening",        nameUr: "باغبانی",      slug: "gardening",    icon: "leaf",         color: "#22C55E", visitCharge: 150, commissionPct: 10, minHourlyRate: 400,  maxHourlyRate: 1500, sortOrder: 112 },
   ];
   for (const cat of categories) {
     await db
@@ -138,18 +133,28 @@ async function seed() {
   // ─── SERVICE AREAS ────────────────────────────────────────────────────────
   console.log("📍 Service areas...");
   const areas = [
-    { id: "area-lahore",     name: "Lahore",      province: "Punjab",      sortOrder: 1  },
-    { id: "area-karachi",    name: "Karachi",     province: "Sindh",       sortOrder: 2  },
-    { id: "area-islamabad",  name: "Islamabad",   province: "ICT",         sortOrder: 3  },
-    { id: "area-rwp",        name: "Rawalpindi",  province: "Punjab",      sortOrder: 4  },
-    { id: "area-faisalabad", name: "Faisalabad",  province: "Punjab",      sortOrder: 5  },
-    { id: "area-multan",     name: "Multan",      province: "Punjab",      sortOrder: 6  },
-    { id: "area-peshawar",   name: "Peshawar",    province: "KPK",         sortOrder: 7  },
-    { id: "area-quetta",     name: "Quetta",      province: "Balochistan", sortOrder: 8  },
-    { id: "area-gujranwala", name: "Gujranwala",  province: "Punjab",      sortOrder: 9  },
-    { id: "area-sialkot",    name: "Sialkot",     province: "Punjab",      sortOrder: 10 },
-    { id: "area-hyderabad",  name: "Hyderabad",   province: "Sindh",       sortOrder: 11 },
-    { id: "area-bahawalpur", name: "Bahawalpur",  province: "Punjab",      sortOrder: 12 },
+    // Province/territory entries make the default installation nationwide.
+    // Administrators can deactivate any region or add city/area-specific
+    // entries without a code deployment.
+    { id: "region-punjab", name: "Punjab", province: "Punjab", sortOrder: 1 },
+    { id: "region-sindh", name: "Sindh", province: "Sindh", sortOrder: 2 },
+    { id: "region-kp", name: "Khyber Pakhtunkhwa", province: "Khyber Pakhtunkhwa", sortOrder: 3 },
+    { id: "region-balochistan", name: "Balochistan", province: "Balochistan", sortOrder: 4 },
+    { id: "region-ict", name: "Islamabad Capital Territory", province: "Islamabad Capital Territory", sortOrder: 5 },
+    { id: "region-gb", name: "Gilgit-Baltistan", province: "Gilgit-Baltistan", sortOrder: 6 },
+    { id: "region-ajk", name: "Azad Jammu and Kashmir", province: "Azad Jammu and Kashmir", sortOrder: 7 },
+    { id: "area-lahore",     name: "Lahore",      province: "Punjab",      sortOrder: 101 },
+    { id: "area-karachi",    name: "Karachi",     province: "Sindh",       sortOrder: 102 },
+    { id: "area-islamabad",  name: "Islamabad",   province: "ICT",         sortOrder: 103 },
+    { id: "area-rwp",        name: "Rawalpindi",  province: "Punjab",      sortOrder: 104 },
+    { id: "area-faisalabad", name: "Faisalabad",  province: "Punjab",      sortOrder: 105 },
+    { id: "area-multan",     name: "Multan",      province: "Punjab",      sortOrder: 106 },
+    { id: "area-peshawar",   name: "Peshawar",    province: "KPK",         sortOrder: 107 },
+    { id: "area-quetta",     name: "Quetta",      province: "Balochistan", sortOrder: 108 },
+    { id: "area-gujranwala", name: "Gujranwala",  province: "Punjab",      sortOrder: 109 },
+    { id: "area-sialkot",    name: "Sialkot",     province: "Punjab",      sortOrder: 110 },
+    { id: "area-hyderabad",  name: "Hyderabad",   province: "Sindh",       sortOrder: 111 },
+    { id: "area-bahawalpur", name: "Bahawalpur",  province: "Punjab",      sortOrder: 112 },
   ];
   for (const area of areas) {
     await db
@@ -237,7 +242,7 @@ async function seed() {
     .insert(schema.usersTable)
     .values({
       id: "user-admin-001",
-      publicId: publicUserId("admin", "user-admin-001"),
+      publicId: "USR-ADMIN-001",
       name: "Super Admin",
       phone: "03000000001",
       email: "admin@athoo.pk",
@@ -263,12 +268,12 @@ async function seed() {
 
   if (seedDemoUsers) {
     // ─── DEMO CUSTOMER ────────────────────────────────────────────────────────
-    console.log("👤 Creating optional development demo users...");
+    console.log("👤 Creating Demo Customer (credentials supplied through SEED_DEMO_PASSWORD)...");
     await db
       .insert(schema.usersTable)
       .values({
         id: "user-customer-001",
-        publicId: publicUserId("customer", "user-customer-001"),
+        publicId: "USR-CUSTOMER-001",
         name: "Ali Hassan",
         phone: "03000000002",
         email: "customer@athoo.pk",
@@ -290,12 +295,12 @@ async function seed() {
       .onConflictDoNothing();
 
     // ─── DEMO PROVIDER ────────────────────────────────────────────────────────
-    console.log("🔧 Creating Demo Provider 1...");
+    console.log("🔧 Creating Demo Provider (credentials supplied through SEED_DEMO_PASSWORD)...");
     await db
       .insert(schema.usersTable)
       .values({
         id: "user-provider-001",
-        publicId: publicUserId("provider", "user-provider-001"),
+        publicId: "USR-PROVIDER-001",
         name: "Usman Khalid",
         phone: "03000000004",
         email: "provider@athoo.pk",
@@ -328,12 +333,12 @@ async function seed() {
       .onConflictDoNothing();
 
     // ─── DEMO CUSTOMER 2 ──────────────────────────────────────────────────────
-    console.log("👤 Creating Demo Customer 2...");
+    console.log("👤 Creating Demo Customer 2 (credentials supplied through SEED_DEMO_PASSWORD)...");
     await db
       .insert(schema.usersTable)
       .values({
         id: "user-customer-002",
-        publicId: publicUserId("customer", "user-customer-002"),
+        publicId: "USR-CUSTOMER-002",
         name: "Sara Malik",
         phone: "03000000003",
         email: "sara@athoo.pk",
@@ -355,12 +360,12 @@ async function seed() {
       .onConflictDoNothing();
 
     // ─── DEMO PROVIDER 2 ──────────────────────────────────────────────────────
-    console.log("🔧 Creating Demo Provider 2...");
+    console.log("🔧 Creating Demo Provider 2 (credentials supplied through SEED_DEMO_PASSWORD)...");
     await db
       .insert(schema.usersTable)
       .values({
         id: "user-provider-002",
-        publicId: publicUserId("provider", "user-provider-002"),
+        publicId: "USR-PROVIDER-002",
         name: "Bilal Ahmed",
         phone: "03000000005",
         email: "bilal@athoo.pk",
@@ -391,6 +396,7 @@ async function seed() {
         updatedAt: new Date(),
       })
       .onConflictDoNothing();
+
 
   } else {
     console.log("👥 Demo users skipped. Set SEED_DEMO_USERS=1 with a strong SEED_DEMO_PASSWORD only in an isolated development database.");

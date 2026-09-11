@@ -1,7 +1,8 @@
 {
   "cli": {
     "version": ">=21.0.0",
-    "appVersionSource": "remote"
+    "appVersionSource": "remote",
+    "requireCommit": true
   },
   "build": {
     "base": {
@@ -30,13 +31,14 @@
       "channel": "preview",
       "env": {
         "APP_ENV": "staging",
-        "APP_VERSION": "1.1.0",
-        "EXPO_PUBLIC_RELEASE_VERSION": "1.1.0"
+        "APP_VERSION": "2.2.0",
+        "EXPO_PUBLIC_RELEASE_VERSION": "2.2.0"
       },
       "android": {
         "buildType": "apk"
       },
-      "autoIncrement": true
+      "autoIncrement": true,
+      "environment": "preview"
     },
     "production": {
       "extends": "base",

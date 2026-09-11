@@ -1,5 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import { LinearGradient } from "expo-linear-gradient";
+import * as ExpoLocation from "expo-location";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
@@ -17,6 +18,7 @@ import { PrivateImage } from "@/services/storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { AnimatedCard } from "@/components/ui/AnimatedCard";
 import { SuccessModal } from "@/components/ui/SuccessModal";
 import { useAuth } from "@/context/AuthContext";
@@ -30,8 +32,7 @@ import { reverseGeocode, searchAddress } from "@/services/maps";
 import { getFastForegroundLocation } from "@/services/location";
 import { useCategories } from "@/context/CategoriesContext";
 import { apiErrorToMessage } from "@/lib/apiError";
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// Helpers
 
 /** Generate the next `count` calendar days starting from today (local time). */
 function getUpcomingDates(count = 30) {
@@ -135,9 +136,11 @@ export default function NegotiateScreen() {
   const [selectedServiceSlug, setSelectedServiceSlug] = useState(serviceId || "");
   const [loadingProvider, setLoadingProvider] = useState(isCreateMode);
   const [offerPrice, setOfferPrice] = useState(providerRate ? String(providerRate) : "");
+  const [travelCharge, setTravelCharge] = useState("0");
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [selectedCounter, setSelectedCounter] = useState("");
+  const [selectedTravelCharge, setSelectedTravelCharge] = useState("0");
   const [actionLoading, setActionLoading] = useState(false);
   const [mediaAssets, setMediaAssets] = useState<any[]>([]);
   const [uploadingMedia, setUploadingMedia] = useState(false);
@@ -147,6 +150,15 @@ export default function NegotiateScreen() {
   const [address, setAddress] = useState("");
   const [addressLatitude, setAddressLatitude] = useState<number | null>(null);
   const [addressLongitude, setAddressLongitude] = useState<number | null>(null);
+  const [locationMeta, setLocationMeta] = useState<{
+    city: string;
+    area: string;
+    province?: string;
+    countryCode: string;
+    source: "current" | "search";
+    accuracy?: number | null;
+    confirmedAt: string;
+  } | null>(null);
   const [scheduledDate, setScheduledDate] = useState("");
   const [scheduledTime, setScheduledTime] = useState("");
   const [isGettingLocation, setIsGettingLocation] = useState(false);
@@ -163,10 +175,30 @@ export default function NegotiateScreen() {
         rationaleBody: "Athoo uses your location to fill the service address for this negotiation.",
       });
       if (!result.location) return;
-      const resolved = await reverseGeocode(result.location.latitude, result.location.longitude);
+      const [resolved, places] = await Promise.all([
+        reverseGeocode(result.location.latitude, result.location.longitude),
+        ExpoLocation.reverseGeocodeAsync({ latitude: result.location.latitude, longitude: result.location.longitude }).catch(() => []),
+      ]);
+      const place = places[0];
+      const city = place?.city || place?.subregion || place?.region || "";
+      const area = place?.district || place?.subregion || place?.name || place?.street || "";
+      const countryCode = place?.isoCountryCode?.trim().toUpperCase() || "";
+      if (!city.trim() || !area.trim() || !countryCode) {
+        showError("Confirm service area", "We found your GPS pin but could not confirm its city and area. Search the exact address instead.");
+        return;
+      }
       setAddressLatitude(result.location.latitude);
       setAddressLongitude(result.location.longitude);
-      setAddress(resolved || `${result.location.latitude.toFixed(5)}, ${result.location.longitude.toFixed(5)}`);
+      setLocationMeta({
+        city: city.trim(),
+        area: area.trim(),
+        province: place?.region?.trim() || undefined,
+        countryCode,
+        source: "current",
+        accuracy: result.location.accuracy ?? null,
+        confirmedAt: new Date().toISOString(),
+      });
+      setAddress(resolved || [place?.name, place?.street, area, city].filter(Boolean).join(", "));
     } catch {
       showError("Location Error", "Could not get your current location. Please type your address.");
     } finally {
@@ -289,17 +321,33 @@ export default function NegotiateScreen() {
 
       let latitude = addressLatitude;
       let longitude = addressLongitude;
-      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-        const matches = await searchAddress(address.trim(), null, 1);
-        const best = matches[0];
-        if (!best) {
-          throw new Error("Please select a valid service address or use your current location.");
+      let verifiedLocation = locationMeta;
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !verifiedLocation) {
+        const matches = await searchAddress(
+          address.trim(),
+          Number.isFinite(latitude) && Number.isFinite(longitude)
+            ? { latitude: latitude!, longitude: longitude! }
+            : null,
+          3,
+        );
+        const exact = matches.find((item) => item.city?.trim() && item.area?.trim() && item.countryCode?.trim());
+        if (!exact) {
+          throw new Error("Athoo could not verify the city and area for this address. Search the exact location or use your current location.");
         }
-        latitude = best.lat;
-        longitude = best.lng;
-        setAddressLatitude(best.lat);
-        setAddressLongitude(best.lng);
-        if (best.label) setAddress(best.label);
+        latitude = exact.lat;
+        longitude = exact.lng;
+        verifiedLocation = {
+          city: exact.city!.trim(),
+          area: exact.area!.trim(),
+          province: exact.province?.trim() || undefined,
+          countryCode: exact.countryCode!.trim().toUpperCase(),
+          source: "search",
+          confirmedAt: new Date().toISOString(),
+        };
+        setAddressLatitude(exact.lat);
+        setAddressLongitude(exact.lng);
+        setLocationMeta(verifiedLocation);
+        if (exact.label) setAddress(exact.label);
       }
 
       await createNegotiation({
@@ -307,9 +355,17 @@ export default function NegotiateScreen() {
         providerName: provider.name,
         service: resolvedServiceLabel,
         customerOffer: price,
+        travellingCharge: Math.max(0, parseInt(travelCharge || "0", 10) || 0),
         address: address.trim(),
         latitude: latitude!,
         longitude: longitude!,
+        locationCity: verifiedLocation.city,
+        locationArea: verifiedLocation.area,
+        locationProvince: verifiedLocation.province,
+        locationCountryCode: verifiedLocation.countryCode,
+        locationSource: verifiedLocation.source,
+        locationAccuracy: verifiedLocation.accuracy,
+        locationConfirmedAt: verifiedLocation.confirmedAt,
         scheduledDate: scheduledDate.trim(),
         scheduledTime: scheduledTime.trim(),
         mediaUrls,
@@ -373,9 +429,11 @@ export default function NegotiateScreen() {
         selectedNegotiation.id,
         amount,
         `My revised offer is Rs. ${amount}`,
-        user.name || "Customer"
+        user.name || "Customer",
+        Math.max(0, parseInt(selectedTravelCharge || "0", 10) || 0)
       );
       setSelectedCounter("");
+      setSelectedTravelCharge("0");
     } catch {
       showError("Failed", "Could not send counter offer.");
     } finally {
@@ -467,8 +525,9 @@ export default function NegotiateScreen() {
                     <View style={styles.amountBox}>
                       <Text style={styles.amountLabel}>Provider Counter</Text>
                       <Text style={[styles.amountValue, { color: theme.colors.secondary }] }>
-                        Rs. {selectedNegotiation.providerCounter}
+                        Rs. {selectedNegotiation.providerCounter} / hour
                       </Text>
+                      <Text style={styles.amountLabel}>Travel: Rs. {selectedNegotiation.providerTravellingCharge || 0}</Text>
                     </View>
                   ) : null}
                 </View>
@@ -481,6 +540,14 @@ export default function NegotiateScreen() {
                         placeholder="Send new counter offer"
                         value={selectedCounter}
                         onChangeText={(v) => setSelectedCounter(v.replace(/[^0-9]/g, ""))}
+                        keyboardType="numeric"
+                        placeholderTextColor={theme.colors.textMuted}
+                      />
+                      <TextInput
+                        style={styles.counterInputInline}
+                        placeholder="Travel charge"
+                        value={selectedTravelCharge}
+                        onChangeText={(v) => setSelectedTravelCharge(v.replace(/[^0-9]/g, ""))}
                         keyboardType="numeric"
                         placeholderTextColor={theme.colors.textMuted}
                       />
@@ -693,7 +760,7 @@ export default function NegotiateScreen() {
                   <Icon name="navigation" size={16} color={theme.colors.primary} />
                 )}
                 <Text style={styles.gpsBtnText}>
-                  {isGettingLocation ? "Getting location…" : "Use My Current Location"}
+                  {isGettingLocation ? "Getting location..." : "Use My Current Location"}
                 </Text>
               </Pressable>
 
@@ -772,7 +839,7 @@ export default function NegotiateScreen() {
                 disabled={!scheduledDate || !scheduledTime}
               >
                 <Text style={styles.nextBtnText}>
-                  {scheduledDate && scheduledTime ? `Next – ${scheduledDate} at ${scheduledTime}` : "Next: Offer Amount"}
+                  {scheduledDate && scheduledTime ? `Next - ${scheduledDate} at ${scheduledTime}` : "Next: Offer Amount"}
                 </Text>
                 <Icon name="arrow-right" size={16} color={theme.colors.onBrand} />
               </Pressable>
@@ -828,6 +895,19 @@ export default function NegotiateScreen() {
                     keyboardType="number-pad"
                   />
                 </View>
+                <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Travelling charge</Text>
+                <Text style={styles.helperText}>Use 0 when travel is included. This is separate from the hourly rate.</Text>
+                <View style={styles.priceInputWrapper}>
+                  <Text style={styles.pricePrefix}>Rs.</Text>
+                  <TextInput
+                    style={styles.priceInput}
+                    value={travelCharge}
+                    onChangeText={(v) => setTravelCharge(v.replace(/[^0-9]/g, ""))}
+                    placeholder="0"
+                    placeholderTextColor={theme.colors.textMuted}
+                    keyboardType="number-pad"
+                  />
+                </View>
               </View>
             </AnimatedCard>
 
@@ -862,7 +942,7 @@ export default function NegotiateScreen() {
                   <>
                     <Icon name="send" size={18} color={theme.colors.onBrand} />
                     <Text style={styles.submitText}>
-                      Send Offer – Rs.{" "}
+                      Send Offer - Rs.{" "}
                       {offerPrice ? parseInt(offerPrice, 10).toLocaleString() : "0"}
                     </Text>
                   </>
@@ -922,23 +1002,25 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   headerGrad: {
-    paddingTop: 16,
-    paddingBottom: 32,
-    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 24,
+    paddingHorizontal: redesign.layout.horizontalPadding,
     gap: 4,
     alignItems: "center",
   },
 
   backBtn: {
     position: "absolute",
-    top: 16,
-    left: 20,
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    top: 12,
+    left: redesign.layout.horizontalPadding,
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
+    backgroundColor: "rgba(255,255,255,0.18)",
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: "rgba(255,255,255,0.22)",
   },
 
   headerTitle: {
@@ -956,13 +1038,13 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   providerBadge: {
     alignItems: "center",
     gap: 4,
-    marginTop: 8,
+    marginTop: 6,
   },
 
   providerBadgeAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
@@ -989,15 +1071,15 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   scroll: { flex: 1 },
 
   content: {
-    padding: 16,
-    gap: 12,
+    padding: redesign.layout.horizontalPadding,
+    gap: 10,
     paddingBottom: 60,
   },
 
   howSection: {
     backgroundColor: theme.colors.primary + "10",
     borderRadius: 14,
-    padding: 14,
+    padding: 12,
     borderWidth: 1,
     borderColor: theme.colors.primary + "25",
     gap: 8,
@@ -1023,9 +1105,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   section: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
+    borderRadius: theme.radius.lg,
+    padding: 14,
+    gap: 10,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
 
   sectionTitle: {
@@ -1034,17 +1119,24 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     color: theme.colors.text,
   },
 
+  helperText: {
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    lineHeight: 18,
+  },
+
   // Step wizard styles
   stepRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 24,
-    paddingVertical: 14,
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingVertical: 10,
     backgroundColor: theme.colors.surface,
-    borderBottomWidth: 1,
+    borderBottomWidth: redesign.visual.cardBorderWidth,
     borderBottomColor: theme.colors.border,
     gap: 0,
+    ...theme.shadows.sm,
   },
   stepItem: {
     flexDirection: "row",
@@ -1052,9 +1144,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 6,
   },
   stepDot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: theme.colors.surfaceAlt,
     borderWidth: 2,
     borderColor: theme.colors.border,
@@ -1094,15 +1186,15 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   servicePicker: {
     gap: 10,
-    paddingBottom: 18,
-    marginBottom: 18,
+    paddingBottom: 14,
+    marginBottom: 14,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
   servicePickerChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   servicePickerChip: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    paddingHorizontal: 12, paddingVertical: 9, borderRadius: 18,
+    paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999,
     borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surfaceAlt,
   },
   servicePickerChipSelected: { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary + "12" },
@@ -1124,11 +1216,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignItems: "center",
     gap: 8,
     backgroundColor: theme.colors.primary + "12",
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: theme.colors.primary + "40",
     borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
   gpsBtnText: {
     fontSize: 14,
@@ -1155,14 +1247,14 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   addressInput: {
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: theme.colors.border,
     borderRadius: 12,
     padding: 12,
     fontSize: 14,
     color: theme.colors.text,
     backgroundColor: theme.colors.surfaceAlt,
-    minHeight: 80,
+    minHeight: 72,
   },
 
   // Date chip row
@@ -1171,10 +1263,10 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   dateChip: {
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 14,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: theme.colors.border,
     backgroundColor: theme.colors.surfaceAlt,
     minWidth: 64,
@@ -1205,10 +1297,10 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 8,
   },
   timeChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderRadius: 10,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: theme.colors.border,
     backgroundColor: theme.colors.surfaceAlt,
   },
@@ -1231,9 +1323,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     backgroundColor: theme.colors.primary,
-    borderRadius: 14,
-    paddingVertical: 14,
+    borderRadius: theme.radius.md,
+    minHeight: redesign.control.standardHeight,
+    paddingHorizontal: 16,
     marginTop: 4,
+    ...theme.shadows.sm,
   },
   nextBtnText: {
     fontSize: 15,
@@ -1247,10 +1341,10 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     marginBottom: 4,
   },
   fieldInput: {
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: theme.colors.border,
     borderRadius: 12,
-    padding: 12,
+    padding: 10,
     fontSize: 14,
     color: theme.colors.text,
     backgroundColor: theme.colors.surfaceAlt,
@@ -1258,7 +1352,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   summaryBox: {
     backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 12,
-    padding: 12,
+    padding: 10,
     gap: 8,
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -1356,7 +1450,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   submitBtnDisabled: {
-    opacity: 0.6,
+    opacity: redesign.visual.disabledOpacity,
   },
 
   submitGrad: {
@@ -1394,11 +1488,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   selectedCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 18,
+    borderRadius: theme.radius.lg,
     padding: 16,
     gap: 14,
-    borderWidth: 1,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.primary + "25",
+    ...theme.shadows.sm,
   },
 
   selectedHeader: {
@@ -1465,11 +1560,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   listCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 16,
+    borderRadius: theme.radius.lg,
     padding: 14,
     gap: 10,
-    borderWidth: 1,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
 
   listCardSelected: {
