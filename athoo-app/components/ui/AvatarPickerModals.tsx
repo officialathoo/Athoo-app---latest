@@ -30,6 +30,7 @@ export function AvatarPickerModals(props: AvatarPickerModalsProps) {
   const isRtl = direction === "rtl";
   const localizedRow = isRtl ? styles.rowReverse : undefined;
   const optionChevron = isRtl ? "chevron-left" : "chevron-right";
+  const avatarColorLabel = tr("Avatar colors");
   const {
     avatarVisible,
     colorVisible,
@@ -58,7 +59,7 @@ export function AvatarPickerModals(props: AvatarPickerModalsProps) {
           <View
             style={styles.avatarSheet}
             onStartShouldSetResponder={() => true}
-            accessibilityRole="dialog"
+            accessible
             accessibilityLabel={tr("Profile Picture")}
           >
             <Text style={[styles.sheetTitle, localizedText]}>{tr("Profile Picture")}</Text>
@@ -159,17 +160,17 @@ export function AvatarPickerModals(props: AvatarPickerModalsProps) {
           <View
             style={styles.colorSheet}
             onStartShouldSetResponder={() => true}
-            accessibilityRole="dialog"
+            accessible
             accessibilityLabel={tr("Choose Avatar Color")}
           >
             <Text style={[styles.sheetTitle, localizedText]}>{tr("Choose Avatar Color")}</Text>
-            <View style={styles.colorGrid} accessibilityRole="radiogroup" accessibilityLabel={tr("Avatar colors")}>
+            <View style={styles.colorGrid} accessibilityLabel={avatarColorLabel}>
               {avatarColors.map((c) => (
                 <Pressable
                   key={c}
-                  accessibilityRole="radio"
-                  accessibilityLabel={tr("Avatar color {{color}}", { color: c })}
-                  accessibilityState={{ checked: profileColor === c }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${avatarColorLabel} ${c}`}
+                  accessibilityState={{ selected: profileColor === c }}
                   style={[styles.colorDot, { backgroundColor: c }, profileColor === c && styles.colorActive]}
                   onPress={() => onChangeColor(c)}
                 />
