@@ -1,6 +1,7 @@
 import { Icon } from "@/components/ui/Icon";
 import { PrivateImage } from "@/services/storage";
 import { useTheme } from "@/context/ThemeContext";
+import { useLang } from "@/context/LanguageContext";
 import type { AthooTheme } from "@/design/theme";
 import { redesign } from "@/design/redesign";
 import React, { useMemo } from "react";
@@ -23,7 +24,13 @@ interface AvatarPickerModalsProps {
 
 export function AvatarPickerModals(props: AvatarPickerModalsProps) {
   const { theme } = useTheme();
+  const { translate: tr, textAlign, writingDirection, direction } = useLang();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const localizedText = useMemo(() => ({ textAlign, writingDirection }), [textAlign, writingDirection]);
+  const isRtl = direction === "rtl";
+  const localizedRow = isRtl ? styles.rowReverse : undefined;
+  const optionChevron = isRtl ? "chevron-left" : "chevron-right";
+  const avatarColorLabel = tr("Avatar colors");
   const {
     avatarVisible,
     colorVisible,
@@ -48,11 +55,16 @@ export function AvatarPickerModals(props: AvatarPickerModalsProps) {
         statusBarTranslucent
         onRequestClose={onCloseAvatar}
       >
-        <Pressable style={styles.backdrop} onPress={onCloseAvatar}>
-          <View style={styles.avatarSheet} onStartShouldSetResponder={() => true}>
-            <Text style={styles.sheetTitle}>Profile Picture</Text>
+        <Pressable style={styles.backdrop} onPress={onCloseAvatar} accessibilityRole="button" accessibilityLabel={tr("Close profile picture options")}>
+          <View
+            style={styles.avatarSheet}
+            onStartShouldSetResponder={() => true}
+            accessible
+            accessibilityLabel={tr("Profile Picture")}
+          >
+            <Text style={[styles.sheetTitle, localizedText]}>{tr("Profile Picture")}</Text>
 
-            <View style={styles.previewRow}>
+            <View style={[styles.previewRow, localizedRow]}>
               {profileImage ? (
                 <PrivateImage objectPath={profileImage} style={styles.preview} />
               ) : (
@@ -65,54 +77,73 @@ export function AvatarPickerModals(props: AvatarPickerModalsProps) {
                       justifyContent: "center",
                     },
                   ]}
+                  accessibilityLabel={tr("Profile initials")}
                 >
                   <Text style={styles.previewInitials}>{initials}</Text>
                 </View>
               )}
               {profileImage ? (
                 <Pressable
-                  style={styles.removeBtn}
+                  style={[styles.removeBtn, localizedRow]}
                   onPress={onRemovePhoto}
                   accessibilityRole="button"
-                  accessibilityLabel="Remove profile photo"
+                  accessibilityLabel={tr("Remove profile photo")}
                 >
                   <Icon name="trash-2" size={14} color={theme.colors.danger} />
-                  <Text style={styles.removeText}>Remove Photo</Text>
+                  <Text style={[styles.removeText, localizedText]}>{tr("Remove Photo")}</Text>
                 </Pressable>
               ) : null}
             </View>
 
-            <Pressable style={styles.option} onPress={() => onPickImage(false)} accessibilityRole="button">
+            <Pressable
+              style={[styles.option, localizedRow]}
+              onPress={() => onPickImage(false)}
+              accessibilityRole="button"
+              accessibilityLabel={tr("Upload from Gallery")}
+              accessibilityHint={tr("Choose a photo from your device")}
+            >
               <View style={[styles.optIcon, { backgroundColor: theme.colors.primary + "15" }]}>
                 <Icon name="image" size={20} color={theme.colors.primary} />
               </View>
               <View style={styles.optCopy}>
-                <Text style={styles.optLabel}>Upload from Gallery</Text>
-                <Text style={styles.optSub}>Choose a photo from your device</Text>
+                <Text style={[styles.optLabel, localizedText]}>{tr("Upload from Gallery")}</Text>
+                <Text style={[styles.optSub, localizedText]}>{tr("Choose a photo from your device")}</Text>
               </View>
-              <Icon name="chevron-right" size={16} color={theme.colors.textMuted} />
+              <Icon name={optionChevron} size={16} color={theme.colors.textMuted} />
             </Pressable>
 
-            <Pressable style={styles.option} onPress={() => onPickImage(true)} accessibilityRole="button">
+            <Pressable
+              style={[styles.option, localizedRow]}
+              onPress={() => onPickImage(true)}
+              accessibilityRole="button"
+              accessibilityLabel={tr("Take a Selfie")}
+              accessibilityHint={tr("Use your camera")}
+            >
               <View style={[styles.optIcon, { backgroundColor: theme.colors.accent + "15" }]}>
                 <Icon name="camera" size={20} color={theme.colors.accent} />
               </View>
               <View style={styles.optCopy}>
-                <Text style={styles.optLabel}>Take a Selfie</Text>
-                <Text style={styles.optSub}>Use your camera</Text>
+                <Text style={[styles.optLabel, localizedText]}>{tr("Take a Selfie")}</Text>
+                <Text style={[styles.optSub, localizedText]}>{tr("Use your camera")}</Text>
               </View>
-              <Icon name="chevron-right" size={16} color={theme.colors.textMuted} />
+              <Icon name={optionChevron} size={16} color={theme.colors.textMuted} />
             </Pressable>
 
-            <Pressable style={styles.option} onPress={onChooseColor} accessibilityRole="button">
+            <Pressable
+              style={[styles.option, localizedRow]}
+              onPress={onChooseColor}
+              accessibilityRole="button"
+              accessibilityLabel={tr("Choose Color")}
+              accessibilityHint={tr("Pick an avatar color")}
+            >
               <View style={[styles.optIcon, { backgroundColor: theme.colors.secondary + "15" }]}>
                 <Icon name="droplet" size={20} color={theme.colors.secondary} />
               </View>
               <View style={styles.optCopy}>
-                <Text style={styles.optLabel}>Choose Color</Text>
-                <Text style={styles.optSub}>Pick an avatar color</Text>
+                <Text style={[styles.optLabel, localizedText]}>{tr("Choose Color")}</Text>
+                <Text style={[styles.optSub, localizedText]}>{tr("Pick an avatar color")}</Text>
               </View>
-              <Icon name="chevron-right" size={16} color={theme.colors.textMuted} />
+              <Icon name={optionChevron} size={16} color={theme.colors.textMuted} />
             </Pressable>
           </View>
         </Pressable>
@@ -125,22 +156,28 @@ export function AvatarPickerModals(props: AvatarPickerModalsProps) {
         statusBarTranslucent
         onRequestClose={onCloseColor}
       >
-        <Pressable style={styles.backdrop} onPress={onCloseColor}>
-          <View style={styles.colorSheet} onStartShouldSetResponder={() => true}>
-            <Text style={styles.sheetTitle}>Choose Avatar Color</Text>
-            <View style={styles.colorGrid}>
+        <Pressable style={styles.backdrop} onPress={onCloseColor} accessibilityRole="button" accessibilityLabel={tr("Close avatar color options")}>
+          <View
+            style={styles.colorSheet}
+            onStartShouldSetResponder={() => true}
+            accessible
+            accessibilityLabel={tr("Choose Avatar Color")}
+          >
+            <Text style={[styles.sheetTitle, localizedText]}>{tr("Choose Avatar Color")}</Text>
+            <View style={styles.colorGrid} accessibilityLabel={avatarColorLabel}>
               {avatarColors.map((c) => (
                 <Pressable
                   key={c}
                   accessibilityRole="button"
-                  accessibilityLabel={`Avatar color ${c}`}
+                  accessibilityLabel={`${avatarColorLabel} ${c}`}
+                  accessibilityState={{ selected: profileColor === c }}
                   style={[styles.colorDot, { backgroundColor: c }, profileColor === c && styles.colorActive]}
                   onPress={() => onChangeColor(c)}
                 />
               ))}
             </View>
-            <Pressable style={styles.cancelBtn} onPress={onCloseColor} accessibilityRole="button">
-              <Text style={styles.cancelText}>Cancel</Text>
+            <Pressable style={styles.cancelBtn} onPress={onCloseColor} accessibilityRole="button" accessibilityLabel={tr("Cancel")}>
+              <Text style={[styles.cancelText, localizedText]}>{tr("Cancel")}</Text>
             </Pressable>
           </View>
         </Pressable>
@@ -221,12 +258,15 @@ function createStyles(theme: AthooTheme) {
     colorDot: { width: 46, height: 46, borderRadius: 23 },
     colorActive: { borderWidth: 4, borderColor: theme.colors.text },
     cancelBtn: {
+      minHeight: redesign.control.compactHeight,
       backgroundColor: theme.colors.surfaceAlt,
       borderRadius: theme.radius.md,
       paddingVertical: 12,
       alignItems: "center",
+      justifyContent: "center",
       marginTop: 4,
     },
     cancelText: { fontSize: 15, fontWeight: "600", color: theme.colors.textSecondary },
+    rowReverse: { flexDirection: "row-reverse" },
   });
 }
