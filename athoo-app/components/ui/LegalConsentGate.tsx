@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
+import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
 import { LegalAcceptanceCheckbox, LEGAL_VERSION } from "@/components/ui/LegalAcceptanceCheckbox";
@@ -10,8 +11,11 @@ import { apiErrorToMessage } from "@/lib/apiError";
 /** Blocking legal re-consent modal mounted at the application root. */
 export function LegalConsentGate() {
   const { user, acceptCurrentLegal, logout } = useAuth();
+  const { translate: tr, textAlign, writingDirection, direction } = useLang();
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const localizedText = useMemo(() => ({ textAlign, writingDirection }), [textAlign, writingDirection]);
+  const localizedRow = direction === "rtl" ? styles.rowReverse : undefined;
   const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,44 +30,53 @@ export function LegalConsentGate() {
     const result = await acceptCurrentLegal();
     setBusy(false);
     if (!result.success) {
-      setError(apiErrorToMessage(result.error, "Could not save your acceptance. Please try again."));
+      setError(apiErrorToMessage(result.error, tr("Could not save your acceptance. Please try again.")));
     }
   };
 
   return (
     <Modal visible animationType="fade" transparent onRequestClose={() => undefined} statusBarTranslucent>
       <View style={styles.backdrop}>
-        <View style={styles.card} accessibilityViewIsModal>
-          <View style={styles.iconBox}>
+        <View
+          style={styles.card}
+          accessibilityViewIsModal
+          accessibilityRole="alert"
+          accessibilityLabel={tr("We've updated our Terms")}
+        >
+          <View style={styles.iconBox} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
             <Feather name="file-text" size={22} color={theme.colors.primary} />
           </View>
-          <Text style={styles.title}>We&apos;ve updated our Terms</Text>
-          <Text style={styles.body}>
-            To continue using Athoo, please review and accept our updated Terms of Service and Privacy Policy
-            {` (version ${LEGAL_VERSION}).`}
+          <Text style={[styles.title, localizedText]}>{tr("We've updated our Terms")}</Text>
+          <Text style={[styles.body, localizedText]}>
+            {tr("To continue using Athoo, please review and accept our updated Terms of Service and Privacy Policy")}
+            {` (${tr("Version {{version}}", { version: LEGAL_VERSION })}).`}
           </Text>
 
-          <ScrollView style={styles.reasonBox} contentContainerStyle={styles.reasonContent}>
-            <Text style={styles.reasonText}>
-              • We&apos;ve clarified how location data is used for live job tracking.{"\n"}
-              • We&apos;ve added details about chat content and dispute resolution.{"\n"}
-              • Cancellation and refund timelines are now explained more clearly.{"\n\n"}
-              Read the complete documents using the links below.
+          <ScrollView
+            style={styles.reasonBox}
+            contentContainerStyle={styles.reasonContent}
+            accessibilityLabel={tr("Summary")}
+          >
+            <Text style={[styles.reasonText, localizedText]}>
+              {`• ${tr("We've clarified how location data is used for live job tracking.")}\n`}
+              {`• ${tr("We've added details about chat content and dispute resolution.")}\n`}
+              {`• ${tr("Cancellation and refund timelines are now explained more clearly.")}\n\n`}
+              {tr("Read the complete documents using the links below.")}
             </Text>
           </ScrollView>
 
           <LegalAcceptanceCheckbox value={accepted} onChange={setAccepted} />
-          {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+          {error ? <Text accessibilityRole="alert" style={[styles.error, localizedText]}>{error}</Text> : null}
 
-          <View style={styles.row}>
+          <View style={[styles.row, localizedRow]}>
             <Pressable
               onPress={() => void logout()}
               style={({ pressed }) => [styles.button, styles.ghostButton, pressed && styles.pressed]}
               disabled={busy}
               accessibilityRole="button"
-              accessibilityLabel="Decline and sign out"
+              accessibilityLabel={tr("Decline and sign out")}
             >
-              <Text style={styles.ghostButtonText}>Decline & sign out</Text>
+              <Text style={[styles.ghostButtonText, localizedText]}>{tr("Decline & sign out")}</Text>
             </Pressable>
             <Pressable
               onPress={() => void onAccept()}
@@ -75,12 +88,13 @@ export function LegalConsentGate() {
               ]}
               disabled={!accepted || busy}
               accessibilityRole="button"
-              accessibilityLabel="Accept the updated Terms"
+              accessibilityLabel={tr("Accept the updated Terms")}
+              accessibilityState={{ disabled: !accepted || busy }}
             >
               {busy ? (
                 <ActivityIndicator color={theme.colors.white} />
               ) : (
-                <Text style={styles.primaryButtonText}>Accept & continue</Text>
+                <Text style={[styles.primaryButtonText, localizedText]}>{tr("Accept & continue")}</Text>
               )}
             </Pressable>
           </View>
@@ -124,6 +138,7 @@ function createStyles(theme: AthooTheme) {
     reasonText: { fontSize: 13, color: theme.colors.text, lineHeight: 19 },
     error: { fontSize: 12, color: theme.colors.danger, fontWeight: "600" },
     row: { flexDirection: "row", gap: 10, marginTop: 6 },
+    rowReverse: { flexDirection: "row-reverse" },
     button: { flex: 1, minHeight: 46, paddingHorizontal: 10, borderRadius: 12, alignItems: "center", justifyContent: "center" },
     primaryButton: { backgroundColor: theme.colors.primary },
     primaryButtonText: { color: theme.colors.white, fontWeight: "700", fontSize: 14, textAlign: "center" },
