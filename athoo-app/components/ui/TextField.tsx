@@ -17,6 +17,8 @@ type TextFieldProps = TextInputProps & {
   left?: ReactNode;
   right?: ReactNode;
   containerStyle?: StyleProp<ViewStyle>;
+  inputContainerTestID?: string;
+  helperTextTestID?: string;
 };
 
 export function TextField({
@@ -26,6 +28,8 @@ export function TextField({
   left,
   right,
   containerStyle,
+  inputContainerTestID,
+  helperTextTestID,
   onFocus,
   onBlur,
   editable = true,
@@ -34,6 +38,8 @@ export function TextField({
   const { theme } = useTheme();
   const [focused, setFocused] = useState(false);
   const borderColor = error ? theme.colors.danger : focused ? theme.colors.primary : theme.colors.border;
+  const accessibilityLabel = inputProps.accessibilityLabel ?? label;
+  const accessibilityHint = inputProps.accessibilityHint ?? error ?? helperText;
 
   return (
     <View style={containerStyle}>
@@ -43,6 +49,7 @@ export function TextField({
         </Text>
       ) : null}
       <View
+        testID={inputContainerTestID}
         style={{
           minHeight: redesign.control.standardHeight,
           flexDirection: "row",
@@ -60,6 +67,8 @@ export function TextField({
         <TextInput
           {...inputProps}
           editable={editable}
+          accessibilityLabel={accessibilityLabel}
+          accessibilityHint={accessibilityHint}
           placeholderTextColor={theme.colors.textMuted}
           onFocus={(event) => {
             setFocused(true);
@@ -79,6 +88,8 @@ export function TextField({
       </View>
       {error || helperText ? (
         <Text
+          testID={helperTextTestID}
+          accessibilityRole={error ? "alert" : "text"}
           style={[
             theme.typography.caption,
             { color: error ? theme.colors.danger : theme.colors.textSecondary, marginTop: theme.spacing.xs },
