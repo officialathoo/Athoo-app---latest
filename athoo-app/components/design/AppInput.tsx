@@ -8,19 +8,40 @@ interface AppInputProps extends TextInputProps {
   label?: string;
   error?: string;
   containerStyle?: StyleProp<ViewStyle>;
+  containerTestID?: string;
+  labelTestID?: string;
+  errorTestID?: string;
 }
 
-export function AppInput({ label, error, containerStyle, style, onFocus, onBlur, ...props }: AppInputProps) {
+export function AppInput({
+  label,
+  error,
+  containerStyle,
+  style,
+  onFocus,
+  onBlur,
+  containerTestID,
+  labelTestID,
+  errorTestID,
+  ...props
+}: AppInputProps) {
   const { theme } = useTheme();
   const language = useOptionalLang();
   const [focused, setFocused] = useState(false);
+  const inputAccessibilityLabel = props.accessibilityLabel ?? label ?? props.placeholder;
 
   return (
-    <View style={[{ gap: theme.spacing.sm }, containerStyle]}>
-      {label ? <AppText variant="label" tone={props.editable === false ? "muted" : "primary"}>{label}</AppText> : null}
+    <View testID={containerTestID} style={[{ gap: theme.spacing.sm }, containerStyle]}>
+      {label ? (
+        <AppText testID={labelTestID} variant="label" tone={props.editable === false ? "muted" : "primary"}>
+          {label}
+        </AppText>
+      ) : null}
       <TextInput
         {...props}
-        accessibilityLabel={props.accessibilityLabel ?? label ?? props.placeholder}
+        accessibilityLabel={inputAccessibilityLabel}
+        accessibilityHint={props.accessibilityHint ?? (error ? error : undefined)}
+        accessibilityInvalid={error ? true : undefined}
         maxFontSizeMultiplier={props.maxFontSizeMultiplier ?? 1.5}
         onFocus={(event) => { setFocused(true); onFocus?.(event); }}
         onBlur={(event) => { setFocused(false); onBlur?.(event); }}
@@ -46,7 +67,11 @@ export function AppInput({ label, error, containerStyle, style, onFocus, onBlur,
           style,
         ]}
       />
-      {error ? <AppText variant="caption" tone="danger">{error}</AppText> : null}
+      {error ? (
+        <AppText testID={errorTestID} accessibilityRole="alert" variant="caption" tone="danger">
+          {error}
+        </AppText>
+      ) : null}
     </View>
   );
 }
