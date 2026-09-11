@@ -314,10 +314,7 @@ export default function ChooseRoleScreen() {
                     >
                       {item.eyebrow}
                     </Text>
-                    <Text
-                      numberOfLines={1}
-                      style={[styles.roleTitle, localizedText]}
-                    >
+                    <Text numberOfLines={1} style={styles.roleTitle}>
                       {item.title}
                     </Text>
                     <Text
