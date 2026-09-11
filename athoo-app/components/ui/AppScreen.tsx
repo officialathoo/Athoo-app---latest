@@ -20,6 +20,8 @@ type AppScreenProps = {
   style?: StyleProp<ViewStyle>;
   contentContainerStyle?: StyleProp<ViewStyle>;
   scrollProps?: Omit<ScrollViewProps, "contentContainerStyle">;
+  testID?: string;
+  accessibilityLabel?: string;
 };
 
 export function AppScreen({
@@ -30,6 +32,8 @@ export function AppScreen({
   style,
   contentContainerStyle,
   scrollProps,
+  testID,
+  accessibilityLabel,
 }: AppScreenProps) {
   const { theme } = useTheme();
   const horizontalPadding = padded ? redesign.layout.horizontalPadding : 0;
@@ -58,7 +62,12 @@ export function AppScreen({
   );
 
   return (
-    <SafeAreaView style={[{ flex: 1, backgroundColor: theme.colors.background }, style]} edges={["top", "left", "right"]}>
+    <SafeAreaView
+      testID={testID}
+      accessibilityLabel={accessibilityLabel}
+      style={[{ flex: 1, backgroundColor: theme.colors.background }, style]}
+      edges={["top", "left", "right"]}
+    >
       {keyboardAware ? (
         <KeyboardAvoidingView
           style={{ flex: 1 }}
