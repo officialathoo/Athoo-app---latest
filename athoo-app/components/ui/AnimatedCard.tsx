@@ -1,14 +1,27 @@
 import React, { useEffect, useRef } from "react";
-import { Animated, StyleSheet, ViewStyle } from "react-native";
+import { Animated, type AccessibilityRole, type StyleProp, type ViewStyle } from "react-native";
 
 interface AnimatedCardProps {
   children: React.ReactNode;
   delay?: number;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   direction?: "up" | "down" | "left" | "right" | "fade";
+  testID?: string;
+  accessible?: boolean;
+  accessibilityLabel?: string;
+  accessibilityRole?: AccessibilityRole;
 }
 
-export function AnimatedCard({ children, delay = 0, style, direction = "up" }: AnimatedCardProps) {
+export function AnimatedCard({
+  children,
+  delay = 0,
+  style,
+  direction = "up",
+  testID,
+  accessible,
+  accessibilityLabel,
+  accessibilityRole,
+}: AnimatedCardProps) {
   const anim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -32,6 +45,10 @@ export function AnimatedCard({ children, delay = 0, style, direction = "up" }: A
 
   return (
     <Animated.View
+      testID={testID}
+      accessible={accessible}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole={accessibilityRole}
       style={[
         style,
         {
