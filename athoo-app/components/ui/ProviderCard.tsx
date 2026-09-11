@@ -59,6 +59,10 @@ interface ProviderCardProps {
   onPress?: () => void;
   distanceText?: string;
   rightAction?: React.ReactNode;
+  testID?: string;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  presenceTestID?: string;
 }
 
 export function ProviderCard({
@@ -66,6 +70,10 @@ export function ProviderCard({
   onPress,
   distanceText,
   rightAction,
+  testID,
+  accessibilityLabel,
+  accessibilityHint,
+  presenceTestID,
 }: ProviderCardProps) {
   const { t, isUrdu } = useLang();
   const { getCategoryBySlug } = useCategories();
@@ -93,12 +101,15 @@ export function ProviderCard({
   const rating = provider.rating ? (provider.rating / 10).toFixed(1) : null;
   const avatarColor = provider.profileColor || theme.colors.primary;
   const badges = getProviderBadges(provider, theme);
+  const cardAccessibilityLabel = accessibilityLabel ?? (onPress ? `View ${provider.name}` : undefined);
 
   return (
     <Pressable
       onPress={onPress}
+      testID={testID}
       accessibilityRole={onPress ? "button" : undefined}
-      accessibilityLabel={onPress ? `View ${provider.name}` : undefined}
+      accessibilityLabel={cardAccessibilityLabel}
+      accessibilityHint={accessibilityHint}
       style={({ pressed }) => [
         styles.card,
         {
@@ -127,6 +138,7 @@ export function ProviderCard({
           </View>
         )}
         <View
+          testID={presenceTestID}
           accessibilityLabel={provider.isAvailable ? "Available" : "Busy"}
           style={[
             styles.presenceDot,
