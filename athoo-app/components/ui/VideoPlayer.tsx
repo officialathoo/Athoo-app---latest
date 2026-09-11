@@ -10,9 +10,13 @@ import { api } from "@/services/api";
 interface VideoPlayerProps {
   uri: string;
   style?: StyleProp<ViewStyle>;
+  testID?: string;
+  accessibilityLabel?: string;
+  loadingTestID?: string;
+  errorTestID?: string;
 }
 
-export function VideoPlayer({ uri, style }: VideoPlayerProps) {
+export function VideoPlayer({ uri, style, testID, accessibilityLabel, loadingTestID, errorTestID }: VideoPlayerProps) {
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const videoRef = useRef<Video>(null);
@@ -21,6 +25,7 @@ export function VideoPlayer({ uri, style }: VideoPlayerProps) {
   const [buffering, setBuffering] = useState(false);
   const [error, setError] = useState(false);
   const [resolvedUri, setResolvedUri] = useState<string | null>(null);
+  const containerAccessibilityLabel = accessibilityLabel ?? "Video player";
 
   useEffect(() => {
     let mounted = true;
@@ -91,7 +96,7 @@ export function VideoPlayer({ uri, style }: VideoPlayerProps) {
 
   if (error) {
     return (
-      <View style={[styles.container, styles.errorBox, style]}>
+      <View testID={errorTestID ?? testID} accessibilityRole="alert" accessibilityLabel="Video could not load" style={[styles.container, styles.errorBox, style]}>
         <Icon name="video-off" size={26} color={theme.colors.textMuted} />
         <Text style={styles.errorText}>Could not load video</Text>
         <Text style={styles.errorSub}>Check your internet connection and try again.</Text>
@@ -101,9 +106,9 @@ export function VideoPlayer({ uri, style }: VideoPlayerProps) {
 
   if (!source) {
     return (
-      <View style={[styles.container, style]}>
+      <View testID={testID} accessibilityRole="progressbar" accessibilityLabel="Preparing video" style={[styles.container, style]}>
         {preparing ? (
-          <View style={styles.loadingOverlay}>
+          <View testID={loadingTestID} style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color={theme.colors.primary} />
             <Text style={styles.loadingText}>Preparing video...</Text>
           </View>
@@ -113,7 +118,7 @@ export function VideoPlayer({ uri, style }: VideoPlayerProps) {
   }
 
   return (
-    <View style={[styles.container, style]}>
+    <View testID={testID} accessibilityLabel={containerAccessibilityLabel} style={[styles.container, style]}>
       <Video
         ref={videoRef}
         source={source}
@@ -138,7 +143,7 @@ export function VideoPlayer({ uri, style }: VideoPlayerProps) {
         progressUpdateIntervalMillis={500}
       />
       {preparing || buffering ? (
-        <View pointerEvents="none" style={styles.loadingOverlay}>
+        <View testID={loadingTestID} accessibilityRole="progressbar" accessibilityLabel={preparing ? "Loading video" : "Buffering video"} pointerEvents="none" style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
           <Text style={styles.loadingText}>{preparing ? "Loading video..." : "Buffering..."}</Text>
         </View>
