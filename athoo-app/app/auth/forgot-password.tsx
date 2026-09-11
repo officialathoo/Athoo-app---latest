@@ -295,12 +295,12 @@ export default function ForgotPasswordScreen() {
               >
                 <LinearGradient
                   colors={isProvider ? [theme.colors.secondary, theme.colors.secondaryPressed] : [theme.colors.primary, theme.colors.primaryPressed]}
-                  style={styles.primaryBtnGrad}
+                  style={[styles.primaryBtnGrad, localizedRow]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                 >
                   <Icon name="send" size={16} color={theme.colors.white} />
-                  <Text style={styles.primaryBtnText}>
+                  <Text style={[styles.primaryBtnText, localizedText]}>
                     {loading ? tr("Sending...") : tr("Send Reset OTP")}
                   </Text>
                 </LinearGradient>
