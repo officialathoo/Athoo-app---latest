@@ -24,9 +24,10 @@ export default function EmailVerificationScreen() {
   }>();
   const { user, refreshUser } = useAuth();
   const { theme } = useTheme();
-  const { translate: tr, textAlign, writingDirection } = useLang();
+  const { translate: tr, direction, textAlign, writingDirection } = useLang();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const localizedText = useMemo(() => ({ textAlign, writingDirection }), [textAlign, writingDirection]);
+  const isRtl = direction === "rtl";
   const insets = useSafeAreaInsets();
   const role = params.role === "provider" ? "provider" : "customer";
   const destination = role === "provider" ? "/(provider)/(tabs)/dashboard" : "/(customer)/(tabs)/home";
@@ -180,7 +181,7 @@ export default function EmailVerificationScreen() {
             : tr("Add an email address from your profile before verification.")}
         </Text>
 
-        <View style={styles.securityNote}>
+        <View style={[styles.securityNote, isRtl && styles.rowReverse]}>
           <Icon name="shield" size={18} color={theme.colors.success} />
           <Text style={[styles.securityText, localizedText]}>{tr("Verified email enables email OTP login, recovery messages, and important security alerts.")}</Text>
         </View>
@@ -197,7 +198,7 @@ export default function EmailVerificationScreen() {
         />
 
         {sent ? (
-          <Text style={[styles.timer, expiresIn === 0 && styles.expired]}>
+          <Text style={[styles.timer, localizedText, expiresIn === 0 && styles.expired]}>
             {expiresIn > 0
               ? tr("Code expires in {{time}}", { time: `${Math.floor(expiresIn / 60)}:${String(expiresIn % 60).padStart(2, "0")}` })
               : tr("Code expired. Request a new code.")}
@@ -207,8 +208,14 @@ export default function EmailVerificationScreen() {
         {sent ? (
           <Button title={loading ? tr("Verifying...") : tr("Verify Email")} onPress={verify} loading={loading} disabled={expiresIn === 0 || !verificationEmail} fullWidth />
         ) : null}
-        <Pressable style={[styles.linkButton, (loading || resendIn > 0 || !verificationEmail) && styles.disabled]} disabled={loading || resendIn > 0 || !verificationEmail} onPress={sendCode}>
-          <Text style={styles.linkText}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={tr(!sent ? "Send verification code" : "Resend verification email")}
+          style={[styles.linkButton, (loading || resendIn > 0 || !verificationEmail) && styles.disabled]}
+          disabled={loading || resendIn > 0 || !verificationEmail}
+          onPress={sendCode}
+        >
+          <Text style={[styles.linkText, localizedText]}>
             {!sent
               ? tr("Send verification code")
               : resendIn > 0
@@ -217,6 +224,8 @@ export default function EmailVerificationScreen() {
           </Text>
         </Pressable>
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={publicLoginVerification ? tr("Back to Sign In") : tr("Continue without email login")}
           style={styles.skipButton}
           onPress={continueAfterVerification}
         >
@@ -239,6 +248,7 @@ export default function EmailVerificationScreen() {
 
 const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
+  rowReverse: { flexDirection: "row-reverse" },
   content: { flex: 1, width: "100%", maxWidth: redesign.layout.maxContentWidth, alignSelf: "center", paddingHorizontal: redesign.layout.horizontalPadding, justifyContent: "center", gap: redesign.layout.fieldGap },
   iconWrap: { alignSelf: "center", width: 76, height: 76, borderRadius: 24, backgroundColor: theme.colors.infoSoft, borderWidth: 1, borderColor: theme.colors.primary + "30", alignItems: "center", justifyContent: "center", ...theme.shadows.sm },
   title: { ...theme.typography.h1, color: theme.colors.text, textAlign: "center", letterSpacing: -0.5 },
@@ -248,9 +258,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   codeInput: { color: theme.colors.text, backgroundColor: theme.colors.input, borderColor: theme.colors.primary + "70", borderWidth: redesign.visual.focusedBorderWidth, borderRadius: theme.radius.md, minHeight: 64, paddingVertical: 14, paddingHorizontal: 16, textAlign: "center", fontSize: 28, fontFamily: theme.typography.h1.fontFamily, letterSpacing: 10 },
   timer: { color: theme.colors.textSecondary, textAlign: "center", fontSize: 12 },
   expired: { color: theme.colors.danger, fontWeight: "700" },
-  linkButton: { alignSelf: "center", paddingVertical: 10, paddingHorizontal: 12 },
+  linkButton: { alignSelf: "center", minHeight: 44, paddingVertical: 10, paddingHorizontal: 12, justifyContent: "center" },
   linkText: { color: theme.colors.primary, fontWeight: "700", fontSize: 14 },
-  skipButton: { alignSelf: "center", paddingVertical: 8, paddingHorizontal: 12 },
+  skipButton: { alignSelf: "center", minHeight: 44, paddingVertical: 8, paddingHorizontal: 12, justifyContent: "center" },
   skipText: { color: theme.colors.textSecondary, fontWeight: "600", fontSize: 14 },
   skipHint: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 17, textAlign: "center" },
   disabled: { opacity: redesign.visual.disabledOpacity },
