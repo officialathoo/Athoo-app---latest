@@ -71,6 +71,7 @@ export function SuccessModal({
       ? theme.colors.warningSoft
       : theme.colors.infoSoft;
   const iconName = type === "success" ? "check-circle" : type === "warning" ? "alert-circle" : "info";
+  const dialogLabel = subtitle ? `${title}. ${subtitle}` : title;
 
   return (
     <Modal
@@ -91,11 +92,13 @@ export function SuccessModal({
         <Animated.View
           style={[styles.card, { transform: [{ scale }], opacity }]}
           accessible
-          accessibilityLabel={subtitle ? `${title}. ${subtitle}` : title}
+          accessibilityRole="summary"
+          accessibilityLabel={dialogLabel}
         >
           <Animated.View
             style={[styles.iconCircle, { backgroundColor: iconBg, transform: [{ scale: checkScale }] }]}
             accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
           >
             <Icon name={iconName as any} size={44} color={iconColor} />
           </Animated.View>
@@ -104,9 +107,15 @@ export function SuccessModal({
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
 
           {details && details.length > 0 ? (
-            <View style={styles.detailsBox} accessibilityRole="summary">
+            <View style={styles.detailsBox}>
               {details.map((detail, index) => (
-                <View key={`${detail.label}-${index}`} style={[styles.detailRow, index < details.length - 1 && styles.detailBorder]}>
+                <View
+                  key={`${detail.label}-${index}`}
+                  style={[styles.detailRow, index < details.length - 1 && styles.detailBorder]}
+                  accessible
+                  accessibilityRole="text"
+                  accessibilityLabel={`${detail.label}: ${detail.value}`}
+                >
                   <Text style={styles.detailLabel}>{detail.label}</Text>
                   <Text style={styles.detailValue}>{detail.value}</Text>
                 </View>
@@ -212,9 +221,9 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     detailValue: { flexShrink: 1, fontSize: 13, fontWeight: "700", color: theme.colors.text, textAlign: isUrdu ? "left" : "right", writingDirection: isUrdu ? "rtl" : "ltr" },
     primaryBtn: { width: "100%", minHeight: redesign.control.largeHeight, borderRadius: theme.radius.md, overflow: "hidden", marginBottom: 8, ...theme.shadows.sm },
     primaryBtnGrad: { minHeight: redesign.control.largeHeight, paddingHorizontal: 16, alignItems: "center", justifyContent: "center" },
-    primaryBtnText: { ...theme.typography.bodyLg, fontFamily: theme.typography.h3.fontFamily, color: theme.colors.white, writingDirection: isUrdu ? "rtl" : "ltr" },
+    primaryBtnText: { ...theme.typography.bodyLg, fontFamily: theme.typography.h3.fontFamily, color: theme.colors.white, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
     secondaryBtn: { minHeight: 44, minWidth: 120, paddingHorizontal: 16, alignItems: "center", justifyContent: "center" },
-    secondaryBtnText: { fontSize: 14, fontWeight: "600", color: theme.colors.primary, writingDirection: isUrdu ? "rtl" : "ltr" },
+    secondaryBtnText: { fontSize: 14, fontWeight: "600", color: theme.colors.primary, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
     pressed: { opacity: 0.86, transform: [{ scale: redesign.visual.pressedScale }] },
   });
 }
