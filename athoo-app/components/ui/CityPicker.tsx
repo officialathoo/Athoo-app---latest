@@ -23,6 +23,7 @@ type CityPickerProps = {
   label?: string;
   required?: boolean;
   testID?: string;
+  accessibilityLabel?: string;
 };
 
 export function CityPicker({
@@ -31,6 +32,7 @@ export function CityPicker({
   label = "City",
   required = false,
   testID = "city-picker",
+  accessibilityLabel,
 }: CityPickerProps) {
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -87,7 +89,8 @@ export function CityPicker({
 
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${label}. ${value || "No city selected"}`}
+        accessibilityLabel={accessibilityLabel || `${label}. ${value || "No city selected"}`}
+        accessibilityHint="Opens city selection list"
         testID={testID}
         style={({ pressed }) => [styles.inputWrapper, pressed && styles.pressed]}
         onPress={() => setVisible(true)}
@@ -103,7 +106,7 @@ export function CityPicker({
 
       <Modal visible={visible} transparent animationType="slide" onRequestClose={close} statusBarTranslucent>
         <View style={styles.modalRoot}>
-          <Pressable accessibilityLabel="Close city picker" style={styles.overlay} onPress={close} />
+          <Pressable accessibilityLabel="Close city picker" accessibilityRole="button" style={styles.overlay} onPress={close} />
           <View style={styles.sheet}>
             <View style={styles.handle} />
             <View style={styles.sheetHeader}>
@@ -126,10 +129,11 @@ export function CityPicker({
                 placeholderTextColor={theme.colors.textMuted}
                 autoCapitalize="words"
                 autoCorrect={false}
+                accessibilityLabel="Search city"
                 style={styles.searchInput}
               />
               {query ? (
-                <Pressable accessibilityLabel="Clear search" onPress={() => setQuery("")}>
+                <Pressable accessibilityRole="button" accessibilityLabel="Clear search" accessibilityHint="Clears the city search field" onPress={() => setQuery("")}>
                   <Icon name="x-circle" size={17} color={theme.colors.textMuted} />
                 </Pressable>
               ) : null}
@@ -147,6 +151,8 @@ export function CityPicker({
                   return (
                     <Pressable
                       accessibilityRole="button"
+                      accessibilityLabel={city}
+                      accessibilityHint="Selects this city and closes the picker"
                       accessibilityState={{ selected }}
                       key={city}
                       style={({ pressed }) => [
