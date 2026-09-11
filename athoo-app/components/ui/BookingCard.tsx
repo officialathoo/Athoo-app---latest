@@ -32,9 +32,10 @@ interface BookingCardProps {
   onPress: () => void;
   onContact?: () => void;
   compact?: boolean;
+  testID?: string;
 }
 
-export function BookingCard({ booking, role, onPress, onContact, compact = false }: BookingCardProps) {
+export function BookingCard({ booking, role, onPress, onContact, compact = false, testID }: BookingCardProps) {
   const { theme } = useTheme();
   const { isUrdu, formatCurrency, translate: tr } = useLang();
   const styles = useMemo(() => createStyles(theme, isUrdu), [theme, isUrdu]);
@@ -51,6 +52,7 @@ export function BookingCard({ booking, role, onPress, onContact, compact = false
 
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`${booking.service}, ${person}, ${status.label}${booking.price != null ? `, ${formatCurrency(booking.price)}` : ""}`}
@@ -107,6 +109,7 @@ export function BookingCard({ booking, role, onPress, onContact, compact = false
           onPress={(event) => { event.stopPropagation(); onContact(); }}
           accessibilityRole="button"
           accessibilityLabel={tr("Contact {{role}}", { role: contactRole })}
+          accessibilityHint={tr("Opens chat or contact options")}
           hitSlop={6}
         >
           <Icon name="message-circle" size={13} color={theme.colors.primary} />
