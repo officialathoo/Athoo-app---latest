@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Shield, UserPlus, Pencil, Trash2, X, Check, ChevronDown,
+  Shield, UserPlus, Pencil, Trash2, X, Check, ChevronDown, RotateCcw,
   Crown, Headphones, DollarSign, Settings2, Loader2, Megaphone
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -278,7 +278,23 @@ export function AdminUsersPage() {
   const deleteMut = useMutation({
     mutationFn: (id: string) =>
       api(`/api/admin/admin-users/${id}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-users"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+      setConfirmDeleteId(null);
+      setError("");
+      toast({ title: "Admin deactivated", description: "Existing sessions were revoked by the server." });
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const reactivateMut = useMutation({
+    mutationFn: (id: string) =>
+      api(`/api/admin/admin-users/${id}/reactivate`, { method: "POST" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+      setError("");
+      toast({ title: "Admin reactivated", description: "The admin account can sign in again." });
+    },
     onError: (e: Error) => setError(e.message),
   });
 
@@ -361,7 +377,16 @@ export function AdminUsersPage() {
                         {admin.name.charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <p className="font-medium text-slate-900">{admin.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-slate-900">{admin.name}</p>
+                          <span className={`text-[10px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 ${
+                            admin.isDeactivated
+                              ? "bg-red-50 text-red-700 border border-red-200"
+                              : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          }`}>
+                            {admin.isDeactivated ? "Deactivated" : "Active"}
+                          </span>
+                        </div>
                         <p className="text-xs text-slate-500">{admin.phone}</p>
                       </div>
                     </div>
@@ -391,10 +416,26 @@ export function AdminUsersPage() {
                       >
                         <Pencil size={15} />
                       </button>
-                      {confirmDeleteId === admin.id ? (
+                      {admin.isDeactivated ? (
+                        <button
+                          onClick={() => reactivateMut.mutate(admin.id)}
+                          disabled={reactivateMut.isPending}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg text-emerald-700 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50"
+                          title="Reactivate admin account"
+                        >
+                          {reactivateMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+                          Reactivate
+                        </button>
+                      ) : confirmDeleteId === admin.id ? (
                         <span className="inline-flex items-center gap-1">
-                          <button onClick={() => { deleteMut.mutate(admin.id); setConfirmDeleteId(null); }} className="px-2 py-1 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700">Deactivate</button>
-                          <button onClick={() => setConfirmDeleteId(null)} className="px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 rounded-lg">Cancel</button>
+                          <button
+                            onClick={() => deleteMut.mutate(admin.id)}
+                            disabled={deleteMut.isPending}
+                            className="px-2 py-1 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                          >
+                            {deleteMut.isPending ? "Deactivating..." : "Deactivate"}
+                          </button>
+                          <button onClick={() => setConfirmDeleteId(null)} disabled={deleteMut.isPending} className="px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 rounded-lg disabled:opacity-50">Cancel</button>
                         </span>
                       ) : (
                         <button onClick={() => setConfirmDeleteId(admin.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors" title="Deactivate">

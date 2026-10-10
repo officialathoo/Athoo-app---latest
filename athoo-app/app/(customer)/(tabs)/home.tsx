@@ -32,6 +32,7 @@ import { openSafeActionLink } from "@/services/safeLinks";
 import { AppText, CustomerHomeSkeleton } from "@/components/design";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 
 type ApiBanner = {
   id: string;
@@ -77,6 +78,7 @@ const SHOWN_ANNOUNCEMENTS_KEY = "shown_announcements";
 let customerHomeLoadedThisSession = false;
 let customerHomeLastLoadedAt = 0;
 const HOME_BACKGROUND_REFRESH_MS = 60_000;
+const HOME_PROVIDER_FETCH_LIMIT = 50;
 
 const HOME_CONTENT_CACHE_KEY = "athoo.admin.home.content.cache.v2";
 
@@ -218,7 +220,11 @@ export default function HomeScreen() {
         setBannersStatus("error");
         throw error;
       }),
-      api.getProviders().then((res) => { const next = res.providers as Provider[]; setTopProviders(next); void cacheHomePart({ providers: next }); }),
+      api.getProviders(undefined, { limit: HOME_PROVIDER_FETCH_LIMIT, sort: "top" }).then((res) => {
+        const next = res.providers as Provider[];
+        setTopProviders(next);
+        void cacheHomePart({ providers: next });
+      }),
       api.getPlatformStats().then((data) => {
         const next = { providerCount: data.providerCount || 0, categoryCount: data.categoryCount || 0, avgRating: data.avgRating || 0 };
         setPlatformStats(next);
@@ -562,9 +568,10 @@ export default function HomeScreen() {
                 </Text>
               </Pressable>
             </View>
-            {displayProviders.map((p, i) => (
-              <AnimatedCard key={p.id} delay={310 + i * 60}>
+            <View style={styles.providerList}>
+              {displayProviders.map((p) => (
                 <ProviderCard
+                  key={p.id}
                   provider={p}
                   onPress={() =>
                     router.push({
@@ -573,8 +580,8 @@ export default function HomeScreen() {
                     })
                   }
                 />
-              </AnimatedCard>
-            ))}
+              ))}
+            </View>
           </View>
         </AnimatedCard>
         ) : null}
@@ -697,33 +704,31 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   header: {
     backgroundColor: theme.colors.surface,
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 4,
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingBottom: 14,
+    borderBottomWidth: redesign.visual.cardBorderWidth,
+    borderBottomColor: theme.colors.border,
+    ...theme.shadows.sm,
     zIndex: 10,
   },
   headerTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 14,
+    marginBottom: 10,
   },
-  greeting: { fontSize: 20, fontWeight: "800", color: theme.colors.text },
+  greeting: { ...theme.typography.h2, color: theme.colors.text, letterSpacing: -0.35 },
   locationRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     marginTop: 3,
   },
-  location: { fontSize: 12, color: theme.colors.textSecondary, fontWeight: "500" },
+  location: { ...theme.typography.caption, color: theme.colors.textSecondary, fontFamily: theme.typography.label.fontFamily },
   notifBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
     backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
@@ -748,12 +753,12 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: theme.colors.background,
-    borderRadius: 16,
+    backgroundColor: theme.colors.input,
+    borderRadius: theme.radius.md,
     paddingHorizontal: 12,
-    paddingVertical: 11,
+    minHeight: redesign.control.standardHeight,
     gap: 10,
-    borderWidth: 1.5,
+    borderWidth: redesign.visual.inputBorderWidth,
     borderColor: theme.colors.border,
   },
   searchIconBg: {
@@ -764,7 +769,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  searchPlaceholder: { flex: 1, fontSize: 14, color: theme.colors.textMuted },
+  searchPlaceholder: { flex: 1, ...theme.typography.body, color: theme.colors.textMuted },
   filterBtn: {
     width: 34,
     height: 34,
@@ -775,18 +780,18 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 100 },
-  bannerScroll: { paddingHorizontal: 20, paddingTop: 18 },
+  bannerScroll: { paddingHorizontal: redesign.layout.horizontalPadding, paddingTop: 16 },
   banner: {
-    width: 290,
-    height: 150,
-    borderRadius: 22,
-    marginRight: 14,
-    padding: 22,
+    width: 286,
+    minHeight: 138,
+    borderRadius: theme.radius.xl,
+    marginRight: 12,
+    padding: 18,
     flexDirection: "row",
     overflow: "hidden",
   },
   bannerContent: { flex: 1, justifyContent: "space-between" },
-  bannerTitle: { fontSize: 19, fontWeight: "800", color: theme.colors.onBrand },
+  bannerTitle: { ...theme.typography.h2, color: theme.colors.onBrand, letterSpacing: -0.3 },
   bannerSubtitle: {
     fontSize: 12,
     color: "rgba(255,255,255,0.8)",
@@ -804,37 +809,41 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   bannerBtnText: { color: theme.colors.onBrand, fontSize: 12, fontWeight: "700" },
   bannerIconCircle: { position: "absolute", right: 14, bottom: 12 },
-  section: { paddingHorizontal: 20, paddingTop: 22 },
+  section: { paddingHorizontal: redesign.layout.horizontalPadding, paddingTop: redesign.layout.sectionGap, gap: 12 },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 14,
+    marginBottom: 10,
   },
-  sectionTitle: { fontSize: 18, fontWeight: "800", color: theme.colors.text },
-  seeAll: { fontSize: 13, fontWeight: "600", color: theme.colors.primary },
-  servicesRow: { flexDirection: "row", gap: 10, paddingRight: 20 },
-  statsRow: { flexDirection: "row", gap: 10 },
+  sectionTitle: { ...theme.typography.h3, color: theme.colors.text },
+  seeAll: { ...theme.typography.label, color: theme.colors.primary },
+  servicesRow: { flexDirection: "row", gap: 8, paddingRight: 16, paddingTop: 2 },
+  statsRow: { flexDirection: "row", gap: 8 },
   statCard: {
     flex: 1,
-    borderRadius: 16,
+    borderRadius: theme.radius.md,
     padding: 14,
     alignItems: "center",
     gap: 4,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
   },
-  statValue: { fontSize: 20, fontWeight: "800" },
-  statLabel: { fontSize: 11, fontWeight: "600", color: theme.colors.textSecondary },
+  statValue: { ...theme.typography.h3 },
+  statLabel: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.textSecondary },
+  providerList: { gap: 8 },
   negotiateCard: {
-    marginHorizontal: 20,
-    marginTop: 20,
-    borderRadius: 22,
+    marginHorizontal: redesign.layout.horizontalPadding,
+    marginTop: redesign.layout.sectionGap,
+    borderRadius: theme.radius.xl,
     overflow: "hidden",
+    ...theme.shadows.sm,
   },
   negotiateGrad: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 20,
+    padding: 16,
   },
   negotiateLeft: { flex: 1, gap: 6 },
   negotiateTitle: { fontSize: 17, fontWeight: "800", color: theme.colors.onBrand },
@@ -856,9 +865,10 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   negotiateBtnText: { color: theme.colors.onBrand, fontSize: 12, fontWeight: "700" },
   emergencyCard: {
-    margin: 20,
-    backgroundColor: theme.colors.danger + "10",
-    borderRadius: 20,
+    marginHorizontal: redesign.layout.horizontalPadding,
+    marginTop: 14,
+    backgroundColor: theme.colors.dangerSoft,
+    borderRadius: theme.radius.xl,
     padding: 18,
     flexDirection: "row",
     alignItems: "center",
@@ -889,10 +899,10 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   emergencyCallText: { fontSize: 13, fontWeight: "700", color: theme.colors.onBrand },
   homeErrorCard: {
-    marginHorizontal: 20,
-    marginTop: 12,
+    marginHorizontal: redesign.layout.horizontalPadding,
+    marginTop: 10,
     padding: 14,
-    borderRadius: 14,
+    borderRadius: theme.radius.md,
     borderWidth: 1,
     borderColor: theme.colors.danger + "35",
     backgroundColor: theme.colors.danger + "0D",
@@ -914,15 +924,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   activeBroadcastCard: {
-    marginHorizontal: 20,
-    marginTop: 8,
-    borderRadius: 18,
+    marginHorizontal: redesign.layout.horizontalPadding,
+    marginTop: 10,
+    borderRadius: theme.radius.xl,
     overflow: "hidden",
-    shadowColor: theme.colors.success,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 6,
+    ...theme.shadows.sm,
   },
   activeBroadcastGrad: {
     flexDirection: "row",
@@ -983,10 +989,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   broadcastCTA: {
-    marginHorizontal: 20,
-    marginTop: 8,
-    borderRadius: 20,
+    marginHorizontal: redesign.layout.horizontalPadding,
+    marginTop: 10,
+    borderRadius: theme.radius.xl,
     overflow: "hidden",
+    ...theme.shadows.sm,
   },
   broadcastGrad: {
     flexDirection: "row",
@@ -994,7 +1001,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     padding: 18,
     gap: 12,
   },
-  broadcastCTATitle: { fontSize: 17, fontWeight: "800", color: theme.colors.onBrand },
+  broadcastCTATitle: { fontSize: 16, fontWeight: "700", color: theme.colors.onBrand },
   broadcastCTASub: {
     fontSize: 12,
     color: "rgba(255,255,255,0.85)",
@@ -1002,8 +1009,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     marginTop: 4,
   },
   broadcastCTAArrow: {
-    width: 48,
-    height: 48,
+    width: 42,
+    height: 42,
     borderRadius: 14,
     backgroundColor: "rgba(255,255,255,0.2)",
     alignItems: "center",
@@ -1012,22 +1019,20 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   announcementOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
+    backgroundColor: theme.colors.overlay,
     alignItems: "center",
     justifyContent: "center",
-    padding: 28,
+    padding: 20,
   },
   announcementCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: 24,
-    padding: 24,
+    backgroundColor: theme.colors.elevated,
+    borderRadius: theme.radius.xl,
+    padding: 20,
     width: "100%",
-    maxWidth: 380,
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 24,
-    elevation: 12,
+    maxWidth: 400,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    ...theme.shadows.md,
     gap: 12,
   },
   announcementHeader: {
@@ -1052,20 +1057,20 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     justifyContent: "center",
   },
   announcementTitle: {
-    fontSize: 17,
-    fontWeight: "800",
+    ...theme.typography.h3,
     color: theme.colors.text,
   },
   announcementMessage: {
-    fontSize: 14,
+    ...theme.typography.body,
     color: theme.colors.textSecondary,
-    lineHeight: 22,
   },
   announcementBtn: {
     backgroundColor: theme.colors.primary,
-    borderRadius: 14,
-    paddingVertical: 13,
+    borderRadius: theme.radius.md,
+    minHeight: redesign.control.standardHeight,
+    paddingHorizontal: 16,
     alignItems: "center",
+    justifyContent: "center",
     marginTop: 4,
   },
   announcementBtnText: {
@@ -1075,7 +1080,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   initialSkeletonWrap: {
-    paddingHorizontal: 20,
+    paddingHorizontal: redesign.layout.horizontalPadding,
     paddingTop: 18,
     paddingBottom: 8,
   },

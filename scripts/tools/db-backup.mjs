@@ -15,7 +15,7 @@ const manifestPath = `${file}.manifest.json`;
 const checksumPath = `${file}.sha256`;
 
 const pgDumpVersion = (await run("pg_dump", ["--version"], { capture: true })).stdout.trim();
-const latestMigration = (await run("psql", [databaseUrl, "--tuples-only", "--no-align", "--set", "ON_ERROR_STOP=1", "--command", "SELECT migration_id FROM athoo_schema_migrations ORDER BY migration_id DESC LIMIT 1"], { capture: true })).stdout.trim();
+const latestMigration = (await run("psql", [databaseUrl, "--tuples-only", "--no-align", "--set", "ON_ERROR_STOP=1", "--command", "SELECT migration_id FROM public.athoo_schema_migrations ORDER BY migration_id DESC LIMIT 1"], { capture: true })).stdout.trim();
 if (!latestMigration) throw new Error("Cannot create a release backup before migrations have been applied");
 
 await run("pg_dump", [

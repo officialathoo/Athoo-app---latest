@@ -35,7 +35,7 @@ export function DashboardPage() {
   const canViewAudit = hasPermission("audit.read");
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["admin-dashboard"],
+    queryKey: ["admin", "dashboard"],
     queryFn: () => api<{ dashboard: DashboardData }>("/api/admin/dashboard"),
     refetchInterval: 180000,
     staleTime: 15000,
@@ -46,7 +46,7 @@ export function DashboardPage() {
 
   const { data: trendData, refetch: refetchTrend } = useQuery({
     queryKey: ["dashboard-trend", trendDays],
-    queryFn: () => api<{ revenueByDay: { day: string; bookings: number; revenue: number; commission: number }[] }>(`/api/admin/reports?from=${trendFrom}&to=${trendTo}`),
+    queryFn: () => api<{ revenueByDay: { day: string; completedBookings: number; jobValue: number; commission: number; providerEarnings: number }[] }>(`/api/admin/reports?from=${trendFrom}&to=${trendTo}`),
     staleTime: 60000,
     enabled: canViewReports,
   });
@@ -156,8 +156,8 @@ export function DashboardPage() {
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
         <div className="flex items-center justify-between mb-5">
           <div>
-            <h3 className="text-sm font-semibold text-slate-900">Revenue & Booking Trend</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Daily revenue and booking volume</p>
+            <h3 className="text-sm font-semibold text-slate-900">Revenue & Commission Trend</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Daily job value and commission earned</p>
           </div>
           <div className="inline-flex items-center gap-1 bg-slate-100 rounded-lg p-1">
             {([7, 30] as const).map(d => (
@@ -194,12 +194,12 @@ export function DashboardPage() {
               <Tooltip
                 contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12 }}
                 formatter={(v: any, name: string) => [
-                  name === "bookings" ? v : currency(Number(v)),
-                  name === "revenue" ? "Revenue" : name === "commission" ? "Commission" : "Bookings",
+                  currency(Number(v)),
+                  name === "jobValue" ? "Job Value" : name === "commission" ? "Commission" : name,
                 ]}
                 labelFormatter={l => `Date: ${l}`}
               />
-              <Area type="monotone" dataKey="revenue" stroke="#3b82f6" fill="url(#revGrad)" strokeWidth={2} dot={false} />
+              <Area type="monotone" dataKey="jobValue" stroke="#3b82f6" fill="url(#revGrad)" strokeWidth={2} dot={false} />
               <Area type="monotone" dataKey="commission" stroke="#22c55e" fill="url(#commGrad)" strokeWidth={2} dot={false} />
             </AreaChart>
           </ResponsiveContainer>

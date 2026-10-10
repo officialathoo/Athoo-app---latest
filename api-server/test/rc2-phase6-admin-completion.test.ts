@@ -8,7 +8,7 @@ test("admin icon picker is searchable, explicit and bundle-safe", () => {
   const picker = read("admin-panel/src/components/admin/IconPicker.tsx");
   const categories = read("admin-panel/src/pages/CategoriesPage.tsx");
   assert.match(picker, /ADMIN_ICON_OPTIONS/);
-  assert.match(picker, /Search icons by name or purpose/);
+  assert.match(picker, /placeholder="Search icon\.\.\."/);
   assert.doesNotMatch(picker, /import \* as/);
   assert.ok((picker.match(/icon\("/g) || []).length >= 80, "expected a broad explicit icon catalog");
   assert.match(categories, /<IconPicker value=\{icon\}/);

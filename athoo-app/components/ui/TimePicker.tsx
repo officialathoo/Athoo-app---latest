@@ -52,6 +52,12 @@ function DrumCol({ data, selectedIndex, onChange, flex = 1, fontSize = 22 }: Dru
     return () => clearTimeout(timer);
   }, [scrollTo, selectedIndex]);
 
+  const handleScroll = useCallback((event: { nativeEvent: { contentOffset: { y: number } } }) => {
+    const { y } = event.nativeEvent.contentOffset;
+    const index = Math.max(0, Math.min(Math.round(y / ITEM_H), data.length - 1));
+    if (index !== selectedIndex) onChange(index);
+  }, [onChange, data.length]);
+
   return (
     <View style={[styles.col, { flex }]}>
       <View pointerEvents="none" style={styles.selectionFrame} />
@@ -60,7 +66,7 @@ function DrumCol({ data, selectedIndex, onChange, flex = 1, fontSize = 22 }: Dru
         style={styles.scrollLayer}
         contentContainerStyle={{ paddingVertical: COL_PAD }}
         snapToInterval={ITEM_H}
-        decelerationRate={Platform.OS === "ios" ? "fast" : 0.85}
+        decelerationRate={Platform.OS === "ios" ? "fast" : 0.9}
         showsVerticalScrollIndicator={false}
         onMomentumScrollEnd={(event) => {
           const index = Math.max(
@@ -69,6 +75,7 @@ function DrumCol({ data, selectedIndex, onChange, flex = 1, fontSize = 22 }: Dru
           );
           onChange(index);
         }}
+        onScroll={(event) => handleScroll(event)}
         onScrollEndDrag={(event) => {
           if (Platform.OS === "web") {
             const index = Math.max(
@@ -101,14 +108,28 @@ function DrumCol({ data, selectedIndex, onChange, flex = 1, fontSize = 22 }: Dru
 interface TimePickerProps {
   value: TimeValue;
   onChange: (value: TimeValue) => void;
+  testID?: string;
+  accessibilityLabel?: string;
+  manualToggleTestID?: string;
+  manualInputTestID?: string;
+  presetTestIDPrefix?: string;
 }
 
-export function TimePicker({ value, onChange }: TimePickerProps) {
+export function TimePicker({
+  value,
+  onChange,
+  testID,
+  accessibilityLabel,
+  manualToggleTestID,
+  manualInputTestID,
+  presetTestIDPrefix,
+}: TimePickerProps) {
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [showManual, setShowManual] = useState(false);
   const [manualText, setManualText] = useState(formatTimeValue(value));
   const [manualError, setManualError] = useState(false);
+  const selectedTime = formatTimeValue(value);
 
   const hourIndex = value.hour - 1;
   const minuteIndex = Math.round(value.minute / 5);
@@ -122,16 +143,23 @@ export function TimePicker({ value, onChange }: TimePickerProps) {
   };
 
   return (
-    <View style={styles.wrap}>
+    <View
+      testID={testID}
+      accessibilityLabel={accessibilityLabel ?? `Time picker. Selected time ${selectedTime}`}
+      style={styles.wrap}
+    >
       <View style={styles.displayRow}>
-        <Text style={styles.displayTime}>{formatTimeValue(value)}</Text>
+        <Text style={styles.displayTime}>{selectedTime}</Text>
         <Pressable
+          testID={manualToggleTestID}
           style={styles.manualToggle}
           onPress={() => {
             setShowManual((current) => !current);
-            if (!showManual) setManualText(formatTimeValue(value));
+            if (!showManual) setManualText(selectedTime);
           }}
           accessibilityRole="button"
+          accessibilityLabel={showManual ? "Use scroll time picker" : "Type time manually"}
+          accessibilityHint={showManual ? "Switches back to the scroll time picker" : "Opens manual time entry"}
         >
           <Text style={styles.manualToggleText}>{showManual ? "Use scroll" : "Type time"}</Text>
         </Pressable>
@@ -140,6 +168,7 @@ export function TimePicker({ value, onChange }: TimePickerProps) {
       {showManual ? (
         <View style={styles.manualWrap}>
           <TextInput
+            testID={manualInputTestID}
             style={[styles.manualInput, manualError && styles.manualInputError]}
             value={manualText}
             onChangeText={handleManualChange}
@@ -148,6 +177,8 @@ export function TimePicker({ value, onChange }: TimePickerProps) {
             autoFocus
             autoCapitalize="characters"
             returnKeyType="done"
+            accessibilityLabel="Manual time input"
+            accessibilityHint="Enter a time such as 02:30 PM or 14:30"
           />
           {manualError ? (
             <Text style={styles.manualErrorText}>Use format like “02:30 PM” or “14:30”</Text>
@@ -194,11 +225,17 @@ export function TimePicker({ value, onChange }: TimePickerProps) {
               const active = value.hour === preset.hour
                 && value.minute === preset.minute
                 && value.period === preset.period;
+              const presetTime = formatTimeValue(preset);
               return (
                 <Pressable
                   key={preset.label}
+                  testID={presetTestIDPrefix ? `${presetTestIDPrefix}-${preset.label.toLowerCase()}` : undefined}
                   style={[styles.preset, active && styles.presetActive]}
                   onPress={() => onChange({ hour: preset.hour, minute: preset.minute, period: preset.period })}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={`${preset.label} time preset`}
+                  accessibilityHint={`Sets time to ${presetTime}`}
                 >
                   <Text style={[styles.presetText, active && styles.presetTextActive]}>{preset.label}</Text>
                 </Pressable>

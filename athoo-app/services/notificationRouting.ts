@@ -159,7 +159,7 @@ export function resolveNotificationTarget(
       : { pathname: "/(customer)/broadcast-status", params: { requestId } };
   }
 
-  const bookingMatch = link.match(/^\/bookings\/([^/]+)$/);
+  const bookingMatch = link.match(/^\/bookings?\/([^/]+)$/);
   if (bookingMatch) {
     return {
       pathname: role === "provider" ? "/(provider)/job-detail" : "/(customer)/booking-detail",
@@ -175,7 +175,7 @@ export function resolveNotificationTarget(
     };
   }
 
-  if (link === "/profile" || link === "/provider/profile") {
+  if (link === "/profile" || link === "/provider/profile" || link === "/account") {
     return role === "provider" ? "/(provider)/(tabs)/profile" : "/(customer)/(tabs)/profile";
   }
   if (link === "/provider/dashboard") return "/(provider)/(tabs)/dashboard";
@@ -187,9 +187,15 @@ export function resolveNotificationTarget(
   if (link === "/premium") return role === "provider" ? "/(provider)/subscription" : "/(customer)/subscription";
   if (link === "/refunds") return role === "provider" ? "/(provider)/(tabs)/earnings" : "/(customer)/refund-requests";
   if (link === "/withdrawals") return role === "provider" ? "/(provider)/withdrawal-requests" : roleHome(role);
-  if (link === "/support" || link === "/complaints") return role === "provider" ? "/(provider)/support-tickets" : "/(customer)/support-tickets";
-  if (link === "/invoices") return role === "provider" ? "/(provider)/invoices" : "/(customer)/invoices";
+  if (link === "/provider/withdrawal-request" || link === "/payouts") return role === "provider" ? "/(provider)/withdrawal-requests" : roleHome(role);
+  if (link === "/support" || link === "/complaints" || link === "/support-tickets") return role === "provider" ? "/(provider)/support-tickets" : "/(customer)/support-tickets";
+  if (link === "/invoices" || link === "/billing") return role === "provider" ? "/(provider)/invoices" : "/(customer)/invoices";
   if (link === "/notifications") return roleNotifications(role);
+  if (link === "/bookings" || link === "/jobs") return role === "provider" ? "/(provider)/(tabs)/jobs" : "/(customer)/(tabs)/bookings";
+  if (link === "/chats" || link === "/messages") return role === "provider" ? "/(provider)/(tabs)/chat" : "/(customer)/(tabs)/chat";
+  if (link === "/calls") return role === "provider" ? "/(provider)/calls" : "/(customer)/calls";
+  if (link === "/provider/broadcast-jobs" || link === "/broadcast-jobs") return role === "provider" ? "/(provider)/broadcast-jobs" : roleHome(role);
+  if (link === "/broadcast-status") return role === "provider" ? roleHome(role) : "/(customer)/broadcast-status";
 
   if (input.type === "message" || input.type === "chat") {
     return role === "provider" ? "/(provider)/(tabs)/chat" : "/(customer)/(tabs)/chat";

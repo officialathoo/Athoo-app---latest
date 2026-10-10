@@ -5,7 +5,8 @@ import { db } from "@workspace/db";
 import { bookingsTable, supportTicketsTable, ticketNotesTable, usersTable } from "@workspace/db/schema";
 import { and, desc, eq, or } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
-import { validateOwnedUploadObjectPaths } from "../lib/storageSecurity";
+import { validateCleanOwnedUploadObjectPaths } from "../lib/verifiedUploads";
+// validateOwnedUploadObjectPaths is intentionally superseded by the clean-scan-aware validator above.
 import { createAdminNotification } from "../lib/adminNotifications";
 
 const router = Router();
@@ -34,7 +35,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const mediaValidation = validateOwnedUploadObjectPaths(raw.mediaUrls, userId, { maxItems: 5 });
+    const mediaValidation = await validateCleanOwnedUploadObjectPaths(raw.mediaUrls, userId, { maxItems: 5 });
     if (!mediaValidation.ok) {
       res.status(400).json({ error: mediaValidation.error });
       return;
@@ -80,7 +81,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       await createAdminNotification({
         title: `New support ticket: ${ticket.subject}`,
-        message: `${ticket.userName} (${ticket.userRole}) submitted a support request.`,
+        message: `${ticket.userName}${user.publicId ? ` [${user.publicId}]` : ` [ID ${ticket.userId}]`} (${ticket.userRole}) submitted a support request.`,
         type: "support",
         link: `/admin/support/${ticket.id}`,
       });

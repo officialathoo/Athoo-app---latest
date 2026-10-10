@@ -8,8 +8,11 @@ import { Icon } from "@/components/ui/Icon";
 import { useAuth } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 import { api } from "@/services/api";
 import { apiErrorToMessage } from "@/lib/apiError";
+import { AccountActionVerificationModal } from "./AccountActionVerificationModal";
 
 type Role = "customer" | "provider";
 
@@ -20,7 +23,8 @@ export function PrivacySecurityScreen({ role }: { role: Role }) {
   const { translate: tr } = useLang();
   const { logout } = useAuth();
   const insets = useSafeAreaInsets();
-  const [deleting, setDeleting] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [accountAction, setAccountAction] = useState<"deactivate" | "delete" | null>(null);
   const group = role === "provider" ? "(provider)" : "(customer)";
 
   const items = useMemo<PrivacyItem[]>(() => [
@@ -92,20 +96,7 @@ export function PrivacySecurityScreen({ role }: { role: Role }) {
                 {
                   text: tr("Delete permanently"),
                   style: "destructive",
-                  onPress: async () => {
-                    setDeleting(true);
-                    try {
-                      await api.deleteMe();
-                      await logout();
-                    } catch (caught) {
-                      Alert.alert(
-                        tr("Unable to delete account"),
-                        tr(apiErrorToMessage(caught, "We couldn't process your deletion request. Please try again or contact support.")),
-                      );
-                    } finally {
-                      setDeleting(false);
-                    }
-                  },
+                  onPress: () => setAccountAction("delete"),
                 },
               ],
             );
@@ -113,6 +104,39 @@ export function PrivacySecurityScreen({ role }: { role: Role }) {
         },
       ],
     );
+  };
+
+  const deactivateAccount = () => {
+    Alert.alert(
+      tr("Deactivate account temporarily"),
+      tr("Your profile will be hidden and your active sessions will close. Athoo Support can help you reactivate the account later."),
+      [
+        { text: tr("Cancel"), style: "cancel" },
+        { text: tr("Continue"), style: "destructive", onPress: () => setAccountAction("deactivate") },
+      ],
+    );
+  };
+
+  const completeAccountAction = async (credential: { password: string } | { verificationToken: string }) => {
+    if (!accountAction) return;
+    setProcessing(true);
+    try {
+      if (accountAction === "deactivate") {
+        await api.deactivateAccount(credential);
+      } else {
+        await api.requestAccountDeletion(credential);
+      }
+      setAccountAction(null);
+      await logout();
+    } catch (caught) {
+      Alert.alert(
+        accountAction === "delete" ? tr("Unable to delete account") : tr("Unable to deactivate account"),
+        tr(apiErrorToMessage(caught, "We couldn't complete this account action. Please try again or contact support.")),
+      );
+      throw caught;
+    } finally {
+      setProcessing(false);
+    }
   };
 
   return (
@@ -168,18 +192,34 @@ export function PrivacySecurityScreen({ role }: { role: Role }) {
             <AppText variant="bodyStrong" tone="danger">{tr("Danger zone")}</AppText>
           </View>
           <AppText variant="caption" tone="danger" style={styles.dangerCopy}>
-            {tr("Account deletion is permanent. Download or save anything you need before continuing.")}
+            {tr("Temporary deactivation hides your account. Permanent deletion is scheduled after the grace period. Both actions require fresh verification.")}
           </AppText>
           <Button
-            title={deleting ? tr("Deleting account…") : tr("Request account deletion")}
-            onPress={deleteAccount}
-            loading={deleting}
-            variant="danger"
+            title={processing && accountAction === "deactivate" ? tr("Deactivating account…") : tr("Deactivate temporarily")}
+            onPress={deactivateAccount}
+            loading={processing && accountAction === "deactivate"}
+            variant="outline"
             fullWidth
             style={{ marginTop: 14 }}
           />
+          <Button
+            title={processing && accountAction === "delete" ? tr("Scheduling deletion…") : tr("Request permanent deletion")}
+            onPress={deleteAccount}
+            loading={processing && accountAction === "delete"}
+            variant="danger"
+            fullWidth
+            style={{ marginTop: 10 }}
+          />
         </AppCard>
       </ScrollView>
+      {accountAction ? (
+        <AccountActionVerificationModal
+          visible
+          action={accountAction}
+          onClose={() => { if (!processing) setAccountAction(null); }}
+          onVerified={completeAccountAction}
+        />
+      ) : null}
     </View>
   );
 }
@@ -194,7 +234,7 @@ function PolicyLink({ icon, label, onPress }: { icon: string; label: string; onP
       style={({ pressed }) => [
         styles.linkRow,
         { borderBottomColor: theme.colors.divider },
-        pressed && { opacity: 0.68 },
+        pressed && styles.pressed,
       ]}
     >
       <View style={[styles.linkIcon, { backgroundColor: theme.colors.surfaceAlt }]}>
@@ -209,16 +249,60 @@ function PolicyLink({ icon, label, onPress }: { icon: string; label: string; onP
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   flex: { flex: 1 },
-  content: { paddingHorizontal: 16, paddingTop: 18, gap: 12 },
-  hero: { alignItems: "center", gap: 9, paddingVertical: 4 },
-  heroIcon: { width: 68, height: 68, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  pressed: {
+    opacity: 0.82,
+    transform: [{ scale: redesign.visual.pressedScale }],
+  },
+  content: {
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: redesign.layout.fieldGap,
+    gap: redesign.layout.cardGap,
+  },
+  hero: {
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 6,
+  },
+  heroIcon: {
+    width: redesign.control.largeHeight,
+    height: redesign.control.largeHeight,
+    borderRadius: radius.lg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   heroCopy: { maxWidth: 560, lineHeight: 21 },
-  itemRow: { flexDirection: "row", alignItems: "flex-start", gap: 13 },
-  itemIcon: { width: 46, height: 46, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  itemRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: redesign.layout.cardGap,
+  },
+  itemIcon: {
+    width: redesign.control.compactHeight,
+    height: redesign.control.compactHeight,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   itemDescription: { lineHeight: 19, marginTop: 4 },
   links: { marginTop: 8 },
-  linkRow: { minHeight: 56, flexDirection: "row", alignItems: "center", gap: 11, borderBottomWidth: StyleSheet.hairlineWidth },
-  linkIcon: { width: 36, height: 36, borderRadius: 11, alignItems: "center", justifyContent: "center" },
-  dangerHeader: { flexDirection: "row", alignItems: "center", gap: 9 },
-  dangerCopy: { lineHeight: 19, marginTop: 7 },
+  linkRow: {
+    minHeight: redesign.control.largeHeight,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: redesign.layout.cardGap,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  linkIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dangerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  dangerCopy: { lineHeight: 19, marginTop: 6 },
 });

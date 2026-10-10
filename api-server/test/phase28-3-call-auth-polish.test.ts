@@ -36,8 +36,14 @@ test("Phase 28.3 uses one curved logo surface and compact professional auth choi
   assert.match(welcome, /logoImage: \{ width: "100%", height: "100%", borderRadius: 29 \}/);
   assert.match(welcome, /primaryAction:[\s\S]*minHeight: 62/);
   assert.match(chooser, /roleCard:[\s\S]*minHeight: 94/);
-  assert.match(chooser, /numberOfLines=\{1\}>Service Provider/);
+  assert.match(chooser, /numberOfLines=\{1\}[\s\S]{0,100}styles\.roleTitle[\s\S]{0,100}localizedText/);
   assert.doesNotMatch(chooser, /borderColor: theme\.colors\.secondary \}, pressed/);
-  assert.match(loader, /resizeMode="cover"/);
-  assert.match(loader, /logo: \{ width: "100%", height: "100%", borderRadius: 27 \}/);
+  assert.match(loader, /<StatusBar barStyle="light-content" backgroundColor=\{splashSurface\} translucent=\{false\}/);
+  assert.match(loader, /colors=\{\[splashSurface, "#062B7E", "#04205E", splashSurface\]\}/);
+  assert.match(loader, /logoTileWrap: \{ width: 176, height: 176/);
+  assert.match(loader, /logoTile: \{ width: 164, height: 164, borderRadius: 42/);
+  assert.match(loader, /logoMark: \{ width: 118, height: 118/);
+  assert.match(loader, /brandName: \{ fontSize: 44, lineHeight: 50/);
+  assert.match(loader, /loaderTrack: \{ position: "relative", width: 76, height: 5/);
+  assert.match(loader, /loaderBarGradient/);
 });

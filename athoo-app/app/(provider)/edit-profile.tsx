@@ -1,9 +1,11 @@
 import { Icon } from "@/components/ui/Icon";
 import { router } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 import type { AthooTheme } from "@/design/theme";
 import { getCategoryAppearance } from "@/utils/categoryAppearance";
 import { useAuth } from "@/context/AuthContext";
@@ -42,31 +44,66 @@ export default function EditProfileScreen() {
   const [pendingRateRequest, setPendingRateRequest] = useState<ProviderRateRequest | null>(null);
   const [latestRateRequest, setLatestRateRequest] = useState<ProviderRateRequest | null>(null);
   const [saving, setSaving] = useState(false);
+  const [approvalLoading, setApprovalLoading] = useState(true);
+  const [approvalError, setApprovalError] = useState("");
+  const approvalRequestInFlightRef = useRef(false);
   const ratePending = Boolean(pendingRateRequest);
+  const approvalUnavailable = approvalLoading || Boolean(approvalError);
 
-  const loadApprovalStatus = useCallback(async () => {
+  const loadApprovalStatus = useCallback(async (
+    mode: "initial" | "refresh" | "event" = "initial"
+  ) => {
+    if (approvalRequestInFlightRef.current) return;
+
+    approvalRequestInFlightRef.current = true;
+    if (mode !== "event") {
+      setApprovalLoading(true);
+      setApprovalError("");
+    }
+
     try {
-      const [services, rates] = await Promise.all([api.getMyServiceRequests(), api.getMyRateRequests()]);
-      setPendingServiceIds((services.requests || []).filter((item: any) => item.status === "pending").map((item: any) => item.serviceCategoryId).filter(Boolean));
+      const [services, rates] = await Promise.all([
+        api.getMyServiceRequests(),
+        api.getMyRateRequests(),
+      ]);
+      setPendingServiceIds(
+        (services.requests || [])
+          .filter((item: any) => item.status === "pending")
+          .map((item: any) => item.serviceCategoryId)
+          .filter(Boolean)
+      );
       const rateRequests = ((rates.requests || []) as ProviderRateRequest[]);
       const pending = rateRequests.find((item) => item.status === "pending") || null;
       setPendingRateRequest(pending);
       setLatestRateRequest(rateRequests[0] || null);
       if (pending) setRequestedRate(String(pending.requestedRate));
       else setRequestedRate(provider?.ratePerHour ? String(provider.ratePerHour) : "");
-    } catch {
-      // Keep the last visible approval state when temporarily offline.
+      setApprovalError("");
+    } catch (error) {
+      if (mode !== "event") {
+        setApprovalError(
+          apiErrorToMessage(
+            error,
+            "Could not load your pending service and rate requests. Retry before saving changes."
+          )
+        );
+      }
+    } finally {
+      approvalRequestInFlightRef.current = false;
+      if (mode !== "event") {
+        setApprovalLoading(false);
+      }
     }
   }, [provider?.ratePerHour]);
 
   useEffect(() => {
-    void loadApprovalStatus();
+    void loadApprovalStatus("initial");
   }, [loadApprovalStatus]);
 
   useEffect(() => realtime.on((message) => {
     const payload = (message.payload || {}) as Record<string, unknown>;
     if (message.type === "admin:event" && payload.resource === "providers" && payload.providerId === user?.id) {
-      void refreshUser().then(() => loadApprovalStatus());
+      void refreshUser().then(() => loadApprovalStatus("event"));
     }
   }), [loadApprovalStatus, refreshUser, user?.id]);
 
@@ -133,11 +170,53 @@ export default function EditProfileScreen() {
         <View style={styles.header}>
           <Pressable style={styles.backBtn} onPress={() => router.back()} accessibilityLabel="Go back"><Icon name="arrow-left" size={20} color={theme.colors.text} /></Pressable>
           <Text style={styles.title}>Edit Provider Profile</Text>
-          <Pressable style={[styles.saveBtn, saving && styles.disabled]} onPress={handleSave} disabled={saving} testID="provider-profile-save"><Text style={styles.saveBtnText}>{saving ? "Saving..." : "Save"}</Text></Pressable>
+          <Pressable
+            style={[styles.saveBtn, (saving || approvalUnavailable) && styles.disabled]}
+            onPress={handleSave}
+            disabled={saving || approvalUnavailable}
+            accessibilityState={{ disabled: saving || approvalUnavailable, busy: saving || approvalLoading }}
+            testID="provider-profile-save"
+          >
+            <Text style={styles.saveBtnText}>
+              {approvalLoading ? "Loading..." : saving ? "Saving..." : "Save"}
+            </Text>
+          </Pressable>
         </View>
 
         <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 60 }]}>
           <View style={styles.notice}><Icon name="shield-check" size={16} color={theme.colors.primary} /><Text style={styles.noticeText}>Bio, experience, and location update immediately. New services and hourly-rate changes require Athoo approval.</Text></View>
+
+          {approvalLoading ? (
+            <View style={styles.notice} accessibilityRole="progressbar">
+              <ActivityIndicator size="small" color={theme.colors.primary} />
+              <Text style={styles.noticeText}>Loading pending service and rate requests...</Text>
+            </View>
+          ) : approvalError ? (
+            <View
+              style={[
+                styles.notice,
+                {
+                  backgroundColor: theme.colors.dangerSoft,
+                  borderColor: theme.colors.danger,
+                },
+              ]}
+              accessibilityRole="alert"
+            >
+              <Icon name="alert-circle" size={16} color={theme.colors.danger} />
+              <View style={{ flex: 1, gap: 6 }}>
+                <Text style={[styles.noticeText, { color: theme.colors.danger }]}>
+                  {approvalError}
+                </Text>
+                <Pressable
+                  onPress={() => void loadApprovalStatus("refresh")}
+                  accessibilityRole="button"
+                  testID="provider-profile-approval-retry"
+                >
+                  <Text style={{ color: theme.colors.primary, fontWeight: "800" }}>Retry</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
 
           <Field label="Approved Services" hint="These services are visible to customers.">
             <View style={styles.chips}>{approvedServices.map((slug) => { const category = categories.find((item) => item.slug === slug); return <View key={slug} style={styles.approvedChip}><Icon name="check-circle" size={13} color={theme.colors.success} /><Text style={styles.chipText}>{category?.name || slug}</Text></View>; })}</View>
@@ -237,34 +316,149 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 
 const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 18, paddingVertical: 14, backgroundColor: theme.colors.surface, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
-  backBtn: { width: 38, height: 38, borderRadius: 11, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.surfaceAlt },
-  title: { flex: 1, textAlign: "center", fontSize: 16, fontWeight: "800", color: theme.colors.text },
-  saveBtn: { backgroundColor: theme.colors.primary, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 9 },
-  saveBtnText: { color: theme.colors.onBrand, fontWeight: "800", fontSize: 13 }, disabled: { opacity: 0.55 },
-  content: { padding: 18, gap: 20 }, notice: { flexDirection: "row", gap: 9, padding: 13, borderRadius: 12, backgroundColor: theme.colors.primary + "10", borderWidth: 1, borderColor: theme.colors.primary + "25" }, noticeText: { flex: 1, fontSize: 12, lineHeight: 18, color: theme.colors.textSecondary },
-  input: { backgroundColor: theme.colors.surface, borderRadius: 12, borderWidth: 1.5, borderColor: theme.colors.border, paddingHorizontal: 14, paddingVertical: 13, fontSize: 15, color: theme.colors.text }, textArea: { minHeight: 105 },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 }, approvedChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 11, paddingVertical: 8, borderRadius: 18, backgroundColor: theme.colors.successSoft, borderWidth: 1, borderColor: theme.colors.successSoft },
-  requestChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 11, paddingVertical: 8, borderRadius: 18, backgroundColor: theme.colors.surface, borderWidth: 1.5, borderColor: theme.colors.border }, chipText: { fontSize: 12, fontWeight: "700", color: theme.colors.text },
-  pendingServicesCard: { marginTop: -8, padding: 12, borderRadius: 12, backgroundColor: theme.colors.warningSoft, borderWidth: 1, borderColor: theme.colors.warning + "35", gap: 9 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: redesign.layout.cardGap,
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingVertical: 12,
+    backgroundColor: theme.colors.surface,
+    borderBottomWidth: redesign.visual.cardBorderWidth,
+    borderBottomColor: theme.colors.border,
+    ...theme.shadows.sm,
+  },
+  backBtn: {
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+  },
+  title: { flex: 1, textAlign: "center", ...theme.typography.h3, color: theme.colors.text },
+  saveBtn: {
+    minHeight: redesign.control.compactHeight,
+    backgroundColor: theme.colors.primary,
+    borderRadius: radius.md,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    ...theme.shadows.sm,
+  },
+  saveBtnText: { color: theme.colors.onBrand, ...theme.typography.label },
+  disabled: { opacity: redesign.visual.disabledOpacity },
+  content: {
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: redesign.layout.cardGap,
+    gap: redesign.layout.fieldGap,
+    width: "100%",
+    maxWidth: redesign.layout.maxContentWidth,
+    alignSelf: "center",
+  },
+  notice: {
+    flexDirection: "row",
+    gap: 9,
+    padding: 11,
+    borderRadius: radius.md,
+    backgroundColor: theme.colors.infoSoft,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.primary + "25",
+  },
+  noticeText: { flex: 1, ...theme.typography.caption, lineHeight: 18, color: theme.colors.textSecondary },
+  input: {
+    minHeight: redesign.control.standardHeight,
+    backgroundColor: theme.colors.input,
+    borderRadius: radius.md,
+    borderWidth: redesign.visual.inputBorderWidth,
+    borderColor: theme.colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    fontSize: 15,
+    color: theme.colors.text,
+  },
+  textArea: { minHeight: 96 },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  approvedChip: {
+    minHeight: 32,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: theme.colors.successSoft,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.success + "25",
+  },
+  requestChip: {
+    minHeight: 32,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: theme.colors.surface,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+  },
+  chipText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.text },
+  pendingServicesCard: {
+    marginTop: -6,
+    padding: 10,
+    borderRadius: radius.md,
+    backgroundColor: theme.colors.warningSoft,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.warning + "35",
+    gap: 9,
+  },
   pendingHeader: { flexDirection: "row", alignItems: "center", gap: 7 },
   pendingTitle: { flex: 1, fontSize: 12, fontWeight: "800", color: theme.colors.warning },
-  pendingChip: { paddingHorizontal: 9, paddingVertical: 5, borderRadius: 14, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.warning + "35" },
+  pendingChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    backgroundColor: theme.colors.surface,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.warning + "35",
+  },
   pendingChipText: { fontSize: 11, fontWeight: "700", color: theme.colors.text },
-  rateStatusCard: { padding: 14, borderRadius: 14, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border, gap: 12 },
+  rateStatusCard: {
+    padding: redesign.layout.cardGap,
+    borderRadius: radius.lg,
+    backgroundColor: theme.colors.surface,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    gap: 10,
+    ...theme.shadows.sm,
+  },
   rateStatusHeader: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
-  rateStatusIcon: { width: 34, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.primary + "15" },
+  rateStatusIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.infoSoft,
+  },
   rateStatusTitle: { fontSize: 14, fontWeight: "800", color: theme.colors.text },
   rateStatusText: { marginTop: 2, fontSize: 11, lineHeight: 16, color: theme.colors.textSecondary },
   rateRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
-  rateRowBorder: { paddingTop: 11, borderTopWidth: 1, borderTopColor: theme.colors.border },
+  rateRowBorder: {
+    paddingTop: 11,
+    borderTopWidth: redesign.visual.cardBorderWidth,
+    borderTopColor: theme.colors.border,
+  },
   rateRowLabel: { fontSize: 12, color: theme.colors.textSecondary, fontWeight: "600" },
   rateApprovedValue: { fontSize: 14, fontWeight: "800", color: theme.colors.success },
   ratePendingValue: { fontSize: 14, fontWeight: "800", color: theme.colors.warning },
   ratePendingMeta: { marginTop: 2, fontSize: 10, color: theme.colors.textMuted },
-  rateRejectedBox: { padding: 10, borderRadius: 10, backgroundColor: theme.colors.dangerSoft, gap: 3 },
+  rateRejectedBox: { padding: 10, borderRadius: radius.md, backgroundColor: theme.colors.dangerSoft, gap: 3 },
   rateRejectedTitle: { fontSize: 12, fontWeight: "800", color: theme.colors.danger },
   rateRejectedText: { fontSize: 11, lineHeight: 16, color: theme.colors.textSecondary },
   rateApprovedNote: { fontSize: 11, lineHeight: 16, color: theme.colors.success, fontWeight: "700" },
-  readOnlyInput: { opacity: 0.7, backgroundColor: theme.colors.surfaceAlt },
+  readOnlyInput: { opacity: redesign.visual.disabledOpacity, backgroundColor: theme.colors.surfaceAlt },
 });

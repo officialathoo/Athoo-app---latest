@@ -180,8 +180,63 @@ adminRouter.get("/", requirePermission("verification.read"), async (req: AuthReq
     const status = String(req.query.status || "pending").trim();
     const validStatuses = ["pending", "approved", "rejected", "cancelled", "all"];
     if (!validStatuses.includes(status)) return res.status(400).json({ error: "Invalid status filter" });
-    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 100));
-    const baseQuery = db.select({
+
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const offset = (page - 1) * limit;
+    const providerId = typeof req.query.provider === "string" ? req.query.provider.trim() : "";
+
+    const conditions = [];
+    if (status !== "all") conditions.push(eq(providerDocumentUpdateRequestsTable.status, status));
+    if (providerId) conditions.push(eq(providerDocumentUpdateRequestsTable.providerId, providerId));
+    const whereClause = conditions.length ? and(...conditions) : undefined;
+    const providerScope = providerId ? eq(providerDocumentUpdateRequestsTable.providerId, providerId) : undefined;
+
+    const [rows,total,statsRows] = await Promise.all([
+      db.select({
+        request: providerDocumentUpdateRequestsTable,
+        providerName: usersTable.name,
+        providerPhone: usersTable.phone,
+        providerEmail: usersTable.email,
+        providerComplianceStatus: usersTable.documentComplianceStatus,
+        providerSuspendedAt: usersTable.documentSuspendedAt,
+      }).from(providerDocumentUpdateRequestsTable)
+        .innerJoin(usersTable, eq(usersTable.id, providerDocumentUpdateRequestsTable.providerId))
+        .where(whereClause)
+        .orderBy(desc(providerDocumentUpdateRequestsTable.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db.$count(providerDocumentUpdateRequestsTable, whereClause),
+      db.select({
+        pending: sql<number>`count(*) filter (where ${providerDocumentUpdateRequestsTable.status} = 'pending')::int`,
+        approved: sql<number>`count(*) filter (where ${providerDocumentUpdateRequestsTable.status} = 'approved')::int`,
+        rejected: sql<number>`count(*) filter (where ${providerDocumentUpdateRequestsTable.status} = 'rejected')::int`,
+        cancelled: sql<number>`count(*) filter (where ${providerDocumentUpdateRequestsTable.status} = 'cancelled')::int`,
+      }).from(providerDocumentUpdateRequestsTable).where(providerScope),
+    ]);
+
+    const stats=statsRows[0]||{pending:0,approved:0,rejected:0,cancelled:0};
+    return res.json({
+      requests: rows.map((row)=>({...row.request,provider:{
+        id:row.request.providerId,name:row.providerName,phone:row.providerPhone,email:row.providerEmail,
+        documentComplianceStatus:row.providerComplianceStatus,documentSuspendedAt:row.providerSuspendedAt,
+      }})),
+      total:Number(total||0), page, limit,
+      stats:{
+        pending:Number(stats.pending||0),approved:Number(stats.approved||0),
+        rejected:Number(stats.rejected||0),cancelled:Number(stats.cancelled||0),
+        all:Number(stats.pending||0)+Number(stats.approved||0)+Number(stats.rejected||0)+Number(stats.cancelled||0),
+      },
+    });
+  } catch (error) {
+    logger.error({ err: error }, "admin document renewal list failed");
+    return res.status(500).json({ error: "Failed to load document renewal requests" });
+  }
+});
+
+adminRouter.get("/:id", requirePermission("verification.read"), async (req, res) => {
+  try {
+    const [row] = await db.select({
       request: providerDocumentUpdateRequestsTable,
       providerName: usersTable.name,
       providerPhone: usersTable.phone,
@@ -189,24 +244,17 @@ adminRouter.get("/", requirePermission("verification.read"), async (req: AuthReq
       providerComplianceStatus: usersTable.documentComplianceStatus,
       providerSuspendedAt: usersTable.documentSuspendedAt,
     }).from(providerDocumentUpdateRequestsTable)
-      .innerJoin(usersTable, eq(usersTable.id, providerDocumentUpdateRequestsTable.providerId));
-    const rows = status === "all"
-      ? await baseQuery.orderBy(desc(providerDocumentUpdateRequestsTable.createdAt)).limit(limit)
-      : await baseQuery
-          .where(eq(providerDocumentUpdateRequestsTable.status, status))
-          .orderBy(desc(providerDocumentUpdateRequestsTable.createdAt))
-          .limit(limit);
-    return res.json({ requests: rows.map((row) => ({ ...row.request, provider: {
-      id: row.request.providerId,
-      name: row.providerName,
-      phone: row.providerPhone,
-      email: row.providerEmail,
-      documentComplianceStatus: row.providerComplianceStatus,
-      documentSuspendedAt: row.providerSuspendedAt,
-    } })) });
+      .innerJoin(usersTable, eq(usersTable.id, providerDocumentUpdateRequestsTable.providerId))
+      .where(eq(providerDocumentUpdateRequestsTable.id, String(req.params.id)))
+      .limit(1);
+    if (!row) return res.status(404).json({ error: "Renewal request not found" });
+    return res.json({ request: { ...row.request, provider: {
+      id: row.request.providerId, name: row.providerName, phone: row.providerPhone, email: row.providerEmail,
+      documentComplianceStatus: row.providerComplianceStatus, documentSuspendedAt: row.providerSuspendedAt,
+    } } });
   } catch (error) {
-    logger.error({ err: error }, "admin document renewal list failed");
-    return res.status(500).json({ error: "Failed to load document renewal requests" });
+    logger.error({ err: error, requestId: req.params.id }, "admin document renewal detail failed");
+    return res.status(500).json({ error: "Failed to load document renewal request" });
   }
 });
 

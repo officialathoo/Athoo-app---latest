@@ -1,9 +1,10 @@
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
-import { reportIssuesTable } from "@workspace/db/schema";
+import { reportIssuesTable, usersTable } from "@workspace/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { requireAuth, requireAdmin, requirePermission, type AuthRequest } from "../middlewares/auth";
 import { logger } from "../lib/logger";
+import { createAdminNotification } from "../lib/adminNotifications";
 import crypto from "crypto";
 
 function generateId(): string { return crypto.randomUUID(); }
@@ -18,19 +19,48 @@ userRouter.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
     if (!category?.trim() || !description?.trim()) {
       return res.status(400).json({ error: "Category and description are required" });
     }
+    let resolvedReportedId: string | null = reportedId || null;
+    let resolvedReportedName: string | null = null;
+    let resolvedReportedPublicId: string | null = null;
+    if (resolvedReportedId) {
+      const [reportedUser] = await db
+        .select({ id: usersTable.id, name: usersTable.name, publicId: usersTable.publicId })
+        .from(usersTable)
+        .where(eq(usersTable.id, resolvedReportedId))
+        .limit(1);
+      if (!reportedUser) {
+        resolvedReportedId = null;
+      } else {
+        resolvedReportedName = reportedUser.name || reportedName || "Unknown";
+        resolvedReportedPublicId = reportedUser.publicId || null;
+      }
+    }
+    if (!resolvedReportedId && reportedName?.trim()) {
+      resolvedReportedName = String(reportedName).trim();
+    }
     const report = {
       id: generateId(),
       bookingId: bookingId || null,
       reporterId: req.user!.userId,
       reporterName: (req.user as any).name || "Unknown",
       reporterRole: req.user!.role,
-      reportedId: reportedId || null,
-      reportedName: reportedName || null,
+      reportedId: resolvedReportedId,
+      reportedName: resolvedReportedName,
       category: category.trim(),
       description: description.trim(),
       status: "open",
     };
     await db.insert(reportIssuesTable).values(report);
+    try {
+      await createAdminNotification({
+        title: `New reported issue (${report.category})`,
+        message: `${report.reporterName} [ID ${report.reporterId}]${resolvedReportedName ? ` reported ${resolvedReportedName}${resolvedReportedPublicId ? ` [${resolvedReportedPublicId}]` : ` [ID ${resolvedReportedId}]`}` : ""}`,
+        type: "support",
+        link: `/reported-issues?focus=${encodeURIComponent(report.id)}`,
+      });
+    } catch (adminNotificationError) {
+      logger.error({ err: adminNotificationError }, "report issue admin notification error");
+    }
     return res.status(201).json({ report });
   } catch (e) {
     logger.error({ err: e }, "report-issues create error");

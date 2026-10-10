@@ -93,17 +93,29 @@ export function UsersPage() {
       toast({ title: "Reason required", description: "Enter at least 5 characters.", variant: "destructive" });
       return;
     }
+    const action = pendingAction;
+    const customerId = selected.id;
     setActionLoading(true);
     try {
-      const endpoint = pendingAction === "logout"
-        ? `/api/admin/customers/${selected.id}/revoke-sessions`
-        : `/api/admin/customers/${selected.id}/${pendingAction}`;
-      await api(endpoint, { method: pendingAction === "logout" ? "POST" : "PATCH", body: { reason: reason.trim() } });
-      toast({ title: pendingAction === "logout" ? "Customer signed out" : `Customer ${pendingAction}d` });
+      const endpoint = action === "logout"
+        ? `/api/admin/customers/${customerId}/revoke-sessions`
+        : `/api/admin/customers/${customerId}/${action}`;
+      await api(endpoint, { method: action === "logout" ? "POST" : "PATCH", body: { reason: reason.trim() } });
+      toast({ title: action === "logout" ? "Customer signed out" : `Customer ${action}d` });
       setPendingAction(null);
       setReason("");
-      await load();
-      if (pendingAction !== "logout") setSelected(null);
+
+      if (action === "logout") {
+        const [, detail] = await Promise.all([
+          load(),
+          api<{ user: User }>(`/api/admin/users/${customerId}`),
+        ]);
+        setSelected(detail.user);
+        setNotes(detail.user.adminNotes || "");
+      } else {
+        setSelected(null);
+        await load();
+      }
     } catch (error) {
       toast({ title: "Action failed", description: (error as Error).message, variant: "destructive" });
     } finally {
@@ -118,14 +130,21 @@ export function UsersPage() {
     }
     setActionLoading(true);
     try {
-      await api(`/api/admin/customers/${selected.id}/profile`, {
+      const customerId = selected.id;
+      await api(`/api/admin/customers/${customerId}/profile`, {
         method: "PATCH",
         body: { name: editForm.name.trim(), location: editForm.location.trim() || null, bio: editForm.bio.trim() || null, reason: reason.trim() },
       });
+      const [, detail] = await Promise.all([
+        load(),
+        api<{ user: User }>(`/api/admin/users/${customerId}`),
+      ]);
+      setSelected(detail.user);
+      setEditForm({ name: detail.user.name || "", location: detail.user.location || "", bio: detail.user.bio || "" });
+      setNotes(detail.user.adminNotes || "");
       toast({ title: "Customer profile corrected" });
       setEditMode(false);
       setReason("");
-      await load();
     } catch (error) {
       toast({ title: "Profile update failed", description: (error as Error).message, variant: "destructive" });
     } finally {
@@ -163,11 +182,14 @@ export function UsersPage() {
 
   async function saveNotes() {
     if (!selected) return;
+    const customerId = selected.id;
     setActionLoading(true);
     try {
-      await api(`/api/admin/users/${selected.id}/notes`, { method: "PATCH", body: { notes } });
+      await api(`/api/admin/users/${customerId}/notes`, { method: "PATCH", body: { notes } });
+      const detail = await api<{ user: User }>(`/api/admin/users/${customerId}`);
+      setSelected(detail.user);
+      setNotes(detail.user.adminNotes || "");
       toast({ title: "Notes saved" });
-      await load();
     } catch (error) {
       toast({ title: "Could not save notes", description: (error as Error).message, variant: "destructive" });
     } finally { setActionLoading(false); }

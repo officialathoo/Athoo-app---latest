@@ -7,8 +7,10 @@ import { useToast } from "@/hooks/use-toast";
 type ReportIssue = {
   id: string;
   bookingId?: string;
+  reporterId: string;
   reporterName: string;
   reporterRole: string;
+  reportedId?: string;
   reportedName?: string;
   category: string;
   description: string;
@@ -17,6 +19,10 @@ type ReportIssue = {
   resolvedAt?: string;
   createdAt: string;
 };
+
+function shortId(id?: string | null): string {
+  return id ? `#${id.slice(-8)}` : "";
+}
 
 const STATUS_STYLE: Record<string, string> = {
   open: "bg-red-100 text-red-700 border-red-200",
@@ -137,14 +143,20 @@ export function ReportedIssuesPage() {
                     )}
                   </div>
                   <p className="text-sm text-slate-800 font-medium line-clamp-2">{r.description}</p>
-                  <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
+                  <div className="flex items-center gap-4 mt-2 text-xs text-slate-500 flex-wrap">
                     <span>
                       By <span className="font-medium text-slate-700">{r.reporterName}</span>{" "}
+                      <span className="font-mono text-[11px] text-slate-400">{shortId(r.reporterId)}</span>{" "}
                       <span className={`px-1.5 py-0.5 rounded text-xs ${r.reporterRole === "customer" ? "bg-blue-50 text-blue-600" : "bg-orange-50 text-orange-600"}`}>
                         {r.reporterRole}
                       </span>
                     </span>
-                    {r.reportedName && <span>Against: <span className="font-medium">{r.reportedName}</span></span>}
+                    {r.reportedName && (
+                      <span>
+                        Against: <span className="font-medium">{r.reportedName}</span>{" "}
+                        <span className="font-mono text-[11px] text-slate-400">{shortId(r.reportedId)}</span>
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="text-right shrink-0">
@@ -176,8 +188,10 @@ export function ReportedIssuesPage() {
                 </div>
                 <p className="text-sm text-slate-700">{selected.description}</p>
                 <p className="text-xs text-slate-500 mt-2">
-                  Reported by <strong>{selected.reporterName}</strong>
-                  {selected.reportedName && <> against <strong>{selected.reportedName}</strong></>}
+                  Reported by <strong>{selected.reporterName}</strong>{" "}
+                  <span className="font-mono">{shortId(selected.reporterId)}</span>
+                  {selected.reportedName && <> against <strong>{selected.reportedName}</strong>{" "}
+                    <span className="font-mono">{shortId(selected.reportedId)}</span></>}
                 </p>
               </div>
 

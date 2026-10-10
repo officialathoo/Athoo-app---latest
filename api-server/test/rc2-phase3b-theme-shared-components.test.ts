@@ -35,7 +35,7 @@ test("loader uses the centralized approved brand asset and stops all animations 
   assert.match(brand, /app-icon-approved\.png/);
   assert.doesNotMatch(source + brand, /logo_transparent\.png/);
   assert.match(source, /animations\.forEach\(\(animation\) => animation\.stop\(\)\)/);
-  assert.match(source, /timers\.forEach\(clearTimeout\)/);
+  assert.doesNotMatch(source, /setTimeout\(|setInterval\(/);
 });
 
 test("support and legal destinations are deployment-configurable rather than embedded in screens", () => {

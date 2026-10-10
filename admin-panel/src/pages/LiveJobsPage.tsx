@@ -40,7 +40,7 @@ export function LiveJobsPage() {
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["live-jobs"],
-    queryFn: () => api<{ bookings: LiveBooking[] }>("/api/admin/bookings?status=accepted,in_progress&limit=100"),
+    queryFn: () => api<{ bookings: LiveBooking[] }>("/api/admin/bookings?status=active&limit=100"),
     refetchInterval: 120000,
     staleTime: 10000,
   });

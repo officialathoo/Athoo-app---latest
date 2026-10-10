@@ -14,7 +14,13 @@ interface ScreenHeaderProps {
   accessibilityLabel?: string;
 }
 
-export function ScreenHeader({ title, subtitle, onBack, right, accessibilityLabel }: ScreenHeaderProps) {
+export function ScreenHeader({
+  title,
+  subtitle,
+  onBack,
+  right,
+  accessibilityLabel,
+}: ScreenHeaderProps) {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
@@ -24,10 +30,10 @@ export function ScreenHeader({ title, subtitle, onBack, right, accessibilityLabe
       style={[
         styles.shell,
         {
-          paddingTop: topPadding + 10,
-          paddingBottom: 12,
+          paddingTop: topPadding + theme.spacing.sm,
+          paddingBottom: theme.spacing.sm,
           backgroundColor: theme.colors.surface,
-          borderBottomColor: theme.colors.border,
+          borderBottomColor: theme.colors.divider,
         },
       ]}
     >
@@ -39,16 +45,24 @@ export function ScreenHeader({ title, subtitle, onBack, right, accessibilityLabe
           onPress={onBack || (() => router.back())}
           style={({ pressed }) => [
             styles.back,
-            { backgroundColor: theme.colors.surfaceAlt },
-            pressed && { opacity: 0.72 },
+            {
+              backgroundColor: pressed ? theme.colors.infoSoft : theme.colors.surfaceAlt,
+              borderColor: theme.colors.border,
+            },
           ]}
         >
-          <Icon name="arrow-left" size={20} color={theme.colors.text} />
+          <Icon name="arrow-left" size={19} color={theme.colors.text} strokeWidth={2.2} />
         </Pressable>
 
         <View style={styles.copy}>
-          <AppText variant="h3" numberOfLines={1}>{title}</AppText>
-          {subtitle ? <AppText variant="caption" tone="secondary" numberOfLines={1}>{subtitle}</AppText> : null}
+          <AppText variant="h3" numberOfLines={1}>
+            {title}
+          </AppText>
+          {subtitle ? (
+            <AppText variant="caption" tone="secondary" numberOfLines={1}>
+              {subtitle}
+            </AppText>
+          ) : null}
         </View>
 
         <View style={styles.right}>{right}</View>
@@ -64,9 +78,34 @@ export const responsiveContent = {
 };
 
 const styles = StyleSheet.create({
-  shell: { borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16 },
-  inner: { width: "100%", maxWidth: 900, alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 12 },
-  back: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  copy: { flex: 1, minWidth: 0, gap: 1 },
-  right: { minWidth: 44, minHeight: 44, alignItems: "flex-end", justifyContent: "center" },
+  shell: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 16,
+  },
+  inner: {
+    width: "100%",
+    maxWidth: 900,
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  back: {
+    width: 44, height: 44,
+    borderRadius: 13,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  copy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 1,
+  },
+  right: {
+    minWidth: 42,
+    minHeight: 42,
+    alignItems: "flex-end",
+    justifyContent: "center",
+  },
 });

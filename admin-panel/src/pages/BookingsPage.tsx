@@ -63,6 +63,8 @@ export function BookingsPage() {
   const [operations, setOperations] = useState<BookingOperation[]>([]);
   const [availableProviders, setAvailableProviders] = useState<User[]>([]);
   const [replacementProviderId, setReplacementProviderId] = useState("");
+  const [replacementSearch, setReplacementSearch] = useState("");
+  const [replacementProvidersLoading, setReplacementProvidersLoading] = useState(false);
   const [operationLoading, setOperationLoading] = useState(false);
   const [focusOpened, setFocusOpened] = useState(false);
   const { hasPermission } = usePermissions();
@@ -121,16 +123,57 @@ export function BookingsPage() {
   const totalRevenue = bookings.filter(b => b.status === "completed").reduce((sum, b) => sum + Number(b.price || 0), 0);
 
   async function openBooking(booking: Booking) {
-    setSelected(booking); setOperations([]); setAvailableProviders([]); setReplacementProviderId("");
+    setSelected(booking);
+    setOperations([]);
+    setAvailableProviders([]);
+    setReplacementProviderId("");
+    setReplacementSearch("");
     try {
-      const [details, providers] = await Promise.all([
-        api<{ booking: Booking; operations: BookingOperation[] }>(`/api/admin/bookings/${booking.id}/operations`),
-        canWrite && booking.status === "pending" ? api<{ providers: User[] }>("/api/admin/providers", { params: { status: "available", limit: 200 } }) : Promise.resolve({ providers: [] as User[] }),
-      ]);
-      setSelected(details.booking); setOperations(details.operations || []);
-      setAvailableProviders((providers.providers || []).filter(provider => provider.id !== booking.providerId));
-    } catch (error) { setLoadError((error as Error).message); }
+      const details = await api<{ booking: Booking; operations: BookingOperation[] }>(
+        `/api/admin/bookings/${booking.id}/operations`,
+      );
+      setSelected(details.booking);
+      setOperations(details.operations || []);
+    } catch (error) {
+      setLoadError((error as Error).message);
+    }
   }
+
+  useEffect(() => {
+    if (!canWrite || selected?.status !== "pending") {
+      setAvailableProviders([]);
+      setReplacementProvidersLoading(false);
+      return;
+    }
+
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      setReplacementProvidersLoading(true);
+      try {
+        const response = await api<{ providers: User[] }>("/api/admin/providers", {
+          params: {
+            status: "available",
+            search: replacementSearch.trim() || undefined,
+            page: 1,
+            limit: 50,
+          },
+        });
+        if (!active) return;
+        setAvailableProviders(
+          (response.providers || []).filter((provider) => provider.id !== selected.providerId),
+        );
+      } catch (error) {
+        if (active) setLoadError((error as Error).message || "Could not load replacement providers");
+      } finally {
+        if (active) setReplacementProvidersLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [canWrite, replacementSearch, selected?.id, selected?.providerId, selected?.status]);
 
   useEffect(() => {
     if (!focusId || focusOpened || loading) return;
@@ -149,7 +192,8 @@ export function BookingsPage() {
     setOperationLoading(true);
     try {
       const res = await api<{ booking: Booking }>(`/api/admin/bookings/${selected.id}/cancel`, { method: "PATCH", body: { reason } });
-      setSelected(res.booking); await load(); await openBooking(res.booking);
+      setSelected(res.booking);
+      await Promise.all([load(), openBooking(res.booking)]);
     } catch (error) { alert((error as Error).message || "Failed to cancel booking"); }
     finally { setOperationLoading(false); }
   }
@@ -161,7 +205,8 @@ export function BookingsPage() {
     setOperationLoading(true);
     try {
       const res = await api<{ booking: Booking }>(`/api/admin/bookings/${selected.id}/reassign`, { method: "PATCH", body: { providerId: replacementProviderId, reason } });
-      setSelected(res.booking); await load(); await openBooking(res.booking);
+      setSelected(res.booking);
+      await Promise.all([load(), openBooking(res.booking)]);
     } catch (error) { alert((error as Error).message || "Failed to reassign booking"); }
     finally { setOperationLoading(false); }
   }
@@ -276,7 +321,7 @@ export function BookingsPage() {
                   <tr key={b.id} data-focus-id={b.id === focusId || b.publicId === focusId ? b.id : undefined} className={b.id === focusId || b.publicId === focusId ? "bg-blue-50 ring-2 ring-inset ring-blue-400" : "hover:bg-slate-50 transition-colors"} title={b.publicId || b.id}>
                     <td className="px-5 py-3">
                       <p className="font-medium text-slate-800 capitalize">{b.service.replace(/_/g, " ")}</p>
-                      <p className="text-xs text-slate-400 truncate max-w-[180px]">{b.address}</p>
+                      <p className="text-xs text-slate-400 break-words">{b.address}</p>
                       {b.publicId && <p className="text-[10px] font-mono text-slate-400 mt-0.5">{b.publicId}</p>}
                     </td>
                     <td className="px-4 py-3">
@@ -299,7 +344,7 @@ export function BookingsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-slate-700">{b.price ? currency(b.price) : "—"}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{b.scheduledDate}</td>
+                      <td className="px-4 py-3 text-xs text-slate-500 whitespace-normal break-words">{b.scheduledDate}</td>
                     <td className="px-4 py-3 text-right">
                       <button className="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-50" onClick={() => openBooking(b)}>
                         View
@@ -390,12 +435,36 @@ export function BookingsPage() {
                   <div className="flex items-center gap-2"><ShieldAlert size={17} className="text-orange-700" /><p className="text-sm font-semibold text-orange-900">Operations intervention</p></div>
                   <p className="text-xs text-orange-800">Only unstarted, unpaid bookings can be changed here. All actions require a reason and are audited.</p>
                   {selected.status === "pending" && (
-                    <div className="flex gap-2">
-                      <select value={replacementProviderId} onChange={e => setReplacementProviderId(e.target.value)} className="flex-1 px-3 py-2 text-sm border border-orange-200 rounded-lg bg-white">
-                        <option value="">Choose eligible replacement provider</option>
-                        {availableProviders.map(provider => <option key={provider.id} value={provider.id}>{provider.name} — {provider.location || "No location"}</option>)}
-                      </select>
-                      <button disabled={!replacementProviderId || operationLoading} onClick={reassignBooking} className="px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium disabled:opacity-50 flex items-center gap-1"><UserRoundCog size={15}/> Reassign</button>
+                    <div className="space-y-2">
+                      <input
+                        value={replacementSearch}
+                        onChange={(event) => {
+                          setReplacementSearch(event.target.value);
+                          setReplacementProviderId("");
+                        }}
+                        placeholder="Search available provider by Athoo ID, name, phone, email, or CNIC"
+                        className="w-full px-3 py-2 text-sm border border-orange-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        aria-label="Search replacement providers"
+                      />
+                      <div className="flex gap-2">
+                        <select
+                          value={replacementProviderId}
+                          onChange={e => setReplacementProviderId(e.target.value)}
+                          className="flex-1 px-3 py-2 text-sm border border-orange-200 rounded-lg bg-white"
+                          disabled={replacementProvidersLoading}
+                        >
+                          <option value="">
+                            {replacementProvidersLoading
+                              ? "Loading matching providers..."
+                              : availableProviders.length
+                                ? "Choose replacement provider"
+                                : "No matching available providers"}
+                          </option>
+                          {availableProviders.map(provider => <option key={provider.id} value={provider.id}>{provider.name} - {provider.publicId || provider.phone} - {provider.location || "No location"}</option>)}
+                        </select>
+                        <button disabled={!replacementProviderId || operationLoading || replacementProvidersLoading} onClick={reassignBooking} className="px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium disabled:opacity-50 flex items-center gap-1"><UserRoundCog size={15}/> Reassign</button>
+                      </div>
+                      <p className="text-[11px] text-orange-700">Search is server-side and capped to 50 matching available providers. Final service, schedule, radius, verification, and workload eligibility is re-checked by the backend before reassignment.</p>
                     </div>
                   )}
                   <button disabled={operationLoading} onClick={cancelBooking} className="px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-medium disabled:opacity-50">Cancel booking</button>

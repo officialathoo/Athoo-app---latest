@@ -1,4 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
+import { ServiceMultiSelect } from "@/components/auth/ServiceMultiSelect";
+import { brandConfig } from "@/config/brand";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
@@ -22,8 +24,10 @@ import { SuccessModal } from "@/components/ui/SuccessModal";
 import { useAuth } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
-import type { AthooTheme } from "@/design/theme";
+import { createAuthPalette } from "@/design/authPalette";
 import { getCategoryAppearance } from "@/utils/categoryAppearance";
+import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { useCategories } from "@/context/CategoriesContext";
 import { api } from "@/services/api";
 import { uploadPickedImage } from "@/services/storage";
@@ -120,10 +124,12 @@ export default function ProviderRegisterScreen() {
   const { register, sendOtp, verifyOtpAndLogin } = useAuth();
   const { categories } = useCategories();
   const { theme } = useTheme();
+  const auth = useMemo(() => createAuthPalette(theme), [theme]);
   const { translate: tr, textAlign, writingDirection, direction } = useLang();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const localizedText = useMemo(() => ({ textAlign, writingDirection }), [textAlign, writingDirection]);
-  const localizedRow = direction === "rtl" ? styles.rowReverse : undefined;
+  const isRtl = direction === "rtl";
+  const localizedRow = isRtl ? styles.rowReverse : undefined;
   const steps = useMemo(() => STEPS.map((item) => ({ ...item, title: tr(item.title), desc: tr(item.desc) })), [tr]);
   const docItems = useMemo(() => DOC_ITEMS.map((item) => ({ ...item, label: tr(item.label), hint: tr(item.hint) })), [tr]);
   const { phone: phoneParam } = useLocalSearchParams<{ phone?: string }>();
@@ -132,9 +138,9 @@ export default function ProviderRegisterScreen() {
 
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [sendingOtp, setSendingOtp] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [emailVerificationParams, setEmailVerificationParams] = useState<Record<string, string> | null>(null);
   const [otpVerified, setOtpVerified] = useState(false);
   const [registrationToken, setRegistrationToken] = useState("");
   const [showCnicNotice, setShowCnicNotice] = useState(true);
@@ -228,7 +234,7 @@ export default function ProviderRegisterScreen() {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: isVideo ? ("videos" as const) : ("images" as const),
         quality: 0.85,
-        ...(isVideo ? { videoMaxDuration: 30 } : { allowsEditing: true, aspect: doc.id === "selfie" ? [1, 1] as [number, number] : [4, 3] as [number, number] }),
+        ...(isVideo ? { videoMaxDuration: 30 } : { allowsEditing: true }),
       });
       if (!result.canceled && result.assets?.[0]) {
         setDocFiles(prev => ({ ...prev, [doc.id]: result.assets[0].uri }));
@@ -254,7 +260,7 @@ export default function ProviderRegisterScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: isVideo ? ("videos" as const) : ("images" as const),
         quality: 0.85,
-        ...(isVideo ? { videoMaxDuration: 30 } : { allowsEditing: true, aspect: [4, 3] as [number, number] }),
+        ...(isVideo ? { videoMaxDuration: 30 } : { allowsEditing: true }),
       });
       if (!result.canceled && result.assets?.[0]) {
         setDocFiles(prev => ({ ...prev, [doc.id]: result.assets[0].uri }));
@@ -262,6 +268,62 @@ export default function ProviderRegisterScreen() {
       }
     } catch (err: any) {
       Alert.alert(tr("Gallery Error"), tr(apiErrorToMessage(err, "Could not open photo library. Please try again.")));
+    }
+  };
+
+  const handleSendRegistrationOtp = async () => {
+    if (sendingOtp) return;
+    if (!form.phone) {
+      Alert.alert(tr("Enter phone number first"));
+      return;
+    }
+
+    const cleaned = form.phone.trim().replace(/\D/g, "");
+    const isPakistani = /^(92|0)?3\d{9}$/.test(cleaned);
+    if (!isPakistani) {
+      Alert.alert(
+        tr("Invalid Phone"),
+        tr("Please enter a valid Pakistani mobile number (e.g. 03XX-XXXXXXX).")
+      );
+      return;
+    }
+
+    setSendingOtp(true);
+    try {
+      const res = await sendOtp(
+        form.phone,
+        "registration",
+        "provider",
+        form.email || undefined
+      );
+
+      if (!res.success || res.error) {
+        Alert.alert(
+          tr("Failed"),
+          tr(
+            apiErrorToMessage(
+              res.error || res.message,
+              "Unable to send OTP. Please try again."
+            )
+          )
+        );
+        return;
+      }
+
+      if (__DEV__) setOtpHint(res.code || "");
+      setShowOtp(true);
+
+      if (__DEV__ && res.code) {
+        Alert.alert(
+          tr("Your OTP Code"),
+          tr("Code: {{code}}\n\nEnter this code in the field below.", {
+            code: res.code,
+          }),
+          [{ text: "OK" }]
+        );
+      }
+    } finally {
+      setSendingOtp(false);
     }
   };
 
@@ -403,15 +465,6 @@ export default function ProviderRegisterScreen() {
         }
       }
 
-      if (form.email && ok.emailVerificationRequired) {
-        setEmailVerificationParams({
-          role: "provider",
-          sent: String(ok.emailVerificationSent === true),
-          expires: String(ok.emailVerificationExpiresInSeconds || 600),
-          resend: String(ok.emailVerificationResendAfterSeconds || 45),
-          ...(__DEV__ && ok.emailVerificationCode ? { code: ok.emailVerificationCode } : {}),
-        });
-      }
       setShowSuccess(true);
     } else {
       Alert.alert(tr("Registration Error"), tr(apiErrorToMessage(ok.error, "Could not create account. Please try again.")));
@@ -419,15 +472,29 @@ export default function ProviderRegisterScreen() {
     setLoading(false);
   };
 
- 
-
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <View style={[styles.container, { paddingTop: topPad }]}>
-        <LinearGradient colors={[theme.colors.primary, theme.colors.primaryPressed]} style={styles.headerGrad}>
-          <Pressable style={styles.backBtn} onPress={() => step > 0 ? setStep(step - 1) : router.back()}>
-            <Icon name="arrow-left" size={20} color={theme.colors.white} />
+        <LinearGradient
+          colors={
+            theme.dark
+              ? [auth.emberInk, auth.emberDeep, auth.ember]
+              : [theme.colors.secondaryPressed, theme.colors.secondary, auth.heroAmber]
+          }
+          style={styles.headerGrad}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        >
+          <Pressable accessibilityRole="button" accessibilityLabel={tr("Back")} style={styles.backBtn} onPress={() => step > 0 ? setStep(step - 1) : router.back()}>
+            <Icon name={isRtl ? "arrow-right" : "arrow-left"} size={20} color={theme.colors.white} />
           </Pressable>
+          <View style={[styles.providerBrandRow, localizedRow]}>
+            <Image source={brandConfig.assets.appIcon} style={styles.providerBrandIcon} resizeMode="cover" />
+            <View>
+              <Text style={styles.providerBrandName}>{brandConfig.displayName}</Text>
+              <Text style={[styles.providerBrandCaption, localizedText]}>{tr("Verified professional onboarding")}</Text>
+            </View>
+          </View>
           <Text style={[styles.headerTitle, localizedText]}>{tr("Provider Registration")}</Text>
           <Text style={[styles.headerSubtitle, localizedText]}>{tr("Join Athoo as a verified professional")}</Text>
 
@@ -438,7 +505,7 @@ export default function ProviderRegisterScreen() {
                   <View style={[styles.stepCircle, i === step && styles.stepActive, i < step && styles.stepDone]}>
                     {i < step
                       ? <Icon name="check" size={14} color={theme.colors.white} />
-                      : <Icon name={s.icon as any} size={14} color={i === step ? theme.colors.white : "rgba(255,255,255,0.4)"} />
+                      : <Icon name={s.icon as any} size={14} color={i === step ? theme.colors.primary : "rgba(255,255,255,0.4)"} />
                     }
                   </View>
                   <Text style={[styles.stepLabel, localizedText, i === step && styles.stepLabelActive]}>{s.title}</Text>
@@ -478,7 +545,7 @@ export default function ProviderRegisterScreen() {
                 <View style={[styles.checkbox, form.cnicLifetime && styles.checkboxChecked]}>
                   {form.cnicLifetime && <Icon name="check" size={14} color={theme.colors.white} />}
                 </View>
-                <Text style={styles.declarationText}>{tr("This CNIC has lifetime validity")}</Text>
+                <Text style={[styles.declarationText, localizedText]}>{tr("This CNIC has lifetime validity")}</Text>
               </Pressable>
               {!form.cnicLifetime && (
                 <InputField
@@ -506,21 +573,17 @@ export default function ProviderRegisterScreen() {
                 </View>
               )}
               {!otpVerified && (
-                <Pressable style={styles.sendOtpBtn} onPress={async () => {
-                  if (!form.phone) { Alert.alert(tr("Enter phone number first")); return; }
-                  const cleaned = form.phone.trim().replace(/\D/g, "");
-                  const isPakistani = /^(92|0)?3\d{9}$/.test(cleaned);
-                  if (!isPakistani) { Alert.alert(tr("Invalid Phone"), tr("Please enter a valid Pakistani mobile number (e.g. 03XX-XXXXXXX).")); return; }
-                  const res = await sendOtp(form.phone, "registration", "provider", form.email || undefined);
-                  if (!res.success || res.error) {
-                    Alert.alert(tr("Failed"), tr(apiErrorToMessage(res.error || res.message, "Unable to send OTP. Please try again.")));
-                    return;
-                  }
-                  if (__DEV__) setOtpHint(res.code || "");
-                  setShowOtp(true);
-                  if (__DEV__ && res.code) Alert.alert(tr("Your OTP Code"), tr("Code: {{code}}\n\nEnter this code in the field below.", { code: res.code }), [{ text: "OK" }]);
-                }}>
-                  <Text style={[styles.sendOtpText, localizedText]}>{tr("Send Verification Code")}</Text>
+                <Pressable
+                  style={[styles.sendOtpBtn, sendingOtp && styles.btnDisabled]}
+                  onPress={() => void handleSendRegistrationOtp()}
+                  disabled={sendingOtp}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: sendingOtp }}
+                  testID="provider-registration-send-otp"
+                >
+                  <Text style={[styles.sendOtpText, localizedText]}>
+                    {sendingOtp ? tr("Sending...") : tr("Send Verification Code")}
+                  </Text>
                 </Pressable>
               )}
               {otpHint ? (
@@ -535,25 +598,22 @@ export default function ProviderRegisterScreen() {
                 <Icon name="tool" size={15} color={theme.colors.primary} />{"  "}{tr("Services & Details")}
               </Text>
 
-              <View style={styles.inputGroup}>
-                <Text style={[styles.label, localizedText]}>{tr("Services Offered")} <Text style={{ color: theme.colors.danger }}>*</Text></Text>
-                <View style={[styles.servicesGrid, localizedRow]}>
-                  {categories.map((s) => {
-                    const sel = form.services.includes(s.slug || s.id);
-                    const appearance = getCategoryAppearance(s, theme);
-                    return (
-                      <Pressable
-                        key={s.id}
-                        onPress={() => toggleService(s.slug || s.id)}
-                        style={[styles.serviceChip, sel && { backgroundColor: appearance.selectedBackground, borderColor: appearance.accent }]}
-                      >
-                        <Icon name={s.icon as any} size={13} color={sel ? appearance.accent : theme.colors.textSecondary} />
-                        <Text style={[styles.serviceChipText, sel && { color: appearance.accent }]}>{s.name}</Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
+              <ServiceMultiSelect
+                options={categories.map((service) => {
+                  const appearance = getCategoryAppearance(service, theme);
+                  return {
+                    id: String(service.id),
+                    slug: service.slug || undefined,
+                    name: service.name,
+                    icon: service.icon || "tool",
+                    accentColor: appearance.accent,
+                  };
+                })}
+                selected={form.services}
+                onToggle={toggleService}
+                label={tr("Services Offered")}
+                required
+              />
 
               <InputField label={tr("Years of Experience")} value={form.experience} onChange={(v: string) => update("experience", v)} placeholder={tr("e.g. 5 years")} />
               <InputField
@@ -748,7 +808,7 @@ export default function ProviderRegisterScreen() {
         </ScrollView>
       </View>
 
-      <Modal visible={showCnicNotice} transparent animationType="fade">
+      <Modal visible={showCnicNotice} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setShowCnicNotice(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Pressable style={styles.modalClose} onPress={() => router.back()}>
@@ -814,10 +874,8 @@ export default function ProviderRegisterScreen() {
         title={tr("Application Submitted!")}
         subtitle={tr("Your provider registration is under review. Our team will verify your documents and approve your account within 24-48 hours.")}
         primaryAction={{
-          label: emailVerificationParams ? tr("Verify Email") : tr("Go to Home"),
-          onPress: () => emailVerificationParams
-            ? router.replace({ pathname: "/auth/email-verification" as any, params: emailVerificationParams })
-            : router.replace("/(provider)/(tabs)/dashboard"),
+          label: tr("Go to Home"),
+          onPress: () => router.replace("/(provider)/(tabs)/dashboard"),
         }}
         secondaryAction={{ label: tr("Back to Login"), onPress: () => router.replace("/auth/welcome") }}
         onClose={() => router.replace("/auth/welcome")}
@@ -829,118 +887,127 @@ export default function ProviderRegisterScreen() {
 const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   rowReverse: { flexDirection: "row-reverse" },
-  headerGrad: { paddingHorizontal: 20, paddingBottom: 20 },
+  headerGrad: { paddingHorizontal: redesign.layout.horizontalPadding, paddingBottom: 24 },
   backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.15)",
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
+    backgroundColor: "rgba(255,255,255,0.09)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
-    marginTop: 10,
+    marginBottom: 8,
+    marginTop: 8,
   },
-  headerTitle: { fontSize: 20, fontWeight: "800", color: theme.colors.white },
-  headerSubtitle: { fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 2, marginBottom: 16 },
-  stepsRow: { flexDirection: "row", alignItems: "center" },
+  providerBrandRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
+  providerBrandIcon: { width: 52, height: 52, borderRadius: 16, backgroundColor: theme.colors.white, borderWidth: 1, borderColor: "rgba(255,255,255,0.42)" },
+  providerBrandName: { ...theme.typography.h3, color: theme.colors.white, letterSpacing: -0.3 },
+  providerBrandCaption: { marginTop: 2, ...theme.typography.caption, color: "rgba(255,255,255,0.76)" },
+  headerTitle: { ...theme.typography.h1, color: theme.colors.white, letterSpacing: -0.45 },
+  headerSubtitle: { ...theme.typography.body, color: "rgba(255,255,255,0.82)", marginTop: 4, marginBottom: 16 },
+  stepsRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 2 },
   stepItem: { alignItems: "center", gap: 4 },
   stepCircle: {
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
     alignItems: "center",
     justifyContent: "center",
   },
-  stepActive: { backgroundColor: theme.colors.surface },
+  stepActive: { backgroundColor: theme.colors.white, borderColor: "rgba(255,255,255,0.55)" },
   stepDone: { backgroundColor: theme.colors.success },
-  stepLabel: { fontSize: 10, color: "rgba(255,255,255,0.5)", fontWeight: "600" },
+  stepLabel: { ...theme.typography.caption, color: "rgba(255,255,255,0.62)", fontFamily: theme.typography.label.fontFamily },
   stepLabelActive: { color: theme.colors.white },
-  stepLine: { flex: 1, height: 2, backgroundColor: "rgba(255,255,255,0.2)", marginBottom: 14 },
+  stepLine: { flex: 1, height: 2, backgroundColor: "rgba(255,255,255,0.14)", marginBottom: 13 },
   stepLineDone: { backgroundColor: theme.colors.success },
   scroll: { flex: 1 },
-  scrollContent: { padding: 20, paddingBottom: 100 },
-  formSection: { gap: 14 },
+  scrollContent: { width: "100%", maxWidth: redesign.layout.maxContentWidth, alignSelf: "center", paddingHorizontal: redesign.layout.horizontalPadding, paddingTop: 20, paddingBottom: 92 },
+  formSection: { gap: redesign.layout.fieldGap, backgroundColor: theme.colors.surface, borderRadius: theme.radius.xl, padding: 18, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border, ...theme.shadows.sm },
   formSectionTitle: {
-    fontSize: 15,
-    fontWeight: "800",
+    ...theme.typography.h3,
     color: theme.colors.text,
     marginTop: 6,
     marginBottom: 4,
   },
-  inputGroup: { gap: 6 },
-  label: { fontSize: 13, fontWeight: "600", color: theme.colors.text },
+  inputGroup: { gap: 7 },
+  label: { ...theme.typography.label, color: theme.colors.text },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: theme.colors.surface,
-    borderRadius: 14,
+    backgroundColor: theme.colors.input,
+    borderRadius: theme.radius.md,
     paddingHorizontal: 14,
-    paddingVertical: 13,
-    borderWidth: 1.5,
+    minHeight: redesign.control.standardHeight,
+    borderWidth: redesign.visual.inputBorderWidth,
     borderColor: theme.colors.border,
   },
-  input: { flex: 1, fontSize: 14, color: theme.colors.text },
+  input: { flex: 1, ...theme.typography.bodyLg, color: theme.colors.text, paddingVertical: 0 },
   charCount: { fontSize: 10, color: theme.colors.textMuted, alignSelf: "flex-end" },
   verifiedRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
     backgroundColor: theme.colors.success + "10",
-    padding: 10,
-    borderRadius: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: theme.colors.success + "30",
+    borderColor: theme.colors.success + "28",
   },
   verifiedText: { fontSize: 13, fontWeight: "600", color: theme.colors.success },
   sendOtpBtn: {
-    backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 12,
-    padding: 12,
+    backgroundColor: theme.colors.premiumSoft,
+    borderRadius: theme.radius.md,
+    minHeight: redesign.control.standardHeight,
     alignItems: "center",
-    borderWidth: 1.5,
-    borderColor: theme.colors.primary,
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: theme.colors.secondary + "66",
   },
-  sendOtpText: { fontSize: 14, fontWeight: "700", color: theme.colors.primary },
-  servicesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  sendOtpText: { ...theme.typography.body, fontFamily: theme.typography.label.fontFamily, color: theme.colors.secondary },
+  servicesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
   serviceChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingHorizontal: 12,
+    paddingHorizontal: 11,
     paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1.5,
-    borderColor: theme.colors.border,
+    borderRadius: 16,
+    backgroundColor: theme.dark ? "rgba(255,255,255,0.04)" : theme.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: theme.dark ? "rgba(148,163,184,0.16)" : theme.colors.border,
   },
   serviceChipText: { fontSize: 12, fontWeight: "600", color: theme.colors.textSecondary },
   infoBox: {
     flexDirection: "row",
     gap: 10,
-    backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 12,
-    padding: 12,
+    backgroundColor: theme.colors.infoSoft,
+    borderRadius: 13,
+    padding: 11,
     borderWidth: 1,
-    borderColor: theme.colors.primary + "25",
+    borderColor: theme.colors.primary + "22",
   },
   infoText: { flex: 1, fontSize: 12, color: theme.colors.textSecondary, lineHeight: 18 },
   docItem: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 11,
     backgroundColor: theme.colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1.5,
-    borderColor: theme.colors.border,
+    borderRadius: theme.radius.md,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: theme.dark ? "rgba(148,163,184,0.16)" : theme.colors.border,
   },
   docItemUploaded: { borderColor: theme.colors.success, backgroundColor: theme.colors.success + "05" },
   docIconBox: {
-    width: 44, height: 44, borderRadius: 12,
+    width: 42, height: 42, borderRadius: 12,
     alignItems: "center", justifyContent: "center", overflow: "hidden",
   },
-  docThumb: { width: 44, height: 44, borderRadius: 10, resizeMode: "cover" },
+  docThumb: { width: 42, height: 42, borderRadius: 10, resizeMode: "cover" },
   docLabelRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   docLabel: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
   docRequired: { fontSize: 9, fontWeight: "700", color: theme.colors.danger, backgroundColor: theme.colors.danger + "15", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 },
@@ -983,7 +1050,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   policeText: { fontSize: 12, color: theme.colors.textSecondary, lineHeight: 18 },
   reviewCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 20,
+    borderRadius: theme.radius.xl,
     padding: 20,
     alignItems: "center",
     gap: 14,
@@ -1020,17 +1087,17 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   summaryRow: { flexDirection: "row", justifyContent: "space-between" },
   summaryKey: { fontSize: 12, color: theme.colors.textSecondary },
   summaryVal: { fontSize: 12, fontWeight: "700", color: theme.colors.text },
-  footer: { marginTop: 24 },
-  nextBtn: { borderRadius: 18, overflow: "hidden" },
-  nextBtnGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 17 },
-  nextBtnText: { fontSize: 16, fontWeight: "800", color: theme.colors.white },
-  btnDisabled: { opacity: 0.5 },
+  footer: { marginTop: 20 },
+  nextBtn: { borderRadius: theme.radius.md, overflow: "hidden", ...theme.shadows.sm },
+  nextBtnGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, minHeight: redesign.control.largeHeight },
+  nextBtnText: { ...theme.typography.bodyLg, fontFamily: theme.typography.h3.fontFamily, color: theme.colors.white },
+  btnDisabled: { opacity: redesign.visual.disabledOpacity },
   declarationBox: {
-    marginHorizontal: 16,
+    marginHorizontal: 2,
     marginTop: 12,
     backgroundColor: theme.colors.warningSoft,
-    borderRadius: 12,
-    padding: 14,
+    borderRadius: 14,
+    padding: 13,
     borderWidth: 1,
     borderColor: theme.colors.warning,
   },
@@ -1056,7 +1123,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   modalCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 20,
+    borderRadius: theme.radius.xl,
     padding: 24,
     width: "100%",
     maxWidth: 380,
@@ -1090,4 +1157,3 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   modalOkText: { color: theme.colors.white, fontWeight: "700", fontSize: 15 },
 });
-

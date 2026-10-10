@@ -37,14 +37,15 @@ jobs:
     environment: production-verification
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          package-manager-cache: false
       - name: Install pnpm
         uses: pnpm/action-setup@v6
         with:
           version: 10.33.2
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install exact dependencies
         run: pnpm install --frozen-lockfile
       - name: Verify exact source commit
@@ -76,6 +77,7 @@ jobs:
           CONNECTED_OTP_TEST_PHONE: ${{ secrets.CONNECTED_OTP_TEST_PHONE }}
           CONNECTED_OTP_TEST_ROLE: customer
           CONNECTED_VERIFY_STORAGE: "true"
+          CONNECTED_VERIFY_UPLOAD_SCANNER: "true"
           CONNECTED_VERIFY_MAP_PROVIDERS: "true"
           CONNECTED_VERIFY_EMAIL_TRANSPORT: "true"
           CONNECTED_STRICT: "true"
@@ -84,7 +86,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: phase23-connected-production-evidence
+          name: athoo-v2-connected-production-evidence
           path: release-evidence/
           if-no-files-found: warn
           retention-days: 90

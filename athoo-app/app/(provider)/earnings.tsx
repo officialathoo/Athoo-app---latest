@@ -3,6 +3,8 @@ import { useAuth } from "@/context/AuthContext";
 import { useBookings } from "@/context/BookingContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 import { AthooTheme } from "@/design/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -12,13 +14,22 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type Period = "week" | "month" | "all";
 type ChartBar = { label: string; amount: number };
+type ChartMode = "earnings" | "jobs";
+
+const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 type Translate = (message: string, params?: Record<string, string | number>) => string;
 
-function buildChartData(bookings: any[], period: Period, tr: Translate): ChartBar[] {
+function buildChartData(
+  bookings: any[],
+  period: Period,
+  tr: Translate,
+  mode: ChartMode = "earnings",
+): ChartBar[] {
   const now = new Date();
+  const val = (b: any) => (mode === "jobs" ? 1 : Number(b.providerAmount ?? b.price ?? 0));
   if (period === "week") {
-    const days = [tr("Mon"), tr("Tue"), tr("Wed"), tr("Thu"), tr("Fri"), tr("Sat"), tr("Sun")];
+    const days = DAY_LABELS.map((day) => tr(day));
     const buckets: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
     const startOfWeek = new Date(now);
     startOfWeek.setDate(now.getDate() - ((now.getDay() + 6) % 7));
@@ -27,7 +38,7 @@ function buildChartData(bookings: any[], period: Period, tr: Translate): ChartBa
       const date = new Date(booking.scheduledDate || booking.createdAt || now);
       const difference = Math.floor((date.getTime() - startOfWeek.getTime()) / 86400000);
       if (difference >= 0 && difference < 7) {
-        buckets[difference] = (buckets[difference] || 0) + Number(booking.providerAmount ?? booking.price ?? 0);
+        buckets[difference] = (buckets[difference] || 0) + val(booking);
       }
     });
     return days.map((label, index) => ({ label, amount: buckets[index] || 0 }));
@@ -39,7 +50,7 @@ function buildChartData(bookings: any[], period: Period, tr: Translate): ChartBa
       const date = new Date(booking.scheduledDate || booking.createdAt || now);
       if (date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear()) {
         const week = Math.min(3, Math.floor((date.getDate() - 1) / 7));
-        weeks[week].amount += Number(booking.providerAmount ?? booking.price ?? 0);
+        weeks[week].amount += val(booking);
       }
     });
     return weeks;
@@ -50,7 +61,7 @@ function buildChartData(bookings: any[], period: Period, tr: Translate): ChartBa
   bookings.forEach((booking) => {
     const date = new Date(booking.scheduledDate || booking.createdAt || now);
     if (date.getFullYear() === now.getFullYear()) {
-      buckets[date.getMonth()] += Number(booking.providerAmount ?? booking.price ?? 0);
+      buckets[date.getMonth()] += val(booking);
     }
   });
   return months.map((label, index) => ({ label, amount: buckets[index] }));
@@ -62,9 +73,10 @@ interface EarningsBarChartProps {
   isUrdu: boolean;
   formatNumber: (value: number) => string;
   label: string;
+  labels?: string[];
 }
 
-function EarningsBarChart({ bars, theme, isUrdu, formatNumber, label }: EarningsBarChartProps) {
+function EarningsBarChart({ bars, theme, isUrdu, formatNumber, label, labels }: EarningsBarChartProps) {
   const maxAmount = Math.max(...bars.map((bar) => bar.amount), 1);
   const styles = useMemo(() => createChartStyles(theme, isUrdu), [theme, isUrdu]);
   return (
@@ -73,7 +85,7 @@ function EarningsBarChart({ bars, theme, isUrdu, formatNumber, label }: Earnings
         {bars.map((bar, index) => {
           const heightPercent = bar.amount / maxAmount;
           return (
-            <View key={`${bar.label}-${index}`} style={styles.barCol} accessible accessibilityLabel={`${bar.label}: ${formatNumber(bar.amount)}`}>
+            <View key={`${bar.label}-${index}`} style={styles.barCol} accessible accessibilityLabel={`${labels?.[index] ?? bar.label}: ${formatNumber(bar.amount)}`}>
               <Text style={styles.barAmt} numberOfLines={1}>
                 {bar.amount > 0 ? (bar.amount >= 1000 ? `${(bar.amount / 1000).toFixed(1)}k` : formatNumber(bar.amount)) : ""}
               </Text>
@@ -88,7 +100,7 @@ function EarningsBarChart({ bars, theme, isUrdu, formatNumber, label }: Earnings
                   ]}
                 />
               </View>
-              <Text style={styles.barLabel}>{bar.label}</Text>
+              <Text style={styles.barLabel}>{labels?.[index] ?? bar.label}</Text>
             </View>
           );
         })}
@@ -101,11 +113,12 @@ export default function ProviderEarningsScreen() {
   const { user } = useAuth();
   const { getMyBookings } = useBookings();
   const { theme } = useTheme();
-  const { isUrdu, formatCurrency, formatDate, formatNumber, translate: tr } = useLang();
+  const { t, isUrdu, formatCurrency, formatDate, formatNumber, translate: tr } = useLang();
   const styles = useMemo(() => createStyles(theme, isUrdu), [theme, isUrdu]);
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const [period, setPeriod] = useState<Period>("month");
+  const [chartMode, setChartMode] = useState<ChartMode>("earnings");
 
   const allBookings = user ? getMyBookings(user.id, "provider") : [];
   const completedBookings = allBookings.filter((booking) => booking.status === "completed");
@@ -125,14 +138,21 @@ export default function ProviderEarningsScreen() {
   }, [completedBookings, pendingPayout]);
 
   const chartBars = useMemo(
-    () => buildChartData(completedBookings, period, tr),
-    [completedBookings, period, tr],
+    () => buildChartData(completedBookings, period, tr, chartMode),
+    [completedBookings, period, chartMode, tr],
   );
+
+  const dayLabels = useMemo(() => DAY_LABELS.map((day) => tr(day)), [tr]);
 
   const periods: Array<{ value: Period; label: string }> = [
     { value: "week", label: tr("This Week") },
     { value: "month", label: tr("This Month") },
     { value: "all", label: tr("All Time") },
+  ];
+
+  const chartModes: Array<{ value: ChartMode; label: string }> = [
+    { value: "earnings", label: tr("Earnings") },
+    { value: "jobs", label: tr("Jobs") },
   ];
 
   return (
@@ -147,7 +167,7 @@ export default function ProviderEarningsScreen() {
         >
           <Icon name="arrow-left" size={20} color={theme.colors.text} />
         </Pressable>
-        <Text accessibilityRole="header" style={styles.title}>{tr("Earnings")}</Text>
+        <Text accessibilityRole="header" style={styles.title}>{t.earningsHistory}</Text>
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 60 }]}>
@@ -173,6 +193,7 @@ export default function ProviderEarningsScreen() {
         </LinearGradient>
 
         <View style={[styles.infoCard, user?.isBlocked && styles.warningCard]} accessibilityRole={user?.isBlocked ? "alert" : "text"}>
+          <Text style={styles.commTitle2}>{tr("Commission Overview")}</Text>
           <View style={styles.infoRow}>
             <Icon
               name={user?.isBlocked ? "alert-triangle" : "info"}
@@ -210,6 +231,24 @@ export default function ProviderEarningsScreen() {
           })}
         </View>
 
+        <View style={styles.chartModeRow} accessibilityRole="tablist">
+          {chartModes.map((option) => {
+            const selected = chartMode === option.value;
+            return (
+              <Pressable
+                key={option.value}
+                style={({ pressed }) => [styles.chartModeBtn, selected && styles.chartModeBtnActive, pressed && styles.pressed]}
+                onPress={() => setChartMode(option.value)}
+                accessibilityRole="tab"
+                accessibilityLabel={option.label}
+                accessibilityState={{ selected }}
+              >
+                <Text style={[styles.chartModeText, selected && styles.chartModeTextActive]}>{option.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
         <View>
           <Text accessibilityRole="header" style={[styles.sectionTitle, styles.chartTitle]}>{tr("Earnings Chart")}</Text>
           <EarningsBarChart
@@ -218,6 +257,7 @@ export default function ProviderEarningsScreen() {
             isUrdu={isUrdu}
             formatNumber={formatNumber}
             label={tr("Earnings chart for {{period}}", { period: periods.find((option) => option.value === period)?.label || "" })}
+            labels={dayLabels}
           />
         </View>
 
@@ -266,7 +306,14 @@ export default function ProviderEarningsScreen() {
 
 function createChartStyles(theme: AthooTheme, isUrdu: boolean) {
   return StyleSheet.create({
-    container: { backgroundColor: theme.colors.surface, borderRadius: 18, padding: 16, borderWidth: 1, borderColor: theme.colors.border },
+    container: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: radius.lg,
+      padding: redesign.layout.fieldGap,
+      borderWidth: redesign.visual.cardBorderWidth,
+      borderColor: theme.colors.border,
+      ...theme.shadows.sm,
+    },
     bars: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "flex-end", height: 120, gap: 4 },
     barCol: { flex: 1, alignItems: "center", gap: 4, height: "100%", justifyContent: "flex-end" },
     barAmt: { fontSize: 8, color: theme.colors.textMuted, fontWeight: "600" },
@@ -279,37 +326,131 @@ function createChartStyles(theme: AthooTheme, isUrdu: boolean) {
 function createStyles(theme: AthooTheme, isUrdu: boolean) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.background },
-    header: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 12, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16, backgroundColor: theme.colors.surface, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
-    backBtn: { width: 44, height: 44, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt, alignItems: "center", justifyContent: "center" },
-    title: { flex: 1, fontSize: 18, fontWeight: "800", color: theme.colors.text, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
+    header: {
+      flexDirection: isUrdu ? "row-reverse" : "row",
+      alignItems: "center",
+      gap: redesign.layout.cardGap,
+      paddingHorizontal: redesign.layout.horizontalPadding,
+      paddingTop: 12,
+      paddingBottom: 12,
+      backgroundColor: theme.colors.surface,
+      borderBottomWidth: redesign.visual.cardBorderWidth,
+      borderBottomColor: theme.colors.border,
+      ...theme.shadows.sm,
+    },
+    backBtn: {
+      width: redesign.control.iconButtonSize,
+      height: redesign.control.iconButtonSize,
+      borderRadius: radius.md,
+      backgroundColor: theme.colors.surfaceAlt,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: redesign.visual.cardBorderWidth,
+      borderColor: theme.colors.border,
+    },
+    title: {
+      flex: 1,
+      ...theme.typography.h2,
+      color: theme.colors.text,
+      textAlign: isUrdu ? "right" : "left",
+      writingDirection: isUrdu ? "rtl" : "ltr",
+    },
     scroll: { flex: 1 },
-    content: { padding: 16, gap: 14, paddingBottom: 60 },
-    earningsCard: { borderRadius: 22, padding: 22, gap: 16 },
+    content: {
+      paddingHorizontal: redesign.layout.horizontalPadding,
+      paddingTop: redesign.layout.cardGap,
+      gap: redesign.layout.cardGap,
+      paddingBottom: 60,
+      width: "100%",
+      maxWidth: redesign.layout.maxContentWidth,
+      alignSelf: "center",
+    },
+    earningsCard: {
+      borderRadius: radius.xl,
+      padding: redesign.layout.sectionGap,
+      gap: redesign.layout.cardGap,
+      ...theme.shadows.sm,
+    },
     earningsLabel: { fontSize: 13, color: "rgba(255,255,255,0.78)", fontWeight: "600", textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
-    earningsAmount: { fontSize: 38, fontWeight: "800", color: theme.colors.white, textAlign: isUrdu ? "right" : "left" },
-    earningsRow: { flexDirection: isUrdu ? "row-reverse" : "row", backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 14, padding: 12, alignItems: "center" },
+    earningsAmount: { fontSize: 32, fontWeight: "800", color: theme.colors.white, textAlign: isUrdu ? "right" : "left" },
+    earningsRow: {
+      flexDirection: isUrdu ? "row-reverse" : "row",
+      backgroundColor: "rgba(255,255,255,0.15)",
+      borderRadius: radius.md,
+      padding: 10,
+      alignItems: "center",
+    },
     earningsStat: { flex: 1, alignItems: "center" },
     earningsStatVal: { fontSize: 15, fontWeight: "800", color: theme.colors.white, textAlign: "center" },
     earningsStatLbl: { fontSize: 10, color: "rgba(255,255,255,0.74)", fontWeight: "500", textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
     pendingValue: { color: theme.colors.warningSoft },
     commissionValue: { color: theme.colors.successSoft },
     earningsDivider: { width: 1, height: 28, backgroundColor: "rgba(255,255,255,0.2)" },
-    infoCard: { backgroundColor: theme.colors.infoSoft, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: theme.colors.focusRing, gap: 6 },
+    infoCard: {
+      backgroundColor: theme.colors.infoSoft,
+      borderRadius: radius.md,
+      padding: redesign.layout.cardGap,
+      borderWidth: redesign.visual.cardBorderWidth,
+      borderColor: theme.colors.focusRing,
+      gap: 6,
+    },
     warningCard: { backgroundColor: theme.colors.warningSoft, borderColor: theme.colors.warning },
+    commTitle2: { fontSize: 13, fontWeight: "700", color: theme.colors.primary, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
     infoRow: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 8 },
     infoText: { flex: 1, fontSize: 13, color: theme.colors.primary, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
     subInfoText: { fontSize: 12, color: theme.colors.textSecondary, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
     warningText: { color: theme.colors.warning },
     bold: { fontWeight: "700" },
     periodRow: { flexDirection: isUrdu ? "row-reverse" : "row", gap: 8 },
-    periodBtn: { flex: 1, minHeight: 44, paddingHorizontal: 8, borderRadius: 10, backgroundColor: theme.colors.surfaceAlt, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: theme.colors.border },
+    periodBtn: {
+      flex: 1,
+      minHeight: redesign.control.compactHeight,
+      paddingHorizontal: 8,
+      borderRadius: radius.pill,
+      backgroundColor: theme.colors.surfaceAlt,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: redesign.visual.cardBorderWidth,
+      borderColor: theme.colors.border,
+    },
     periodBtnActive: { backgroundColor: theme.colors.secondary, borderColor: theme.colors.secondary },
     periodText: { fontSize: 11, fontWeight: "600", color: theme.colors.textSecondary, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
     periodTextActive: { color: theme.colors.white },
+    chartModeRow: { flexDirection: isUrdu ? "row-reverse" : "row", gap: 8, alignSelf: "flex-end" },
+    chartModeBtn: {
+      minHeight: redesign.control.compactHeight,
+      paddingHorizontal: 14,
+      borderRadius: radius.pill,
+      backgroundColor: theme.colors.surfaceAlt,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: redesign.visual.cardBorderWidth,
+      borderColor: theme.colors.border,
+    },
+    chartModeBtnActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+    chartModeText: { fontSize: 11, fontWeight: "600", color: theme.colors.textSecondary, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
+    chartModeTextActive: { color: theme.colors.white },
     sectionTitle: { fontSize: 13, fontWeight: "700", color: theme.colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
     chartTitle: { marginBottom: 10 },
-    txCard: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "flex-start", gap: 12, backgroundColor: theme.colors.surface, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: theme.colors.border },
-    txIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: theme.dark ? theme.colors.premiumSoft : theme.colors.premiumSoft, alignItems: "center", justifyContent: "center" },
+    txCard: {
+      flexDirection: isUrdu ? "row-reverse" : "row",
+      alignItems: "flex-start",
+      gap: 10,
+      backgroundColor: theme.colors.surface,
+      borderRadius: radius.lg,
+      padding: redesign.layout.cardGap,
+      borderWidth: redesign.visual.cardBorderWidth,
+      borderColor: theme.colors.border,
+      ...theme.shadows.sm,
+    },
+    txIcon: {
+      width: redesign.control.compactHeight,
+      height: redesign.control.compactHeight,
+      borderRadius: radius.md,
+      backgroundColor: theme.colors.premiumSoft,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     txInfo: { flex: 1, gap: 2 },
     txService: { fontSize: 14, fontWeight: "700", color: theme.colors.text, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
     txCustomer: { fontSize: 12, color: theme.colors.textSecondary, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
@@ -318,11 +459,28 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     txAmount: { fontSize: 15, fontWeight: "800", color: theme.colors.success },
     txBreakdown: { backgroundColor: theme.colors.surfaceAlt, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 },
     txBreakdownText: { fontSize: 9, color: theme.colors.textMuted, textAlign: isUrdu ? "left" : "right", writingDirection: isUrdu ? "rtl" : "ltr" },
-    paidBadge: { backgroundColor: theme.colors.successSoft, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+    paidBadge: {
+      backgroundColor: theme.colors.successSoft,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: radius.pill,
+    },
     paidText: { fontSize: 10, fontWeight: "700", color: theme.colors.success, writingDirection: isUrdu ? "rtl" : "ltr" },
-    empty: { alignItems: "center", paddingVertical: 56, gap: 10, backgroundColor: theme.colors.surface, borderRadius: 18, borderWidth: 1, borderColor: theme.colors.border },
+    empty: {
+      alignItems: "center",
+      paddingVertical: 42,
+      gap: 10,
+      backgroundColor: theme.colors.surface,
+      borderRadius: radius.lg,
+      borderWidth: redesign.visual.cardBorderWidth,
+      borderColor: theme.colors.border,
+      ...theme.shadows.sm,
+    },
     emptyTitle: { fontSize: 18, fontWeight: "700", color: theme.colors.text, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
     emptySubtitle: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr", paddingHorizontal: 20 },
-    pressed: { opacity: 0.82 },
+    pressed: {
+      opacity: 0.82,
+      transform: [{ scale: redesign.visual.pressedScale }],
+    },
   });
 }

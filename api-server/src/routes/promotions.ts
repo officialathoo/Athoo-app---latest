@@ -61,32 +61,15 @@ router.post("/validate", requireAuth, async (req: AuthRequest, res: Response) =>
   }
 });
 
-router.post("/redeem", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    const code = String(req.body?.code || "").trim().toUpperCase();
-    if (!code) {
-      res.status(400).json({ error: "Promo code required" });
-      return;
-    }
-    const promo = await db.query.promotionsTable.findFirst({
-      where: eq(promotionsTable.code, code),
-    });
-    if (!promo || !promo.isActive) {
-      res.status(404).json({ error: "Invalid promo code" });
-      return;
-    }
-    if (promo.maxUses != null && (promo.usedCount || 0) >= promo.maxUses) {
-      res.status(400).json({ error: "This promo has reached its usage limit" });
-      return;
-    }
-    await db.update(promotionsTable)
-      .set({ usedCount: (promo.usedCount || 0) + 1, updatedAt: new Date() })
-      .where(eq(promotionsTable.id, promo.id));
-    res.json({ ok: true });
-  } catch (e) {
-    logger.error({ err: e }, "promo redeem error");
-    res.status(500).json({ error: "Failed to redeem promo code" });
-  }
+// Promo consumption must be tied to an actual booking transaction.
+// The current booking schema/workflow has no promotionId/promoCode redemption
+// record, so a standalone counter mutation would let any authenticated user
+// consume promo inventory without creating a booking.
+router.post("/redeem", requireAuth, async (_req: AuthRequest, res: Response) => {
+  res.status(409).json({
+    error: "Promo redemption is available only through a booking transaction.",
+    code: "PROMO_REDEMPTION_REQUIRES_BOOKING",
+  });
 });
 
 export default router;

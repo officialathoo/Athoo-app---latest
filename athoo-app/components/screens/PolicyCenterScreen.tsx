@@ -8,6 +8,8 @@ import { Icon } from "@/components/ui/Icon";
 import { useAuth } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 import { api, type PublicPolicySummary } from "@/services/api";
 
 const CACHE_KEY = "athoo_public_policy_index_v1";
@@ -162,18 +164,79 @@ export function PolicyCenterScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   flex: { flex: 1 },
-  content: { paddingHorizontal: 16, paddingTop: 18, gap: 12 },
-  noticeRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  hero: { flexDirection: "row", alignItems: "flex-start", gap: 13 },
-  heroIcon: { width: 52, height: 52, borderRadius: 16, alignItems: "center", justifyContent: "center" },
-  heroCopy: { lineHeight: 19, marginTop: 4 },
-  loading: { minHeight: 220, alignItems: "center", justifyContent: "center", gap: 12 },
-  empty: { minHeight: 180, alignItems: "center", justifyContent: "center", gap: 9 },
-  pressed: { opacity: 0.72 },
-  policyRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  policyIcon: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  summary: { lineHeight: 18, marginTop: 4 },
-  metaRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 8 },
-  requiredBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
-  footer: { marginVertical: 8 },
+  content: {
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: redesign.layout.fieldGap,
+    gap: redesign.layout.cardGap,
+  },
+  noticeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  hero: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: redesign.layout.cardGap,
+  },
+  heroIcon: {
+    width: redesign.control.standardHeight,
+    height: redesign.control.standardHeight,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heroCopy: {
+    lineHeight: 19,
+    marginTop: 4,
+  },
+  loading: {
+    minHeight: 220,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: redesign.layout.cardGap,
+  },
+  empty: {
+    minHeight: 180,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 9,
+  },
+  pressed: {
+    opacity: 0.82,
+    transform: [{ scale: redesign.visual.pressedScale }],
+  },
+  policyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: redesign.layout.cardGap,
+  },
+  policyIcon: {
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  summary: {
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 8,
+  },
+  requiredBadge: {
+    minHeight: 24,
+    borderRadius: radius.pill,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    justifyContent: "center",
+  },
+  footer: {
+    marginVertical: 8,
+  },
 });

@@ -35,6 +35,8 @@ const requiredChecks = [
   "mapTileRendering", "providerLiveLocation", "providerRadiusPersistence", "bottomNavigationSafeArea",
   "availabilityTimePicker", "biometricEnableLogin", "invoiceNoTax", "broadcastRadiusDelivery",
   "singleDeviceImmediateRevocation", "callCrashFreeTwoWayAudio",
+  "malwareScannerConnected", "legacyMediaBackfill", "accountActionStepUp", "singleAcceptBookingFlow",
+  "scheduledJobSafety", "geofencedArrival", "signedInvoiceVerification", "refundRequestReliability",
   "legalReview", "productionSecretsRotation", "monitoringAndAlerts", "hostingCapacity",
   "openP0Defects", "openP1Defects",
 ];
@@ -71,7 +73,7 @@ for (const key of ["engineering", "qa", "product", "operations"]) {
 }
 
 if (!specific(evidence.deviceEvidenceSummary, 5)) {
-  errors.push("deviceEvidenceSummary must reference the passed Phase 24.8 device evidence summary JSON");
+  errors.push("deviceEvidenceSummary must reference the passed Athoo App V2 device evidence summary JSON");
 } else {
   const summaryPath = path.resolve(path.dirname(file), evidence.deviceEvidenceSummary);
   if (!fs.existsSync(summaryPath)) {

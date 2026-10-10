@@ -7,13 +7,13 @@ const root = path.resolve(import.meta.dirname, "../..");
 const read = (file: string) => fs.readFileSync(path.join(root, file), "utf8");
 
 const financeRoutes = [
-  "athoo-app/app/(customer)/invoices.tsx",
+  "athoo-app/components/screens/InvoicesScreen.tsx",
   "athoo-app/app/(customer)/refund-requests.tsx",
-  "athoo-app/app/(customer)/subscription.tsx",
-  "athoo-app/app/(provider)/invoices.tsx",
+  "athoo-app/components/screens/SubscriptionScreen.tsx",
+  "athoo-app/components/screens/InvoicesScreen.tsx",
   "athoo-app/app/(provider)/pay-commission.tsx",
   "athoo-app/app/(provider)/withdrawal-requests.tsx",
-  "athoo-app/app/(provider)/subscription.tsx",
+  "athoo-app/components/screens/SubscriptionScreen.tsx",
 ];
 
 function pngDimensions(file: string) {
@@ -38,9 +38,9 @@ test("phase 8B3B finance routes use runtime theme language responsive widths and
 test("finance evidence offers both camera and gallery without mandatory crop", () => {
   const mediaFiles = [
     "athoo-app/app/(customer)/refund-requests.tsx",
-    "athoo-app/app/(customer)/subscription.tsx",
+    "athoo-app/components/screens/SubscriptionScreen.tsx",
     "athoo-app/app/(provider)/pay-commission.tsx",
-    "athoo-app/app/(provider)/subscription.tsx",
+    "athoo-app/components/screens/SubscriptionScreen.tsx",
   ];
   for (const file of mediaFiles) {
     const source = read(file);
@@ -56,8 +56,8 @@ test("finance evidence offers both camera and gallery without mandatory crop", (
 
 test("subscription payment details are API-backed rather than hardcoded", () => {
   for (const file of [
-    "athoo-app/app/(customer)/subscription.tsx",
-    "athoo-app/app/(provider)/subscription.tsx",
+    "athoo-app/components/screens/SubscriptionScreen.tsx",
+    "athoo-app/components/screens/SubscriptionScreen.tsx",
   ]) {
     const source = read(file);
     assert.match(source, /api\.getPaymentAccounts\(\)/);
@@ -77,17 +77,20 @@ test("commission payment requires a reference owned screenshot and user-safe upl
   assert.match(source, /Payment Screenshot/);
 });
 
-test("invoice documents escape dynamic content and use localized dates and currency", () => {
+test("invoice documents escape dynamic content and use Pakistan dates and currency", () => {
+  const pdf = read("athoo-app/utils/bookingInvoicePdf.ts");
+  assert.match(pdf, /function esc/);
+  assert.match(pdf, /replace\(\/&\/g, "&amp;"\)/);
+  assert.match(pdf, /toLocaleDateString\("en-PK"/);
+  assert.match(pdf, /Rs\. \$\{Number\.isFinite/);
+  assert.match(pdf, /Unable to create invoice/);
   for (const file of [
-    "athoo-app/app/(customer)/invoices.tsx",
-    "athoo-app/app/(provider)/invoices.tsx",
+    "athoo-app/components/screens/InvoicesScreen.tsx",
   ]) {
     const source = read(file);
-    assert.match(source, /function escapeHtml/);
+    assert.match(source, /shareBookingInvoice/);
     assert.match(source, /formatLocalizedDate/);
     assert.match(source, /formatCurrency/);
-    assert.match(source, /html dir="\$\{direction\}"/);
-    assert.match(source, /Unable to create invoice/);
   }
 });
 

@@ -18,6 +18,19 @@ import { useAuth } from "@/context/AuthContext";
 import { useNegotiation, Negotiation } from "@/context/NegotiationContext";
 import { useNotifications } from "@/context/NotificationContext";
 import { apiErrorToMessage } from "@/lib/apiError";
+import { PrivateImage } from "@/services/storage";
+import { VideoPlayer } from "@/components/ui/VideoPlayer";
+import { OpenStreetMapPreview } from "@/components/maps/OpenStreetMapPreview";
+
+
+function negotiationMedia(negotiation: Negotiation | null | undefined): string[] {
+  if (!negotiation) return [];
+  return [...new Set((negotiation.messages || []).flatMap((message) => message.mediaUrls || []).filter(Boolean))];
+}
+
+function isVideoAttachment(url: string): boolean {
+  return /\.(mp4|mov|m4v)(?:$|\?)/i.test(url);
+}
 
 export default function ProviderNegotiationsScreen() {
   const { theme } = useTheme();
@@ -29,6 +42,7 @@ export default function ProviderNegotiationsScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const [counterAmounts, setCounterAmounts] = useState<Record<string, string>>({});
+  const [counterTravelCharges, setCounterTravelCharges] = useState<Record<string, string>>({});
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   const myNegs = user ? getMyNegotiations(user.id) : [];
@@ -119,6 +133,7 @@ export default function ProviderNegotiationsScreen() {
 
   const handleCounter = async (neg: Negotiation) => {
     const amount = parseInt(counterAmounts[neg.id] || "0", 10);
+    const travellingCharge = Math.max(0, parseInt(counterTravelCharges[neg.id] || "0", 10) || 0);
 
     if (!amount || amount < 100) {
       Alert.alert("Invalid", "Enter a valid counter amount.");
@@ -132,7 +147,8 @@ export default function ProviderNegotiationsScreen() {
       neg.id,
       amount,
       `My counter offer is Rs. ${amount} for ${neg.service}`,
-      user?.name || "Provider"
+      user?.name || "Provider",
+      travellingCharge
     );
 
     push({
@@ -144,6 +160,7 @@ export default function ProviderNegotiationsScreen() {
     });
 
       setCounterAmounts((p) => ({ ...p, [neg.id]: "" }));
+      setCounterTravelCharges((p) => ({ ...p, [neg.id]: "0" }));
     } catch (error: any) {
       Alert.alert("Unable to counter", apiErrorToMessage(error, "Could not send the counter offer. Please try again."));
     } finally {
@@ -235,11 +252,22 @@ export default function ProviderNegotiationsScreen() {
               </View>
             )}
 
-            {Array.isArray((selectedNegotiation as any).mediaUrls) && (selectedNegotiation as any).mediaUrls.length > 0 ? (
+            {Number.isFinite(Number(selectedNegotiation.latitude)) && Number.isFinite(Number(selectedNegotiation.longitude)) ? (
+              <OpenStreetMapPreview
+                latitude={Number(selectedNegotiation.latitude)}
+                longitude={Number(selectedNegotiation.longitude)}
+                height={190}
+                markers={[{ id: "job", kind: "job", latitude: Number(selectedNegotiation.latitude), longitude: Number(selectedNegotiation.longitude), label: selectedNegotiation.address || "Job location" }]}
+              />
+            ) : null}
+
+            {negotiationMedia(selectedNegotiation).length > 0 ? (
               <View style={styles.mediaBox}>
                 <Text style={styles.mediaTitle}>Customer Attachments</Text>
-                {((selectedNegotiation as any).mediaUrls || []).map((url: string, mediaIndex: number) => (
-                  <Text key={`${url}-${mediaIndex}`} style={styles.mediaLink} numberOfLines={1}>Attachment {mediaIndex + 1}</Text>
+                {negotiationMedia(selectedNegotiation).map((url, mediaIndex) => (
+                  isVideoAttachment(url)
+                    ? <VideoPlayer key={`${url}-${mediaIndex}`} uri={url} style={styles.mediaPreview} />
+                    : <PrivateImage key={`${url}-${mediaIndex}`} objectPath={url} style={styles.mediaPreview} resizeMode="cover" accessibilityLabel={`Negotiation attachment ${mediaIndex + 1}`} />
                 ))}
               </View>
             ) : null}
@@ -250,6 +278,7 @@ export default function ProviderNegotiationsScreen() {
                 <Text style={[styles.offerAmt, { color: theme.colors.primary }]}>
                   Rs. {selectedNegotiation.customerOffer}
                 </Text>
+                <Text style={styles.offerSub}>Travel: Rs. {selectedNegotiation.customerTravellingCharge || 0}</Text>
               </View>
 
               {selectedNegotiation.providerCounter != null && (
@@ -258,6 +287,7 @@ export default function ProviderNegotiationsScreen() {
                   <Text style={[styles.offerAmt, { color: theme.colors.secondary }]}>
                     Rs. {selectedNegotiation.providerCounter}
                   </Text>
+                  <Text style={styles.offerSub}>Travel: Rs. {selectedNegotiation.providerTravellingCharge || 0}</Text>
                 </View>
               )}
 
@@ -267,6 +297,7 @@ export default function ProviderNegotiationsScreen() {
                   <Text style={[styles.offerAmt, { color: theme.colors.success }]}>
                     Rs. {selectedNegotiation.finalPrice}
                   </Text>
+                  <Text style={styles.offerSub}>Travel: Rs. {selectedNegotiation.finalTravellingCharge || 0}</Text>
                 </View>
               )}
             </View>
@@ -287,6 +318,14 @@ export default function ProviderNegotiationsScreen() {
                     keyboardType="numeric"
                     placeholderTextColor={theme.colors.textMuted}
                     autoFocus={action === "counter"}
+                  />
+                  <TextInput
+                    style={styles.counterInput}
+                    placeholder="Travel charge"
+                    value={counterTravelCharges[selectedNegotiation.id] || "0"}
+                    onChangeText={(v) => setCounterTravelCharges((p) => ({ ...p, [selectedNegotiation.id]: v.replace(/[^0-9]/g, "") }))}
+                    keyboardType="numeric"
+                    placeholderTextColor={theme.colors.textMuted}
                   />
                   <Pressable
                     style={[styles.counterBtn, processingId === selectedNegotiation.id && { opacity: 0.55 }]}
@@ -445,14 +484,12 @@ export default function ProviderNegotiationsScreen() {
                   </View>
                 </View>
 
-                {Array.isArray((selectedNegotiation as any).mediaUrls) && (selectedNegotiation as any).mediaUrls.length > 0 ? (
-              <View style={styles.mediaBox}>
-                <Text style={styles.mediaTitle}>Customer Attachments</Text>
-                {((selectedNegotiation as any).mediaUrls || []).map((url: string, mediaIndex: number) => (
-                  <Text key={`${url}-${mediaIndex}`} style={styles.mediaLink} numberOfLines={1}>Attachment {mediaIndex + 1}</Text>
-                ))}
-              </View>
-            ) : null}
+                {negotiationMedia(neg).length > 0 ? (
+                  <View style={styles.mediaSummaryRow}>
+                    <Icon name="file-text" size={13} color={theme.colors.primary} />
+                    <Text style={styles.mediaLink}>{negotiationMedia(neg).length} secure attachment(s)</Text>
+                  </View>
+                ) : null}
 
             <View style={styles.offerRow}>
                   <View style={styles.offerCard}>
@@ -495,9 +532,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 16,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
     backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
@@ -519,22 +556,22 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   countText: { fontSize: 12, fontWeight: "700", color: theme.colors.secondary },
   scroll: { flex: 1 },
-  content: { padding: 16, gap: 14, paddingBottom: 60 },
-  empty: { alignItems: "center", paddingVertical: 80, gap: 10 },
+  content: { padding: 16, gap: 10, paddingBottom: 60 },
+  empty: { alignItems: "center", paddingVertical: 52, gap: 10 },
   emptyTitle: { fontSize: 18, fontWeight: "700", color: theme.colors.text },
   emptySub: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center" },
   negCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 18,
-    padding: 16,
-    gap: 14,
+    borderRadius: 14,
+    padding: 14,
+    gap: 10,
     borderWidth: 1,
     borderColor: theme.colors.secondary + "30",
     shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
+    shadowOpacity: 0.05,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 1,
   },
   selectedCard: {
     borderColor: theme.colors.primary,
@@ -545,9 +582,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   negHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   negServiceIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     backgroundColor: theme.colors.secondary + "20",
     alignItems: "center",
     justifyContent: "center",
@@ -556,30 +593,33 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   negCustomer: { fontSize: 12, color: theme.colors.textSecondary },
   negStatusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   negStatusText: { fontSize: 11, fontWeight: "700" },
-  mediaBox: { backgroundColor: theme.colors.background, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12, padding: 12, marginTop: 12 },
+  mediaBox: { backgroundColor: theme.colors.background, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12, padding: 10, marginTop: 8},
   mediaTitle: { fontSize: 12, fontWeight: "800", color: theme.colors.text, marginBottom: 6 },
   mediaLink: { fontSize: 12, color: theme.colors.primary, marginTop: 3 },
+  mediaPreview: { width: "100%", height: 160, borderRadius: 10, marginTop: 8 },
+  mediaSummaryRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   offerRow: { flexDirection: "row", gap: 8 },
   offerCard: {
     flex: 1,
     backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 12,
-    padding: 12,
+    padding: 10,
     alignItems: "center",
     gap: 4,
   },
   offerLabel: { fontSize: 10, color: theme.colors.textSecondary, fontWeight: "600" },
-  offerAmt: { fontSize: 18, fontWeight: "800" },
+  offerSub: { fontSize: 10, color: theme.colors.textSecondary, fontWeight: "600" },
+  offerAmt: { fontSize: 16, fontWeight: "800" },
   counterRow: { flexDirection: "row", gap: 8 },
   counterInput: {
     flex: 1,
     backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     fontSize: 14,
     color: theme.colors.text,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: theme.colors.border,
   },
   counterBtn: {
@@ -588,8 +628,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 5,
     backgroundColor: theme.colors.secondary,
     borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
   },
   counterBtnText: { fontSize: 13, fontWeight: "700", color: theme.colors.onBrand },
   waitingRow: { flexDirection: "row", gap: 8, alignItems: "center" },
@@ -636,7 +676,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 6,
     backgroundColor: theme.colors.success,
     borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: 10,
   },
   acceptBtnText: { fontSize: 13, fontWeight: "700", color: theme.colors.onBrand },
   rejectBtn: {
@@ -646,8 +686,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 5,
     backgroundColor: theme.colors.danger + "10",
     borderRadius: 12,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderWidth: 1,
     borderColor: theme.colors.danger + "30",
   },
@@ -655,7 +695,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   detailsBox: {
     backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 10,
-    padding: 10,
+    padding: 9,
     gap: 6,
     borderWidth: 1,
     borderColor: theme.colors.border,

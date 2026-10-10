@@ -6,6 +6,8 @@ import { AppCard, AppText, ScreenHeader, responsiveContent } from "@/components/
 import { Icon } from "@/components/ui/Icon";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
+import { redesign } from "@/design/redesign";
+import { radius } from "@/design/tokens";
 
 type LegalKind = "privacy" | "terms";
 type BilingualSection = { enTitle: string; urTitle: string; enBody: string; urBody: string };
@@ -178,10 +180,24 @@ export function LegalDocumentScreen({ kind }: { kind: LegalKind }) {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   flex: { flex: 1 },
-  content: { paddingHorizontal: 16, paddingTop: 18, gap: 12 },
-  summaryRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
-  summaryIcon: { width: 48, height: 48, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  content: {
+    paddingHorizontal: redesign.layout.horizontalPadding,
+    paddingTop: redesign.layout.fieldGap,
+    gap: redesign.layout.cardGap,
+  },
+  summaryRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: redesign.layout.cardGap,
+  },
+  summaryIcon: {
+    width: redesign.control.standardHeight,
+    height: redesign.control.standardHeight,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   summaryCopy: { lineHeight: 19, marginTop: 4 },
-  sectionBody: { lineHeight: 22, marginTop: 8 },
-  footer: { marginVertical: 6 },
+  sectionBody: { lineHeight: 23, marginTop: 8 },
+  footer: { marginVertical: 8 },
 });

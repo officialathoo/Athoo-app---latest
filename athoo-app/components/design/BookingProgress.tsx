@@ -15,13 +15,34 @@ interface BookingProgressProps {
   activeIndex: number;
   compact?: boolean;
   testID?: string;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  stepTestIDPrefix?: string;
 }
 
-export function BookingProgress({ steps, activeIndex, compact = false, testID = "booking-progress" }: BookingProgressProps) {
+export function BookingProgress({
+  steps,
+  activeIndex,
+  compact = false,
+  testID = "booking-progress",
+  accessibilityLabel,
+  accessibilityHint,
+  stepTestIDPrefix,
+}: BookingProgressProps) {
   const { theme } = useTheme();
+  const currentStep = steps[activeIndex];
+  const progressAccessibilityLabel = accessibilityLabel ?? (currentStep
+    ? `Booking progress. Current step: ${currentStep.label}`
+    : "Booking progress");
 
   return (
-    <View testID={testID} accessibilityRole="progressbar" accessibilityValue={{ min: 1, max: steps.length, now: activeIndex + 1 }}>
+    <View
+      testID={testID}
+      accessibilityRole="progressbar"
+      accessibilityLabel={progressAccessibilityLabel}
+      accessibilityHint={accessibilityHint}
+      accessibilityValue={{ min: 1, max: steps.length, now: activeIndex + 1 }}
+    >
       <View style={styles.trackRow}>
         {steps.map((step, index) => {
           const complete = index < activeIndex;
@@ -29,7 +50,11 @@ export function BookingProgress({ steps, activeIndex, compact = false, testID = 
           const color = complete || active ? theme.colors.primary : theme.colors.textMuted;
           return (
             <React.Fragment key={step.key}>
-              <View style={styles.stepWrap}>
+              <View
+                testID={stepTestIDPrefix ? `${stepTestIDPrefix}-${step.key}` : undefined}
+                accessibilityLabel={`${step.label}${active ? ", current step" : complete ? ", completed" : ", upcoming"}`}
+                style={styles.stepWrap}
+              >
                 <View
                   style={[
                     styles.circle,

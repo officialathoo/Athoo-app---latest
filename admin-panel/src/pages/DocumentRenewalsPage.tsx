@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, FileCheck2, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, FileCheck2, Loader2, XCircle } from "lucide-react";
 import { api, formatDate } from "@/lib/api";
 import type { ProviderDocumentUpdateRequest } from "@/lib/types";
 import { StorageImage } from "@/components/ui/StorageImage";
 import { useToast } from "@/hooks/use-toast";
+import { usePermissions } from "@/hooks/usePermissions";
 
 const LABELS: Record<string, string> = {
   cnic_front: "CNIC Front",
@@ -36,16 +37,26 @@ export function DocumentRenewalsPage() {
     ? requestedStatus
     : "pending";
   const { toast } = useToast();
+  const { hasPermission } = usePermissions();
+  const canWrite = hasPermission("verification.write");
   const queryClient = useQueryClient();
   const [status, setStatus] = useState(initialStatus);
+  const [page, setPage] = useState(1);
+  const limit = 25;
   const [selected, setSelected] = useState<ProviderDocumentUpdateRequest | null>(null);
   const [rejectionNote, setRejectionNote] = useState("");
   const [focusOpened, setFocusOpened] = useState(false);
 
   const query = useQuery({
-    queryKey: ["document-renewals", status],
-    queryFn: () => api<{ requests: ProviderDocumentUpdateRequest[] }>("/api/admin/document-renewals", {
-      params: { status, limit: 200 },
+    queryKey: ["document-renewals", status, page, providerFilter],
+    queryFn: () => api<{
+      requests: ProviderDocumentUpdateRequest[];
+      total: number;
+      page: number;
+      limit: number;
+      stats: Record<string, number>;
+    }>("/api/admin/document-renewals", {
+      params: { status, page, limit, provider: providerFilter || undefined },
     }),
     staleTime: 15_000,
   });
@@ -67,19 +78,30 @@ export function DocumentRenewalsPage() {
     onError: (error: Error) => toast({ title: "Review failed", description: error.message, variant: "destructive" }),
   });
 
-  const requests = useMemo(() => {
-    const all = query.data?.requests || [];
-    return providerFilter ? all.filter((request) => request.providerId === providerFilter) : all;
-  }, [providerFilter, query.data?.requests]);
+  const requests = query.data?.requests || [];
+  const total = Number(query.data?.total || 0);
+  const stats = query.data?.stats || {};
+  const pages = Math.max(1, Math.ceil(total / limit));
+  const rangeFrom = total ? (page - 1) * limit + 1 : 0;
+  const rangeTo = Math.min(page * limit, total);
 
   useEffect(() => {
-    if (!focusId || focusOpened || !requests.length) return;
+    if (!focusId || focusOpened || query.isLoading) return;
     const request = requests.find((item) => item.id === focusId);
-    if (!request) return;
-    setSelected(request);
-    setRejectionNote(request.rejectionNote || "");
+    if (request) {
+      setSelected(request);
+      setRejectionNote(request.rejectionNote || "");
+      setFocusOpened(true);
+      return;
+    }
     setFocusOpened(true);
-  }, [focusId, focusOpened, requests]);
+    api<{ request: ProviderDocumentUpdateRequest }>(`/api/admin/document-renewals/${focusId}`)
+      .then(({ request: focused }) => {
+        setSelected(focused);
+        setRejectionNote(focused.rejectionNote || "");
+      })
+      .catch((error) => toast({ title: "Renewal request could not be opened", description: error.message, variant: "destructive" }));
+  }, [focusId, focusOpened, query.isLoading, requests, toast]);
 
   function rejectSelected() {
     if (!selected) return;
@@ -98,9 +120,9 @@ export function DocumentRenewalsPage() {
           <h1 className="text-xl font-bold text-slate-800">Document Renewal Requests</h1>
           <p className="mt-0.5 text-sm text-slate-500">Review replacement CNIC and police-verification documents without overwriting the approved record first.</p>
         </div>
-        {status === "pending" && requests.length > 0 ? (
+        {(stats.pending || 0) > 0 ? (
           <span className="w-fit rounded-full border border-amber-200 bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">
-            {requests.length} pending
+            {stats.pending || 0} pending
           </span>
         ) : null}
       </div>
@@ -109,12 +131,12 @@ export function DocumentRenewalsPage() {
         {["pending", "approved", "rejected", "cancelled", "all"].map((value) => (
           <button
             key={value}
-            onClick={() => { setStatus(value); setFocusOpened(false); }}
+            onClick={() => { setStatus(value); setPage(1); setFocusOpened(false); }}
             className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
               status === value ? "bg-blue-600 text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
             }`}
           >
-            {value.charAt(0).toUpperCase() + value.slice(1)}
+            {value.charAt(0).toUpperCase() + value.slice(1)} ({stats[value] || 0})
           </button>
         ))}
       </div>
@@ -166,13 +188,29 @@ export function DocumentRenewalsPage() {
                         onClick={() => { setSelected(request); setRejectionNote(request.rejectionNote || ""); }}
                         className="text-xs font-semibold text-blue-600 hover:text-blue-800"
                       >
-                        {request.status === "pending" ? "Review" : "View"}
+                        {request.status === "pending" && canWrite ? "Review" : "View"}
                       </button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-xs text-slate-500">
+            <span>Showing {rangeFrom}-{rangeTo} of {total} requests</span>
+            <div className="flex items-center gap-2">
+              <button type="button" disabled={page <= 1 || query.isFetching}
+                onClick={() => setPage((value) => Math.max(1, value - 1))}
+                className="rounded border border-slate-200 p-1.5 disabled:opacity-40" aria-label="Previous document renewal page">
+                <ChevronLeft size={14} />
+              </button>
+              <span>Page {page} of {pages}</span>
+              <button type="button" disabled={page >= pages || query.isFetching}
+                onClick={() => setPage((value) => Math.min(pages, value + 1))}
+                className="rounded border border-slate-200 p-1.5 disabled:opacity-40" aria-label="Next document renewal page">
+                <ChevronRight size={14} />
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -200,7 +238,7 @@ export function DocumentRenewalsPage() {
                 <div><p className="text-xs text-slate-500">Valid until</p><p className="font-semibold text-slate-800">{selected.expiryNotApplicable ? "Lifetime" : selected.expiresAt ? formatDate(selected.expiresAt) : "Missing"}</p></div>
               </div>
 
-              {selected.status === "pending" ? (
+              {selected.status === "pending" && canWrite ? (
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Rejection reason</label>
                   <textarea
@@ -218,7 +256,7 @@ export function DocumentRenewalsPage() {
 
             <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 p-5">
               <button onClick={() => setSelected(null)} className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Close</button>
-              {selected.status === "pending" ? (
+              {selected.status === "pending" && canWrite ? (
                 <>
                   <button
                     onClick={rejectSelected}

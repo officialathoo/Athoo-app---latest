@@ -15,7 +15,7 @@ test("sensitive uploads are placed in private owner namespaces", () => {
 
 test("upload policy requires MIME, size, and matching safe extension", () => {
   assert.equal(validateUploadPolicy({ name: "photo.jpg", size: 1024, contentType: "image/jpeg" }), null);
-  assert.match(validateUploadPolicy({ name: "photo.exe", size: 1024, contentType: "image/jpeg" }) || "", /extension/i);
+  assert.match(validateUploadPolicy({ name: "photo.exe", size: 1024, contentType: "image/jpeg" }) || "", /extension|executable|active-content/i);
   assert.match(validateUploadPolicy({ name: "photo.jpg", size: 0, contentType: "image/jpeg" }) || "", /positive/i);
   assert.match(validateUploadPolicy({ name: "photo.jpg", size: 1024 }) || "", /contentType/i);
   assert.equal(safeUploadName("../../CNIC front?.jpg"), "CNIC-front-.jpg");
@@ -31,7 +31,7 @@ test("public storage route cannot expose private object prefixes", () => {
 test("storage routes verify active sessions and enforce private ownership", () => {
   const source = readFileSync(new URL("../src/routes/storage.ts", import.meta.url), "utf8");
   assert.match(source, /verifyActiveAccessToken/);
-  assert.match(source, /canReadStorageKey/);
+  assert.match(source, /canReadStoredUploadObject/);
   assert.match(source, /Invalid upload destination/);
 });
 

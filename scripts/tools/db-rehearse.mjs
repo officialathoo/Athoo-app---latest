@@ -1,5 +1,6 @@
 import "dotenv/config";
-import { mkdir, readdir, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
@@ -100,6 +101,156 @@ function buildCliDatabaseUrl(value) {
  */
 function progress(message) {
   console.log(`[db-rehearsal] ${message}`);
+}
+
+/**
+ * Normalize a schema-only pg_dump so PostgreSQL 18's random restrict token
+ * and informational comments do not create false fingerprint differences.
+ *
+ * @param {string} value
+ * @returns {string}
+ */
+function normalizeSchemaDump(value) {
+  return value
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .filter(
+      (line) =>
+        !line.startsWith("\\restrict ") &&
+        !line.startsWith("\\unrestrict ") &&
+        !line.startsWith("--"),
+    )
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .trim();
+}
+
+/**
+ * Split a normalized pg_dump into deterministic SQL statement blocks.
+ * The blocks let a failed fingerprint comparison report the exact structural
+ * differences without exposing table data or database credentials.
+ *
+ * @param {string} normalized
+ * @returns {string[]}
+ */
+function schemaBlocks(normalized) {
+  return normalized
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Build a deterministic schema snapshot.
+ * Ownership, privileges, comments and security labels are excluded because
+ * the rehearsal compares structural migration convergence, not deployment
+ * role metadata.
+ *
+ * @param {string} cliUrl
+ * @returns {Promise<{ fingerprint: string, blocks: string[] }>}
+ */
+async function schemaSnapshot(cliUrl) {
+  const result = await run(
+    "pg_dump",
+    [
+      cliUrl,
+      "--schema-only",
+      "--no-owner",
+      "--no-privileges",
+      "--no-comments",
+      "--no-security-labels",
+    ],
+    {
+      capture: true,
+    },
+  );
+
+  const normalized = normalizeSchemaDump(
+    result.stdout,
+  );
+
+  if (!normalized) {
+    throw new Error(
+      "Schema fingerprint dump was empty",
+    );
+  }
+
+  return {
+    fingerprint: createHash("sha256")
+      .update(normalized)
+      .digest("hex"),
+    blocks: schemaBlocks(normalized),
+    normalized,
+  };
+}
+
+/**
+ * Return a bounded multiset difference between two schema snapshots.
+ * Repeated blocks are counted correctly and output is truncated so logs stay
+ * readable while retaining enough SQL to identify the migration drift.
+ *
+ * @param {string[]} left
+ * @param {string[]} right
+ * @returns {string[]}
+ */
+function schemaBlockDifference(left, right) {
+  const remaining = new Map();
+
+  for (const block of right) {
+    remaining.set(
+      block,
+      (remaining.get(block) || 0) + 1,
+    );
+  }
+
+  const difference = [];
+
+  for (const block of left) {
+    const count = remaining.get(block) || 0;
+
+    if (count > 0) {
+      remaining.set(block, count - 1);
+      continue;
+    }
+
+    difference.push(
+      block.length > 3000
+        ? `${block.slice(0, 3000)}\n... [truncated]`
+        : block,
+    );
+  }
+
+  return difference;
+}
+
+/**
+ * Produce a secret-safe, bounded diagnostic summary.
+ *
+ * @param {{ fingerprint: string, blocks: string[] }} restored
+ * @param {{ fingerprint: string, blocks: string[] }} fresh
+ */
+function schemaDifferenceSummary(restored, fresh) {
+  const restoredOnly = schemaBlockDifference(
+    restored.blocks,
+    fresh.blocks,
+  );
+
+  const freshOnly = schemaBlockDifference(
+    fresh.blocks,
+    restored.blocks,
+  );
+
+  return {
+    restoredFingerprint: restored.fingerprint,
+    freshFingerprint: fresh.fingerprint,
+    restoredBlockCount: restored.blocks.length,
+    freshBlockCount: fresh.blocks.length,
+    restoredOnlyCount: restoredOnly.length,
+    freshOnlyCount: freshOnly.length,
+    restoredOnly,
+    freshOnly,
+    outputTruncated: false,
+  };
 }
 
 const sourceSelection =
@@ -351,43 +502,6 @@ try {
     },
   );
 
-  progress(
-    "Verifying restored database migrations",
-  );
-
-  await run(
-    pnpm,
-    [
-      "--filter",
-      "@workspace/scripts",
-      "db:verify",
-    ],
-    {
-      env: {
-        ...process.env,
-        DATABASE_URL: rehearsalUrl,
-      },
-    },
-  );
-
-  progress(
-    "Running restored database integrity checks",
-  );
-
-  await run(
-    pnpm,
-    [
-      "--filter",
-      "@workspace/scripts",
-      "db:integrity",
-    ],
-    {
-      env: {
-        ...process.env,
-        DATABASE_URL: rehearsalUrl,
-      },
-    },
-  );
 
   progress(
     "Reading latest migration from production source database",
@@ -403,7 +517,7 @@ try {
       "ON_ERROR_STOP=1",
       "--command",
       "SELECT migration_id " +
-      "FROM athoo_schema_migrations " +
+      "FROM public.athoo_schema_migrations " +
       "ORDER BY migration_id DESC " +
       "LIMIT 1",
     ],
@@ -435,7 +549,7 @@ try {
       "ON_ERROR_STOP=1",
       "--command",
       "SELECT migration_id " +
-      "FROM athoo_schema_migrations " +
+      "FROM public.athoo_schema_migrations " +
       "ORDER BY migration_id DESC " +
       "LIMIT 1",
     ],
@@ -459,6 +573,103 @@ try {
 
   progress(
     `Restore migration comparison passed: ${sourceLatest}`,
+  );
+
+  /*
+   * Apply the repository's pending migrations to the restored production copy.
+   * This proves the real upgrade path before production is changed.
+   */
+  progress(
+    "Applying pending migrations to restored rehearsal database",
+  );
+
+  await run(
+    pnpm,
+    [
+      "--filter",
+      "@workspace/scripts",
+      "db:migrate",
+    ],
+    {
+      env: {
+        ...process.env,
+        DATABASE_URL: rehearsalUrl,
+      },
+    },
+  );
+
+  progress(
+    "Verifying migrated restored database",
+  );
+
+  await run(
+    pnpm,
+    [
+      "--filter",
+      "@workspace/scripts",
+      "db:verify",
+    ],
+    {
+      env: {
+        ...process.env,
+        DATABASE_URL: rehearsalUrl,
+      },
+    },
+  );
+
+  progress(
+    "Running migrated restored database integrity checks",
+  );
+
+  await run(
+    pnpm,
+    [
+      "--filter",
+      "@workspace/scripts",
+      "db:integrity",
+    ],
+    {
+      env: {
+        ...process.env,
+        DATABASE_URL: rehearsalUrl,
+      },
+    },
+  );
+
+  progress(
+    "Reading latest migration from upgraded restored database",
+  );
+
+  const restoredMigratedLatestResult = await run(
+    "psql",
+    [
+      rehearsalCliUrl,
+      "--tuples-only",
+      "--no-align",
+      "--set",
+      "ON_ERROR_STOP=1",
+      "--command",
+      "SELECT migration_id " +
+      "FROM public.athoo_schema_migrations " +
+      "ORDER BY migration_id DESC " +
+      "LIMIT 1",
+    ],
+    {
+      capture: true,
+    },
+  );
+
+  const restoredMigratedLatest =
+    restoredMigratedLatestResult.stdout.trim();
+
+  if (!restoredMigratedLatest) {
+    throw new Error(
+      "The upgraded restored database did not return a latest migration ID",
+    );
+  }
+
+  progress(
+    `Restored production upgrade passed: ${sourceLatest} -> ${restoredMigratedLatest}`,
   );
 
   /*
@@ -536,6 +747,138 @@ try {
   );
 
   progress(
+    "Comparing normalized restored and fresh schema fingerprints",
+  );
+
+  const [
+    restoredSchemaSnapshot,
+    freshSchemaSnapshot,
+  ] = await Promise.all([
+    schemaSnapshot(rehearsalCliUrl),
+    schemaSnapshot(migrationCliUrl),
+  ]);
+
+  const restoredSchemaFingerprint =
+    restoredSchemaSnapshot.fingerprint;
+
+  const freshSchemaFingerprint =
+    freshSchemaSnapshot.fingerprint;
+
+  if (
+    restoredSchemaFingerprint !==
+    freshSchemaFingerprint
+  ) {
+    console.error(
+      "[db-rehearsal] SCHEMA DIFFERENCE SUMMARY",
+    );
+    const schemaDifference = schemaDifferenceSummary(
+      restoredSchemaSnapshot,
+      freshSchemaSnapshot,
+    );
+
+    console.error(
+      JSON.stringify(
+        schemaDifference,
+        null,
+        2,
+      ),
+    );
+
+    const schemaArtifactDirectory = path.join(
+      temporaryDir,
+      "schema-artifacts",
+    );
+
+    await rm(
+      schemaArtifactDirectory,
+      {
+        recursive: true,
+        force: true,
+      },
+    );
+
+    await mkdir(
+      schemaArtifactDirectory,
+      {
+        recursive: true,
+        mode: 0o700,
+      },
+    );
+
+    const restoredSchemaArtifact = path.join(
+      schemaArtifactDirectory,
+      "restored-upgrade-schema.sql",
+    );
+
+    const freshSchemaArtifact = path.join(
+      schemaArtifactDirectory,
+      "fresh-migration-schema.sql",
+    );
+
+    const schemaSummaryArtifact = path.join(
+      schemaArtifactDirectory,
+      "schema-artifact-summary.json",
+    );
+
+    await Promise.all([
+      writeFile(
+        restoredSchemaArtifact,
+        `${restoredSchemaSnapshot.normalized}\n`,
+        {
+          encoding: "utf8",
+          mode: 0o600,
+        },
+      ),
+      writeFile(
+        freshSchemaArtifact,
+        `${freshSchemaSnapshot.normalized}\n`,
+        {
+          encoding: "utf8",
+          mode: 0o600,
+        },
+      ),
+      writeFile(
+        schemaSummaryArtifact,
+        `${JSON.stringify(
+          {
+            ...schemaDifference,
+            restoredSchemaArtifact,
+            freshSchemaArtifact,
+          },
+          null,
+          2,
+        )}\n`,
+        {
+          encoding: "utf8",
+          mode: 0o600,
+        },
+      ),
+    ]);
+
+    progress(
+      `Full restored schema artifact: ${restoredSchemaArtifact}`,
+    );
+
+    progress(
+      `Full fresh schema artifact: ${freshSchemaArtifact}`,
+    );
+
+    progress(
+      `Schema artifact summary: ${schemaSummaryArtifact}`,
+    );
+
+    throw new Error(
+      "Schema fingerprint convergence mismatch: " +
+      `restored_upgrade=${restoredSchemaFingerprint}, ` +
+      `fresh=${freshSchemaFingerprint}`,
+    );
+  }
+
+  progress(
+    `Schema fingerprint convergence passed: ${restoredSchemaFingerprint}`,
+  );
+
+  progress(
     "Reading latest migration from fresh migration database",
   );
 
@@ -549,7 +892,7 @@ try {
       "ON_ERROR_STOP=1",
       "--command",
       "SELECT migration_id " +
-      "FROM athoo_schema_migrations " +
+      "FROM public.athoo_schema_migrations " +
       "ORDER BY migration_id DESC " +
       "LIMIT 1",
     ],
@@ -562,17 +905,17 @@ try {
     migratedLatestResult.stdout.trim();
 
   if (
-    migratedLatest !== sourceLatest
+    migratedLatest !== restoredMigratedLatest
   ) {
     throw new Error(
-      "Fresh migration mismatch: " +
-      `source=${sourceLatest}, ` +
+      "Migration convergence mismatch: " +
+      `restored_upgrade=${restoredMigratedLatest}, ` +
       `fresh=${migratedLatest}`,
     );
   }
 
   progress(
-    `Fresh migration comparison passed: ${migratedLatest}`,
+    `Restored-upgrade and fresh-migration convergence passed: ${migratedLatest}`,
   );
 
   completedSuccessfully = true;
@@ -600,8 +943,14 @@ try {
         backup:
           backupFile,
 
-        latestMigration:
+        sourceLatestMigration:
           sourceLatest,
+
+        targetLatestMigration:
+          restoredMigratedLatest,
+
+        schemaFingerprint:
+          restoredSchemaFingerprint,
 
         cliSecurity: {
           sslmode: "require",
@@ -613,14 +962,16 @@ try {
           "backup_manifest",
           "temporary_restore_database_creation",
           "restore",
-          "restored_db_verify",
-          "restored_db_integrity",
-          "restored_migration_comparison",
+          "restored_source_migration_comparison",
+          "restored_pending_migrate",
+          "restored_migrated_db_verify",
+          "restored_migrated_db_integrity",
           "temporary_fresh_database_creation",
           "fresh_migrate",
           "fresh_db_verify",
           "fresh_db_integrity",
-          "fresh_migration_comparison",
+          "restored_fresh_schema_fingerprint_convergence",
+          "restored_fresh_migration_convergence",
         ],
       },
       null,

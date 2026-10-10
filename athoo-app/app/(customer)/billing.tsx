@@ -5,6 +5,7 @@ import { useBookings } from "@/context/BookingContext";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
@@ -178,35 +179,35 @@ export default function BillingScreen() {
 function createStyles(theme: AthooTheme, isUrdu: boolean) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.background },
-    header: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 12, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16, backgroundColor: theme.colors.surface, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
-    backBtn: { width: 44, height: 44, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt, alignItems: "center", justifyContent: "center" },
-    title: { flex: 1, fontSize: 18, fontWeight: "800", color: theme.colors.text, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
-    scroll: { padding: 20, gap: 14, paddingBottom: 60 },
+    header: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 12, paddingHorizontal: redesign.layout.horizontalPadding, paddingTop: 14, paddingBottom: 14, backgroundColor: theme.colors.surface, borderBottomWidth: redesign.visual.cardBorderWidth, borderBottomColor: theme.colors.border, ...theme.shadows.sm },
+    backBtn: { width: redesign.control.iconButtonSize, height: redesign.control.iconButtonSize, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceAlt, alignItems: "center", justifyContent: "center", borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border },
+    title: { flex: 1, ...theme.typography.h2, color: theme.colors.text, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr", letterSpacing: -0.25 },
+    scroll: { padding: redesign.layout.horizontalPadding, gap: 14, paddingBottom: 60 },
     summaryRow: { flexDirection: isUrdu ? "row-reverse" : "row", gap: 10, marginBottom: 4 },
-    summaryCard: { flex: 1, minHeight: 104, borderRadius: 16, padding: 12, alignItems: "center", justifyContent: "center", gap: 6 },
-    summaryVal: { fontSize: 15, fontWeight: "800", color: theme.colors.white, textAlign: "center" },
-    summaryLabel: { fontSize: 10, fontWeight: "600", color: "rgba(255,255,255,0.86)", textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
+    summaryCard: { flex: 1, minHeight: 108, borderRadius: theme.radius.lg, padding: 12, alignItems: "center", justifyContent: "center", gap: 6, ...theme.shadows.sm },
+    summaryVal: { ...theme.typography.h3, color: theme.colors.white, textAlign: "center" },
+    summaryLabel: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: "rgba(255,255,255,0.86)", textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
     filterRow: { flexDirection: isUrdu ? "row-reverse" : "row", gap: 8 },
-    filterChip: { flex: 1, minHeight: 44, paddingHorizontal: 12, borderRadius: 22, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border, alignItems: "center", justifyContent: "center" },
+    filterChip: { flex: 1, minHeight: redesign.control.compactHeight, paddingHorizontal: 12, borderRadius: theme.radius.pill, backgroundColor: theme.colors.surface, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border, alignItems: "center", justifyContent: "center" },
     filterActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
-    filterText: { fontSize: 12, fontWeight: "600", color: theme.colors.textSecondary, writingDirection: isUrdu ? "rtl" : "ltr" },
+    filterText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.textSecondary, writingDirection: isUrdu ? "rtl" : "ltr" },
     filterTextActive: { color: theme.colors.white },
-    txCard: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 12, backgroundColor: theme.colors.surface, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: theme.colors.border, ...theme.shadows.sm },
-    pressed: { opacity: 0.84 },
-    txIcon: { width: 46, height: 46, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+    txCard: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", gap: 12, backgroundColor: theme.colors.surface, borderRadius: theme.radius.lg, padding: 14, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border, ...theme.shadows.sm },
+    pressed: { opacity: 0.88, transform: [{ scale: redesign.visual.pressedScale }] },
+    txIcon: { width: 46, height: 46, borderRadius: theme.radius.md, alignItems: "center", justifyContent: "center" },
     txContent: { flex: 1, gap: 2 },
-    txService: { fontSize: 14, fontWeight: "700", color: theme.colors.text, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
-    txProvider: { fontSize: 12, color: theme.colors.textSecondary, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
-    txDate: { fontSize: 11, color: theme.colors.textMuted, marginTop: 1, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
+    txService: { ...theme.typography.label, color: theme.colors.text, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
+    txProvider: { ...theme.typography.caption, color: theme.colors.textSecondary, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
+    txDate: { ...theme.typography.caption, color: theme.colors.textMuted, marginTop: 1, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
     txRight: { alignItems: isUrdu ? "flex-start" : "flex-end", gap: 4 },
-    txAmount: { fontSize: 15, fontWeight: "800", color: theme.colors.text },
-    txAmountPending: { fontSize: 13, fontWeight: "600", color: theme.colors.textMuted },
-    txStatus: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
-    txStatusText: { fontSize: 10, fontWeight: "700", writingDirection: isUrdu ? "rtl" : "ltr" },
-    empty: { alignItems: "center", paddingVertical: 56, gap: 10, backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderWidth: 1, borderRadius: 18 },
-    emptyTitle: { fontSize: 16, fontWeight: "700", color: theme.colors.text, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
-    emptyText: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
-    securityNote: { flexDirection: isUrdu ? "row-reverse" : "row", gap: 8, alignItems: "flex-start", backgroundColor: theme.colors.infoSoft, borderColor: theme.colors.focusRing, borderWidth: 1, borderRadius: 12, padding: 12, marginTop: 4 },
-    securityText: { flex: 1, fontSize: 11, color: theme.colors.textSecondary, lineHeight: 17, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
+    txAmount: { ...theme.typography.h3, color: theme.colors.text },
+    txAmountPending: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.textMuted },
+    txStatus: { paddingHorizontal: 8, minHeight: 24, justifyContent: "center", borderRadius: theme.radius.pill },
+    txStatusText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, writingDirection: isUrdu ? "rtl" : "ltr" },
+    empty: { alignItems: "center", paddingVertical: 56, gap: 10, backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderWidth: redesign.visual.cardBorderWidth, borderRadius: theme.radius.xl, ...theme.shadows.sm },
+    emptyTitle: { ...theme.typography.h3, color: theme.colors.text, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
+    emptyText: { ...theme.typography.body, color: theme.colors.textSecondary, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
+    securityNote: { flexDirection: isUrdu ? "row-reverse" : "row", gap: 8, alignItems: "flex-start", backgroundColor: theme.colors.infoSoft, borderColor: theme.colors.focusRing, borderWidth: redesign.visual.cardBorderWidth, borderRadius: theme.radius.md, padding: 12, marginTop: 4 },
+    securityText: { flex: 1, ...theme.typography.caption, color: theme.colors.textSecondary, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
   });
 }

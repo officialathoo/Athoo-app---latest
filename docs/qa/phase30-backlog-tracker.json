@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "phase": "30",
+  "title": "Previous Backlog Recovery",
+  "baseline": {
+    "branch": "phase30-backlog-recovery",
+    "commit": "a5d60bc566f3870dada8b9d4c7e6fe440d9835f9",
+    "appVersion": "1.1.0",
+    "nativeRuntime": "1.1.0",
+    "legacyRuntime": "1.0.0"
+  },
+  "policies": {
+    "payments": "manual-only",
+    "architecture": "configuration-first-vendor-agnostic",
+    "development": "local-first-until-native-build-available",
+    "legacyOta": "do-not-publish-native-dependent-updates-to-runtime-1.0.0"
+  },
+  "workstreams": [
+    {
+      "id": "P30-01",
+      "name": "Certified source and runtime isolation",
+      "status": "completed"
+    },
+    {
+      "id": "P30-02",
+      "name": "Live chat identity propagation after profile rename",
+      "status": "source-implemented-device-verification-pending"
+    },
+    {
+      "id": "P30-03",
+      "name": "Native interactive map, routed distance and ETA",
+      "status": "source-implemented-new-native-build-and-device-verification-pending"
+    },
+    {
+      "id": "P30-04",
+      "name": "App performance, loading feedback and responsiveness",
+      "status": "audit-and-remediation-pending"
+    },
+    {
+      "id": "P30-05",
+      "name": "Customer application professional redesign and workflow completion",
+      "status": "screen-by-screen-audit-pending"
+    },
+    {
+      "id": "P30-06",
+      "name": "Provider application professional redesign and workflow completion",
+      "status": "screen-by-screen-audit-pending"
+    },
+    {
+      "id": "P30-07",
+      "name": "Chat, notifications, sounds, deep links and calling",
+      "status": "source-present-cross-device-connected-verification-pending"
+    },
+    {
+      "id": "P30-08",
+      "name": "Camera, gallery, video, documents, evidence and R2 storage",
+      "status": "source-present-connected-and-device-verification-pending"
+    },
+    {
+      "id": "P30-09",
+      "name": "Premium, commission, withdrawals, refunds and manual payments",
+      "status": "source-present-end-to-end-verification-pending"
+    },
+    {
+      "id": "P30-10",
+      "name": "Admin operations, permissions, bulk actions and responsive design",
+      "status": "page-by-page-audit-pending"
+    },
+    {
+      "id": "P30-11",
+      "name": "CMS, policies, Pakistan data, localization and themes",
+      "status": "full-content-and-screen-audit-pending"
+    },
+    {
+      "id": "P30-12",
+      "name": "Render, Vercel, Neon, R2, TURN, push and queue verification",
+      "status": "connected-verification-pending"
+    },
+    {
+      "id": "P30-13",
+      "name": "Android and iPhone physical acceptance",
+      "status": "new-builds-and-device-evidence-pending"
+    },
+    {
+      "id": "P30-14",
+      "name": "Load, recovery, security and final launch certification",
+      "status": "pending-after-product-completion"
+    }
+  ],
+  "executionOrder": [
+    "performance-loading-and-shared-design",
+    "customer-application",
+    "provider-application",
+    "communication-and-notifications",
+    "uploads-storage-and-finance",
+    "admin-panel",
+    "cms-localization-and-configuration",
+    "connected-regression",
+    "native-builds-and-device-certification"
+  ],
+  "nextAction": "phase30-1-performance-loading-and-shared-design-audit",
+  "launchDecision": "NO-GO-PENDING-PRODUCT-CONNECTED-AND-DEVICE-CERTIFICATION"
+}

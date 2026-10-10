@@ -14,7 +14,7 @@ const mainTabs = [
   "athoo-app/app/(customer)/(tabs)/profile.tsx",
   "athoo-app/app/(provider)/(tabs)/dashboard.tsx",
   "athoo-app/app/(provider)/(tabs)/jobs.tsx",
-  "athoo-app/app/(provider)/(tabs)/earnings.tsx",
+  "athoo-app/app/(provider)/earnings.tsx",
   "athoo-app/app/(provider)/(tabs)/chat.tsx",
   "athoo-app/app/(provider)/(tabs)/profile.tsx",
 ];
@@ -29,7 +29,8 @@ test("all customer and provider primary tabs consume theme and language contexts
 });
 
 test("customer and provider chat lists are fully semantic and localized", () => {
-  for (const file of [mainTabs[3], mainTabs[8]]) {
+  // Both role tabs render the same shared screen; it owns the semantics.
+  for (const file of ["athoo-app/components/chat/ConversationListScreen.tsx"]) {
     const source = read(file);
     assert.doesNotMatch(source, /@\/constants\/colors/);
     assert.doesNotMatch(source, /\bColors\./);

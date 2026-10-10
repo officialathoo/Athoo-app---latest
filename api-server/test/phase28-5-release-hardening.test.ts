@@ -115,7 +115,7 @@ test("Phase 28.5 release status stays honest about physical-device evidence", ()
   const status = JSON.parse(readRepo("docs/qa/current-release-status.json"));
   const runbook = readRepo("docs/runbooks/DEVICE_ACCEPTANCE_RUNBOOK.md");
 
-  assert.match(status.candidate, /^ATHOO_PHASE28_5_/);
+  assert.match(status.candidate, /^ATHOO_V2_2[A-Z0-9_.-]*\.zip$/);
   assert.equal(status.externalVerification.twoWayVoiceCall, "pending");
   assert.equal(status.externalVerification.mapTilesOnAndroidAndIos, "pending");
   assert.match(status.launchDecision, /^NO-GO-/);

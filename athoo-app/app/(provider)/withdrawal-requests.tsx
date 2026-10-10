@@ -46,6 +46,8 @@ function getStatusConfig(theme: AthooTheme): Record<string, { label: string; col
   };
 }
 
+const WITHDRAWALS_BACKGROUND_REFRESH_MS = 60_000;
+
 export default function WithdrawalRequestsScreen() {
   const { theme } = useTheme();
   const { isUrdu, formatCurrency, formatDate: formatLocalizedDate, translate: tr } = useLang();
@@ -65,21 +67,63 @@ export default function WithdrawalRequestsScreen() {
   const [iban, setIban] = useState("");
   const [note, setNote] = useState("");
   const requestIdRef = useRef<string | null>(null);
+  const loadRequestInFlightRef = useRef(false);
+  const withdrawalsLoadedRef = useRef(false);
+  const withdrawalsLastLoadedAtRef = useRef(0);
 
-  async function load() {
-    setError(null);
+  const load = useCallback(async (
+    mode: "initial" | "refresh" | "retry" | "background" | "mutation" = "initial"
+  ) => {
+    if (loadRequestInFlightRef.current) return;
+
+    loadRequestInFlightRef.current = true;
+    if (
+      mode === "initial" ||
+      (mode === "retry" && !withdrawalsLoadedRef.current)
+    ) {
+      setLoading(true);
+    } else if (mode === "refresh") {
+      setRefreshing(true);
+    }
+
+    if (mode !== "background") {
+      setError(null);
+    }
+
     try {
       const res = await api.getMyWithdrawals();
       setWithdrawals(res.withdrawals || []);
+      withdrawalsLoadedRef.current = true;
+      withdrawalsLastLoadedAtRef.current = Date.now();
     } catch (e: any) {
-      setError(apiErrorToMessage(e, tr("We couldn't load your withdrawal requests. Please try again.")));
+      if (mode !== "background") {
+        setError(
+          apiErrorToMessage(
+            e,
+            tr("We couldn't load your withdrawal requests. Please try again.")
+          )
+        );
+      }
     } finally {
+      loadRequestInFlightRef.current = false;
       setLoading(false);
       setRefreshing(false);
     }
-  }
+  }, [tr]);
 
-  useFocusEffect(useCallback(() => { load(); }, []));
+  useFocusEffect(useCallback(() => {
+    if (!withdrawalsLoadedRef.current) {
+      void load("initial");
+      return;
+    }
+
+    if (
+      Date.now() - withdrawalsLastLoadedAtRef.current >=
+      WITHDRAWALS_BACKGROUND_REFRESH_MS
+    ) {
+      void load("background");
+    }
+  }, [load]));
 
   async function handleSubmit() {
     const amt = parseFloat(amount);
@@ -116,7 +160,7 @@ export default function WithdrawalRequestsScreen() {
       setBankName("");
       setIban("");
       setNote("");
-      load();
+      void load("mutation");
     } catch (e: any) {
       Alert.alert(tr("Unable to submit request"), apiErrorToMessage(e, tr("We couldn't submit your withdrawal request. Please try again.")));
     } finally {
@@ -142,7 +186,7 @@ export default function WithdrawalRequestsScreen() {
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 24 }]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={[theme.colors.primary]} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load("refresh")} colors={[theme.colors.primary]} />}
         >
           {!showForm ? (
             <Pressable
@@ -255,7 +299,7 @@ export default function WithdrawalRequestsScreen() {
               </View>
               <Text style={[styles.emptyTitle, { color: theme.colors.danger }]}>{tr("Failed to Load")}</Text>
               <Text style={styles.emptySub}>{error}</Text>
-              <Pressable onPress={load} style={{ marginTop: 14, paddingVertical: 10, paddingHorizontal: 28, backgroundColor: theme.colors.primary, borderRadius: 12 }}>
+              <Pressable onPress={() => void load("retry")} style={{ marginTop: 14, paddingVertical: 10, paddingHorizontal: 28, backgroundColor: theme.colors.primary, borderRadius: 12 }}>
                 <Text style={{ color: theme.colors.white, fontWeight: "600", fontSize: 14 }}>{tr("Retry")}</Text>
               </Pressable>
             </View>
@@ -324,10 +368,10 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
   header: {
     flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "center",
-    gap: 14,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    paddingTop: 16,
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    paddingTop: 12,
   },
   backBtn: {
     width: 36,
@@ -340,45 +384,45 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
   headerTitle: { fontSize: 18, fontWeight: "700", color: theme.colors.onBrand },
   headerSub: { fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 2 },
   scroll: { width: "100%", maxWidth: 760, alignSelf: "center", flex: 1 },
-  scrollContent: { width: "100%", maxWidth: 760, alignSelf: "center", padding: 16, gap: 16 },
+  scrollContent: { width: "100%", maxWidth: 760, alignSelf: "center", padding: 14, gap: 12},
   newBtn: {
     flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     backgroundColor: theme.colors.primary,
-    borderRadius: 14,
-    paddingVertical: 14,
+    borderRadius: 12,
+    paddingVertical: 12,
   },
   newBtnDisabled: { opacity: 0.5 },
   newBtnText: { fontSize: 15, fontWeight: "700", color: theme.colors.onBrand },
   form: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 16,
-    padding: 18,
-    gap: 14,
+    borderRadius: 14,
+    padding: 14,
+    gap: 12,
     shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
+    shadowOpacity: 0.04,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 1,
   },
   formHeader: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between" },
   formTitle: { fontSize: 16, fontWeight: "700", color: theme.colors.text },
-  closeBtn: { width: 44, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.surfaceAlt },
+  closeBtn: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.surfaceAlt },
   field: { gap: 6 },
   label: { fontSize: 12, fontWeight: "600", color: theme.colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
   input: {
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: theme.colors.border,
     borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     fontSize: 14,
     color: theme.colors.text,
     backgroundColor: theme.colors.input,
   },
-  textarea: { height: 80, paddingTop: 11 },
+  textarea: { height: 72, paddingTop: 11 },
   submitBtn: {
     flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "center",
@@ -386,47 +430,47 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     gap: 8,
     backgroundColor: theme.colors.primary,
     borderRadius: 12,
-    paddingVertical: 14,
+    paddingVertical: 12,
     marginTop: 4,
   },
   submitBtnText: { fontSize: 15, fontWeight: "700", color: theme.colors.onBrand },
-  loadingBox: { alignItems: "center", paddingVertical: 48, gap: 12 },
+  loadingBox: { alignItems: "center", paddingVertical: 36, gap: 12 },
   loadingText: { fontSize: 14, color: theme.colors.textSecondary },
-  emptyBox: { alignItems: "center", paddingVertical: 48, gap: 10 },
+  emptyBox: { alignItems: "center", paddingVertical: 36, gap: 10 },
   emptyIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: theme.colors.border,
   },
   emptyTitle: { fontSize: 16, fontWeight: "700", color: theme.colors.text },
   emptySub: { fontSize: 13, color: theme.colors.textSecondary, textAlign: "center" },
-  list: { gap: 12 },
+  list: { gap: 10},
   sectionLabel: { fontSize: 12, fontWeight: "700", color: theme.colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
   card: {
     backgroundColor: theme.colors.surface,
     borderRadius: 14,
-    padding: 16,
-    gap: 8,
+    padding: 14,
+    gap: 7,
     shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.035,
     shadowRadius: 4,
-    elevation: 2,
+    elevation: 1,
   },
   cardTop: { flexDirection: isUrdu ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between" },
-  cardAmount: { fontSize: 20, fontWeight: "800", color: theme.colors.text },
+  cardAmount: { fontSize: 18, fontWeight: "800", color: theme.colors.text },
   cardDate: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 },
   statusBadge: {
     flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "center",
     gap: 5,
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 4,
     borderRadius: 20,
   },
   statusText: { fontSize: 12, fontWeight: "600" },
@@ -436,8 +480,8 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     flexDirection: isUrdu ? "row-reverse" : "row",
     alignItems: "flex-start",
     gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderRadius: 8,
     backgroundColor: theme.colors.warningSoft,
   },

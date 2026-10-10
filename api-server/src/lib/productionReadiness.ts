@@ -1,6 +1,8 @@
 import { queueStats } from "./queue";
 import { getMapConfigurationStatus, type MapProviderRuntimeOverrides } from "./mapConfiguration";
 import { getCallConfigurationStatus } from "./callConfiguration";
+import { getUploadScannerStatus } from "./uploadScanner";
+import { getPushConfigurationStatus } from "./push";
 
 export type ReadinessIssue = { area: string; severity: "critical" | "high" | "medium"; message: string; fix: string };
 
@@ -15,6 +17,10 @@ export function productionReadinessSnapshot(mapOverrides: MapProviderRuntimeOver
   if (process.env.NODE_ENV === "production" && String(process.env.CORS_ORIGIN || "").trim() === "*") issues.push({ area: "security", severity: "critical", message: "CORS_ORIGIN cannot be wildcard in production", fix: "Set an explicit comma-separated admin/app origin allowlist." });
   if (process.env.NODE_ENV === "production" && ["local", "dev", "filesystem"].includes(String(process.env.STORAGE_PROVIDER || "").toLowerCase())) issues.push({ area: "storage", severity: "critical", message: "Local storage is not allowed in production", fix: "Configure a supported private S3-compatible or Google Cloud Storage provider." });
   if (!process.env.PUBLIC_OBJECT_SEARCH_PATHS) issues.push({ area: "storage", severity: "medium", message: "Public object prefix is using the default", fix: "Set PUBLIC_OBJECT_SEARCH_PATHS to explicit public-only prefixes." });
+  const uploadScanner = getUploadScannerStatus();
+  if (process.env.NODE_ENV === "production" && !uploadScanner.productionSafe) {
+    issues.push({ area: "upload-security", severity: "critical", message: "Malware scanning is not production-ready", fix: "Configure UPLOAD_SCAN_MODE=required, an authenticated HTTPS UPLOAD_SCANNER_URL, and UPLOAD_SCANNER_TOKEN." });
+  }
   if (String(process.env.QUEUE_PROVIDER || "postgres").toLowerCase() !== "postgres") issues.push({ area: "scaling", severity: "high", message: "Unsupported queue provider configured", fix: "Use QUEUE_PROVIDER=postgres for the built-in durable queue." });
   const callStatus = getCallConfigurationStatus();
   if (!callStatus.productionReady) issues.push({ area: "calls", severity: "high", message: callStatus.warning || "Production voice calling is not ready", fix: "Configure CLOUDFLARE_TURN_KEY_ID plus CLOUDFLARE_TURN_API_TOKEN, or provide valid static TURN_URLS, TURN_USERNAME, and TURN_CREDENTIAL." });
@@ -39,6 +45,15 @@ export function productionReadinessSnapshot(mapOverrides: MapProviderRuntimeOver
   }
   if (process.env.NODE_ENV === "production" && mapStatus.directionsProvider === "disabled") {
     issues.push({ area: "maps", severity: "high", message: "Road directions are disabled", fix: "Set MAP_DIRECTIONS_PROVIDER to mapbox or osrm." });
+  }
+  const pushStatus = getPushConfigurationStatus();
+  if (process.env.NODE_ENV === "production" && !pushStatus.configured) {
+    issues.push({
+      area: "notifications",
+      severity: "medium",
+      message: "Push notification provider is not configured",
+      fix: 'Set PUSH_PROVIDER=expo (default) with EXPO_ACCESS_TOKEN, or PUSH_PROVIDER=http_json with PUSH_HTTP_ENDPOINT and auth headers. Set PUSH_PROVIDER=disabled to acknowledge in-app delivery only.',
+    });
   }
   return {
     status: issues.some(i => i.severity === "critical") ? "not_ready" : issues.length ? "ready_with_warnings" : "ready",

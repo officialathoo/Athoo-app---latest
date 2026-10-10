@@ -58,15 +58,15 @@ function emitCategoryChanged(action: string, category?: any) {
   emitToRole("admin", "admin:event", payload);
 }
 
-// PUBLIC — list active categories (used by both customer & provider apps)
-router.get("/", async (req, res) => {
+// PUBLIC - only active categories are exposed to customer/provider clients.
+// Full active + inactive category management is available only through the
+// authenticated /api/admin/categories route.
+router.get("/", async (_req, res) => {
   try {
-    const all = req.query.all === "true";
-    const where = all ? undefined : eq(serviceCategoriesTable.isActive, true);
     const rows = await db
       .select()
       .from(serviceCategoriesTable)
-      .where(where as any)
+      .where(eq(serviceCategoriesTable.isActive, true))
       .orderBy(asc(serviceCategoriesTable.sortOrder), asc(serviceCategoriesTable.name));
     return res.json({ categories: rows });
   } catch (e) {

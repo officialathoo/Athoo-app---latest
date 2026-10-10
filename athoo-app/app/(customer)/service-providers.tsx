@@ -1,9 +1,10 @@
 import { Icon } from "@/components/ui/Icon";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   Platform,
   Pressable,
   ScrollView,
@@ -15,6 +16,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { getCategoryAppearance } from "@/utils/categoryAppearance";
 import { ProviderCard } from "@/components/ui/ProviderCard";
 import { Provider } from "@/data/services";
@@ -22,11 +24,9 @@ import { useCategories } from "@/context/CategoriesContext";
 import { api, realtime } from "@/services/api";
 import { getFastForegroundLocation } from "@/services/location";
 import { useAuth } from "@/context/AuthContext";
-import { getDistanceKm } from "@/utils/distance";
+
 
 type ExtendedProvider = Provider & {
-  latitude?: number;
-  longitude?: number;
   distanceKm?: number;
 };
 
@@ -34,10 +34,12 @@ type ExtendedProvider = Provider & {
 // /api/service-areas below so this filter list always matches the
 // admin-managed, Pakistan-wide service_areas reference table.
 const DEFAULT_CITY_FILTERS = ["All"];
+const PROVIDER_PAGE_SIZE = 25;
+// Hard cap on accumulated pages so long browsing sessions can never grow the
+// in-memory list without bound (25 x 20 = 500 providers max).
+const PROVIDER_MAX_ITEMS = 500;
+const PROVIDER_SEARCH_DEBOUNCE_MS = 350;
 
-function isValidMapCoord(latitude?: number, longitude?: number) {
-  return typeof latitude === "number" && Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 && typeof longitude === "number" && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
-}
 
 
 export default function ServiceProvidersScreen() {
@@ -51,15 +53,24 @@ export default function ServiceProvidersScreen() {
   const [onlyAvailable, setOnlyAvailable] = useState(false);
   const [providers, setProviders] = useState<ExtendedProvider[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [providerRefreshVersion, setProviderRefreshVersion] = useState(0);
 
   const [cityFilter, setCityFilter] = useState("All");
   const [cityFilters, setCityFilters] = useState<string[]>(DEFAULT_CITY_FILTERS);
   const [areaQuery, setAreaQuery] = useState("");
+  const [debouncedAreaQuery, setDebouncedAreaQuery] = useState("");
+  const [locationReady, setLocationReady] = useState(false);
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
     longitude: number;
   } | null>(null);
+
+  const requestVersionRef = useRef(0);
+  const loadingMoreRef = useRef(false);
 
   const { user, toggleSaved } = useAuth();
   const { getCategoryBySlug } = useCategories();
@@ -75,18 +86,24 @@ export default function ServiceProvidersScreen() {
           rationaleTitle: "Location permission",
           rationaleBody: "Athoo uses your location to sort nearby providers.",
         });
-        if (!result.location) return;
+
+        if (!result.location) {
+          setSortBy("rating");
+          return;
+        }
 
         setUserLocation({
           latitude: result.location.latitude,
           longitude: result.location.longitude,
         });
-      } catch (e) {
-        // silent fail — GPS unavailable, continue without location
+      } catch {
+        setSortBy("rating");
+      } finally {
+        setLocationReady(true);
       }
     };
 
-    loadLocation();
+    void loadLocation();
   }, []);
 
   useEffect(() => {
@@ -100,6 +117,14 @@ export default function ServiceProvidersScreen() {
         // silent fail — keep the "All" sentinel only
       });
   }, []);
+  useEffect(() => {
+    const timer = setTimeout(
+      () => setDebouncedAreaQuery(areaQuery.trim()),
+      PROVIDER_SEARCH_DEBOUNCE_MS,
+    );
+
+    return () => clearTimeout(timer);
+  }, [areaQuery]);
 
   useEffect(() => realtime.on((message) => {
     const payload = (message.payload || {}) as Record<string, unknown>;
@@ -114,57 +139,111 @@ export default function ServiceProvidersScreen() {
     setProviderRefreshVersion((version) => version + 1);
   }), []);
 
-  useEffect(() => {
-    const load = async () => {
+  const loadProviders = useCallback(async (
+    mode: "initial" | "more",
+    cursor?: string,
+  ) => {
+    if (!locationReady) return;
+    if (sortBy === "nearby" && !userLocation) return;
+    if (mode === "more" && loadingMoreRef.current) return;
+
+    const requestVersion = ++requestVersionRef.current;
+
+    if (mode === "initial") {
+      loadingMoreRef.current = false;
       setLoading(true);
-      try {
-        const sid = serviceId === "all" ? undefined : serviceId;
-        const res = await api.getProviders(sid);
+      setLoadingMore(false);
+      setLoadError(null);
+      setProviders([]);
+      setHasMore(false);
+      setNextCursor(null);
+    } else {
+      loadingMoreRef.current = true;
+      setLoadingMore(true);
+      setLoadError(null);
+    }
 
-        const mapped = ((res.providers as Provider[]) || []).map((p) => {
-          const locationText =
-            (p as any).location ||
-            (p as any).address ||
-            (p as any).city ||
-            "";
+    try {
+      const sid = serviceId === "all" ? undefined : serviceId;
+      const serverSort = sortBy === "rating" ? "top" : sortBy;
 
-          const rawLat = (p as any).latitude ?? (p as any).lat;
-          const rawLng = (p as any).longitude ?? (p as any).lng;
-          const parsedLat = typeof rawLat === "number" ? rawLat : typeof rawLat === "string" ? Number(rawLat) : NaN;
-          const parsedLng = typeof rawLng === "number" ? rawLng : typeof rawLng === "string" ? Number(rawLng) : NaN;
-          const hasRealCoords = isValidMapCoord(parsedLat, parsedLng);
-          const latitude = hasRealCoords ? parsedLat : undefined;
-          const longitude = hasRealCoords ? parsedLng : undefined;
+      const res = await api.getProviderDiscovery(sid, {
+        limit: PROVIDER_PAGE_SIZE,
+        sort: serverSort,
+        cursor,
+        available: onlyAvailable,
+        city: cityFilter === "All" ? undefined : cityFilter,
+        query: debouncedAreaQuery || undefined,
+        latitude: serverSort === "nearby" ? userLocation?.latitude : undefined,
+        longitude: serverSort === "nearby" ? userLocation?.longitude : undefined,
+      });
 
-          const distanceKm =
-            userLocation && hasRealCoords
-              ? getDistanceKm(
-                  userLocation.latitude,
-                  userLocation.longitude,
-                  parsedLat,
-                  parsedLng
-                )
-              : undefined;
+      if (requestVersion !== requestVersionRef.current) return;
 
-          return {
-            ...(p as ExtendedProvider),
-            latitude,
-            longitude,
-            distanceKm,
-          };
-        });
+      const mapped = ((res.providers as Provider[]) || []).map((provider) => ({
+        ...(provider as ExtendedProvider),
+        distanceKm:
+          typeof (provider as ExtendedProvider).distanceKm === "number"
+            ? (provider as ExtendedProvider).distanceKm
+            : undefined,
+      }));
 
-        setProviders(mapped);
-      } catch (e) {
-        // silent fail — show empty state
+      setProviders((current) => {
+        if (mode === "initial") return mapped;
+
+        const byId = new Map(current.map((provider) => [provider.id, provider]));
+        mapped.forEach((provider) => byId.set(provider.id, provider));
+        const merged = Array.from(byId.values());
+        return merged.length > PROVIDER_MAX_ITEMS ? merged.slice(0, PROVIDER_MAX_ITEMS) : merged;
+      });
+      setHasMore(Boolean(res.hasMore));
+      setNextCursor(res.nextCursor || null);
+    } catch {
+      if (requestVersion !== requestVersionRef.current) return;
+      setLoadError("We couldn't load workers right now. Check your connection and try again.");
+      if (mode === "initial") {
         setProviders([]);
-      } finally {
-        setLoading(false);
+        setHasMore(false);
+        setNextCursor(null);
       }
-    };
+    } finally {
+      if (requestVersion === requestVersionRef.current) {
+        if (mode === "initial") setLoading(false);
+        else setLoadingMore(false);
+      }
+      if (mode === "more") loadingMoreRef.current = false;
+    }
+  }, [
+    cityFilter,
+    debouncedAreaQuery,
+    locationReady,
+    onlyAvailable,
+    serviceId,
+    sortBy,
+    userLocation,
+  ]);
 
-    load();
-  }, [serviceId, userLocation, providerRefreshVersion]);
+  useEffect(() => {
+    if (!locationReady) return;
+    void loadProviders("initial");
+  }, [loadProviders, locationReady, providerRefreshVersion]);
+
+  const loadMoreProviders = () => {
+    if (!hasMore || !nextCursor || loadingMoreRef.current) return;
+    void loadProviders("more", nextCursor);
+  };
+
+  const handleSortChange = (nextSort: "rating" | "jobs" | "nearby") => {
+    if (nextSort === "nearby" && !userLocation) {
+      Alert.alert(
+        "Location Required",
+        "Turn on location access to sort workers by nearest distance.",
+      );
+      return;
+    }
+
+    setSortBy(nextSort);
+  };
 
   const isSaved = (id: string) => {
     return !!user?.savedProviders?.includes(id);
@@ -178,47 +257,6 @@ export default function ServiceProvidersScreen() {
 
     await toggleSaved(providerId);
   };
-
-  const filtered = useMemo(() => {
-    return providers.filter((p) => {
-      if (onlyAvailable && !p.isAvailable) return false;
-
-      const locationText = (
-        ((p as any).location as string) ||
-        ((p as any).address as string) ||
-        ""
-      ).toLowerCase();
-
-      if (cityFilter !== "All" && !locationText.includes(cityFilter.toLowerCase())) {
-        return false;
-      }
-
-      if (
-        areaQuery.trim() &&
-        !locationText.includes(areaQuery.trim().toLowerCase()) &&
-        !p.name.toLowerCase().includes(areaQuery.trim().toLowerCase())
-      ) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [providers, onlyAvailable, cityFilter, areaQuery]);
-
-  const sorted = useMemo(() => {
-    const list = [...filtered];
-
-    list.sort((a, b) => {
-      if (sortBy === "rating") return (b.rating || 0) - (a.rating || 0);
-      if (sortBy === "jobs") return (b.totalJobs || 0) - (a.totalJobs || 0);
-      if (sortBy === "nearby") {
-        return (a.distanceKm ?? 999999) - (b.distanceKm ?? 999999);
-      }
-      return 0;
-    });
-
-    return list;
-  }, [filtered, sortBy]);
 
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
@@ -259,7 +297,7 @@ export default function ServiceProvidersScreen() {
             <Text style={styles.title}>
               {category ? category.name : "All Workers"}
             </Text>
-            <Text style={styles.subtitle}>{sorted.length} workers found</Text>
+            <Text style={styles.subtitle}>{providers.length}{hasMore ? "+" : ""} workers loaded</Text>
           </View>
         </View>
       </View>
@@ -315,7 +353,7 @@ export default function ServiceProvidersScreen() {
                   styles.sortChip,
                   sortBy === item.value && styles.sortChipActive,
                 ]}
-                onPress={() => setSortBy(item.value)}
+                onPress={() => handleSortChange(item.value)}
               >
                 <Text
                   style={[
@@ -358,22 +396,34 @@ export default function ServiceProvidersScreen() {
           <ActivityIndicator size="large" color={theme.colors.primary} />
           <Text style={styles.loadingText}>Finding workers...</Text>
         </View>
-      ) : sorted.length === 0 ? (
+      ) : loadError && providers.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Icon name="alert-circle" size={40} color={theme.colors.textMuted} />
+          <Text style={styles.emptyTitle}>Couldn't load workers</Text>
+          <Text style={styles.emptySubtitle}>{loadError}</Text>
+          <Pressable
+            style={styles.retryButton}
+            onPress={() => void loadProviders("initial")}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </Pressable>
+        </View>
+      ) : providers.length === 0 ? (
         <View style={styles.emptyState}>
           <Icon name="users" size={40} color={theme.colors.textMuted} />
           <Text style={styles.emptyTitle}>No workers found</Text>
           <Text style={styles.emptySubtitle}>
-            Try changing area or city filter.
+            Try changing area, city, availability, or sort filters.
           </Text>
         </View>
       ) : (
-        <ScrollView
+        <FlatList
           style={styles.list}
           contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {sorted.map((p) => (
-            <View key={p.id} style={styles.cardWrap}>
+          data={providers}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item: p }) => (
+            <View style={styles.cardWrap}>
               <Pressable onPress={() => handleToggleSaved(p.id)} style={styles.saveBtn}>
                 <Icon
                   name={isSaved(p.id) ? "heart" : "heart-outline"}
@@ -404,8 +454,38 @@ export default function ServiceProvidersScreen() {
                 }
               />
             </View>
-          ))}
-        </ScrollView>
+          )}
+          ListFooterComponent={
+            <>
+              {loadError && providers.length > 0 && (
+                <View style={styles.inlineError}>
+                  <Text style={styles.emptySubtitle}>{loadError}</Text>
+                </View>
+              )}
+
+              {hasMore && nextCursor && (
+                <Pressable
+                  style={[styles.loadMoreButton, loadingMore && styles.loadMoreButtonDisabled]}
+                  onPress={loadMoreProviders}
+                  disabled={loadingMore}
+                >
+                  {loadingMore ? (
+                    <ActivityIndicator size="small" color={theme.colors.onBrand} />
+                  ) : (
+                    <Text style={styles.loadMoreText}>Load more workers</Text>
+                  )}
+                </Pressable>
+              )}
+            </>
+          }
+          onEndReached={loadMoreProviders}
+          onEndReachedThreshold={0.35}
+          removeClippedSubviews
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          windowSize={7}
+          showsVerticalScrollIndicator={false}
+        />
       )}
     </View>
   );
@@ -416,34 +496,42 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   header: {
     backgroundColor: theme.colors.surface,
-    paddingHorizontal: 16,
+    paddingHorizontal: redesign.layout.horizontalPadding,
     paddingTop: 16,
     paddingBottom: 14,
-    borderBottomWidth: 1,
+    borderBottomWidth: redesign.visual.cardBorderWidth,
     borderBottomColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
 
   backBtn: {
     position: "absolute",
-    left: 16,
+    left: redesign.layout.horizontalPadding,
     top: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: theme.colors.background,
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
     zIndex: 2,
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
   },
 
   mapBtn: {
     position: "absolute",
-    right: 16,
+    right: redesign.layout.horizontalPadding,
     top: 16,
-    backgroundColor: theme.colors.surface,
-    padding: 10,
-    borderRadius: 12,
-    elevation: 5,
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderRadius: theme.radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
     zIndex: 2,
   },
 
@@ -457,26 +545,18 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   categoryIcon: {
     width: 46,
     height: 46,
-    borderRadius: 14,
+    borderRadius: theme.radius.md,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  title: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: theme.colors.text,
-  },
+  title: { ...theme.typography.h2, color: theme.colors.text, letterSpacing: -0.25 },
 
-  subtitle: {
-    fontSize: 13,
-    color: theme.colors.textSecondary,
-    marginTop: 2,
-  },
+  subtitle: { ...theme.typography.caption, color: theme.colors.textSecondary, marginTop: 2 },
 
   searchWrap: {
     backgroundColor: theme.colors.surface,
-    paddingHorizontal: 16,
+    paddingHorizontal: redesign.layout.horizontalPadding,
     paddingBottom: 12,
     gap: 12,
   },
@@ -485,19 +565,15 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 14,
+    backgroundColor: theme.colors.input,
+    borderRadius: theme.radius.md,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderWidth: 1,
+    minHeight: redesign.control.standardHeight,
+    borderWidth: redesign.visual.inputBorderWidth,
     borderColor: theme.colors.border,
   },
 
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: theme.colors.text,
-  },
+  searchInput: { flex: 1, ...theme.typography.body, color: theme.colors.text },
 
   cityRow: {
     flexDirection: "row",
@@ -506,10 +582,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   cityChip: {
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: theme.colors.background,
-    borderWidth: 1,
+    minHeight: 34,
+    justifyContent: "center",
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.border,
   },
 
@@ -518,11 +595,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderColor: theme.colors.primary,
   },
 
-  cityChipText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: theme.colors.textSecondary,
-  },
+  cityChipText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.textSecondary },
 
   cityChipTextActive: {
     color: theme.colors.onBrand,
@@ -532,7 +605,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
+    paddingHorizontal: redesign.layout.horizontalPadding,
     paddingVertical: 10,
     gap: 10,
   },
@@ -544,10 +617,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   sortChip: {
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 18,
+    minHeight: 34,
+    justifyContent: "center",
+    borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.surfaceAlt,
-    borderWidth: 1,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.border,
   },
 
@@ -556,11 +630,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderColor: theme.colors.secondary,
   },
 
-  sortChipText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: theme.colors.textSecondary,
-  },
+  sortChipText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.textSecondary },
 
   sortChipTextActive: {
     color: theme.colors.onBrand,
@@ -571,10 +641,10 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignItems: "center",
     gap: 5,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 18,
+    minHeight: 34,
+    borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.surfaceAlt,
-    borderWidth: 1,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.border,
   },
 
@@ -583,11 +653,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderColor: theme.colors.success + "40",
   },
 
-  availableToggleText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: theme.colors.textSecondary,
-  },
+  availableToggleText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.textSecondary },
 
   availableToggleTextActive: {
     color: theme.colors.success,
@@ -600,10 +666,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 10,
   },
 
-  loadingText: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-  },
+  loadingText: { ...theme.typography.body, color: theme.colors.textSecondary },
 
   emptyState: {
     flex: 1,
@@ -613,27 +676,51 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 10,
   },
 
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: theme.colors.text,
+  emptyTitle: { ...theme.typography.h3, color: theme.colors.text },
+
+  emptySubtitle: { ...theme.typography.body, color: theme.colors.textSecondary, textAlign: "center" },
+
+  retryButton: {
+    marginTop: 4,
+    paddingHorizontal: 18,
+    minHeight: redesign.control.standardHeight,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    ...theme.shadows.sm,
   },
 
-  emptySubtitle: {
-    fontSize: 13,
-    color: theme.colors.textSecondary,
-    textAlign: "center",
-    lineHeight: 20,
+  retryButtonText: { color: theme.colors.onBrand, ...theme.typography.label },
+
+  inlineError: {
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 4,
   },
+
+  loadMoreButton: {
+    minHeight: redesign.control.standardHeight,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 18,
+    ...theme.shadows.sm,
+  },
+
+  loadMoreButtonDisabled: { opacity: redesign.visual.disabledOpacity },
+
+  loadMoreText: { color: theme.colors.onBrand, ...theme.typography.label },
 
   list: {
     flex: 1,
   },
 
   listContent: {
-    padding: 16,
+    padding: redesign.layout.horizontalPadding,
     paddingBottom: 100,
-    gap: 14,
+    gap: redesign.layout.cardGap,
   },
 
   cardWrap: {
@@ -645,14 +732,15 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     right: 14,
     top: 14,
     zIndex: 5,
+    width: 34,
+    height: 34,
     backgroundColor: theme.colors.surface,
-    borderRadius: 18,
-    padding: 7,
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
+    borderRadius: theme.radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
 
   distanceBadge: {

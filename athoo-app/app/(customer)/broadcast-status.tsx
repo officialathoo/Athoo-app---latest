@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { api } from "@/services/api";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
@@ -78,42 +79,84 @@ export default function BroadcastStatusScreen() {
   const [request, setRequest] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [selecting, setSelecting] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [showExpireModal, setShowExpireModal] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const requestInFlightRef = useRef(false);
+  const requestLoadedRef = useRef(false);
+  const requestStatusRef = useRef<string | null>(null);
 
-  const load = useCallback(async (silent = false) => {
-    if (!requestId) return;
-    if (!silent) setLoading(true);
+  const load = useCallback(async (
+    mode: "initial" | "refresh" | "silent" = "initial"
+  ) => {
+    if (!requestId || requestInFlightRef.current) return;
+
+    requestInFlightRef.current = true;
+    if (mode === "initial" && !requestLoadedRef.current) {
+      setLoading(true);
+    } else if (mode === "refresh") {
+      setRefreshing(true);
+    }
+
+    if (mode !== "silent") {
+      setLoadError("");
+    }
+
     try {
       const res = await api.getBroadcastRequest(requestId);
       setRequest(res.request);
+      requestLoadedRef.current = true;
+      requestStatusRef.current = res.request?.status ?? null;
     } catch (e: any) {
-      if (!silent) showError("Unable to load request", apiErrorToMessage(e, "We couldn't load this request. Please try again."));
+      if (mode !== "silent") {
+        setLoadError(
+          apiErrorToMessage(
+            e,
+            "We couldn't load this broadcast request. Please try again."
+          )
+        );
+      }
     } finally {
+      requestInFlightRef.current = false;
       setLoading(false);
       setRefreshing(false);
     }
   }, [requestId]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    if (!requestLoadedRef.current) {
+      void load("initial");
+    } else {
+      void load("silent");
+    }
 
-  useEffect(() => {
-    pollRef.current = setInterval(() => load(true), 5000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [load]);
+    pollRef.current = setInterval(() => {
+      if (requestStatusRef.current === "open") {
+        void load("silent");
+      }
+    }, 5000);
+
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [load]));
 
   useEffect(() => {
     const off = realtime.on((msg) => {
       if (msg.type === "broadcast:response" && msg.payload?.requestId === requestId) {
-        load(true);
-        const resp = msg.payload?.response;
-        const providerName = resp?.providerName ?? "A provider";
-        const priceText = resp?.providerOffer ? `Rs. ${resp.providerOffer}` : "open price";
+        void load("silent");
       }
-      if (msg.type === "broadcast:accepted" || msg.type === "broadcast:cancelled") {
-        load(true);
+      if (
+        (msg.type === "broadcast:accepted" || msg.type === "broadcast:cancelled")
+        && (!msg.payload?.requestId || msg.payload.requestId === requestId)
+      ) {
+        void load("silent");
       }
     });
     return off;
@@ -124,7 +167,14 @@ export default function BroadcastStatusScreen() {
     setSelecting(responseId);
     try {
       const res = await api.selectBroadcastResponse(requestId, responseId);
-      setRequest({ ...request, status: "accepted" });
+      setRequest((current: any) => ({
+        ...current,
+        ...(res.request || {}),
+        status: "accepted",
+        bookingId: res.booking.id,
+        acceptedResponseId: responseId,
+      }));
+      requestStatusRef.current = "accepted";
       Alert.alert(
         "Booking Confirmed! 🎉",
         "Your provider has been notified and your booking is confirmed.",
@@ -146,6 +196,44 @@ export default function BroadcastStatusScreen() {
     }
   };
 
+  const handleReject = (responseId: string, providerName: string) => {
+    if (!requestId || selecting || rejecting) return;
+    Alert.alert(
+      "Reject Counter",
+      `Reject ${providerName || "this provider"}'s counter? The broadcast will stay open and the provider may send a different amount.`,
+      [
+        { text: "Keep Counter", style: "cancel" },
+        {
+          text: "Reject",
+          style: "destructive",
+          onPress: async () => {
+            setRejecting(responseId);
+            try {
+              const result = await api.rejectBroadcastResponse(requestId, responseId);
+              setRequest((current: any) => ({
+                ...current,
+                responses: (current?.responses || []).map((response: any) =>
+                  response.id === responseId ? { ...response, status: "rejected_by_customer" } : response
+                ),
+              }));
+              Alert.alert(
+                "Counter Rejected",
+                result.canRevise
+                  ? "The provider has been notified and may send a revised counter."
+                  : "The provider has been notified. The response revision limit has been reached.",
+              );
+            } catch (e: any) {
+              showError("Unable to reject counter", apiErrorToMessage(e, "We couldn't reject this counter. Please try again."));
+              void load("silent");
+            } finally {
+              setRejecting(null);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const handleCancel = () => {
     Alert.alert("Cancel Broadcast", "Are you sure you want to cancel this request?", [
       { text: "No" },
@@ -158,6 +246,7 @@ export default function BroadcastStatusScreen() {
           try {
             await api.cancelBroadcastRequest(requestId);
             setRequest((p: any) => ({ ...p, status: "cancelled" }));
+            requestStatusRef.current = "cancelled";
           } catch (e: any) {
             showError("Unable to cancel", apiErrorToMessage(e, "We couldn't cancel this request. Please try again."));
           } finally {
@@ -179,12 +268,30 @@ export default function BroadcastStatusScreen() {
 
   if (!request) {
     return (
-      <View style={[styles.container, { paddingTop: topPad, alignItems: "center", justifyContent: "center" }]}>
+      <View style={[styles.container, { paddingTop: topPad, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 }]}>
         <Icon name="alert-circle" size={40} color={theme.colors.danger} />
-        <Text style={{ color: theme.colors.text, fontSize: 16, marginTop: 12 }}>Request not found</Text>
-        <Pressable onPress={() => router.back()} style={{ marginTop: 16 }}>
-          <Text style={{ color: theme.colors.primary, fontWeight: "700" }}>Go Back</Text>
-        </Pressable>
+        <Text style={{ color: theme.colors.text, fontSize: 16, marginTop: 12, fontWeight: "700", textAlign: "center" }}>
+          {loadError ? "Unable to load broadcast" : "Request not found"}
+        </Text>
+        {loadError ? (
+          <>
+            <Text style={{ color: theme.colors.textSecondary, fontSize: 13, marginTop: 8, textAlign: "center" }}>
+              {loadError}
+            </Text>
+            <Pressable
+              onPress={() => void load("refresh")}
+              style={{ marginTop: 16, paddingVertical: 10, paddingHorizontal: 20 }}
+              accessibilityRole="button"
+              testID="broadcast-status-load-retry"
+            >
+              <Text style={{ color: theme.colors.primary, fontWeight: "700" }}>Retry</Text>
+            </Pressable>
+          </>
+        ) : (
+          <Pressable onPress={() => router.back()} style={{ marginTop: 16 }}>
+            <Text style={{ color: theme.colors.primary, fontWeight: "700" }}>Go Back</Text>
+          </Pressable>
+        )}
       </View>
     );
   }
@@ -198,7 +305,7 @@ export default function BroadcastStatusScreen() {
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
       {/* Broadcast Expired — Continue or Cancel modal */}
-      <Modal visible={showExpireModal} transparent animationType="fade">
+      <Modal visible={showExpireModal} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setShowExpireModal(false)}>
         <View style={styles.expireOverlay}>
           <View style={styles.expireCard}>
             <View style={styles.expireIconWrap}>
@@ -263,16 +370,30 @@ export default function BroadcastStatusScreen() {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 60 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => void load("refresh")} />
         }
       >
         {/* Status banner */}
         {isAccepted && (
-          <View style={[styles.statusBanner, { backgroundColor: theme.colors.success + "20", borderColor: theme.colors.success + "40" }]}>
-            <Icon name="check-circle" size={20} color={theme.colors.success} />
-            <Text style={[styles.statusBannerText, { color: theme.colors.success }]}>
-              Provider selected! Booking confirmed.
-            </Text>
+          <View style={[styles.acceptedBanner, { backgroundColor: theme.colors.success + "20", borderColor: theme.colors.success + "40" }]}>
+            <View style={styles.statusBannerRow}>
+              <Icon name="check-circle" size={20} color={theme.colors.success} />
+              <Text style={[styles.statusBannerText, { color: theme.colors.success }]}>
+                Provider accepted. Your booking is confirmed—no second acceptance is needed.
+              </Text>
+            </View>
+            {request.bookingId ? (
+              <Pressable
+                style={styles.viewBookingBtn}
+                onPress={() => router.replace({
+                  pathname: "/(customer)/booking-detail",
+                  params: { bookingId: request.bookingId },
+                } as any)}
+              >
+                <Text style={styles.viewBookingText}>View Booking</Text>
+                <Icon name="arrow-right" size={14} color={theme.colors.onBrand} />
+              </Pressable>
+            ) : null}
           </View>
         )}
         {isCancelled && (
@@ -337,6 +458,7 @@ export default function BroadcastStatusScreen() {
         {pendingResponses.map((resp: any, index: number) => {
           const price = resp.providerOffer ?? request.customerOffer;
           const isSelecting = selecting === resp.id;
+          const isRejecting = rejecting === resp.id;
           const isCountered = resp.providerOffer != null && request.customerOffer != null && resp.providerOffer !== request.customerOffer;
 
           return (
@@ -396,20 +518,33 @@ export default function BroadcastStatusScreen() {
               ) : null}
 
               {isOpen && (
-                <Pressable
-                  style={[styles.selectBtn, isSelecting && styles.selectBtnDisabled]}
-                  onPress={() => handleSelect(resp.id)}
-                  disabled={isSelecting || !!selecting}
-                >
-                  {isSelecting ? (
-                    <ActivityIndicator size="small" color={theme.colors.onBrand} />
-                  ) : (
-                    <>
-                      <Icon name="check-circle" size={16} color={theme.colors.onBrand} />
-                      <Text style={styles.selectBtnText}>Select This Provider</Text>
-                    </>
-                  )}
-                </Pressable>
+                <View style={styles.offerActionRow}>
+                  <Pressable
+                    style={[styles.rejectBtn, (isRejecting || !!selecting) && styles.selectBtnDisabled]}
+                    onPress={() => handleReject(resp.id, resp.providerName)}
+                    disabled={isRejecting || !!selecting || !!rejecting}
+                  >
+                    {isRejecting ? (
+                      <ActivityIndicator size="small" color={theme.colors.danger} />
+                    ) : (
+                      <Text style={styles.rejectBtnText}>Reject</Text>
+                    )}
+                  </Pressable>
+                  <Pressable
+                    style={[styles.selectBtn, (isSelecting || !!rejecting) && styles.selectBtnDisabled]}
+                    onPress={() => handleSelect(resp.id)}
+                    disabled={isSelecting || !!selecting || !!rejecting}
+                  >
+                    {isSelecting ? (
+                      <ActivityIndicator size="small" color={theme.colors.onBrand} />
+                    ) : (
+                      <>
+                        <Icon name="check-circle" size={16} color={theme.colors.onBrand} />
+                        <Text style={styles.selectBtnText}>{isCountered ? "Accept Counter" : "Confirm Provider"}</Text>
+                      </>
+                    )}
+                  </Pressable>
+                </View>
               )}
             </View>
           );
@@ -438,7 +573,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
 
   header: {
-    paddingHorizontal: 16,
+    paddingHorizontal: redesign.layout.horizontalPadding,
     paddingBottom: 20,
     paddingTop: 16,
     flexDirection: "row",
@@ -447,18 +582,20 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    width: redesign.control.iconButtonSize,
+    height: redesign.control.iconButtonSize,
+    borderRadius: theme.radius.md,
+    backgroundColor: "rgba(255,255,255,0.18)",
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: "rgba(255,255,255,0.22)",
   },
 
   headerContent: { flex: 1 },
 
-  headerTitle: { fontSize: 18, fontWeight: "800", color: theme.colors.onBrand },
-  headerSub: { fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 2 },
+  headerTitle: { ...theme.typography.h2, color: theme.colors.onBrand, letterSpacing: -0.25 },
+  headerSub: { ...theme.typography.caption, color: "rgba(255,255,255,0.75)", marginTop: 2 },
 
   timerWrap: {
     flexDirection: "row",
@@ -466,68 +603,77 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     gap: 4,
     backgroundColor: "rgba(255,255,255,0.15)",
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
+    minHeight: 32,
+    borderRadius: theme.radius.pill,
   },
 
-  timerText: { fontSize: 13, color: theme.colors.onBrand, fontWeight: "700" },
-  expiredText: { fontSize: 13, color: "rgba(255,255,255,0.6)" },
+  timerText: { ...theme.typography.caption, color: theme.colors.onBrand, fontFamily: theme.typography.label.fontFamily },
+  expiredText: { ...theme.typography.caption, color: "rgba(255,255,255,0.6)" },
 
   scroll: { flex: 1 },
-  scrollContent: { padding: 16, gap: 14, paddingBottom: 80 },
+  scrollContent: { padding: redesign.layout.horizontalPadding, gap: 14, paddingBottom: 80 },
 
   statusBanner: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
     padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
+    borderRadius: theme.radius.md,
+    borderWidth: redesign.visual.cardBorderWidth,
   },
-  statusBannerText: { fontSize: 14, fontWeight: "700", flex: 1 },
+  acceptedBanner: {
+    gap: 12,
+    padding: 14,
+    borderRadius: theme.radius.md,
+    borderWidth: redesign.visual.cardBorderWidth,
+  },
+  statusBannerRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  statusBannerText: { ...theme.typography.label, flex: 1 },
+  viewBookingBtn: {
+    minHeight: redesign.control.compactHeight, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
+    backgroundColor: theme.colors.success, borderRadius: theme.radius.md, paddingHorizontal: 14,
+  },
+  viewBookingText: { ...theme.typography.label, color: theme.colors.onBrand },
 
   jobCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 16,
+    borderRadius: theme.radius.lg,
     padding: 16,
     gap: 10,
-    borderWidth: 1,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
   jobRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
-  jobText: { flex: 1, fontSize: 13, color: theme.colors.textSecondary, lineHeight: 18 },
+  jobText: { flex: 1, ...theme.typography.body, color: theme.colors.textSecondary },
 
-  sectionTitle: { fontSize: 16, fontWeight: "800", color: theme.colors.text, marginTop: 4 },
+  sectionTitle: { ...theme.typography.h3, color: theme.colors.text, marginTop: 4 },
 
   waitingCard: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     backgroundColor: theme.colors.surface,
-    borderRadius: 14,
+    borderRadius: theme.radius.lg,
     padding: 16,
-    borderWidth: 1,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
   waitingText: {
     flex: 1,
-    fontSize: 13,
+    ...theme.typography.body,
     color: theme.colors.textSecondary,
-    lineHeight: 18,
   },
 
   responseCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 16,
+    borderRadius: theme.radius.lg,
     padding: 16,
     gap: 12,
-    borderWidth: 1,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.border,
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    ...theme.shadows.sm,
   },
 
   respHeader: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
@@ -535,103 +681,113 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   respAvatar: {
     width: 48,
     height: 48,
-    borderRadius: 14,
+    borderRadius: theme.radius.md,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  respAvatarText: { fontSize: 16, fontWeight: "800", color: theme.colors.primary },
-  respName: { fontSize: 15, fontWeight: "800", color: theme.colors.text },
-  respJobs: { fontSize: 11, color: theme.colors.textMuted, marginTop: 2 },
+  respAvatarText: { ...theme.typography.h3, color: theme.colors.primary },
+  respName: { ...theme.typography.h3, color: theme.colors.text },
+  respJobs: { ...theme.typography.caption, color: theme.colors.textMuted, marginTop: 2 },
 
   counterBadge: {
     backgroundColor: theme.colors.secondary + "20",
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 20,
-    borderWidth: 1,
+    minHeight: 26,
+    justifyContent: "center",
+    borderRadius: theme.radius.pill,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.secondary + "40",
   },
-  counterBadgeText: { fontSize: 10, fontWeight: "700", color: theme.colors.secondary },
+  counterBadgeText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.secondary },
 
   priceRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  priceBox: { gap: 2 },
-  priceLabel: { fontSize: 11, color: theme.colors.textMuted, fontWeight: "600" },
-  priceVal: { fontSize: 22, fontWeight: "800" },
-  originalPrice: { fontSize: 11, color: theme.colors.textMuted },
+  priceBox: { gap: 2, flex: 1 },
+  priceLabel: { ...theme.typography.caption, color: theme.colors.textMuted, fontFamily: theme.typography.label.fontFamily },
+  priceVal: { ...theme.typography.h2 },
+  originalPrice: { ...theme.typography.caption, color: theme.colors.textMuted },
 
   matchBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: theme.colors.success + "15",
+    backgroundColor: theme.colors.successSoft,
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-    borderWidth: 1,
+    minHeight: 30,
+    borderRadius: theme.radius.pill,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.success + "30",
   },
-  matchText: { fontSize: 11, fontWeight: "700", color: theme.colors.success },
+  matchText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.success },
 
   respMessage: {
-    fontSize: 13,
+    ...theme.typography.body,
     color: theme.colors.textSecondary,
     fontStyle: "italic",
-    lineHeight: 18,
     backgroundColor: theme.colors.surfaceAlt,
     padding: 10,
-    borderRadius: 10,
+    borderRadius: theme.radius.md,
   },
 
   selectBtn: {
+    flex: 1.65,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     backgroundColor: theme.colors.primary,
-    borderRadius: 12,
-    paddingVertical: 14,
+    borderRadius: theme.radius.md,
+    minHeight: redesign.control.standardHeight,
+    paddingHorizontal: 12,
   },
-  selectBtnDisabled: { opacity: 0.6 },
-  selectBtnText: { fontSize: 15, fontWeight: "800", color: theme.colors.onBrand },
+  selectBtnDisabled: { opacity: redesign.visual.disabledOpacity },
+  selectBtnText: { ...theme.typography.label, color: theme.colors.onBrand },
+  offerActionRow: { flexDirection: "row", alignItems: "stretch", gap: 10 },
+  rejectBtn: {
+    flex: 1, minHeight: redesign.control.standardHeight, alignItems: "center", justifyContent: "center",
+    borderRadius: theme.radius.md, borderWidth: redesign.visual.inputBorderWidth, borderColor: theme.colors.danger,
+    backgroundColor: theme.colors.dangerSoft, paddingHorizontal: 10,
+  },
+  rejectBtnText: { ...theme.typography.label, color: theme.colors.danger },
 
   expireOverlay: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.6)",
+    flex: 1, backgroundColor: theme.colors.overlay,
     alignItems: "center", justifyContent: "center", paddingHorizontal: 24,
   },
   expireCard: {
-    backgroundColor: theme.colors.surface, borderRadius: 22, padding: 24,
+    backgroundColor: theme.colors.elevated, borderRadius: theme.radius.xl, padding: 24,
     width: "100%", alignItems: "center", gap: 14,
-    shadowColor: theme.colors.text, shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.3, shadowRadius: 24, elevation: 24,
+    borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border,
+    ...theme.shadows.md,
   },
   expireIconWrap: {
-    width: 64, height: 64, borderRadius: 32,
-    backgroundColor: theme.colors.warning + "18", alignItems: "center", justifyContent: "center",
+    width: 64, height: 64, borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.warningSoft, alignItems: "center", justifyContent: "center",
   },
-  expireTitle: { fontSize: 20, fontWeight: "800", color: theme.colors.text },
-  expireSub: { fontSize: 14, color: theme.colors.textSecondary, textAlign: "center", lineHeight: 20 },
+  expireTitle: { ...theme.typography.h2, color: theme.colors.text },
+  expireSub: { ...theme.typography.body, color: theme.colors.textSecondary, textAlign: "center" },
   expandBtn: {
     flexDirection: "row", alignItems: "center", gap: 8,
-    backgroundColor: theme.colors.primary, borderRadius: 14, paddingVertical: 14,
+    backgroundColor: theme.colors.primary, borderRadius: theme.radius.md, minHeight: redesign.control.standardHeight,
     paddingHorizontal: 20, width: "100%", justifyContent: "center",
   },
-  expandBtnText: { fontSize: 14, fontWeight: "800", color: theme.colors.onBrand },
+  expandBtnText: { ...theme.typography.label, color: theme.colors.onBrand },
   expireCancelBtn: {
-    paddingVertical: 12, width: "100%", alignItems: "center",
-    borderRadius: 14, borderWidth: 1.5, borderColor: theme.colors.border,
+    minHeight: redesign.control.standardHeight, width: "100%", alignItems: "center", justifyContent: "center",
+    borderRadius: theme.radius.md, borderWidth: redesign.visual.inputBorderWidth, borderColor: theme.colors.border,
   },
-  expireCancelText: { fontSize: 14, fontWeight: "700", color: theme.colors.textSecondary },
+  expireCancelText: { ...theme.typography.label, color: theme.colors.textSecondary },
 
   cancelBtn: {
     alignItems: "center",
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: theme.colors.danger + "10",
-    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: redesign.control.standardHeight,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.dangerSoft,
+    borderWidth: redesign.visual.cardBorderWidth,
     borderColor: theme.colors.danger + "25",
     marginTop: 8,
   },
-  cancelBtnDisabled: { opacity: 0.6 },
-  cancelBtnText: { fontSize: 14, fontWeight: "700", color: theme.colors.danger },
+  cancelBtnDisabled: { opacity: redesign.visual.disabledOpacity },
+  cancelBtnText: { ...theme.typography.label, color: theme.colors.danger },
 });

@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage, Server } from "http";
 import jwt from "jsonwebtoken";
-import { addSubscriber, removeSubscriber } from "./lib/eventBus";
+import { addSubscriber, removeSubscriber, setSubscriberViewingChat } from "./lib/eventBus";
 import { registerSessionConnection, unregisterSessionConnection } from "./lib/sessionConnections";
 import { isSessionActive } from "./lib/session";
 import { db } from "@workspace/db";
@@ -184,9 +184,25 @@ export function setupWebSocket(server: Server) {
         return;
       }
 
-      const sub = { ws, userId: decoded.userId, role: decoded.role };
+      const sub = { ws, userId: decoded.userId, role: decoded.role, viewingChatId: null as string | null };
       addSubscriber(sub);
       try { ws.send(JSON.stringify({ event: "connected", payload: { userId: decoded.userId, role: decoded.role } })); } catch { /* ignore */ }
+
+      // Lightweight client signal: {"type":"chat:view","payload":{"chatId":"..."}} when a
+      // chat room is on screen, chatId null (or "chat:view-end") when leaving. Used only
+      // to suppress native push for the conversation the user is actively reading.
+      ws.on("message", (data: Buffer, isBinary: boolean) => {
+        if (isBinary || ws.readyState !== WebSocket.OPEN) return;
+        try {
+          const text = data.toString("utf8").slice(0, 512);
+          const parsed = JSON.parse(text) as { type?: unknown; payload?: { chatId?: unknown } };
+          if (parsed?.type === "chat:view" && parsed.payload) {
+            setSubscriberViewingChat(decoded.userId, ws, parsed.payload.chatId);
+          } else if (parsed?.type === "chat:view-end") {
+            setSubscriberViewingChat(decoded.userId, ws, null);
+          }
+        } catch { /* ignore malformed client signals */ }
+      });
 
       const sessionHeartbeat = startSessionHeartbeat(ws, decoded);
       const cleanup = makeCleanup(() => {

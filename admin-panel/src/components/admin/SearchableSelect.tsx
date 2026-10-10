@@ -25,7 +25,7 @@ export function SearchableSelect({ value, onChange, options, placeholder = "Sele
   return (
     <div className="relative">
       <button type="button" disabled={disabled} onClick={() => setOpen((current) => !current)} className="flex w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm outline-none hover:border-slate-300 focus:border-blue-500 disabled:bg-slate-100 disabled:opacity-60">
-        <span className={selected ? "truncate text-slate-800" : "truncate text-slate-400"}>{selected?.label || placeholder}</span>
+        <span className={selected ? "min-w-0 flex-1 break-words text-slate-800" : "min-w-0 flex-1 break-words text-slate-400"} title={selected?.label || placeholder}>{selected?.label || placeholder}</span>
         <span className="flex items-center gap-1">
           {clearable && value ? <span role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); onChange(""); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); onChange(""); } }} className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Clear selection"><X size={14} /></span> : null}
           <ChevronsUpDown size={15} className="text-slate-400" />

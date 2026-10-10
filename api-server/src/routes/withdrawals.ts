@@ -3,7 +3,7 @@ import { logger } from "../lib/logger";
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
 import { withdrawalRequestsTable, usersTable, bookingsTable, auditLogTable, financeLedgerTable } from "@workspace/db/schema";
-import { and, eq, desc, inArray, sql } from "drizzle-orm";
+import { and, eq, desc, ilike, inArray, or, sql } from "drizzle-orm";
 import { requireAuth, requireAdmin, requirePermission, type AuthRequest } from "../middlewares/auth";
 import { emitToUser, emitToRole } from "../lib/eventBus";
 import { notifyUser } from "../lib/notifications";
@@ -160,17 +160,86 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
 export const withdrawalsAdminRouter = Router();
 
-withdrawalsAdminRouter.get("/", requireAuth, requireAdmin, requirePermission("finance.read"), async (_req, res) => {
+withdrawalsAdminRouter.get("/", requireAuth, requireAdmin, requirePermission("finance.read"), async (req, res) => {
   try {
-    const rows = await db
+    const focus = String(req.query.focus || "").trim();
+    const search = String(req.query.search || "").trim().slice(0, 120);
+    const status = String(req.query.status || "all").trim();
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const offset = (page - 1) * limit;
+    const conditions = [];
+
+    if (focus) {
+      conditions.push(eq(withdrawalRequestsTable.id, focus));
+    } else {
+      if (["pending", "approved", "rejected", "paid"].includes(status)) {
+        conditions.push(eq(withdrawalRequestsTable.status, status as "pending" | "approved" | "rejected" | "paid"));
+      }
+      if (search) {
+        const like = `%${search}%`;
+        conditions.push(or(
+          ilike(usersTable.name, like),
+          ilike(usersTable.phone, like),
+          ilike(withdrawalRequestsTable.accountTitle, like),
+          ilike(withdrawalRequestsTable.accountNumber, like),
+          ilike(withdrawalRequestsTable.bankName, like),
+          ilike(withdrawalRequestsTable.iban, like),
+        ));
+      }
+    }
+
+    const whereClause =
+      conditions.length === 0
+        ? undefined
+        : conditions.length === 1
+          ? conditions[0]
+          : and(...conditions);
+
+    const listQuery = db
       .select({
         w: withdrawalRequestsTable,
         provider: { id: usersTable.id, name: usersTable.name, phone: usersTable.phone },
       })
       .from(withdrawalRequestsTable)
       .innerJoin(usersTable, eq(usersTable.id, withdrawalRequestsTable.providerId))
-      .orderBy(desc(withdrawalRequestsTable.createdAt));
-    res.json({ withdrawals: rows.map((r) => ({ ...r.w, provider: r.provider })) });
+      .$dynamic();
+    if (whereClause) listQuery.where(whereClause);
+
+    const totalQuery = db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(withdrawalRequestsTable)
+      .innerJoin(usersTable, eq(usersTable.id, withdrawalRequestsTable.providerId))
+      .$dynamic();
+    if (whereClause) totalQuery.where(whereClause);
+
+    const [rows, totalRows, statsRows] = await Promise.all([
+      listQuery
+        .orderBy(desc(withdrawalRequestsTable.createdAt))
+        .limit(focus ? 1 : limit)
+        .offset(focus ? 0 : offset),
+      totalQuery,
+      db.select({
+        pending: sql<number>`count(*) filter (where ${withdrawalRequestsTable.status} = 'pending')::int`,
+        approved: sql<number>`count(*) filter (where ${withdrawalRequestsTable.status} = 'approved')::int`,
+        totalPaid: sql<number>`coalesce(sum(${withdrawalRequestsTable.amount}) filter (where ${withdrawalRequestsTable.status} = 'paid'), 0)::int`,
+      }).from(withdrawalRequestsTable),
+    ]);
+
+    const total = Number(totalRows[0]?.count || 0);
+    const stats = statsRows[0] || { pending: 0, approved: 0, totalPaid: 0 };
+
+    res.json({
+      withdrawals: rows.map((r) => ({ ...r.w, provider: r.provider })),
+      total,
+      page,
+      limit,
+      stats: {
+        pending: Number(stats.pending || 0),
+        approved: Number(stats.approved || 0),
+        totalPaid: Number(stats.totalPaid || 0),
+      },
+    });
   } catch (e) {
     logger.error({ err: e }, "admin withdrawals list error");
     res.status(500).json({ error: "Failed to load withdrawals" });

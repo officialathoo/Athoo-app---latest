@@ -38,6 +38,7 @@ import { OpenStreetMapPreview } from "@/components/maps/OpenStreetMapPreview";
 import { getDirections } from "@/services/maps";
 import { getFastForegroundLocation, cacheForegroundLocation } from "@/services/location";
 import { apiErrorToMessage } from "@/lib/apiError";
+import { PrivateImage } from "@/services/storage";
 
 type LiveCoords = {
   latitude: number;
@@ -235,6 +236,7 @@ export default function JobDetailScreen() {
   const [elapsed, setElapsed] = useState("00:00");
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [isMarkingReceived, setIsMarkingReceived] = useState(false);
+  const [openingChat, setOpeningChat] = useState(false);
 
   const [providerLiveCoords, setProviderLiveCoords] = useState<LiveCoords | null>(null);
   const [roadPolyline, setRoadPolyline] = useState<{ latitude: number; longitude: number }[]>([]);
@@ -248,6 +250,7 @@ export default function JobDetailScreen() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const otpInputRef = useRef<TextInput>(null);
+  const chatOpenRef = useRef(false);
   const locationSubRef = useRef<Location.LocationSubscription | null>(null);
 
   const syncBooking = useCallback(
@@ -306,11 +309,11 @@ export default function JobDetailScreen() {
 
     const tick = () => {
       if (AppState.currentState === "active") {
-        loadBookings();
+        void syncBooking();
       }
     };
 
-    pollRef.current = setInterval(tick, 15000);
+    pollRef.current = setInterval(tick, 60_000);
 
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
@@ -319,10 +322,9 @@ export default function JobDetailScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadBookings();
-      syncBooking();
+      void syncBooking();
       return undefined;
-    }, [loadBookings, syncBooking])
+    }, [syncBooking])
   );
 
   useEffect(() => {
@@ -586,8 +588,8 @@ export default function JobDetailScreen() {
             setIsAccepting(true);
             const res = await api.updateBookingStatus(booking.id, "accepted");
             const updated = res.booking as Booking;
-            await loadBookings();
             await syncBooking(updated);
+            void loadBookings({ silent: true });
 
             addNotification({
               type: "booking",
@@ -622,8 +624,8 @@ export default function JobDetailScreen() {
           try {
             setIsDeclining(true);
             await updateBookingStatus(booking.id, "cancelled");
-            await loadBookings();
             router.back();
+            void loadBookings({ silent: true });
           } catch (e: any) {
             Alert.alert("Unable to decline", apiErrorToMessage(e, "We couldn't decline this booking. Please try again."));
           } finally {
@@ -638,12 +640,27 @@ export default function JobDetailScreen() {
     if (!booking) return;
 
     try {
-      await api.markProviderArrived(booking.id);
+      const locationResult = await getFastForegroundLocation({
+        timeoutMs: 10_000,
+        requiredAccuracy: 250,
+        freshAccuracy: "highest",
+        rationaleTitle: "Verify arrival location",
+        rationaleBody: "Athoo confirms that you are within 1 km of the customer job pin before starting work.",
+      });
+      if (!locationResult.location) {
+        Alert.alert("Location Required", "Enable precise location and try again near the customer job address.");
+        return;
+      }
+      await api.markProviderArrived(booking.id, {
+        latitude: locationResult.location.latitude,
+        longitude: locationResult.location.longitude,
+        accuracy: locationResult.location.accuracy,
+      });
       const res = await api.generateStartPin(booking.id);
       const updated = res.booking as Booking;
       await syncBooking(updated);
-      await loadBookings();
       setShowArriveOtp(true);
+      void loadBookings({ silent: true });
     } catch (e: any) {
       Alert.alert(
         "Start Code Error",
@@ -671,8 +688,8 @@ export default function JobDetailScreen() {
       setShowArriveOtp(false);
       setOtpInput("");
 
-      await loadBookings();
       await syncBooking(updated);
+      void loadBookings({ silent: true });
 
       addNotification({
         type: "system",
@@ -702,8 +719,8 @@ export default function JobDetailScreen() {
       const updated = res.booking as Booking;
 
       setBooking(updated);
-      await loadBookings();
       await syncBooking(updated);
+      void loadBookings({ silent: true });
 
       setOtpInput("");
       setOtpError("");
@@ -734,8 +751,8 @@ export default function JobDetailScreen() {
       setShowCompleteOtp(false);
       setOtpInput("");
 
-      await loadBookings();
       await syncBooking(updated);
+      void loadBookings({ silent: true });
 
       addNotification({
         type: "success",
@@ -762,8 +779,8 @@ export default function JobDetailScreen() {
       const res = await api.markBookingReceived(booking.id);
       const updated = res.booking as Booking;
       setBooking(updated);
-      await loadBookings();
       setShowInvoiceModal(false);
+      void loadBookings({ silent: true });
       addNotification({
         type: "success",
         title: "Cash Received",
@@ -778,27 +795,42 @@ export default function JobDetailScreen() {
   };
 
   const handleChat = async () => {
-    if (!user || !booking) return;
+    if (!user || !booking || chatOpenRef.current) return;
 
-    const chat = await getOrCreateChat(
-      user.id,
-      user.name,
-      booking.customerId,
-      booking.customerName,
-      booking.id,
-      booking.service
-    );
+    chatOpenRef.current = true;
+    setOpeningChat(true);
+    try {
+      const chat = await getOrCreateChat(
+        user.id,
+        user.name,
+        booking.customerId,
+        booking.customerName,
+        booking.id,
+        booking.service,
+      );
 
-    router.push({
-      pathname: "/(provider)/chat-room",
-      params: {
-        chatId: chat.id,
-        otherUserId: booking.customerId,
-        otherUserName: booking.customerName,
-        otherUserImage: booking.customerProfileImage || undefined,
-        otherUserColor: undefined,
-      },
-    });
+      router.push({
+        pathname: "/(provider)/chat-room",
+        params: {
+          chatId: chat.id,
+          otherUserId: booking.customerId,
+          otherUserName: booking.customerName,
+          otherUserImage: booking.customerProfileImage || undefined,
+          otherUserColor: booking.customerProfileColor || undefined,
+        },
+      });
+    } catch (error) {
+      Alert.alert(
+        "Chat unavailable",
+        apiErrorToMessage(
+          error,
+          "We couldn't open this conversation. Please try again.",
+        ),
+      );
+    } finally {
+      chatOpenRef.current = false;
+      setOpeningChat(false);
+    }
   };
 
   const handleCall = async () => {
@@ -808,7 +840,8 @@ export default function JobDetailScreen() {
       booking.customerId,
       booking.customerName,
       booking.service,
-      theme.colors.secondary
+      theme.colors.secondary,
+      booking.customerProfileImage || undefined,
     );
   };
 
@@ -848,10 +881,7 @@ export default function JobDetailScreen() {
   const hasLocation = !!getBookingLatLng(booking) || !!booking.address?.trim();
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
+    <View style={{ flex: 1 }}>
       <View style={[styles.container, { paddingTop: topPad }]}>
         <View style={styles.header}>
           <Pressable style={styles.backBtn} onPress={() => router.back()}>
@@ -926,8 +956,18 @@ export default function JobDetailScreen() {
               {booking.status !== "pending" &&
               booking.status !== "completed" &&
               booking.status !== "cancelled" ? (
-                <Pressable style={styles.chatBtn} onPress={handleChat}>
-                  <Icon name="message-circle" size={18} color={theme.colors.secondary} />
+                <Pressable
+                  style={[styles.chatBtn, openingChat && { opacity: 0.65 }]}
+                  onPress={handleChat}
+                  disabled={openingChat}
+                  accessibilityRole="button"
+                  accessibilityLabel="Message customer"
+                >
+                  {openingChat ? (
+                    <ActivityIndicator size="small" color={theme.colors.secondary} />
+                  ) : (
+                    <Icon name="message-circle" size={18} color={theme.colors.secondary} />
+                  )}
                 </Pressable>
               ) : null}
             </View>
@@ -937,16 +977,41 @@ export default function JobDetailScreen() {
             <Text style={styles.cardTitle}>Customer</Text>
 
             <View style={styles.customerRow}>
-              <View style={styles.custAvatar}>
-                <Text style={styles.custAvatarTxt}>
-                  {booking.customerName
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")
-                    .toUpperCase()
-                    .slice(0, 2)}
-                </Text>
-              </View>
+              {booking.customerProfileImage ? (
+                <PrivateImage
+                  objectPath={booking.customerProfileImage}
+                  style={styles.custAvatar}
+                  resizeMode="cover"
+                  accessibilityLabel={`${booking.customerName} profile photo`}
+                />
+              ) : (
+                <View
+                  style={[
+                    styles.custAvatar,
+                    {
+                      backgroundColor:
+                        (booking.customerProfileColor || theme.colors.primary) + "18",
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.custAvatarTxt,
+                      {
+                        color:
+                          booking.customerProfileColor || theme.colors.primary,
+                      },
+                    ]}
+                  >
+                    {booking.customerName
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")
+                      .toUpperCase()
+                      .slice(0, 2)}
+                  </Text>
+                </View>
+              )}
 
               <View style={{ flex: 1 }}>
                 <Text style={styles.custName}>{booking.customerName}</Text>
@@ -1131,10 +1196,17 @@ export default function JobDetailScreen() {
                   <Text style={styles.photoLabel}>Customer&apos;s Photo</Text>
                 </View>
 
-                <Image
-                  source={{ uri: booking.attachment.startsWith("data:") ? booking.attachment : `data:image/jpeg;base64,${booking.attachment}` }}
+                <PrivateImage
+                  objectPath={
+                    booking.attachment.startsWith("/objects/") ||
+                    booking.attachment.startsWith("data:") ||
+                    booking.attachment.startsWith("http")
+                      ? booking.attachment
+                      : `data:image/jpeg;base64,${booking.attachment}`
+                  }
                   style={styles.attachmentImage}
                   resizeMode="cover"
+                  accessibilityLabel="Customer booking attachment"
                 />
               </View>
             ) : null}
@@ -1470,10 +1542,18 @@ export default function JobDetailScreen() {
           visible={showArriveOtp || showCompleteOtp}
           animationType="slide"
           transparent
+          statusBarTranslucent
+          onRequestClose={() => {
+            setShowArriveOtp(false);
+            setShowCompleteOtp(false);
+            setOtpInput("");
+            setOtpError("");
+          }}
         >
           <KeyboardAvoidingView
             style={{ flex: 1 }}
             behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? topPad : 0}
           >
             <View style={styles.modalOverlay}>
               <View style={styles.modalBox}>
@@ -1538,6 +1618,10 @@ export default function JobDetailScreen() {
                   }}
                   keyboardType="number-pad"
                   maxLength={4}
+                  autoFocus
+                  showSoftInputOnFocus
+                  textContentType="oneTimeCode"
+                  autoComplete="sms-otp"
                   returnKeyType="done"
                   onSubmitEditing={
                     showArriveOtp
@@ -1570,7 +1654,7 @@ export default function JobDetailScreen() {
           </KeyboardAvoidingView>
         </Modal>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -1593,9 +1677,9 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 16,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
     backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
@@ -1631,21 +1715,21 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   scroll: { flex: 1 },
 
   content: {
-    padding: 20,
-    gap: 14,
+    padding: 16,
+    gap: 12,
     paddingBottom: 60,
   },
 
   card: {
     backgroundColor: theme.colors.surface,
-    borderRadius: 18,
-    padding: 16,
+    borderRadius: 14,
+    padding: 14,
     shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
+    shadowOpacity: 0.05,
     shadowRadius: 8,
-    elevation: 2,
-    gap: 12,
+    elevation: 1,
+    gap: 10,
   },
 
   serviceRow: {
@@ -1655,8 +1739,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   serviceIcon: {
-    width: 50,
-    height: 50,
+    width: 44,
+    height: 44,
     borderRadius: 14,
     backgroundColor: theme.colors.secondary + "20",
     alignItems: "center",
@@ -1664,7 +1748,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   serviceName: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "800",
     color: theme.colors.text,
   },
@@ -1715,6 +1799,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     justifyContent: "center",
     borderWidth: 2,
     borderColor: theme.colors.border,
+    overflow: "hidden",
   },
 
   custAvatarTxt: {
@@ -1746,7 +1831,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignItems: "center",
     gap: 6,
     backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 20,
+    borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
@@ -1772,7 +1857,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 12,
-    padding: 12,
+    padding: 10,
     gap: 4,
   },
 
@@ -1805,7 +1890,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: theme.colors.primary + "30",
-    paddingVertical: 12,
+    paddingVertical: 10,
   },
 
   liveActionText: {
@@ -1816,8 +1901,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   trackingMap: {
     width: "100%",
-    height: 230,
-    borderRadius: 16,
+    height: 210,
+    borderRadius: 14,
     overflow: "hidden",
     marginBottom: 4,
   },
@@ -1852,7 +1937,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   locationBtn: {
-    marginTop: 14,
+    marginTop: 10,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -1861,7 +1946,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: theme.colors.primary + "30",
-    paddingVertical: 12,
+    paddingVertical: 10,
   },
 
   locationBtnText: {
@@ -1885,20 +1970,20 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   attachmentImage: {
     width: "100%",
-    height: 200,
+    height: 180,
     borderRadius: 12,
   },
 
   timerCard: {
     backgroundColor: theme.dark ? theme.colors.accentSoft : theme.colors.primaryPressed,
-    borderRadius: 18,
-    padding: 20,
-    gap: 16,
+    borderRadius: 14,
+    padding: 16,
+    gap: 12,
     shadowColor: theme.colors.accent,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.18,
     shadowRadius: 12,
-    elevation: 6,
+    elevation: 3,
   },
 
   timerHeader: {
@@ -1922,7 +2007,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   timerDisplay: {
-    fontSize: 48,
+    fontSize: 40,
     fontWeight: "800",
     color: theme.colors.onBrand,
     textAlign: "center",
@@ -1933,7 +2018,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     flexDirection: "row",
     backgroundColor: "rgba(255,255,255,0.1)",
     borderRadius: 14,
-    padding: 12,
+    padding: 10,
     alignItems: "center",
   },
 
@@ -1970,11 +2055,11 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
 
   actionRowWrap: {
     flexDirection: "row",
-    gap: 12,
+    gap: 10,
   },
 
   arrivedSection: {
-    gap: 12,
+    gap: 10,
   },
 
   otpInfo: {
@@ -1982,8 +2067,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     alignItems: "flex-start",
     gap: 10,
     backgroundColor: theme.colors.primary + "10",
-    borderRadius: 14,
-    padding: 14,
+    borderRadius: 12,
+    padding: 12,
     borderWidth: 1,
     borderColor: theme.colors.primary + "30",
   },
@@ -2113,6 +2198,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
     color: theme.colors.text,
     textAlign: "right",
     flexShrink: 1,
+    minWidth: 0,
   },
 
   completedTitle: {
@@ -2131,15 +2217,17 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.55)",
-    justifyContent: "flex-end",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 24,
   },
 
   modalBox: {
     backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 24,
-    paddingBottom: 40,
+    borderRadius: 24,
+    padding: 20,
+    paddingBottom: 24,
+    maxHeight: "85%",
     gap: 16,
   },
 
@@ -2176,8 +2264,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
 
   otpBox: {
-    width: 60,
-    height: 64,
+    width: 54,
+    height: 58,
     borderRadius: 16,
     borderWidth: 2,
     borderColor: theme.colors.border,

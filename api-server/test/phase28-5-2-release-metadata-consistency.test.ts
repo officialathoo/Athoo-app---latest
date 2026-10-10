@@ -13,8 +13,9 @@ test("Phase 28.5.2 keeps the active candidate synchronized across release gates"
   const candidate = String(status.candidate);
   const candidatePattern = new RegExp(escapeRegex(candidate));
 
-  assert.equal(candidate, "ATHOO_PHASE28_5_2_RELEASE_METADATA_FIXED.zip");
-  assert.equal(status.baseline, "ATHOO_PHASE28_5_1_MAP_PROVIDER_TYPECHECK_FIXED.zip");
+  assert.match(candidate, /^ATHOO_V2_2[A-Z0-9_.-]*\.zip$/);
+  assert.equal(status.releaseVersion, "2.2.0");
+  assert.notEqual(status.baseline, candidate);
   assert.equal(json("docs/qa/device-acceptance-evidence-template.json").candidateArtifactName, candidate);
   assert.equal(json("docs/qa/rc2-evidence-template.json").candidateArtifactName, candidate);
   for (const runbook of [

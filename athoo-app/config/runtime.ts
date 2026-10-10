@@ -52,8 +52,15 @@ export const runtimeConfig = Object.freeze({
       || asHttpsUrl(extra.SUPPORT_INSTAGRAM_URL),
     facebookUrl: asHttpsUrl(process.env.EXPO_PUBLIC_SUPPORT_FACEBOOK_URL)
       || asHttpsUrl(extra.SUPPORT_FACEBOOK_URL),
+    xUrl: asHttpsUrl(process.env.EXPO_PUBLIC_SUPPORT_X_URL)
+      || asHttpsUrl(extra.SUPPORT_X_URL)
+      || "https://x.com/athoo_services",
+    websiteUrl: asHttpsUrl(process.env.EXPO_PUBLIC_WEBSITE_URL)
+      || asHttpsUrl(extra.WEBSITE_URL)
+      || "https://athoo.pk/",
     email: asEmail(process.env.EXPO_PUBLIC_SUPPORT_EMAIL)
-      || asEmail(extra.SUPPORT_EMAIL),
+      || asEmail(extra.SUPPORT_EMAIL)
+      || "official@athoo.pk",
     phoneDisplay: asOptionalString(process.env.EXPO_PUBLIC_SUPPORT_PHONE_DISPLAY)
       || asOptionalString(extra.SUPPORT_PHONE_DISPLAY),
     socialHandle: asOptionalString(process.env.EXPO_PUBLIC_SUPPORT_SOCIAL_HANDLE)

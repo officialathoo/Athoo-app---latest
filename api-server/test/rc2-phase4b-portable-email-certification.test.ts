@@ -54,7 +54,7 @@ test("portable email migration and schema preserve provider-neutral durable stat
   assert.match(migration, /email_challenges_purpose_check/);
   assert.match(migration, /email_campaigns_status_check/);
   assert.match(migration, /email_deliveries_status_check/);
-  assert.match(migrations, /20260720_release_phase28_professional_workflow_integrity\.sql/);
+  assert.match(migrations, /20260802_phase19_security_flow_performance\.sql/);
 });
 
 test("email provider is a portable SMTP adapter with safe operational status", () => {
@@ -223,7 +223,7 @@ test("mobile supports email OTP, verification, and user-controlled preferences",
   assert.match(preferences, /marketingEmails/);
   assert.match(preferences, /bookingUpdates/);
   assert.match(preferences, /productUpdates/);
-  assert.match(apiErrors, /EMAIL address is not verified|email address is not verified/i);
+  assert.match(apiErrors, /Email not verified\. Please verify your email first\./);
   assert.match(apiErrors, /Email delivery is temporarily unavailable/);
   assert.match(language, /"Verify Email": "ای میل کی تصدیق کریں"/);
   assert.match(language, /"Offers and promotions": "آفرز اور تشہیری پیغامات"/);

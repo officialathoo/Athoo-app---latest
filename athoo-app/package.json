@@ -10,7 +10,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "doctor": "expo-doctor",
     "export": "expo export --platform all --output-dir dist-export --clear",
-    "export:web": "expo export --platform web --output-dir dist-web --clear"
+    "export:web": "expo export --platform web --output-dir dist-web --clear",
+    "update:preview": "eas update --channel preview --environment preview --auto",
+    "update:production": "eas update --channel production --environment production --auto"
   },
   "dependencies": {
     "@config-plugins/react-native-webrtc": "^13.0.0",

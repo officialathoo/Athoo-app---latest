@@ -21,6 +21,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/context/ThemeContext";
 import type { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { getCategoryAppearance } from "@/utils/categoryAppearance";
 import { type ServiceCategory } from "@/data/services";
 import { useCategories } from "@/context/CategoriesContext";
@@ -125,7 +126,29 @@ export default function BookServiceScreen() {
       ? { latitude: parseFloat(paramPickedLat), longitude: parseFloat(paramPickedLng) }
       : null
   );
-  const [savedAddresses, setSavedAddresses] = useState<{ id: string; label: string; address: string; latitude?: number | null; longitude?: number | null }[]>([]);
+  const [savedAddresses, setSavedAddresses] = useState<Array<{
+    id: string;
+    label: string;
+    address: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    locationCity?: string | null;
+    locationArea?: string | null;
+    locationProvince?: string | null;
+    locationCountryCode?: string | null;
+    locationSource?: string | null;
+    locationAccuracy?: number | null;
+    locationConfirmedAt?: string | null;
+  }>>([]);
+  const [locationMeta, setLocationMeta] = useState<{
+    city: string;
+    area: string;
+    province?: string;
+    countryCode: string;
+    source: "search" | "current" | "saved" | "recent" | "map" | "pin" | "repeat_booking";
+    accuracy?: number | null;
+    confirmedAt: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -190,7 +213,7 @@ export default function BookServiceScreen() {
 
   const [promoCode, setPromoCode] = useState("");
   const [promoValidating, setPromoValidating] = useState(false);
-  const [appliedPromo, setAppliedPromo] = useState<{ code: string; discountType: "fixed" | "percent"; discountValue: number; description: string | null } | null>(null);
+  const [appliedPromo, setAppliedPromo] = useState<{ code: string; discountType: "fixed" | "percentage"; discountValue: number; description: string | null } | null>(null);
   const [promoError, setPromoError] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
@@ -202,9 +225,51 @@ export default function BookServiceScreen() {
     expansionQueued: boolean;
   } | null>(null);
 
-  const applyLocationSelection = (selection: LocationSelection) => {
+  const resolveLocationMeta = async (
+    latitude: number,
+    longitude: number,
+    source: "search" | "current" | "saved" | "recent" | "map" | "pin" | "repeat_booking",
+    accuracy?: number | null,
+  ) => {
+    try {
+      const results = await Location.reverseGeocodeAsync({ latitude, longitude });
+      const place = results[0];
+      const city = place?.city || place?.subregion || place?.region || "";
+      const area = place?.district || place?.subregion || place?.name || place?.street || "";
+      const countryCode = place?.isoCountryCode?.trim().toUpperCase() || "";
+      if (!city.trim() || !area.trim() || !countryCode) return null;
+      return {
+        city: city.trim(),
+        area: area.trim(),
+        province: place?.region?.trim() || undefined,
+        countryCode,
+        source,
+        accuracy: accuracy ?? null,
+        confirmedAt: new Date().toISOString(),
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const applyLocationSelection = async (selection: LocationSelection) => {
     setAddress(selection.address);
     setUserLocation({ latitude: selection.latitude, longitude: selection.longitude });
+    const supplied = selection.city?.trim() && selection.area?.trim() && selection.countryCode?.trim()
+      ? {
+          city: selection.city.trim(),
+          area: selection.area.trim(),
+          province: selection.province?.trim() || undefined,
+          countryCode: selection.countryCode?.trim().toUpperCase() || "",
+          source: selection.source,
+          accuracy: selection.accuracy ?? null,
+          confirmedAt: selection.confirmedAt || new Date().toISOString(),
+        }
+      : await resolveLocationMeta(selection.latitude, selection.longitude, selection.source, selection.accuracy);
+    setLocationMeta(supplied);
+    if (!supplied) {
+      showError("Confirm service area", "Athoo could not confirm the city and area for this pin. Search the exact address or move the pin slightly and try again.");
+    }
     if (selection.accuracy != null) {
       setGpsAccuracyText(`GPS: ±${Math.round(selection.accuracy)} m`);
     } else {
@@ -238,8 +303,13 @@ export default function BookServiceScreen() {
       const coords = { latitude: result.location.latitude, longitude: result.location.longitude };
       setUserLocation(coords);
 
-      const { label: resolved } = await smartReverseGeocode(coords.latitude, coords.longitude);
+      const [{ label: resolved }, meta] = await Promise.all([
+        smartReverseGeocode(coords.latitude, coords.longitude),
+        resolveLocationMeta(coords.latitude, coords.longitude, "current", result.location.accuracy),
+      ]);
       setAddress(resolved);
+      setLocationMeta(meta);
+      if (!meta) showError("Confirm service area", "We found your GPS pin but could not confirm its city and area. Please search the exact address.");
     } catch {
       setGpsAccuracyText("");
       showError("Location Error", "Could not detect your location.");
@@ -341,8 +411,12 @@ export default function BookServiceScreen() {
     setUserLocation({ latitude, longitude });
     setReversingGeo(true);
     try {
-      const { label } = await smartReverseGeocode(latitude, longitude);
+      const [{ label }, meta] = await Promise.all([
+        smartReverseGeocode(latitude, longitude),
+        resolveLocationMeta(latitude, longitude, "pin"),
+      ]);
       setAddress(label);
+      setLocationMeta(meta);
     } catch { /* keep old address label */ }
     finally { setReversingGeo(false); }
   };
@@ -385,8 +459,10 @@ export default function BookServiceScreen() {
     setPromoError("");
     setAppliedPromo(null);
     try {
-      const offerVal = offerHourlyRate.trim() ? parseInt(offerHourlyRate, 10) : 0;
-      const res = await api.validatePromo(code, offerVal);
+      const offerVal = offerHourlyRate.trim() ? Math.max(0, parseInt(offerHourlyRate, 10) || 0) : 0;
+      const travelVal = travelCharge.trim() ? Math.max(0, parseInt(travelCharge, 10) || 0) : 0;
+      const estimatedBookingValue = offerVal + travelVal;
+      const res = await api.validatePromo(code, estimatedBookingValue);
       if (res.promo) {
         setAppliedPromo({ code: res.promo.code, discountType: res.promo.discountType, discountValue: res.promo.discountValue, description: res.promo.description });
       } else {
@@ -468,6 +544,20 @@ export default function BookServiceScreen() {
     if (!user) { showError("Login Required", "Please log in to continue."); return; }
     if (!selectedCategory) { showError("Error", "No category selected."); return; }
     if (!address.trim()) { showError("Error", "Please enter your address."); return; }
+    if (!userLocation) { showError("Confirm location", "Choose the service address from search, GPS, a saved place, or the map pin."); return; }
+    let verifiedLocationMeta = locationMeta;
+    if (!verifiedLocationMeta) {
+      verifiedLocationMeta = await resolveLocationMeta(
+        userLocation.latitude,
+        userLocation.longitude,
+        paramPreviousBookingId ? "repeat_booking" : "map",
+      );
+      setLocationMeta(verifiedLocationMeta);
+    }
+    if (!verifiedLocationMeta) {
+      showError("Confirm city and area", "Athoo could not verify the city and area for this service address. Search the exact address again before booking.");
+      return;
+    }
     const dateTimeError = isPastOrTooSoon(selectedDate, selectedTime, 20);
     if (dateTimeError) {
       showError("Invalid booking time", dateTimeError);
@@ -525,8 +615,15 @@ export default function BookServiceScreen() {
           description: description.trim() || undefined,
           videoUrl,
           address: finalAddress,
-          pickedLat: userLocation?.latitude,
-          pickedLng: userLocation?.longitude,
+          pickedLat: userLocation.latitude,
+          pickedLng: userLocation.longitude,
+          locationCity: verifiedLocationMeta.city,
+          locationArea: verifiedLocationMeta.area,
+          locationProvince: verifiedLocationMeta.province,
+          locationCountryCode: verifiedLocationMeta.countryCode,
+          locationSource: verifiedLocationMeta.source,
+          locationAccuracy: verifiedLocationMeta.accuracy,
+          locationConfirmedAt: verifiedLocationMeta.confirmedAt,
           scheduledDate: selectedDate,
           scheduledTime: selectedTime,
           price: parsedOffer && parsedOffer >= 100 ? parsedOffer : undefined,
@@ -555,8 +652,15 @@ export default function BookServiceScreen() {
           description: description.trim() || undefined,
           videoUrl,
           address: finalAddress,
-          latitude: userLocation?.latitude,
-          longitude: userLocation?.longitude,
+          latitude: userLocation.latitude,
+          longitude: userLocation.longitude,
+          locationCity: verifiedLocationMeta.city,
+          locationArea: verifiedLocationMeta.area,
+          locationProvince: verifiedLocationMeta.province,
+          locationCountryCode: verifiedLocationMeta.countryCode,
+          locationSource: verifiedLocationMeta.source,
+          locationAccuracy: verifiedLocationMeta.accuracy,
+          locationConfirmedAt: verifiedLocationMeta.confirmedAt,
           scheduledDate: selectedDate,
           scheduledTime: selectedTime,
           customerOffer: parsedOffer && parsedOffer >= 100 ? parsedOffer : undefined,
@@ -699,10 +803,24 @@ export default function BookServiceScreen() {
                         <Pressable
                           key={sa.id}
                           style={[styles.savedChip, isActive && styles.savedChipActive]}
-                          onPress={() => {
+                          onPress={async () => {
                             setAddress(sa.address);
-                            if (sa.latitude && sa.longitude) {
-                              setUserLocation({ latitude: sa.latitude, longitude: sa.longitude });
+                            if (sa.latitude != null && sa.longitude != null) {
+                              const latitude = Number(sa.latitude);
+                              const longitude = Number(sa.longitude);
+                              setUserLocation({ latitude, longitude });
+                              const meta = sa.locationCity && sa.locationArea
+                                ? {
+                                    city: sa.locationCity,
+                                    area: sa.locationArea,
+                                    province: sa.locationProvince || undefined,
+                                    countryCode: sa.locationCountryCode || "PK",
+                                    source: "saved" as const,
+                                    accuracy: sa.locationAccuracy ?? null,
+                                    confirmedAt: new Date().toISOString(),
+                                  }
+                                : await resolveLocationMeta(latitude, longitude, "saved", sa.locationAccuracy);
+                              setLocationMeta(meta);
                             }
                           }}
                         >
@@ -738,6 +856,7 @@ export default function BookServiceScreen() {
                     event.stopPropagation();
                     setAddress("");
                     setUserLocation(null);
+                    setLocationMeta(null);
                     setGpsAccuracyText("");
                   }}
                   style={{ padding: 8 }}
@@ -987,7 +1106,7 @@ export default function BookServiceScreen() {
               <TextInput
                 style={styles.offerInput}
                 value={offerHourlyRate}
-                onChangeText={(v) => setOfferHourlyRate(v.replace(/[^0-9]/g, ""))}
+                onChangeText={(v) => { setOfferHourlyRate(v.replace(/[^0-9]/g, "")); if (appliedPromo) { setAppliedPromo(null); setPromoError("Price changed. Apply the promo again."); } }}
                 placeholder="0"
                 placeholderTextColor={theme.colors.textMuted}
                 keyboardType="numeric"
@@ -1000,7 +1119,7 @@ export default function BookServiceScreen() {
                 <Pressable
                   key={p}
                   style={[styles.quickChip, offerHourlyRate === String(p) && styles.quickChipActive]}
-                  onPress={() => setOfferHourlyRate(String(p))}
+                  onPress={() => { setOfferHourlyRate(String(p)); if (appliedPromo) { setAppliedPromo(null); setPromoError("Price changed. Apply the promo again."); } }}
                 >
                   <Text style={[styles.quickText, offerHourlyRate === String(p) && styles.quickTextActive]}>
                     Rs. {p.toLocaleString()}
@@ -1009,7 +1128,7 @@ export default function BookServiceScreen() {
               ))}
               <Pressable
                 style={[styles.quickChip, offerHourlyRate === "" && styles.quickChipActive]}
-                onPress={() => setOfferHourlyRate("")}
+                onPress={() => { setOfferHourlyRate(""); if (appliedPromo) { setAppliedPromo(null); setPromoError("Price changed. Apply the promo again."); } }}
               >
                 <Text style={[styles.quickText, offerHourlyRate === "" && styles.quickTextActive]}>Open Hourly Rate</Text>
               </Pressable>
@@ -1023,7 +1142,7 @@ export default function BookServiceScreen() {
               <TextInput
                 style={styles.offerInput}
                 value={travelCharge}
-                onChangeText={(v) => setTravelCharge(v.replace(/[^0-9]/g, ""))}
+                onChangeText={(v) => { setTravelCharge(v.replace(/[^0-9]/g, "")); if (appliedPromo) { setAppliedPromo(null); setPromoError("Travel charge changed. Apply the promo again."); } }}
                 placeholder="0"
                 placeholderTextColor={theme.colors.textMuted}
                 keyboardType="numeric"
@@ -1035,7 +1154,7 @@ export default function BookServiceScreen() {
                 <Pressable
                   key={p}
                   style={[styles.quickChip, travelCharge === String(p) && styles.quickChipActive]}
-                  onPress={() => setTravelCharge(String(p))}
+                  onPress={() => { setTravelCharge(String(p)); if (appliedPromo) { setAppliedPromo(null); setPromoError("Travel charge changed. Apply the promo again."); } }}
                 >
                   <Text style={[styles.quickText, travelCharge === String(p) && styles.quickTextActive]}>
                     {p === 0 ? "Free" : `Rs. ${p}`}
@@ -1044,7 +1163,9 @@ export default function BookServiceScreen() {
               ))}
             </View>
 
-            {/* Promo Code */}
+            {/* Promo codes are currently booking-bound for direct bookings only.
+                Broadcast conversion does not yet carry a promo snapshot. */}
+            {isDirectBooking ? (
             <View style={styles.promoSection}>
               <Text style={styles.fieldLabel}>Promo Code <Text style={styles.optionalTag}>(optional)</Text></Text>
               <View style={styles.promoRow}>
@@ -1101,13 +1222,17 @@ export default function BookServiceScreen() {
                 </View>
               ) : null}
             </View>
+            ) : null}
 
             <BookingPriceSummary
               hourlyRate={offerHourlyRate ? Number(offerHourlyRate) : 0}
               travelCharge={Number(travelCharge || 0)}
-              discount={appliedPromo
+              discount={isDirectBooking && appliedPromo
                 ? appliedPromo.discountType === "fixed"
-                  ? appliedPromo.discountValue
+                  ? Math.min(
+                      Number(offerHourlyRate || 0) + Number(travelCharge || 0),
+                      appliedPromo.discountValue,
+                    )
                   : Math.round(((Number(offerHourlyRate || 0) + Number(travelCharge || 0)) * appliedPromo.discountValue) / 100)
                 : 0}
               openOffer={!offerHourlyRate}
@@ -1150,7 +1275,7 @@ export default function BookServiceScreen() {
                   <Text style={[styles.summaryVal, { color: theme.colors.success }]}>Attached</Text>
                 </View>
               )}
-              {appliedPromo && (
+              {isDirectBooking && appliedPromo && (
                 <View style={styles.summaryRow}>
                   <Icon name="tag" size={13} color={theme.colors.success} />
                   <Text style={styles.summaryLbl}>Promo</Text>
@@ -1167,7 +1292,7 @@ export default function BookServiceScreen() {
             <View style={styles.noteBox}>
               <Icon name="info" size={13} color={theme.colors.primary} />
               <Text style={styles.noteText}>
-                Your request will be broadcast to all nearby {selectedCategory?.name}s. You'll receive responses within minutes and pick your preferred provider — just like InDrive.
+                Nearby {selectedCategory?.name}s can accept your exact offer immediately. If a provider counters, you can accept or reject it. Once one provider is confirmed, the job disappears for everyone else.
               </Text>
             </View>
           </View>
@@ -1198,7 +1323,7 @@ export default function BookServiceScreen() {
             ) : (
               <>
                 <Icon name="send" size={18} color={theme.colors.onBrand} />
-                <Text style={styles.btnText}>Broadcast Request</Text>
+                <Text style={styles.btnText}>{isDirectBooking ? "Send Booking Request" : "Broadcast Request"}</Text>
               </>
             )}
           </Pressable>
@@ -1282,115 +1407,118 @@ export default function BookServiceScreen() {
 }
 
 const createLiveConsentStyles = (theme: AthooTheme) => StyleSheet.create({
-  backdrop: { position: "absolute", top: 0, bottom: 0, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.55)", padding: 20, justifyContent: "center", zIndex: 200 },
-  card: { backgroundColor: theme.colors.surface, borderRadius: 20, padding: 22, gap: 12 },
-  iconBox: { width: 48, height: 48, borderRadius: 14, backgroundColor: theme.colors.primary, alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 17, fontWeight: "800", color: theme.colors.text },
-  body: { fontSize: 13, color: theme.colors.textSecondary, lineHeight: 19 },
+  backdrop: { position: "absolute", top: 0, bottom: 0, left: 0, right: 0, backgroundColor: theme.colors.overlay, padding: 20, justifyContent: "center", zIndex: 200 },
+  card: { backgroundColor: theme.colors.elevated, borderRadius: theme.radius.xl, padding: 22, gap: 12, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border, ...theme.shadows.md },
+  iconBox: { width: 48, height: 48, borderRadius: theme.radius.md, backgroundColor: theme.colors.primary, alignItems: "center", justifyContent: "center" },
+  title: { ...theme.typography.h2, color: theme.colors.text },
+  body: { ...theme.typography.body, color: theme.colors.textSecondary },
   row: { flexDirection: "row", gap: 10, marginTop: 6 },
-  btn: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: "center" },
+  btn: { flex: 1, minHeight: redesign.control.standardHeight, borderRadius: theme.radius.md, alignItems: "center", justifyContent: "center", paddingHorizontal: 14 },
   btnPrimary: { backgroundColor: theme.colors.primary },
-  btnPrimaryText: { color: theme.colors.onBrand, fontWeight: "700", fontSize: 14 },
-  btnGhost: { borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
-  btnGhostText: { color: theme.colors.textSecondary, fontWeight: "700", fontSize: 13 },
+  btnPrimaryText: { color: theme.colors.onBrand, ...theme.typography.label },
+  btnGhost: { borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+  btnGhostText: { color: theme.colors.textSecondary, ...theme.typography.label },
 });
 
 const createStyles = (theme: AthooTheme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  repeatNotice: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginHorizontal: 16, marginTop: 8, padding: 12, borderRadius: 12, backgroundColor: theme.colors.primary + "12", borderWidth: 1, borderColor: theme.colors.primary + "30" },
-  repeatNoticeText: { flex: 1, color: theme.colors.textSecondary, fontSize: 13, lineHeight: 18, fontWeight: "600" },
+  repeatNotice: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginHorizontal: redesign.layout.horizontalPadding, marginTop: 10, padding: 12, borderRadius: theme.radius.md, backgroundColor: theme.colors.infoSoft, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.primary + "30" },
+  repeatNoticeText: { flex: 1, color: theme.colors.textSecondary, ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily },
 
   successWrap: { alignItems: "center", justifyContent: "center", padding: 32 },
   uploadProgressWrap: { width: "100%", gap: 8, marginTop: 12 },
-  uploadProgressTrack: { height: 8, borderRadius: 4, backgroundColor: theme.colors.border, overflow: "hidden" },
-  uploadProgressFill: { height: "100%", borderRadius: 4, backgroundColor: theme.colors.primary },
-  uploadProgressText: { fontSize: 12, color: theme.colors.textSecondary, textAlign: "center", fontWeight: "600" },
+  uploadProgressTrack: { height: 8, borderRadius: theme.radius.pill, backgroundColor: theme.colors.border, overflow: "hidden" },
+  uploadProgressFill: { height: "100%", borderRadius: theme.radius.pill, backgroundColor: theme.colors.primary },
+  uploadProgressText: { ...theme.typography.caption, color: theme.colors.textSecondary, textAlign: "center", fontFamily: theme.typography.label.fontFamily },
   successCircle: {
-    width: 100, height: 100, borderRadius: 50,
+    width: 100, height: 100, borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.success, alignItems: "center", justifyContent: "center", marginBottom: 20,
+    ...theme.shadows.md,
   },
-  successTitle: { fontSize: 24, fontWeight: "800", color: theme.colors.text, textAlign: "center" },
-  successSub: { fontSize: 14, color: theme.colors.textSecondary, textAlign: "center", lineHeight: 22, marginTop: 8 },
+  successTitle: { ...theme.typography.h1, color: theme.colors.text, textAlign: "center" },
+  successSub: { ...theme.typography.body, color: theme.colors.textSecondary, textAlign: "center", marginTop: 8 },
   viewResponsesBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-    backgroundColor: theme.colors.primary, borderRadius: 16, paddingVertical: 16, paddingHorizontal: 24,
-    marginTop: 24, width: "100%",
+    backgroundColor: theme.colors.primary, borderRadius: theme.radius.md, minHeight: redesign.control.standardHeight, paddingHorizontal: 24,
+    marginTop: 24, width: "100%", ...theme.shadows.sm,
   },
-  homeBtn: { alignItems: "center", paddingVertical: 14, marginTop: 8, width: "100%" },
-  homeBtnText: { fontSize: 14, fontWeight: "700", color: theme.colors.textSecondary },
+  homeBtn: { alignItems: "center", justifyContent: "center", minHeight: redesign.control.standardHeight, marginTop: 8, width: "100%" },
+  homeBtnText: { ...theme.typography.label, color: theme.colors.textSecondary },
 
   header: {
-    backgroundColor: theme.colors.surface, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 14,
+    backgroundColor: theme.colors.surface, paddingHorizontal: redesign.layout.horizontalPadding, paddingTop: 12, paddingBottom: 12,
     flexDirection: "row", alignItems: "center", gap: 12,
-    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
+    borderBottomWidth: redesign.visual.cardBorderWidth, borderBottomColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
   backBtn: {
-    width: 40, height: 40, borderRadius: 12, backgroundColor: theme.colors.surfaceAlt,
-    alignItems: "center", justifyContent: "center",
+    width: redesign.control.iconButtonSize, height: redesign.control.iconButtonSize, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceAlt,
+    alignItems: "center", justifyContent: "center", borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border,
   },
-  headerTitle: { fontSize: 17, fontWeight: "800", color: theme.colors.text },
-  headerSub: { fontSize: 12, color: theme.colors.textMuted, marginTop: 1 },
+  headerTitle: { ...theme.typography.h3, color: theme.colors.text },
+  headerSub: { ...theme.typography.caption, color: theme.colors.textMuted, marginTop: 1 },
   dots: { flexDirection: "row", gap: 5 },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.border },
   dotActive: { backgroundColor: theme.colors.primary, width: 20 },
   dotDone: { backgroundColor: theme.colors.primary + "60" },
 
-  section: { padding: 20, gap: 14 },
-  heading: { fontSize: 22, fontWeight: "800", color: theme.colors.text },
-  sub: { fontSize: 13, color: theme.colors.textSecondary, marginTop: -8 },
+  section: { paddingHorizontal: redesign.layout.horizontalPadding, paddingTop: 16, paddingBottom: 16, gap: 12 },
+  heading: { ...theme.typography.h2, color: theme.colors.text, letterSpacing: -0.25 },
+  sub: { ...theme.typography.body, color: theme.colors.textSecondary, marginTop: -6 },
 
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: 10},
   catCard: {
-    width: "47%", backgroundColor: theme.colors.surface, borderRadius: 16, padding: 14,
-    borderWidth: 2, borderColor: theme.colors.border, gap: 8, alignItems: "flex-start",
+    width: "47%", backgroundColor: theme.colors.surface, borderRadius: theme.radius.lg, padding: 13,
+    borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border, gap: 8, alignItems: "flex-start",
+    ...theme.shadows.sm,
   },
   catCardActive: {
-    shadowColor: theme.colors.text, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.10,
-    shadowRadius: 12, elevation: 5,
+    borderColor: theme.colors.primary + "70",
+    backgroundColor: theme.colors.infoSoft,
   },
-  catIcon: { width: 44, height: 44, borderRadius: 13, alignItems: "center", justifyContent: "center" },
-  catName: { fontSize: 14, fontWeight: "700", color: theme.colors.text },
-  catDesc: { fontSize: 11, color: theme.colors.textMuted, lineHeight: 15 },
+  catIcon: { width: 42, height: 42, borderRadius: theme.radius.md, alignItems: "center", justifyContent: "center" },
+  catName: { ...theme.typography.label, color: theme.colors.text },
+  catDesc: { ...theme.typography.caption, color: theme.colors.textMuted },
 
   searchBar: {
     flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: theme.colors.surface, borderRadius: 14, borderWidth: 1.5,
-    borderColor: theme.colors.primary + "50", paddingHorizontal: 14, paddingVertical: 12,
+    backgroundColor: theme.colors.input, borderRadius: theme.radius.md, borderWidth: redesign.visual.inputBorderWidth,
+    borderColor: theme.colors.primary + "50", paddingHorizontal: 12, minHeight: redesign.control.standardHeight,
   },
-  searchInput: { flex: 1, fontSize: 14, color: theme.colors.text },
+  searchInput: { flex: 1, ...theme.typography.body, color: theme.colors.text, paddingVertical: 0 },
 
   suggestBox: {
-    backgroundColor: theme.colors.surface, borderRadius: 14, borderWidth: 1, borderColor: theme.colors.border,
-    overflow: "hidden", marginTop: -4,
+    backgroundColor: theme.colors.elevated, borderRadius: theme.radius.lg, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border,
+    overflow: "hidden", marginTop: -4, ...theme.shadows.sm,
   },
-  suggestRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
+  suggestRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, minHeight: redesign.control.standardHeight, paddingVertical: 10 },
   suggestRowTyped: { backgroundColor: theme.colors.surface },
-  suggestBorder: { borderBottomWidth: 1, borderBottomColor: theme.colors.border },
-  suggestText: { flex: 1, fontSize: 13, color: theme.colors.text, lineHeight: 18 },
+  suggestBorder: { borderBottomWidth: redesign.visual.cardBorderWidth, borderBottomColor: theme.colors.border },
+  suggestText: { flex: 1, ...theme.typography.body, color: theme.colors.text },
   suggestTextTyped: { color: theme.colors.textSecondary, fontStyle: "italic" },
   suggestTypedHint: { fontSize: 10, color: theme.colors.textSecondary, marginBottom: 1, textTransform: "uppercase", letterSpacing: 0.4 },
 
   detectBtn: {
     flexDirection: "row", alignItems: "center", gap: 8, alignSelf: "flex-start",
-    backgroundColor: theme.colors.primary + "12", borderWidth: 1, borderColor: theme.colors.primary + "30",
-    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11,
+    backgroundColor: theme.colors.infoSoft, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.primary + "30",
+    borderRadius: theme.radius.md, paddingHorizontal: 12, minHeight: redesign.control.compactHeight,
   },
-  detectText: { fontSize: 13, fontWeight: "700", color: theme.colors.primary },
+  detectText: { ...theme.typography.label, color: theme.colors.primary },
 
   savedSection: { marginBottom: 12 },
   savedLabel: { fontSize: 12, fontWeight: "700", color: theme.colors.textMuted, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 },
   savedChip: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    backgroundColor: theme.colors.primary + "12", borderWidth: 1, borderColor: theme.colors.primary + "30",
-    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8, maxWidth: 200,
+    backgroundColor: theme.colors.infoSoft, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.primary + "30",
+    borderRadius: theme.radius.pill, paddingHorizontal: 11, minHeight: 34, maxWidth: 200,
   },
   savedChipActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
   savedChipText: { fontSize: 12, fontWeight: "600", color: theme.colors.primary },
   savedChipTextActive: { color: theme.colors.onBrand },
 
   mapCard: {
-    borderRadius: 16, borderWidth: 1.5, borderColor: theme.colors.primary + "35",
-    backgroundColor: theme.colors.surface, overflow: "hidden",
+    borderRadius: theme.radius.lg, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.primary + "35",
+    backgroundColor: theme.colors.surface, overflow: "hidden", ...theme.shadows.sm,
   },
   mapCardHeader: {
     flexDirection: "row", alignItems: "center", gap: 7,
@@ -1400,7 +1528,7 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   mapCardHint: {
     fontSize: 11, color: theme.colors.textMuted, paddingHorizontal: 14, paddingBottom: 8,
   },
-  mapWrap: { height: 200, marginHorizontal: 0 },
+  mapWrap: { height: 180, marginHorizontal: 0 },
   map: { flex: 1 },
 
   addrPreview: {
@@ -1410,8 +1538,8 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   },
   addrPreviewNoMap: {
     flexDirection: "row", alignItems: "flex-start", gap: 10,
-    backgroundColor: theme.colors.warning + "10", borderRadius: 12, padding: 12,
-    borderWidth: 1, borderColor: theme.colors.warning + "30",
+    backgroundColor: theme.colors.warningSoft, borderRadius: theme.radius.md, padding: 12,
+    borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.warning + "30",
   },
   addrLabel: { fontSize: 11, color: theme.colors.textMuted, fontWeight: "600" },
   addrText: { fontSize: 13, color: theme.colors.text, lineHeight: 18, marginTop: 2 },
@@ -1424,16 +1552,16 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   gpsPillText: { fontSize: 10, fontWeight: "700", color: theme.colors.primary },
 
   manualCard: {
-    borderRadius: 14, borderWidth: 1.5, borderColor: theme.colors.secondary + "40",
-    backgroundColor: theme.colors.surface, padding: 14, gap: 8,
+    borderRadius: theme.radius.lg, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.secondary + "40",
+    backgroundColor: theme.colors.surface, padding: 12, gap: 8, ...theme.shadows.sm,
   },
   manualCardHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
   manualCardTitle: { fontSize: 13, fontWeight: "700", color: theme.colors.secondary },
   manualCardHint: { fontSize: 11, color: theme.colors.textMuted, lineHeight: 16, marginTop: -4 },
   manualInput: {
-    backgroundColor: theme.colors.surfaceAlt, borderRadius: 10, borderWidth: 1,
-    borderColor: theme.colors.border, paddingHorizontal: 12, paddingVertical: 11,
-    fontSize: 13, color: theme.colors.text,
+    backgroundColor: theme.colors.input, borderRadius: theme.radius.md, borderWidth: redesign.visual.inputBorderWidth,
+    borderColor: theme.colors.border, paddingHorizontal: 12, minHeight: redesign.control.standardHeight,
+    ...theme.typography.body, color: theme.colors.text,
   },
   cityOnlyWarn: {
     flexDirection: "row", alignItems: "flex-start", gap: 6,
@@ -1443,141 +1571,146 @@ const createStyles = (theme: AthooTheme) => StyleSheet.create({
   cityOnlyWarnText: { flex: 1, fontSize: 11, color: theme.colors.warning, lineHeight: 16, fontWeight: "600" },
 
   textAreaWrap: {
-    backgroundColor: theme.colors.surface, borderRadius: 14, borderWidth: 1.5, borderColor: theme.colors.border, padding: 14,
+    backgroundColor: theme.colors.surface, borderRadius: theme.radius.lg, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border, padding: 12,
+    ...theme.shadows.sm,
   },
-  textArea: { fontSize: 14, color: theme.colors.text, minHeight: 120, textAlignVertical: "top", lineHeight: 22 },
+  textArea: { ...theme.typography.body, color: theme.colors.text, minHeight: 104, textAlignVertical: "top" },
 
-  fieldLabel: { fontSize: 15, fontWeight: "700", color: theme.colors.text },
-  fieldHint: { fontSize: 12, color: theme.colors.textMuted, marginTop: -8 },
+  fieldLabel: { ...theme.typography.label, color: theme.colors.text },
+  fieldHint: { ...theme.typography.caption, color: theme.colors.textMuted, marginTop: -6 },
 
   videoChosen: {
-    flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: theme.colors.success + "12",
-    borderRadius: 12, padding: 14, borderWidth: 1, borderColor: theme.colors.success + "30",
+    flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: theme.colors.successSoft,
+    borderRadius: theme.radius.md, padding: 14, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.success + "30",
   },
-  videoChosenText: { flex: 1, fontSize: 13, fontWeight: "700", color: theme.colors.success },
+  videoChosenText: { flex: 1, ...theme.typography.label, color: theme.colors.success },
   videoBtns: { flexDirection: "row", gap: 12 },
   videoBtn: {
     flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: theme.colors.surface, borderWidth: 1.5, borderColor: theme.colors.border, borderRadius: 12, paddingVertical: 14,
+    backgroundColor: theme.colors.surface, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border, borderRadius: theme.radius.md,
+    minHeight: redesign.control.standardHeight, ...theme.shadows.sm,
   },
-  videoBtnText: { fontSize: 13, fontWeight: "600", color: theme.colors.primary },
+  videoBtnText: { ...theme.typography.label, color: theme.colors.primary },
 
   dateCard: {
-    width: 70, alignItems: "center", padding: 12, borderRadius: 14,
-    backgroundColor: theme.colors.surface, borderWidth: 1.5, borderColor: theme.colors.border,
+    width: 68, minHeight: 78, alignItems: "center", justifyContent: "center", padding: 10, borderRadius: theme.radius.lg,
+    backgroundColor: theme.colors.surface, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
   dateCardActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
-  dayLbl: { fontSize: 10, fontWeight: "600", color: theme.colors.textSecondary, textTransform: "uppercase" },
-  dateNum: { fontSize: 22, fontWeight: "800", color: theme.colors.text, marginTop: 2 },
-  monthLbl: { fontSize: 10, color: theme.colors.textMuted },
+  dayLbl: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.textSecondary, textTransform: "uppercase" },
+  dateNum: { ...theme.typography.h2, color: theme.colors.text, marginTop: 2 },
+  monthLbl: { ...theme.typography.caption, color: theme.colors.textMuted },
   dateActiveText: { color: theme.colors.onBrand },
 
   chargesCard: {
-    backgroundColor: theme.colors.surface, borderRadius: 16, borderWidth: 1.5,
-    borderColor: theme.colors.border, overflow: "hidden",
+    backgroundColor: theme.colors.surface, borderRadius: theme.radius.lg, borderWidth: redesign.visual.cardBorderWidth,
+    borderColor: theme.colors.border, overflow: "hidden", ...theme.shadows.sm,
   },
   chargesTitle: {
-    fontSize: 11, fontWeight: "800", color: theme.colors.textMuted, textTransform: "uppercase",
+    ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.textMuted, textTransform: "uppercase",
     letterSpacing: 0.8, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4,
   },
   chargesRow: {
     flexDirection: "row", alignItems: "center", gap: 10,
     paddingHorizontal: 14, paddingVertical: 10,
-    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
+    borderBottomWidth: redesign.visual.cardBorderWidth, borderBottomColor: theme.colors.border,
   },
   chargesIcon: {
-    width: 30, height: 30, borderRadius: 10, alignItems: "center", justifyContent: "center",
+    width: 32, height: 32, borderRadius: theme.radius.md, alignItems: "center", justifyContent: "center",
   },
-  chargesLabel: { fontSize: 13, fontWeight: "700", color: theme.colors.text },
-  chargesSub: { fontSize: 11, color: theme.colors.textMuted, marginTop: 1 },
-  chargesAmt: { fontSize: 15, fontWeight: "900" },
+  chargesLabel: { ...theme.typography.label, color: theme.colors.text },
+  chargesSub: { ...theme.typography.caption, color: theme.colors.textMuted, marginTop: 1 },
+  chargesAmt: { ...theme.typography.h3 },
   chargesNote: {
     flexDirection: "row", alignItems: "flex-start", gap: 8,
     backgroundColor: theme.colors.surfaceAlt, paddingHorizontal: 14, paddingVertical: 10,
   },
-  chargesNoteText: { flex: 1, fontSize: 11, color: theme.colors.textMuted, lineHeight: 16 },
+  chargesNoteText: { flex: 1, ...theme.typography.caption, color: theme.colors.textMuted },
 
   offerWrap: {
-    flexDirection: "row", alignItems: "center", backgroundColor: theme.colors.surface,
-    borderRadius: 16, borderWidth: 2, borderColor: theme.colors.primary, paddingHorizontal: 16, paddingVertical: 4, gap: 8,
+    flexDirection: "row", alignItems: "center", backgroundColor: theme.colors.input,
+    borderRadius: theme.radius.lg, borderWidth: redesign.visual.inputBorderWidth, borderColor: theme.colors.primary, paddingHorizontal: 16, minHeight: redesign.control.largeHeight, gap: 8,
   },
-  rsSign: { fontSize: 20, fontWeight: "800", color: theme.colors.primary },
-  offerInput: { flex: 1, fontSize: 28, fontWeight: "800", color: theme.colors.text, paddingVertical: 12 },
+  rsSign: { ...theme.typography.h2, color: theme.colors.primary },
+  offerInput: { flex: 1, ...theme.typography.h1, color: theme.colors.text, paddingVertical: 8 },
 
   promoSection: { gap: 8 },
-  optionalTag: { fontSize: 12, fontWeight: "400", color: theme.colors.textMuted },
+  optionalTag: { ...theme.typography.caption, color: theme.colors.textMuted },
   promoRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   promoInput: {
-    flex: 1, backgroundColor: theme.colors.surface, borderRadius: 12, borderWidth: 1.5,
-    borderColor: theme.colors.border, paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 14, fontWeight: "700", color: theme.colors.text, letterSpacing: 1,
+    flex: 1, backgroundColor: theme.colors.input, borderRadius: theme.radius.md, borderWidth: redesign.visual.inputBorderWidth,
+    borderColor: theme.colors.border, paddingHorizontal: 14, minHeight: redesign.control.standardHeight,
+    ...theme.typography.label, color: theme.colors.text, letterSpacing: 1,
   },
-  promoInputApplied: { borderColor: theme.colors.success, backgroundColor: theme.colors.success + "08" },
+  promoInputApplied: { borderColor: theme.colors.success, backgroundColor: theme.colors.successSoft },
   promoBtn: {
-    backgroundColor: theme.colors.primary, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 13,
+    backgroundColor: theme.colors.primary, borderRadius: theme.radius.md, paddingHorizontal: 18, minHeight: redesign.control.standardHeight, justifyContent: "center",
   },
-  promoBtnText: { fontSize: 13, fontWeight: "800", color: theme.colors.onBrand },
+  promoBtnText: { ...theme.typography.label, color: theme.colors.onBrand },
   promoRemoveBtn: {
-    width: 44, height: 44, borderRadius: 12, backgroundColor: theme.colors.danger + "12",
-    alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: theme.colors.danger + "30",
+    width: redesign.control.iconButtonSize, height: redesign.control.iconButtonSize, borderRadius: theme.radius.md, backgroundColor: theme.colors.dangerSoft,
+    alignItems: "center", justifyContent: "center", borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.danger + "30",
   },
   promoSuccess: {
-    flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: theme.colors.success + "12",
-    borderRadius: 10, padding: 10, borderWidth: 1, borderColor: theme.colors.success + "30",
+    flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: theme.colors.successSoft,
+    borderRadius: theme.radius.md, padding: 10, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.success + "30",
   },
-  promoSuccessText: { flex: 1, fontSize: 12, color: theme.colors.success, fontWeight: "700", lineHeight: 16 },
+  promoSuccessText: { flex: 1, ...theme.typography.caption, color: theme.colors.success, fontFamily: theme.typography.label.fontFamily },
   promoErrorRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  promoErrorText: { fontSize: 12, color: theme.colors.danger, fontWeight: "600" },
+  promoErrorText: { ...theme.typography.caption, color: theme.colors.danger, fontFamily: theme.typography.label.fontFamily },
 
   quickRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   quickChip: {
-    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
-    backgroundColor: theme.colors.surfaceAlt, borderWidth: 1.5, borderColor: theme.colors.border,
+    paddingHorizontal: 11, minHeight: 34, borderRadius: theme.radius.pill, justifyContent: "center",
+    backgroundColor: theme.colors.surfaceAlt, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border,
   },
   quickChipActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
-  quickText: { fontSize: 13, fontWeight: "700", color: theme.colors.textSecondary },
+  quickText: { ...theme.typography.caption, fontFamily: theme.typography.label.fontFamily, color: theme.colors.textSecondary },
   quickTextActive: { color: theme.colors.onBrand },
 
   summaryCard: {
-    backgroundColor: theme.colors.surface, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface, borderRadius: theme.radius.lg, padding: 14, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
-  summaryTitle: { fontSize: 14, fontWeight: "800", color: theme.colors.text, marginBottom: 12 },
+  summaryTitle: { ...theme.typography.h3, color: theme.colors.text, marginBottom: 12 },
   summaryRow: {
     flexDirection: "row", alignItems: "flex-start", gap: 8, paddingVertical: 8,
-    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
+    borderBottomWidth: redesign.visual.cardBorderWidth, borderBottomColor: theme.colors.border,
   },
-  summaryLbl: { width: 56, fontSize: 12, color: theme.colors.textMuted, fontWeight: "600" },
-  summaryVal: { flex: 1, fontSize: 13, fontWeight: "600", color: theme.colors.text },
+  summaryLbl: { width: 56, ...theme.typography.caption, color: theme.colors.textMuted, fontFamily: theme.typography.label.fontFamily },
+  summaryVal: { flex: 1, ...theme.typography.body, color: theme.colors.text },
 
   noteBox: {
-    flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: theme.colors.primary + "10",
-    borderRadius: 12, padding: 12, borderWidth: 1, borderColor: theme.colors.primary + "25",
+    flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: theme.colors.infoSoft,
+    borderRadius: theme.radius.md, padding: 12, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.primary + "25",
   },
-  noteText: { flex: 1, fontSize: 12, color: theme.colors.primary, lineHeight: 18, fontWeight: "600" },
+  noteText: { flex: 1, ...theme.typography.caption, color: theme.colors.primary, fontFamily: theme.typography.label.fontFamily },
 
-  materialsWarning: { padding: 14, backgroundColor: theme.colors.warningSoft, borderRadius: 12, borderWidth: 1, borderColor: theme.colors.warning, gap: 8 },
+  materialsWarning: { padding: 12, backgroundColor: theme.colors.warningSoft, borderRadius: theme.radius.md, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.warning, gap: 8 },
   materialsWarningHeader: { flexDirection: "row" as const, alignItems: "center" as const, gap: 7 },
-  materialsWarningTitle: { fontSize: 13.5, fontWeight: "800" as const, color: theme.colors.warning, flex: 1 },
-  materialsWarningText: { fontSize: 12.5, color: theme.colors.warning, lineHeight: 18 },
-  materialsCheckRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 10, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surfaceAlt },
-  materialsCheckRowActive: { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary + "10" },
+  materialsWarningTitle: { ...theme.typography.label, color: theme.colors.warning, flex: 1 },
+  materialsWarningText: { ...theme.typography.body, color: theme.colors.warning },
+  materialsCheckRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 10, padding: 12, borderRadius: theme.radius.md, borderWidth: redesign.visual.cardBorderWidth, borderColor: theme.colors.border, backgroundColor: theme.colors.surfaceAlt },
+  materialsCheckRowActive: { borderColor: theme.colors.primary, backgroundColor: theme.colors.infoSoft },
   materialsCheckbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: theme.colors.border, alignItems: "center" as const, justifyContent: "center" as const },
   materialsCheckboxChecked: { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary },
-  materialsCheckLabel: { flex: 1, fontSize: 13.5, fontWeight: "700" as const, color: theme.colors.text },
+  materialsCheckLabel: { flex: 1, ...theme.typography.label, color: theme.colors.text },
 
   bottomBar: {
     position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: theme.colors.surface,
-    paddingHorizontal: 20, paddingTop: 14,
-    borderTopWidth: 1, borderTopColor: theme.colors.border,
+    paddingHorizontal: redesign.layout.horizontalPadding, paddingTop: 10,
+    borderTopWidth: redesign.visual.cardBorderWidth, borderTopColor: theme.colors.border,
+    ...theme.shadows.md,
   },
   primaryBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-    backgroundColor: theme.colors.primary, borderRadius: 16, paddingVertical: 16,
+    backgroundColor: theme.colors.primary, borderRadius: theme.radius.md, minHeight: redesign.control.standardHeight, paddingHorizontal: 16,
   },
   broadcastBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-    backgroundColor: theme.colors.secondary, borderRadius: 16, paddingVertical: 16,
+    backgroundColor: theme.colors.secondary, borderRadius: theme.radius.md, minHeight: redesign.control.standardHeight, paddingHorizontal: 16,
   },
-  btnDisabled: { opacity: 0.5 },
+  btnDisabled: { opacity: redesign.visual.disabledOpacity },
   btnText: { fontSize: 16, fontWeight: "800", color: theme.colors.onBrand },
 });

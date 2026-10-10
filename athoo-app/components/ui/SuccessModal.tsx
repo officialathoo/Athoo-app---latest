@@ -2,6 +2,7 @@ import { Icon } from "@/components/ui/Icon";
 import { useLang } from "@/context/LanguageContext";
 import { useTheme } from "@/context/ThemeContext";
 import { AthooTheme } from "@/design/theme";
+import { redesign } from "@/design/redesign";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useMemo, useRef } from "react";
 import {
@@ -70,6 +71,7 @@ export function SuccessModal({
       ? theme.colors.warningSoft
       : theme.colors.infoSoft;
   const iconName = type === "success" ? "check-circle" : type === "warning" ? "alert-circle" : "info";
+  const dialogLabel = subtitle ? `${title}. ${subtitle}` : title;
 
   return (
     <Modal
@@ -90,11 +92,13 @@ export function SuccessModal({
         <Animated.View
           style={[styles.card, { transform: [{ scale }], opacity }]}
           accessible
-          accessibilityLabel={subtitle ? `${title}. ${subtitle}` : title}
+          accessibilityRole="summary"
+          accessibilityLabel={dialogLabel}
         >
           <Animated.View
             style={[styles.iconCircle, { backgroundColor: iconBg, transform: [{ scale: checkScale }] }]}
             accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
           >
             <Icon name={iconName as any} size={44} color={iconColor} />
           </Animated.View>
@@ -103,9 +107,15 @@ export function SuccessModal({
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
 
           {details && details.length > 0 ? (
-            <View style={styles.detailsBox} accessibilityRole="summary">
+            <View style={styles.detailsBox}>
               {details.map((detail, index) => (
-                <View key={`${detail.label}-${index}`} style={[styles.detailRow, index < details.length - 1 && styles.detailBorder]}>
+                <View
+                  key={`${detail.label}-${index}`}
+                  style={[styles.detailRow, index < details.length - 1 && styles.detailBorder]}
+                  accessible
+                  accessibilityRole="text"
+                  accessibilityLabel={`${detail.label}: ${detail.value}`}
+                >
                   <Text style={styles.detailLabel}>{detail.label}</Text>
                   <Text style={styles.detailValue}>{detail.value}</Text>
                 </View>
@@ -157,8 +167,8 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     card: {
       backgroundColor: theme.colors.elevated,
       borderColor: theme.colors.border,
-      borderWidth: 1,
-      borderRadius: 28,
+      borderWidth: redesign.visual.cardBorderWidth,
+      borderRadius: theme.radius.xl,
       padding: 24,
       alignItems: "center",
       width: "100%",
@@ -174,15 +184,14 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
       marginBottom: 20,
     },
     title: {
-      fontSize: 22,
-      fontWeight: "800",
+      ...theme.typography.h2,
       color: theme.colors.text,
       textAlign: "center",
       writingDirection: isUrdu ? "rtl" : "ltr",
       marginBottom: 8,
     },
     subtitle: {
-      fontSize: 14,
+      ...theme.typography.body,
       color: theme.colors.textSecondary,
       textAlign: "center",
       writingDirection: isUrdu ? "rtl" : "ltr",
@@ -210,11 +219,11 @@ function createStyles(theme: AthooTheme, isUrdu: boolean) {
     detailBorder: { borderBottomWidth: 1, borderBottomColor: theme.colors.divider },
     detailLabel: { flex: 1, fontSize: 13, color: theme.colors.textSecondary, textAlign: isUrdu ? "right" : "left", writingDirection: isUrdu ? "rtl" : "ltr" },
     detailValue: { flexShrink: 1, fontSize: 13, fontWeight: "700", color: theme.colors.text, textAlign: isUrdu ? "left" : "right", writingDirection: isUrdu ? "rtl" : "ltr" },
-    primaryBtn: { width: "100%", minHeight: 48, borderRadius: 16, overflow: "hidden", marginBottom: 8 },
-    primaryBtnGrad: { minHeight: 48, paddingHorizontal: 16, alignItems: "center", justifyContent: "center" },
-    primaryBtnText: { fontSize: 16, fontWeight: "800", color: theme.colors.white, writingDirection: isUrdu ? "rtl" : "ltr" },
+    primaryBtn: { width: "100%", minHeight: redesign.control.largeHeight, borderRadius: theme.radius.md, overflow: "hidden", marginBottom: 8, ...theme.shadows.sm },
+    primaryBtnGrad: { minHeight: redesign.control.largeHeight, paddingHorizontal: 16, alignItems: "center", justifyContent: "center" },
+    primaryBtnText: { ...theme.typography.bodyLg, fontFamily: theme.typography.h3.fontFamily, color: theme.colors.white, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
     secondaryBtn: { minHeight: 44, minWidth: 120, paddingHorizontal: 16, alignItems: "center", justifyContent: "center" },
-    secondaryBtnText: { fontSize: 14, fontWeight: "600", color: theme.colors.primary, writingDirection: isUrdu ? "rtl" : "ltr" },
-    pressed: { opacity: 0.82 },
+    secondaryBtnText: { fontSize: 14, fontWeight: "600", color: theme.colors.primary, textAlign: "center", writingDirection: isUrdu ? "rtl" : "ltr" },
+    pressed: { opacity: 0.86, transform: [{ scale: redesign.visual.pressedScale }] },
   });
 }

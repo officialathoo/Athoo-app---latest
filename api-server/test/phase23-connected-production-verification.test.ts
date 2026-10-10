@@ -41,6 +41,8 @@ test("strict connected verifier checks API, admin, Neon-backed infrastructure an
     "admin release manifest",
     "API/admin Git commit mismatch",
     "storage provider connectivity",
+    "upload malware scanner connectivity",
+    "safe EICAR antivirus test signature",
     "map provider connectivity",
     "email transport verification",
     "authentication OTP delivery",
@@ -62,12 +64,14 @@ test("connected GitHub workflow verifies source, Neon and deployed services from
   assert.match(workflow, /CONNECTED_EXPECTED_COMMIT_SHA/);
   assert.match(workflow, /CONNECTED_ADMIN_ORIGIN/);
   assert.match(workflow, /CONNECTED_VERIFY_STORAGE: "true"/);
+  assert.match(workflow, /CONNECTED_VERIFY_UPLOAD_SCANNER: "true"/);
+  assert.match(workflow, /athoo-v2-connected-production-evidence/);
 });
 
 test("current status remains NO-GO until real external evidence exists", () => {
   const status = json("docs/qa/current-release-status.json");
-  assert.match(status.candidate, /^ATHOO_PHASE(?:23|24|28)_/);
-  assert.match(status.status, /(?:CONNECTED-VERIFICATION-READY|SOURCE-VERIFIED-CONNECTED-DEVICE-VALIDATION-PENDING|SOURCE-VERIFIED-STRICT-DEVICE-EVIDENCE-PENDING|SOURCE-HARDENED-LOCAL-VERIFICATION-PENDING|SOURCE-HARDENED-LOCAL-VALIDATION-PASSED)/);
+  assert.match(String(status.candidate), /^ATHOO_V2_2[A-Z0-9_.-]*\.zip$/);
+  assert.match(String(status.status), /V2\.2.*(?:PENDING|PASSED)/i);
   assert.equal(status.externalVerification.connectedRuntime, "pending");
   assert.equal(status.externalVerification.androidDevice, "pending");
   assert.equal(status.externalVerification.iosDevice, "pending");

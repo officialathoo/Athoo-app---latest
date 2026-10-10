@@ -7,10 +7,25 @@ import { Feather } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
 
 /** Branded full-screen / inline loading view. */
-export function LoadingView({ label, compact }: { label?: string; compact?: boolean }) {
+export function LoadingView({
+  label,
+  compact,
+  testID,
+  accessibilityLabel,
+}: {
+  label?: string;
+  compact?: boolean;
+  testID?: string;
+  accessibilityLabel?: string;
+}) {
   const { theme } = useTheme();
   return (
-    <View accessibilityRole="progressbar" accessibilityLabel={label || "Loading"} style={[styles.center, compact ? styles.centerCompact : styles.centerFull]}>
+    <View
+      testID={testID}
+      accessibilityRole="progressbar"
+      accessibilityLabel={accessibilityLabel || label || "Loading"}
+      style={[styles.center, compact ? styles.centerCompact : styles.centerFull]}
+    >
       <ActivityIndicator size="large" color={theme.colors.primary} />
       {label ? <AppText variant="caption" tone="secondary">{label}</AppText> : null}
     </View>
@@ -126,7 +141,12 @@ export function OfflineBanner() {
   if (!offline) return null;
 
   return (
-    <Animated.View pointerEvents="none" style={[styles.offlineBanner, { opacity, backgroundColor: theme.colors.danger, borderRadius: theme.radius.sm, shadowColor: theme.colors.overlay }]}>
+    <Animated.View
+      pointerEvents="none"
+      accessibilityRole="alert"
+      accessibilityLabel="You are offline. Some features may not work."
+      style={[styles.offlineBanner, { opacity, backgroundColor: theme.colors.danger, borderRadius: theme.radius.sm, shadowColor: theme.colors.overlay }]}
+    >
       <Feather name="wifi-off" size={theme.iconSize.xs} color={theme.colors.white} />
       <Text style={[styles.offlineText, { color: theme.colors.white }]}>You are offline. Some features may not work.</Text>
     </Animated.View>

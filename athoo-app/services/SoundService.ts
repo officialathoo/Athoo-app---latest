@@ -66,6 +66,8 @@ function playWebTone(type: SoundKey) {
 class SoundService {
   private ringtoneSound: Audio.Sound | null = null;
   private ringtoneWebLoop: ReturnType<typeof setTimeout> | null = null;
+  private ringtoneMode: "incoming" | "outgoing" | null = null;
+  private ringtoneGeneration = 0;
   private oneShotSounds = new Set<Audio.Sound>();
 
   private async applyAlertAudioMode(): Promise<void> {
@@ -112,13 +114,18 @@ class SoundService {
     }
   }
 
-  async startRingtone(): Promise<void> {
+  async startRingtone(mode: "incoming" | "outgoing" = "incoming"): Promise<void> {
+    if (this.ringtoneMode === mode && (this.ringtoneSound || this.ringtoneWebLoop)) return;
+
     await this.stopRingtone();
+    const generation = ++this.ringtoneGeneration;
+    this.ringtoneMode = mode;
 
     if (Platform.OS === "web") {
       const loop = () => {
+        if (generation !== this.ringtoneGeneration || this.ringtoneMode !== mode) return;
         playWebTone("ringtone");
-        this.ringtoneWebLoop = setTimeout(loop, 1900);
+        this.ringtoneWebLoop = setTimeout(loop, mode === "incoming" ? 1900 : 2400);
       };
       loop();
       return;
@@ -129,28 +136,35 @@ class SoundService {
       const { sound } = await Audio.Sound.createAsync(SOUND_MODULES.ringtone, {
         shouldPlay: true,
         isLooping: true,
-        volume: 1,
+        volume: mode === "incoming" ? 1 : 0.58,
       });
+
+      if (generation !== this.ringtoneGeneration || this.ringtoneMode !== mode) {
+        await sound.unloadAsync().catch(() => {});
+        return;
+      }
+
       this.ringtoneSound = sound;
     } catch (error) {
-      appLogger.warn("sound", "[SoundService] unable to start ringtone", error);
+      if (generation === this.ringtoneGeneration) this.ringtoneMode = null;
+      appLogger.warn("sound", `[SoundService] unable to start ${mode} ringtone`, error);
     }
   }
 
   async stopRingtone(): Promise<void> {
+    this.ringtoneGeneration += 1;
+    this.ringtoneMode = null;
+
     if (this.ringtoneWebLoop) {
       clearTimeout(this.ringtoneWebLoop);
       this.ringtoneWebLoop = null;
     }
+
     const sound = this.ringtoneSound;
     this.ringtoneSound = null;
     if (sound) {
-      try {
-        await sound.stopAsync();
-      } catch {}
-      try {
-        await sound.unloadAsync();
-      } catch {}
+      try { await sound.stopAsync(); } catch {}
+      try { await sound.unloadAsync(); } catch {}
     }
   }
 
